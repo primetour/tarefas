@@ -662,8 +662,19 @@ async function saveImageExtractionCache(url, extracted) {
  * @param {Object} agent — config do agente
  * @returns {{ json, provider, model }} ou null
  */
+// 4.49.34+ Circuit breaker contra quota exhausted (429). Quando a IA
+// retorna "exceeded quota" não é rate limit transitório — é o tier
+// inteiro estourado. Continuar batendo gasta 15-20s por chamada e
+// estoura timeout do workflow (15min). Solução: 1ª falha de quota
+// → desabilita enrichment pro RESTO do run. Sync segue capturando
+// métricas (sends/opens/clicks), só não enriquece extracted.
+// Backfill via Claude (sem custo API) cobre a defasagem depois.
+let _enrichmentCircuitOpen = false;
+let _enrichmentCircuitReason = '';
+
 async function extractEntitiesViaAgent(input, agent, retries = 3) {
   if (!agent) return null;
+  if (_enrichmentCircuitOpen) return null;   // já desistiu pra esse run
 
   const provider = agent.provider || 'gemini';
   const model    = agent.model    || 'gemini-2.5-flash';
@@ -754,6 +765,17 @@ async function extractEntitiesViaAgent(input, agent, retries = 3) {
     });
     return { json, provider, model, imagesUsed: imagesUsed.length, cacheHitsImg };
   } catch (e) {
+    // 4.49.34+ Detecta QUOTA EXCEEDED (free tier estourado) vs rate
+    // limit transitório. Quota exhausted = circuit breaker open, sync
+    // continua sem enrichment. Rate limit transitório = retry com backoff.
+    const isQuotaExhausted = /exceeded.*quota|quota.*exhaust|billing.*details/i.test(e.message);
+    if (isQuotaExhausted) {
+      _enrichmentCircuitOpen = true;
+      _enrichmentCircuitReason = e.message.slice(0, 200);
+      console.warn(`  ⚠ Circuit breaker ON · quota da IA estourada · enrichment desabilitado pro resto do run`);
+      console.warn(`    Sync continua salvando métricas. Re-rodar backfill Claude depois.`);
+      return null;
+    }
     if (retries > 0 && /429|5\d\d/.test(e.message)) {
       const waitMatch = e.message.match(/try again in ([\d.]+)s/i);
       const waitMs = waitMatch ? Math.ceil(parseFloat(waitMatch[1]) * 1000) + 500 : 5000;
@@ -1058,6 +1080,16 @@ async function main() {
       ? ` · 🖼 ${summary.imagesUsed} imgs Vision (${summary.imageCacheHits || 0} cache img)`
       : '';
     console.log(`🤖 Enriquecimento IA: ${summary.enriched} novos · ${summary.cacheHits} cache hits · ${summary.llmCalls} chamadas LLM${visionInfo}`);
+  }
+  // 4.49.34+ Sinaliza claramente quando circuit breaker tripou.
+  // Exit code 0 mesmo assim — sync das métricas teve sucesso, só
+  // enrichment ficou pra trás (recuperável via backfill Claude).
+  if (_enrichmentCircuitOpen) {
+    console.warn(`\n⚠ ⚠ ⚠  QUOTA DA IA ESTOURADA  ⚠ ⚠ ⚠`);
+    console.warn(`Reason: ${_enrichmentCircuitReason}`);
+    console.warn(`Métricas sincronizadas, mas docs novos NÃO tiveram enrichment IA.`);
+    console.warn(`Próximo passo: rodar functions/enrich-mc-claude.cjs + classify-mc-claude.cjs`);
+    console.warn(`(ambos são determinísticos, sem custo de API)\n`);
   }
 }
 
