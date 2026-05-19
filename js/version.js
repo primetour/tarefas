@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 45,
-  build: '20260519-regression-defensiveness',
+  patch: 46,
+  build: '20260520-changelog-devhours-sprint-completo',
 };
 
 /** "1.2.0" */

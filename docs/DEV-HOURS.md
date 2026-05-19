@@ -1,8 +1,14 @@
 # Sistema de Horas de Desenvolvimento
 
-> **Última atualização:** v4.49.22 (19/05/2026) · 107 dias de calendário · ~764h 32min approved · ~R$ 114.679,50 · 7h 9min/dia médio · 168 releases + 17 phases (185 entradas aprovadas)
+> **Última atualização:** v4.49.45 (20/05/2026, madrugada) · 107 dias de calendário · ~788h 11min approved · ~R$ 118.227,00 · 7h 22min/dia médio · 180 releases + 17 phases (197 entradas aprovadas)
 >
-> _Backfill 19/05/2026 (final do dia)_: 10 releases novas (4.49.13 → 4.49.22) — sprint denso de melhorias operacionais centradas no painel pessoal + harmonização de filtros + bug crítico do metaLinks. **+24,86h ajustado / +R$ 3.729,00** vs snapshot anterior (v4.49.8). Cobriu: Portal de Dicas (pacote de 5 fixes/features + DOCX import), Meu Calendário no Meu Painel (3 iterações até versão final com agenda + mini-mês + tooltip), filtro por tipo harmonizado nas 4 views de tarefa (tasks/steps/calendar/timeline) com sentinel "Sem tipo", coerência Dashboard ↔ #tasks (predicate + período + drill-down clicável + novo preset `activityInPeriod`), fix crítico do `metaLinks` seguindo responsável em vez de criador (3 camadas de defesa), e exports modulares ocultando blocos vazios em Portal e Roteiros.
+> _Backfill 20/05/2026 (madrugada)_: **23 releases novas (4.49.23 → 4.49.45)** — sprint maratona Newsletter centrado no pipeline shadow mode do Classificador IA. **+35,62h ajustado / +R$ 5.343,00** vs snapshot anterior (v4.49.22). Subdividido em 2 blocos:
+>
+> - **Manhã/tarde (4.49.23-31)** — 13,09h / R$ 1.963,50. Quick wins na aba Conteúdo & Temas (sort, drill, expand), backfill claude-curado do `mc_performance.extracted` (cobertura 4 → 95+ cidades), enrich estendido pra ler `htmlText`, eixos duplos Comercial × Turismo (script `classify-content.js` novo), exports XLS+PDF+PPTX, modal "Ver arte" preview, backfill `imageUrls` legado (692/756 docs = 92%), CSP `img-src` libera SFMC CDNs iniciais.
+>
+> - **Noite/madrugada (4.49.32-45)** — 22,53h / R$ 3.379,50. Sprint principal: arrumação do legado (categorize-no-art, fix merge waves, CSP completo das 5 BUs SFMC, IA desacoplada do mc-sync), **rewrite do PDF Conteúdo & Temas seguindo padrão Produtividade** (8 gráficos nativos, sanitização total), agente-seed `nl-content-classifier` no IA Hub (Claude Haiku 4.5, DESATIVADO), **pipeline shadow mode completo** (script + workflow + dashboard com sparkline + cutover/rollback workflows + test harness 61 testes + security audit bank-grade 2 CRITICAL + 2 HIGH corrigidos + regression review pra não quebrar login).
+>
+> _Backfill 19/05/2026 (final do dia)_: 10 releases (4.49.13 → 4.49.22) — sprint denso de melhorias operacionais centradas no painel pessoal + harmonização de filtros + bug crítico do metaLinks. +24,86h / +R$ 3.729,00.
 >
 > _Backfill 18/05/2026_: 12 releases (4.48.1 → 4.49.8) — sprint denso de bugfixes + features pequenas (auth dedup, filtros, deep-links, RBAC granular, bulk import destinos). +18,45h / +R$ 2.767,50.
 >
