@@ -1,0 +1,80 @@
+/* BTG IA — barra de botões "Sugerir" / "Revisar" sob inputs do form */
+
+.btg-input-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.btg-ai-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.btg-ai-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--btg-navy, #05132a);
+  color: #fff;
+  border: 0;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 120ms, transform 120ms;
+  font-family: inherit;
+}
+
+.btg-ai-btn:hover:not(:disabled) {
+  opacity: 0.92;
+  transform: translateY(-1px);
+}
+
+.btg-ai-btn:disabled {
+  opacity: 0.55;
+  cursor: progress;
+}
+
+.btg-ai-btn--ghost {
+  background: transparent;
+  color: var(--btg-navy, #05132a);
+  border: 1px solid #d1d5db;
+}
+
+.btg-ai-btn--ghost:hover:not(:disabled) {
+  background: #f3f4f6;
+  border-color: #9ca3af;
+}
+
+.btg-ai-btn__icon {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.btg-ai-status {
+  font-size: 12px;
+  color: #6b7280;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: #f3f4f6;
+}
+
+.btg-ai-status.is-busy {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.btg-ai-status.is-ok {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.btg-ai-status.is-err {
+  background: #fee2e2;
+  color: #991b1b;
+}

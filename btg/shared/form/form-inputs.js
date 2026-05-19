@@ -6,6 +6,7 @@
 
 import { icon } from '../btg-icons.js';
 import { openImagePicker } from '../btg-image-picker.js';
+import { sugerir as aiSugerir, revisar as aiRevisar, isStaging as aiIsStaging } from '../btg-ai.js';
 
 const esc = (s) =>
   String(s ?? '').replace(/[&<>"']/g, (c) => ({
@@ -23,29 +24,52 @@ const TEXTAREA_CLASS =
 
 // ─── TEXTO / TEXTAREA ──────────────────────────────────────
 
+// 4.42.0+ (Fase 3 BTG): se opts.aiField passado, wrappa input + barra
+// com botões "Sugerir" e "Revisar". Em staging o cliente IA usa mocks
+// (callLLM não roda lá); em produção chama o callLLM real do Gestor.
+function aiBar(field) {
+  return `
+    <div class="btg-ai-bar" data-ai-bar="${esc(field)}">
+      <button type="button" class="btg-ai-btn" data-ai-action="sugerir" data-ai-field="${esc(field)}">
+        <span class="btg-ai-btn__icon">✨</span>
+        <span>Sugerir com IA</span>
+      </button>
+      <button type="button" class="btg-ai-btn btg-ai-btn--ghost" data-ai-action="revisar" data-ai-field="${esc(field)}">
+        <span class="btg-ai-btn__icon">📝</span>
+        <span>Revisar texto</span>
+      </button>
+      <span class="btg-ai-status" data-ai-status="${esc(field)}" hidden></span>
+    </div>
+  `;
+}
+
 export function inputText(store, name, opts = {}) {
   const val = store.get(name) ?? '';
-  return `
-    <input type="${opts.type || 'text'}"
+  const inputHtml = `<input type="${opts.type || 'text'}"
       class="${INPUT_CLASS}"
       data-field="${name}"
       placeholder="${esc(opts.placeholder || '')}"
       ${opts.maxLength ? `maxlength="${opts.maxLength}"` : ''}
       value="${esc(val)}"
-    />
-  `;
+    />`;
+  if (opts.aiField) {
+    return `<div class="btg-input-wrap">${inputHtml}${aiBar(opts.aiField)}</div>`;
+  }
+  return inputHtml;
 }
 
 export function inputTextarea(store, name, opts = {}) {
   const val = store.get(name) ?? '';
-  return `
-    <textarea
+  const taHtml = `<textarea
       class="${TEXTAREA_CLASS}"
       data-field="${name}"
       rows="${opts.rows || 4}"
       placeholder="${esc(opts.placeholder || '')}"
-    >${esc(val)}</textarea>
-  `;
+    >${esc(val)}</textarea>`;
+  if (opts.aiField) {
+    return `<div class="btg-input-wrap">${taHtml}${aiBar(opts.aiField)}</div>`;
+  }
+  return taHtml;
 }
 
 // ─── TIPO DE CARTÃO (multi-select com cards grandes) ──────
@@ -287,6 +311,66 @@ export function bindFormEvents(container, store, opts = {}) {
 
   // Botões — re-render após clique pra UI refletir o estado
   container.addEventListener('click', (e) => {
+    // 4.42.0+ BTG IA (Sugerir / Revisar). Botões aparecem só quando
+    // o input/textarea foi renderizado com opts.aiField. Em staging
+    // o cliente usa mocks; em produção chama callLLM via Functions.
+    const aiBtn = e.target.closest('[data-ai-action]');
+    if (aiBtn) {
+      e.preventDefault();
+      const action = aiBtn.dataset.aiAction;
+      const field = aiBtn.dataset.aiField;
+      const statusEl = container.querySelector(`[data-ai-status="${field}"]`);
+      const setBusy = (msg) => {
+        if (statusEl) { statusEl.hidden = false; statusEl.textContent = msg; statusEl.className = 'btg-ai-status is-busy'; }
+        container.querySelectorAll(`[data-ai-field="${field}"]`).forEach((b) => { b.disabled = true; });
+      };
+      const setIdle = (msg = '', kind = 'ok') => {
+        if (statusEl) {
+          if (msg) { statusEl.hidden = false; statusEl.textContent = msg; statusEl.className = `btg-ai-status is-${kind}`; }
+          else { statusEl.hidden = true; }
+        }
+        container.querySelectorAll(`[data-ai-field="${field}"]`).forEach((b) => { b.disabled = false; });
+      };
+
+      (async () => {
+        try {
+          if (action === 'sugerir') {
+            setBusy('Gerando sugestão...');
+            const res = await aiSugerir({ field, values: store.values() });
+            if (!res.text) { setIdle('Vazio.', 'err'); return; }
+            const current = store.get(field) || '';
+            if (current && !confirm('Já existe texto nesse campo. Substituir pela sugestão?')) {
+              setIdle('Cancelado.', 'ok');
+              return;
+            }
+            store.set(field, res.text);
+            triggerRerender();
+            setIdle(res.mock ? '✓ Sugestão aplicada (mock — staging)' : '✓ Sugestão aplicada', 'ok');
+          } else if (action === 'revisar') {
+            const text = store.get(field) || '';
+            if (!text.trim()) { setIdle('Preencha o campo antes de revisar.', 'err'); return; }
+            setBusy('Revisando...');
+            const res = await aiRevisar({ text, type: 'completo' });
+            if (!res.text || res.text === text) {
+              setIdle(res.mock ? '✓ Sem alterações (mock — staging)' : '✓ Nada pra revisar', 'ok');
+              return;
+            }
+            if (!confirm(`Substituir o texto pelo revisado?\n\nNovo:\n"${res.text.slice(0, 240)}${res.text.length > 240 ? '...' : ''}"`)) {
+              setIdle('Cancelado.', 'ok');
+              return;
+            }
+            store.set(field, res.text);
+            triggerRerender();
+            setIdle(res.mock ? '✓ Revisão aplicada (mock — staging)' : '✓ Revisão aplicada', 'ok');
+          }
+        } catch (err) {
+          console.error('[btg-ai]', err);
+          setIdle(`Erro: ${err.message}`, 'err');
+        }
+      })();
+      return;
+    }
+
     // 4.41.0+ BTG image picker (modal com banco curado + upload novo).
     // Captura clicks no botão de escolher/trocar imagem, abre o modal,
     // e ao escolher seta imagem_url no store + limpa file local.

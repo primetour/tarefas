@@ -78,7 +78,7 @@ const qNome = (label, placeholder) => ({
   hint: 'Aparece como título nos cards e na página da oferta.',
   fields: ['nome_da_oferta'],
   previewTargets: ['nome'],
-  render: (s) => inputText(s, 'nome_da_oferta', { placeholder }),
+  render: (s) => inputText(s, 'nome_da_oferta', { placeholder, aiField: 'nome_da_oferta' }),
 });
 
 const qDescricao = {
@@ -87,7 +87,7 @@ const qDescricao = {
   hint: '2-3 frases. Aparece como abertura no card e na página.',
   fields: ['descricao'],
   previewTargets: ['descricao'],
-  render: (s) => inputTextarea(s, 'descricao', { rows: 4, placeholder: 'Resort à beira-mar com experiências para a família...' }),
+  render: (s) => inputTextarea(s, 'descricao', { rows: 4, placeholder: 'Resort à beira-mar com experiências para a família...', aiField: 'descricao' }),
 };
 
 const qSelo = {
@@ -97,7 +97,7 @@ const qSelo = {
   optional: true,
   fields: ['oferta_especial'],
   previewTargets: ['selo'],
-  render: (s) => inputText(s, 'oferta_especial', { placeholder: 'Kids FREE', maxLength: 40 }),
+  render: (s) => inputText(s, 'oferta_especial', { placeholder: 'Kids FREE', maxLength: 40, aiField: 'oferta_especial' }),
 };
 
 const qDuracao = (label, placeholder) => ({
@@ -288,7 +288,7 @@ const qIncluso = (label, placeholder) => ({
   optional: true,
   fields: ['incluso_no_pacote'],
   previewTargets: ['incluso'],
-  render: (s) => inputTextarea(s, 'incluso_no_pacote', { rows: 5, placeholder }),
+  render: (s) => inputTextarea(s, 'incluso_no_pacote', { rows: 5, placeholder, aiField: 'incluso_no_pacote' }),
 });
 
 const qBeneficios = {
@@ -298,7 +298,7 @@ const qBeneficios = {
   optional: true,
   fields: ['beneficios_marca'],
   previewTargets: ['beneficios'],
-  render: (s) => inputTextarea(s, 'beneficios_marca', { rows: 5, placeholder: 'Welcome drink\nEarly check-in & late check-out\nMassagem 50min' }),
+  render: (s) => inputTextarea(s, 'beneficios_marca', { rows: 5, placeholder: 'Welcome drink\nEarly check-in & late check-out\nMassagem 50min', aiField: 'beneficios_marca' }),
 };
 
 const qCondicoes = {
@@ -308,7 +308,7 @@ const qCondicoes = {
   optional: true,
   fields: ['condicoes_observacoes'],
   previewTargets: ['condicoes'],
-  render: (s) => inputTextarea(s, 'condicoes_observacoes', { rows: 4, placeholder: 'Válido entre 23/07 e 28/08/2026\nAntecedência mínima 14 dias' }),
+  render: (s) => inputTextarea(s, 'condicoes_observacoes', { rows: 4, placeholder: 'Válido entre 23/07 e 28/08/2026\nAntecedência mínima 14 dias', aiField: 'condicoes_observacoes' }),
 };
 
 // ─── FLUXOS POR TIPO ─────────────────────────────────────
