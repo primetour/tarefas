@@ -6,6 +6,60 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.31+20260519-csp-img-src-sfmc] — 2026-05-19
+
+Release **PATCH** — bugfix do v4.49.30: backfill funcionou (692 docs com
+imageUrls) mas modal "Ver arte" mostrava "imagem indisponível" pra tudo.
+
+**Causa:** Content-Security-Policy `img-src` não tinha os domínios SFMC.
+Hosts encontrados via debug ao vivo:
+- `image.viagens.newsletterprime.com.br` — CDN próprio do PRIMETOUR
+- `ftpprime.blob.core.windows.net` — Azure Storage com hero images
+- `image.exct.net`, `image.s10.exacttarget.com` — CDN SFMC genérico
+
+Todos adicionados ao `img-src`. **Validado live**: 5/5 imagens renderizam
+em naturalWidth=800px. Zero risco XSS — `<img>` com src externo não
+executa JS.
+
+---
+
+## [4.49.30+20260519-backfill-image-urls-legado] — 2026-05-19
+
+Release **MINOR** — Backfill do legado de imageUrls (resposta ao user:
+"não conseguimos pegar o legado de imagens pq?" — corte de caminho meu
+em v4.49.29).
+
+### Script + workflow
+
+- `scripts/backfill-image-urls.js`: refetch HTML do SFMC por assetName,
+  extrai top 5 imagens via mesmo `extractContentImages()` do mc-sync.js,
+  popula `doc.imageUrls`. Idempotente, suporta `--dry`, `--bu`, `--limit`.
+- `.github/workflows/backfill-image-urls.yml`: workflow_dispatch manual
+  reusando secrets MC_* + FIREBASE_* do cron de sync.
+
+### Bugs encontrados durante deploy
+
+1. **MIDs errados** (chutei sem checar mc-sync): 401 SFMC token. Fixei
+   com os MIDs reais (546014130 primetour, 546015816 btg-partners, etc).
+2. **Query body com `fields` specifier**: 400 "views.html.content is not
+   a valid field argument". Removido, agora retorna doc completo.
+
+### Resultado
+
+| BU | Docs com imageUrls (antes → depois) |
+|---|---|
+| btg-ultrablue | 0/240 → **231/240 (96%)** |
+| primetour     | 0/209 → **192/209 (92%)** |
+| pts           | 0/82  → **80/82 (98%)** |
+| btg-partners  | 0/152 → **130/152 (86%)** |
+| centurion     | 0/73  → **59/73 (81%)** |
+| **TOTAL** | 0/756 → **692/756 (92%)** · **1.181 URLs adicionadas** |
+
+Em ~30 segundos · 265 assets únicos consultados · 17 assets não
+encontrados no SFMC (provavelmente deletados desde o sync original).
+
+---
+
 ## [4.49.29+20260519-nl-ver-arte-modal] — 2026-05-19
 
 Release **MINOR** — User: "gostaria de clicar na newsletter na aba
