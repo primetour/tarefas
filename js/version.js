@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 38,
-  build: '20260519-pdf-conteudo-rewrite',
+  patch: 39,
+  build: '20260519-agente-classificador-newsletters-seed',
 };
 
 /** "1.2.0" */

@@ -30,6 +30,7 @@ export const MODULE_REGISTRY = {
   'arts-editor':      { label: 'Editor de Artes',     icon: '▣',  contextFields: ['design','template','text','brand'] },
   'roteiros':         { label: 'Roteiros de Viagem',  icon: '✈',  contextFields: ['destination','clientProfile','dayNumber','narrative','hotels','pricing','portalTips'] },
   'content-calendar':  { label: 'Calendário de Conteúdo', icon: '📱', contextFields: ['slot','platform','account','brief','performance','schedule','contentType'] },
+  'nl':               { label: 'Newsletters',          icon: '✉',  contextFields: ['subject','name','htmlText','buId','extracted','sentDate','openRate','clickRate'] },
   'ai-automations':   { label: 'Automações IA',       icon: '⚡', contextFields: ['automationName','type','frequency','status','lastRun'] },
   'sectors':          { label: 'Setores e Núcleos',   icon: '◈',  contextFields: ['sector','nucleo','members'] },
   'workspaces':       { label: 'Workspaces',          icon: '▤',  contextFields: ['name','sector','members','archived'] },
