@@ -74,7 +74,9 @@ async function loadChartJS() {
 /* ─── Render shell ────────────────────────────────────────── */
 export async function renderDashboards(container) {
   // Guard: permissão necessária
-  if (!store.can('analytics_view') && !store.can('dashboard_view') && !store.isMaster()) {
+  // 4.49.11+ Migrado pra canViewProductivityDashboard (aceita perm nova
+  // dashboard_productivity_view + back-compat com dashboard_view/analytics_view)
+  if (!store.canViewProductivityDashboard()) {
     container.innerHTML = `<div class="empty-state" style="padding:60px 20px;text-align:center;">
       <div class="empty-state-icon">🔒</div>
       <div class="empty-state-title">Acesso restrito</div>

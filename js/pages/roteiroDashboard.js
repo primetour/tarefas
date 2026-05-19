@@ -97,8 +97,9 @@ function parseTimestamp(val) {
 
 /* ─── Render ─────────────────────────────────────────────── */
 export async function renderRoteiroDashboard(container) {
-  if (!store.canManageRoteiros()) {
-    container.innerHTML = '<div class="empty-state"><p>Sem permissão.</p></div>';
+  // 4.49.11+ Granular: dashboard_roteiros_view (aceita roteiro_manage como fallback).
+  if (!store.canViewRoteirosDashboard()) {
+    container.innerHTML = '<div class="empty-state"><p>Sem permissão pra ver o dashboard de Roteiros.</p></div>';
     return;
   }
 

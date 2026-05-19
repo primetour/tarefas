@@ -119,6 +119,16 @@ let unsubscribe  = null;
 
 /* ─── Render ─────────────────────────────────────────────── */
 export async function renderCsat(container) {
+  // 4.49.11+ Guard granular: dashboard_csat_view (aceita csat_view_all/manage
+  // como fallback). Antes não tinha guard de página — qualquer auth user via.
+  if (!store.canViewCsatDashboard()) {
+    container.innerHTML = `<div class="empty-state" style="min-height:50vh;">
+      <div class="empty-state-icon">🔒</div>
+      <div class="empty-state-title">Sem acesso ao dashboard CSAT</div>
+      <p class="text-sm text-muted mt-2">Seu role não tem permissão pra ver este painel.</p>
+    </div>`;
+    return;
+  }
   container.innerHTML = `
     <div class="page-header">
       <div class="page-header-left">

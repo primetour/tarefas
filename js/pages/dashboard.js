@@ -15,6 +15,17 @@ import { fetchUserAbsences, fetchAllAbsences, ABSENCE_TYPES } from '../services/
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 export async function renderDashboard(container) {
+  // 4.49.11+ Guard granular: dashboard_home_view (antes era sem guard).
+  // Roles sem essa perm caem em "Acesso restrito" com sugestão de outro módulo.
+  if (!store.canViewHomeDashboard()) {
+    container.innerHTML = `<div class="empty-state" style="min-height:50vh;">
+      <div class="empty-state-icon">🔒</div>
+      <div class="empty-state-title">Sem acesso ao painel inicial</div>
+      <p class="text-sm text-muted mt-2">Seu role não tem permissão pra ver este dashboard.
+        Tente <a href="#tasks">Tarefas</a> ou <a href="#portal-tips">Portal de Dicas</a>.</p>
+    </div>`;
+    return;
+  }
   const profile = store.get('userProfile');
   const hour    = new Date().getHours();
   const greeting = hour < 12 ? 'Bom dia' : hour < 18 ? 'Boa tarde' : 'Boa noite';

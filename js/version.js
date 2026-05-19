@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 10,
-  build: '20260519-rbac-bypasses-fix',
+  patch: 11,
+  build: '20260519-dashboards-granular-perms',
 };
 
 /** "1.2.0" */

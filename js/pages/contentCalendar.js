@@ -679,6 +679,19 @@ export async function renderContentCalendar(container) {
   const main = container || document.getElementById('page-content') || document.getElementById('main');
   if (!main) return;
 
+  // 4.49.11+ Wire da perm content_calendar_view (que estava ÓRFÃ no catálogo —
+  // definida em rbac.js mas nunca checada no código). Master sempre vê;
+  // demais precisam ter content_calendar_view.
+  if (!store.isMaster?.() && !store.can?.('content_calendar_view')
+      && !store.canViewContentCalendar?.()) {
+    main.innerHTML = `<div class="empty-state" style="min-height:50vh;">
+      <div class="empty-state-icon">🔒</div>
+      <div class="empty-state-title">Sem acesso ao Calendário de Conteúdo</div>
+      <p class="text-sm text-muted mt-2">Seu role não tem permissão pra ver este módulo.</p>
+    </div>`;
+    return;
+  }
+
   // ── Parse URL ──────────────────────────────────────────
   // Aceita:
   //   - #content-calendar?project=ABC          (legado, single)
