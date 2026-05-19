@@ -518,8 +518,24 @@ function mergeWaves(rows) {
     // Wave label list for tooltip: "1776_1 / 1776_2 / 1776_3 / 1776_4"
     const waveNames = group.map(r => r.name).join(' / ');
 
+    // 4.49.36+ Bug fix CRÍTICO: imageUrls do base alfabético podia estar
+    // vazio enquanto outras waves do mesmo grupo tinham as imagens. Caso
+    // real: "U0196" (base sem imgs) + "U0196_1..._4" (todas com 5 imgs).
+    // Merge usava ...base → ícone aparecia 🔍/⚠ e modal mostrava "sem arte".
+    // Fix: pegar imageUrls/id da PRIMEIRA wave que TIVER. Mesmo critério
+    // pra noArtReason (se alguma wave tem imgs, descarta noArtReason).
+    const waveWithImgs = group.find(d => Array.isArray(d.imageUrls) && d.imageUrls.length > 0);
+    const mergedImageUrls = waveWithImgs?.imageUrls || base.imageUrls || [];
+    // Doc id: prefere o da wave com imgs (pra modal abrir o doc certo)
+    const mergedDocId = waveWithImgs?.id || base.id;
+    // noArtReason: só mantém se NENHUMA wave tem imgs
+    const mergedNoArtReason = waveWithImgs ? null : (base.noArtReason || null);
+
     merged.push({
       ...base,
+      id:           mergedDocId,         // 4.49.36+ doc com imgs
+      imageUrls:    mergedImageUrls,     // 4.49.36+ herda de qualquer wave
+      noArtReason:  mergedNoArtReason,   // 4.49.36+ limpa se alguma wave tem
       name:         baseCode(base.name),  // show clean base name
       waveCount:    waves,
       waveNames,
@@ -2217,16 +2233,26 @@ function dedupContentByCampaign(docs) {
     // Pega o doc com extracted preenchido se houver; senão o primeiro
     const withExtracted = group.find(d => d.extracted);
     const canonical = withExtracted || group[0];
+    // 4.49.36+ Igual ao fix em mergeWaves — herda imageUrls de qualquer
+    // wave que tenha, não só do canonical. Caso real: U0196 base sem imgs
+    // + waves _1..._4 com imgs cada.
+    const waveWithImgs = group.find(d => Array.isArray(d.imageUrls) && d.imageUrls.length > 0);
+    const mergedImageUrls = waveWithImgs?.imageUrls || canonical.imageUrls || [];
+    const mergedDocId = waveWithImgs?.id || canonical.id;
+    const mergedNoArtReason = waveWithImgs ? null : (canonical.noArtReason || null);
+
     if (group.length === 1) {
-      merged.push({ ...canonical, _waveCount: 1, _waveDocs: group });
+      merged.push({ ...canonical, imageUrls: mergedImageUrls, noArtReason: mergedNoArtReason, id: mergedDocId, _waveCount: 1, _waveDocs: group });
     } else {
-      // Soma métricas, mantém extracted do canônico
       const totalSent  = group.reduce((s, d) => s + (+d.totalSent || 0), 0);
       const delivered  = group.reduce((s, d) => s + (+d.delivered || 0), 0);
       const openUnique = group.reduce((s, d) => s + (+d.openUnique || 0), 0);
       const clickUnique = group.reduce((s, d) => s + (+d.clickUnique || 0), 0);
       merged.push({
         ...canonical,
+        id:           mergedDocId,
+        imageUrls:    mergedImageUrls,
+        noArtReason:  mergedNoArtReason,
         name: baseCode(canonical.name),
         totalSent,
         delivered,

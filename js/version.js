@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 35,
-  build: '20260519-mc-sync-desacopla-ia',
+  patch: 36,
+  build: '20260519-fix-merge-imgs-de-qualquer-wave',
 };
 
 /** "1.2.0" */
