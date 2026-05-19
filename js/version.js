@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 44,
-  build: '20260519-security-audit-fixes',
+  patch: 45,
+  build: '20260519-regression-defensiveness',
 };
 
 /** "1.2.0" */

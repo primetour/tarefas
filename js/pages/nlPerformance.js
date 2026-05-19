@@ -2177,9 +2177,13 @@ function renderContentTab() {
       ${renderContentByBu(enrichedDocs)}
     </div>
 
-    <!-- v4.49.41+ Shadow mode IA — só renderiza se houver docs classificados pela IA. -->
+    <!-- v4.49.41+ Shadow mode IA — só renderiza se houver docs classificados pela IA.
+         v4.49.45+ Blindado: try/catch local evita que bug aqui derrube o
+         tab inteiro (mesma técnica usada em outros blocos defensivos do dashboard). -->
     <div id="nl-content-shadow-block" class="card" style="padding:18px;margin-top:16px;">
-      ${renderShadowModeBlock(enrichedDocs)}
+      ${(() => { try { return renderShadowModeBlock(enrichedDocs); }
+                 catch (e) { console.warn('[shadow-mode] render err:', e);
+                             return '<p style="color:var(--text-muted);font-size:0.75rem;">Bloco shadow-mode indisponível (erro interno; demais features OK).</p>'; } })()}
     </div>
 
     <!-- Lista de envios filtrados -->
@@ -2193,7 +2197,10 @@ function renderContentTab() {
   `;
 
   wireDrillDowns();
-  wireShadowModeDrill();
+  // v4.49.45+ Blindado: wireShadowModeDrill é async e pode rejeitar (ex:
+  // firestore.rules ainda não deployada). Catch defensivo pra não vazar
+  // unhandled rejection nem bloquear o resto do setup.
+  wireShadowModeDrill().catch(e => console.warn('[shadow-mode] wire err:', e));
 
   // Setup insights da aba Conteúdo (idempotente — remontado a cada renderContentTab)
   setTimeout(() => setupNlContentInsights(enrichedDocs, agg), 50);
