@@ -104,13 +104,13 @@
       Imagem precisa ser anexada manualmente depois (no editor de oferta).
     </p>
 
-    <label class="dropzone" id="dz">
-      <input type="file" accept=".xlsx,.xls,.docx" hidden id="file-input" />
-      <div class="dropzone__icon">⬆️</div>
-      <h3 class="dropzone__title">Arraste o arquivo aqui ou clique</h3>
-      <p class="dropzone__hint">.xlsx, .xls, .docx — até 5 MB</p>
+    <div class="dropzone" id="dz" role="button" tabindex="0">
+      <input type="file" accept=".xlsx,.xls,.docx" id="file-input" style="position:absolute;left:-9999px;width:1px;height:1px;opacity:0" />
+      <div class="dropzone__icon">⬆</div>
+      <div class="dropzone__title">Arraste o arquivo aqui ou clique</div>
+      <div class="dropzone__hint">.xlsx, .xls, .docx — até 5 MB</div>
       <div class="filename" id="filename"></div>
-    </label>
+    </div>
 
     <div id="result" hidden>
       <div class="panel">
@@ -230,6 +230,13 @@
 
     // Eventos
     fileInput.addEventListener('change', (e) => handleFile(e.target.files[0]));
+    dz.addEventListener('click', (e) => {
+      if (e.target.tagName === 'INPUT') return;
+      fileInput.click();
+    });
+    dz.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput.click(); }
+    });
     dz.addEventListener('dragover', (e) => { e.preventDefault(); dz.classList.add('is-drag'); });
     dz.addEventListener('dragleave', () => dz.classList.remove('is-drag'));
     dz.addEventListener('drop', (e) => {
