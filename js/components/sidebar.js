@@ -29,8 +29,10 @@ const NAV_GROUPS = [
   {
     label: 'Tarefas e Projetos',
     items: [
-      { route: 'check-in',   icon: 'check-in',   label: 'Check-in',     perm: 'dashboard_view' },
-      { route: 'dashboard',  icon: 'dashboard',  label: 'Meu Painel',   perm: 'dashboard_view' },
+      // 4.49.11+ Migrado de dashboard_view (renomeado) pra dashboard_home_view.
+      // Check-in e Meu Painel são parte do painel inicial — mesma perm.
+      { route: 'check-in',   icon: 'check-in',   label: 'Check-in',     perm: 'dashboard_home_view' },
+      { route: 'dashboard',  icon: 'dashboard',  label: 'Meu Painel',   perm: 'dashboard_home_view' },
       { route: 'tasks',      icon: 'tasks',      label: 'Tarefas',      perm: 'task_create' },
       { route: 'projects',   icon: 'projects',   label: 'Projetos',     perm: 'task_create',       altPerm: 'project_create' },
       { route: 'kanban',     icon: 'kanban',     label: 'Steps',        perm: 'task_create' },
@@ -43,7 +45,10 @@ const NAV_GROUPS = [
     items: [
       { route: 'workspaces',    icon: 'workspaces',    label: 'Squads',       perm: 'workspace_create', altPerm: 'system_view_all' },
       { route: 'requests',      icon: 'requests',      label: 'Solicitações', perm: 'task_create',      badge: true },
-      { route: 'notifications', icon: 'notifications', label: 'Notificações', perm: 'dashboard_view',   badge: true },
+      // 4.49.11+ Notificações sempre visíveis pra qualquer user autenticado
+      // (não faz sentido bloquear notificações próprias). Antes usava
+      // dashboard_view (renomeado). Sem perm = sempre visível.
+      { route: 'notifications', icon: 'notifications', label: 'Notificações',                           badge: true },
       { route: 'team',          icon: 'team',          label: 'Equipe',       perm: 'task_view_all' },
       { route: 'feedbacks',     icon: 'feedbacks',     label: 'Feedbacks',    perm: 'feedback_view',    altPerm: 'feedback_create' },
       { route: 'goals',         icon: 'goals',         label: 'Metas',        perm: 'goals_view' },
@@ -62,19 +67,22 @@ const NAV_GROUPS = [
       { route: 'cms',              icon: 'cms',              label: 'CMS / Site',             perm: 'portal_manage'  },
       { route: 'arts-editor',      icon: 'arts-editor',      label: 'Editor de Artes',        perm: 'portal_manage'  },
       { route: 'luxury-travel',    icon: 'luxury-travel',    label: 'Revista Luxury Travel' },
-      { route: 'news-monitor',     icon: 'news-monitor',     label: 'Pautas e Clipping',      perm: 'dashboard_view' },
+      // 4.49.11+ Pautas/Clipping = análise → analytics_view (consistente com newsMonitor.js)
+      { route: 'news-monitor',     icon: 'news-monitor',     label: 'Pautas e Clipping',      perm: 'analytics_view' },
       // 'ai-automations' DEPRECADO em favor do IA Hub (triggers.schedule do agente).
     ]
   },
   {
     label: 'Análise de Dados',
     items: [
-      { route: 'dashboards',        icon: 'dashboards',        label: 'Produtividade',     perm: 'analytics_view',  altPerm: 'dashboard_view' },
+      // 4.49.11+ altPerm migrado de dashboard_view (renomeado) pra dashboard_productivity_view
+      { route: 'dashboards',        icon: 'dashboards',        label: 'Produtividade',     perm: 'analytics_view',  altPerm: 'dashboard_productivity_view' },
       { route: 'nl-performance',    icon: 'nl-performance',    label: 'Newsletters',       perm: 'analytics_view' },
       { route: 'meta-performance',  icon: 'meta-performance',  label: 'Instagram',         perm: 'analytics_view' },
       { route: 'ga-performance',    icon: 'ga-performance',    label: 'Google Analytics',  perm: 'analytics_view' },
-      { route: 'portal-dashboard',  icon: 'portal-dashboard',  label: 'Portal de Dicas',   perm: 'portal_manage' },
-      { route: 'roteiro-dashboard', icon: 'roteiro-dashboard', label: 'Roteiros',          perm: 'roteiro_manage' },
+      // 4.49.11+ Migrado pra perms granulares (aceitam o legado como altPerm)
+      { route: 'portal-dashboard',  icon: 'portal-dashboard',  label: 'Portal de Dicas',   perm: 'dashboard_portal_view',   altPerm: 'portal_manage' },
+      { route: 'roteiro-dashboard', icon: 'roteiro-dashboard', label: 'Roteiros',          perm: 'dashboard_roteiros_view', altPerm: 'roteiro_manage' },
       // 'ai-dashboard' agora dentro do IA Hub (aba Custos)
     ]
   },
