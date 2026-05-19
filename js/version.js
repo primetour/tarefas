@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 16,
-  build: '20260519-meu-calendario-agenda',
+  patch: 17,
+  build: '20260519-calendar-up-filters-type',
 };
 
 /** "1.2.0" */

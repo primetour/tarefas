@@ -44,6 +44,9 @@ let searchTerm   = '';
 let filterStatus = '';
 let filterPriority = '';
 let filterProject  = '';
+// 4.49.17+ Filtro por tipo de tarefa (taskTypes). Suporta sentinel
+// TYPE_NONE_SENTINEL = '__NONE__' pra "tarefas sem tipo".
+let filterType     = '';
 // 4.21+ — multi-select. Pode ser '' (legacy/none), string (single via deep-link
 // `?assignee=uid`), ou string[] (multi via UI). applyFilters normaliza.
 let filterAssignee = '';
@@ -87,6 +90,7 @@ const DEFAULT_FILTER_VISIBILITY = {
   observer: true, // 4.40.11+ filtro por observadores (multi-select)
   datePreset: true, squad: true, area: false, tag: false,
   meta: true,
+  type: true, // 4.49.17+ tipo de tarefa (visível por padrão; harmonização c/ Steps/Calendar/Timeline)
 };
 let filterVisibility = { ...DEFAULT_FILTER_VISIBILITY };
 function loadFilterVisibility() {
@@ -117,6 +121,7 @@ function loadFilterValues() {
     if (typeof saved.filterStatus     === 'string') filterStatus     = saved.filterStatus;
     if (typeof saved.filterPriority   === 'string') filterPriority   = saved.filterPriority;
     if (typeof saved.filterProject    === 'string') filterProject    = saved.filterProject;
+    if (typeof saved.filterType       === 'string') filterType       = saved.filterType;
     if (typeof saved.filterDatePreset === 'string') filterDatePreset = saved.filterDatePreset;
     if (typeof saved.filterDateFrom   === 'string') filterDateFrom   = saved.filterDateFrom;
     if (typeof saved.filterDateTo     === 'string') filterDateTo     = saved.filterDateTo;
@@ -138,7 +143,8 @@ function saveFilterValues() {
   _saveFilterTimer = setTimeout(() => {
     try {
       localStorage.setItem(FILTER_VALUES_KEY, JSON.stringify({
-        filterStatus, filterPriority, filterProject, filterAssignee, filterObserver,
+        filterStatus, filterPriority, filterProject, filterType,
+        filterAssignee, filterObserver,
         filterDatePreset, filterDateFrom, filterDateTo,
         filterArea, filterTag, filterSquad, filterMeta, filterShowArchived,
         groupBy,
@@ -341,6 +347,14 @@ export async function renderTasks(container) {
         </select>
         ${renderPickerButton({ btnId: 'filter-project-btn', selected: null, emptyLabel: 'Todos os projetos' })}
       </div>
+      <!-- 4.49.17+ Filtro por TIPO de tarefa (estava ausente em #tasks).
+           Suporta opção "Sem tipo" pra ver órfãs. -->
+      <div class="toolbar-filter-wrap" style="${filterVisibility.type?'':'display:none;'}min-width:180px;">
+        <select id="filter-type" style="display:none;">
+          <option value="">Todos os tipos</option>
+        </select>
+        ${renderPickerButton({ btnId: 'filter-type-btn', selected: null, emptyLabel: 'Todos os tipos' })}
+      </div>
       <div class="toolbar-filter-wrap" style="${filterVisibility.squad?'':'display:none;'}min-width:180px;">
         <select id="filter-squad" style="display:none;">
           <option value="">Todos os squads</option>
@@ -522,6 +536,30 @@ export async function renderTasks(container) {
       }
     }
   } catch (e) { console.warn('Projects fetch:', e); }
+
+  // 4.49.17+ Popula options do filter-type (taskTypes do store) + sentinel "Sem tipo".
+  // Necessário pro bindOptionPicker conseguir achar a label do tipo selecionado.
+  try {
+    const typeFilter = document.getElementById('filter-type');
+    if (typeFilter) {
+      // Sentinel "Sem tipo" sempre no topo
+      const noneOpt = document.createElement('option');
+      noneOpt.value = '__NONE__';
+      noneOpt.textContent = '∅ Sem tipo';
+      typeFilter.appendChild(noneOpt);
+      // Tipos cadastrados
+      (store.get('taskTypes') || []).forEach(t => {
+        const opt = document.createElement('option');
+        opt.value = t.id;
+        opt.textContent = `${t.icon || '▶'} ${t.name}`;
+        typeFilter.appendChild(opt);
+      });
+      // Restaura valor persistido
+      if (filterType) {
+        typeFilter.value = filterType;
+      }
+    }
+  } catch (e) { console.warn('TaskTypes filter populate:', e); }
 
   // Pré-seleciona squad se chegou via ?workspaceId=xxx
   if (filterSquad) {
@@ -1016,6 +1054,15 @@ function applyFilters() {
   }
   if (filterPriority) result = result.filter(t => t.priority === filterPriority);
   if (filterProject)  result = result.filter(t => t.projectId === filterProject);
+  // 4.49.17+ Filtro por tipo de tarefa:
+  //   __NONE__         → sem typeId E sem .type (legacy string)
+  //   <typeId>         → match exato em t.typeId
+  // Mantém compat com tarefas legadas que tinham t.type='newsletter' (string).
+  if (filterType === '__NONE__') {
+    result = result.filter(t => !t.typeId && !t.type);
+  } else if (filterType) {
+    result = result.filter(t => t.typeId === filterType);
+  }
 
   // 4.40.25+ COMBINAÇÃO assignee + observer:
   // - Só assignee selecionado → task passa se assignees match (AND com demais)
@@ -1690,6 +1737,7 @@ function _attachPageEvents() {
   document.getElementById('filter-status')?.addEventListener('change', e => { filterStatus = e.target.value; saveFilterValues(); applyFilters(); });
   document.getElementById('filter-priority')?.addEventListener('change', e => { filterPriority = e.target.value; saveFilterValues(); applyFilters(); });
   document.getElementById('filter-project')?.addEventListener('change', e => { filterProject = e.target.value; saveFilterValues(); applyFilters(); });
+  document.getElementById('filter-type')?.addEventListener('change', e => { filterType = e.target.value; saveFilterValues(); applyFilters(); });
   document.getElementById('filter-squad')?.addEventListener('change', e => { filterSquad = e.target.value; saveFilterValues(); applyFilters(); });
 
   // Visual pickers (status / priority / squad) — selects nativos preservados pra change events
@@ -1746,6 +1794,40 @@ function _attachPageEvents() {
     }),
     findSelected: findProject,
     emptyLabel: 'Todos os projetos',
+  });
+
+  // 4.49.17+ Picker de TIPO de tarefa — mesma estética dos outros filtros.
+  // Inclui sentinel "Sem tipo" (TYPE_NONE_SENTINEL) no topo.
+  const typeOpts = () => {
+    const types = store.get('taskTypes') || [];
+    return [
+      { id: '__NONE__', label: 'Sem tipo', icon: '∅', color: 'var(--text-muted)' },
+      ...types.map(t => {
+        // Mesma lógica de extração de emoji do filterBar.js
+        const name = String(t.name || '').trim();
+        const fc = name[0];
+        const isEmoji = fc && fc.codePointAt(0) > 127;
+        const parts = isEmoji ? name.split(/\s+/) : null;
+        return {
+          id:    t.id,
+          label: parts ? parts.slice(1).join(' ').trim() || name : name,
+          icon:  t.icon || (parts ? parts[0] : '▶'),
+          color: '#0EA5E9',
+        };
+      }),
+    ];
+  };
+  const findType = (id) => typeOpts().find(o => o.id === id) || null;
+  bindOptionPicker({
+    btnId: 'filter-type-btn',
+    selectId: 'filter-type',
+    buildConfig: () => ({
+      options: typeOpts(),
+      empty: { id: '', label: 'Todos os tipos' },
+      searchPlaceholder: 'Buscar tipo…',
+    }),
+    findSelected: findType,
+    emptyLabel: 'Todos os tipos',
   });
   const squadOpts = () => {
     const ws = store.get('userWorkspaces') || [];
@@ -1928,6 +2010,7 @@ function openFilterConfigModal() {
     { key: 'status',     label: 'Status' },
     { key: 'priority',   label: 'Prioridade' },
     { key: 'project',    label: 'Projeto' },
+    { key: 'type',       label: 'Tipo de tarefa (inclui "sem tipo")' }, // 4.49.17+
     { key: 'squad',      label: 'Squad' },
     { key: 'assignee',   label: 'Responsável' },
     { key: 'observer',   label: '👁 Observador' },

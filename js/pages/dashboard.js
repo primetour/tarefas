@@ -288,8 +288,52 @@ export async function renderDashboard(container) {
     const $main = document.getElementById('dash-main');
     if (!$main) return; // user navigated away
     $main.innerHTML = `
-      <!-- LEFT COLUMN: Minhas Tarefas + Meu Calendário (4.49.15+) -->
+      <!-- LEFT COLUMN: Meu Calendário (em cima) + Minhas Tarefas (4.49.17+) -->
       <div style="display:flex;flex-direction:column;gap:16px;">
+
+      <!-- 4.49.17+ Meu Calendário NO TOPO (era embaixo de Minhas Tarefas).
+           Agenda visível + mini-mês sempre aberto. Tooltip nas células
+           mostra os títulos das tarefas. -->
+      <div class="card" id="dash-mini-cal-card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">📅 Meu Calendário</div>
+            <div class="card-subtitle" id="dash-mini-cal-summary"
+              style="font-size:0.75rem;color:var(--text-muted);"></div>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;">
+            <button class="btn btn-ghost btn-sm" onclick="location.hash='#calendar'"
+              style="padding:4px 10px;font-size:0.75rem;">Agenda completa →</button>
+          </div>
+        </div>
+        <div class="card-body" style="padding:0;">
+
+          <!-- AGENDA: próximos 14 dias agrupados por data, com título da tarefa -->
+          <div id="dash-mini-cal-upcoming" style="padding:8px 16px 4px;"></div>
+
+          <!-- MINI-MÊS: sempre aberto (4.49.17+ removido toggle) -->
+          <div style="border-top:1px solid var(--border-subtle);padding:10px 16px 14px;
+            background:var(--bg-surface);">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+              <span style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;
+                letter-spacing:0.08em;color:var(--text-muted);">
+                Visão do mês — <span id="dash-mini-cal-subtitle" style="text-transform:none;letter-spacing:0;color:var(--text-secondary);">…</span>
+              </span>
+              <div id="dash-cal-nav" style="display:flex;gap:4px;align-items:center;">
+                <button class="btn btn-ghost btn-sm" id="dash-cal-prev" title="Mês anterior"
+                  style="padding:2px 8px;font-size:0.75rem;">◀</button>
+                <button class="btn btn-ghost btn-sm" id="dash-cal-today"
+                  style="padding:2px 8px;font-size:0.6875rem;">Hoje</button>
+                <button class="btn btn-ghost btn-sm" id="dash-cal-next" title="Próximo mês"
+                  style="padding:2px 8px;font-size:0.75rem;">▶</button>
+              </div>
+            </div>
+            <div id="dash-mini-cal-grid"></div>
+            <div id="dash-mini-cal-detail" style="margin-top:8px;"></div>
+          </div>
+        </div>
+      </div>
+
       <!-- My tasks card -->
       <div class="card">
         <div class="card-header">
@@ -385,53 +429,6 @@ export async function renderDashboard(container) {
         </div>
       </div>
 
-      <!-- 4.49.15+ Meu Calendário — agenda dos próximos dias + mini-mês.
-           v4.49.16 reformulado: primeira coisa que aparece é a LISTA de
-           próximos compromissos com TÍTULO da tarefa (não só dots), pra
-           user saber na hora o que tem pra fazer. Mini-mês fica embaixo
-           como visão panorâmica/navegação. -->
-      <div class="card" id="dash-mini-cal-card">
-        <div class="card-header">
-          <div>
-            <div class="card-title">📅 Meu Calendário</div>
-            <div class="card-subtitle" id="dash-mini-cal-summary"
-              style="font-size:0.75rem;color:var(--text-muted);"></div>
-          </div>
-          <div style="display:flex;gap:6px;align-items:center;">
-            <button class="btn btn-ghost btn-sm" onclick="location.hash='#calendar'"
-              style="padding:4px 10px;font-size:0.75rem;">Agenda completa →</button>
-          </div>
-        </div>
-        <div class="card-body" style="padding:0;">
-
-          <!-- AGENDA: próximos 14 dias agrupados por data, com título da tarefa -->
-          <div id="dash-mini-cal-upcoming" style="padding:8px 16px 4px;"></div>
-
-          <!-- MINI-MÊS: navegação visual (colapsável) -->
-          <div style="border-top:1px solid var(--border-subtle);padding:10px 16px 14px;
-            background:var(--bg-surface);">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-              <button id="dash-cal-toggle"
-                style="background:none;border:none;cursor:pointer;font-size:0.6875rem;
-                font-weight:700;text-transform:uppercase;letter-spacing:0.08em;
-                color:var(--text-muted);display:flex;align-items:center;gap:6px;padding:0;">
-                <span id="dash-cal-toggle-arrow" style="font-size:0.625rem;transition:transform 0.2s;transform:rotate(90deg);">▸</span>
-                Visão do mês — <span id="dash-mini-cal-subtitle" style="text-transform:none;letter-spacing:0;color:var(--text-secondary);">…</span>
-              </button>
-              <div id="dash-cal-nav" style="display:flex;gap:4px;align-items:center;">
-                <button class="btn btn-ghost btn-sm" id="dash-cal-prev" title="Mês anterior"
-                  style="padding:2px 8px;font-size:0.75rem;">◀</button>
-                <button class="btn btn-ghost btn-sm" id="dash-cal-today"
-                  style="padding:2px 8px;font-size:0.6875rem;">Hoje</button>
-                <button class="btn btn-ghost btn-sm" id="dash-cal-next" title="Próximo mês"
-                  style="padding:2px 8px;font-size:0.75rem;">▶</button>
-              </div>
-            </div>
-            <div id="dash-mini-cal-grid"></div>
-            <div id="dash-mini-cal-detail" style="margin-top:8px;"></div>
-          </div>
-        </div>
-      </div>
       </div>
       <!-- /LEFT COLUMN -->
 
@@ -729,7 +726,6 @@ function mountMiniCalendar(myTasks, onTaskClick) {
   const today = new Date(); today.setHours(0,0,0,0);
   let cursor  = new Date(today.getFullYear(), today.getMonth(), 1);
   let selectedDayKey = null; // YYYY-MM-DD
-  let monthCollapsed = true; // 4.49.16+ — mini-mês começa fechado; agenda é o foco
 
   const MONTHS = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
                   'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
@@ -828,13 +824,28 @@ function mountMiniCalendar(myTasks, onTaskClick) {
         }
       }
 
+      // 4.49.17+ Tooltip nativo (title) com os títulos das tarefas do dia.
+      // Mostra até 5 títulos, com horário se houver; se passar de 5, "+N".
+      let tooltipTitle = '';
+      if (dayTasks.length) {
+        const previews = dayTasks.slice(0, 5).map(({task: t, dueObj}) => {
+          const hh = (dueObj.getHours() || dueObj.getMinutes())
+            ? `${String(dueObj.getHours()).padStart(2,'0')}:${String(dueObj.getMinutes()).padStart(2,'0')} `
+            : '';
+          return `• ${hh}${(t.title || '').replace(/"/g,'')}`;
+        });
+        const header = `${dayTasks.length} tarefa${dayTasks.length!==1?'s':''} — ${d.getDate()}/${String(d.getMonth()+1).padStart(2,'0')}`;
+        const extra  = dayTasks.length > 5 ? `\n+${dayTasks.length-5} mais` : '';
+        tooltipTitle = `${header}\n${previews.join('\n')}${extra}`;
+      }
+
       const cursorStyle = dayTasks.length ? 'cursor:pointer;' : 'cursor:default;';
       html += `<div class="dash-cal-cell" data-day-key="${key}"
         style="aspect-ratio:1;min-height:32px;border-radius:6px;
           background:${cellBg};border:${cellBorder};
           display:flex;flex-direction:column;align-items:center;justify-content:space-between;
-          padding:3px 2px;${cursorStyle}transition:background 0.12s;"
-        ${dayTasks.length ? `title="${dayTasks.length} tarefa${dayTasks.length!==1?'s':''}"` : ''}
+          padding:3px 2px;${cursorStyle}transition:background 0.12s;position:relative;"
+        ${tooltipTitle ? `title="${esc(tooltipTitle)}"` : ''}
         onmouseover="if(${dayTasks.length}) this.style.background='rgba(212,168,67,0.10)'"
         onmouseout="this.style.background='${cellBg}'">
         <span style="font-size:0.6875rem;font-weight:${numWeight};color:${numColor};line-height:1.1;">
@@ -1064,22 +1075,6 @@ function mountMiniCalendar(myTasks, onTaskClick) {
     });
   }
 
-  /* ─── Toggle do mini-mês (colapsado por padrão em 4.49.16+) ──── */
-  function applyMonthCollapse() {
-    if (grid)     grid.style.display     = monthCollapsed ? 'none' : '';
-    if (detailEl) detailEl.style.display = monthCollapsed ? 'none' : '';
-    const nav    = document.getElementById('dash-cal-nav');
-    if (nav)     nav.style.display       = monthCollapsed ? 'none' : 'flex';
-    const arrow  = document.getElementById('dash-cal-toggle-arrow');
-    if (arrow)   arrow.style.transform   = monthCollapsed ? 'rotate(0deg)' : 'rotate(90deg)';
-  }
-
-  document.getElementById('dash-cal-toggle')?.addEventListener('click', () => {
-    monthCollapsed = !monthCollapsed;
-    applyMonthCollapse();
-    if (!monthCollapsed) renderMonth(); // só renderiza se for abrir
-  });
-
   // Wire nav buttons (uma vez — botões são reescritos pelo card mas só uma
   // instância do mount roda por render do dashboard).
   document.getElementById('dash-cal-prev')?.addEventListener('click', () => {
@@ -1098,11 +1093,9 @@ function mountMiniCalendar(myTasks, onTaskClick) {
     renderMonth(); renderDetail();
   });
 
-  // Inicial: agenda visível, mini-mês oculto (lazy render). Mas seta o
-  // subtitle do mês corrente já no botão pra ficar "Visão do mês — Maio 2026"
-  if (subtitle) subtitle.textContent = `${MONTHS[cursor.getMonth()]} ${cursor.getFullYear()}`;
+  // 4.49.17+ Inicial: agenda + mini-mês ambos visíveis (toggle removido)
   renderUpcoming();
-  applyMonthCollapse();
+  renderMonth();
 }
 
 /* ─── Helpers ─────────────────────────────────────────────── */

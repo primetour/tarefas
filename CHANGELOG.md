@@ -6,6 +6,38 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.17+20260519-calendar-up-filters-type] — 2026-05-19
+
+Release **MINOR** — Duas mudanças baseadas em feedback direto do user:
+
+### 📅 Meu Painel — Meu Calendário reorganizado
+
+- **Calendário sobe pro topo da coluna esquerda** (era abaixo de Minhas Tarefas).
+- **Mini-mês sempre aberto** (era colapsável). Toggle removido — agenda
+  e visão mensal ficam visíveis ao mesmo tempo.
+- **Tooltip nas células do mês**: passar o mouse mostra os títulos das
+  tarefas daquele dia (até 5 com horário; >5 vira "+N mais"). User não
+  precisa mais clicar pra saber o que tem no dia.
+
+### 🔍 Filtros harmonizados (tasks · steps · calendar · timeline)
+
+User identificou que só Steps tinha filtro por tipo de tarefa e nenhum
+tinha opção "sem tipo". Harmonização nas 4 páginas:
+
+- **Filtro "Sem tipo"** (sentinel `__NONE__`) em todas: lista tarefas
+  com `typeId` vazio E `type` legacy vazio. Útil pra cleanup/auditoria.
+- **`tasks.js` agora tem filtro por tipo** (estava ausente):
+  - Picker com busca, mesmo padrão dos outros filtros (status, prioridade…)
+  - "∅ Sem tipo" sempre no topo da lista
+  - Visível por padrão (toggle no ⚙ Configurar filtros)
+  - Valor persistido em `tasks.filterValues.v1` junto com os outros
+- **`filterBar.js`** (usado por kanban/calendar/timeline): typeOpts
+  agora inclui sentinel; `buildFilterFn` trata o caso.
+- **Sem regressão**: lookup `taskTypes` continua via `store.get()`,
+  filterVisibility já existente preserva preferências do user.
+
+---
+
 ## [4.49.16+20260519-meu-calendario-agenda] — 2026-05-19
 
 Release **PATCH** — Reformulação do **Meu Calendário** (v4.49.15) com base

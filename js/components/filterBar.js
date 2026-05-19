@@ -46,8 +46,12 @@ const hashColor = (s) => {
 function sectorOpts(list) {
   return list.map(s => ({ id: s, label: s, icon: '◈', color: hashColor(s) }));
 }
+// 4.49.17+ Sentinel pra filtrar tarefas SEM tipo (typeId vazio/null).
+// Resolve relato do user: "não tem opção de ver quais estão sem tipo".
+export const TYPE_NONE_SENTINEL = '__NONE__';
+
 function typeOpts(list) {
-  return list.map(t => {
+  const out = list.map(t => {
     // Extrai emoji se o nome começa com um (mesma lógica do portal.js)
     const name = String(t.name || '').trim();
     const fc = name[0];
@@ -60,6 +64,14 @@ function typeOpts(list) {
       color: '#0EA5E9',
     };
   });
+  // Opção "Sem tipo" — sempre disponível, fica no topo da lista.
+  out.unshift({
+    id:    TYPE_NONE_SENTINEL,
+    label: 'Sem tipo',
+    icon:  '∅',
+    color: 'var(--text-muted)',
+  });
+  return out;
 }
 function projectOpts(list) {
   return list.map(p => ({
@@ -395,7 +407,11 @@ export function bindFilterBar(container, state, onChange, ctx = {}) {
 export function buildFilterFn(state = {}) {
   return (task) => {
     if (state.sector   && task.sector          !== state.sector)                  return false;
-    if (state.type     && task.typeId          !== state.type)                    return false;
+    // 4.49.17+ Sentinel TYPE_NONE_SENTINEL filtra tarefas SEM typeId.
+    // task.type (legacy string) também conta — só "sem tipo" se ambos vazios.
+    if (state.type === TYPE_NONE_SENTINEL) {
+      if (task.typeId || task.type) return false;
+    } else if (state.type     && task.typeId          !== state.type)             return false;
     if (state.project  && task.projectId       !== state.project)                 return false;
     if (state.area     && task.requestingArea  !== state.area)                    return false;
     // 4.40.25+ COMBINAÇÃO assignee + observer: UNION quando ambos têm
