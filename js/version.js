@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 37,
-  build: '20260519-csp-libera-todas-bus-sfmc',
+  patch: 38,
+  build: '20260519-pdf-conteudo-rewrite',
 };
 
 /** "1.2.0" */

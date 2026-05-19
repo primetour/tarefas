@@ -2464,85 +2464,268 @@ async function exportContentXlsx() {
   }
 }
 
-/* ─── PDF export ──────────────────────────────────────────── */
-async function exportContentPdf() {
+/* ─── PDF export ──────────────────────────────────────────────
+ * v4.49.38+ Rewrite alinhada ao padrão visual da Produtividade:
+ *   - Capa branded (drawCover) + footer com paginação (drawFooter)
+ *   - KPI strip colorido (6 blocos)
+ *   - Gráficos nativos: barras horizontais por Comercial/Turismo/Top hotéis/Cruzeiros/Temas
+ *   - Tabelas com autoTable estilizadas (não mais tabelão emoji+raw)
+ *   - Sanitização total: txt() + stripEmoji() em CADA campo que vira PDF
+ *     (jsPDF Helvetica é WinAnsi → emojis e setas viram caixinhas)
+ *   - Landscape: melhor pra grids de 2 colunas e tabela final
+ */
+const exportContentPdf = withExportGuard(async function exportContentPdf() {
   try {
-    if (!window.jspdf?.jsPDF) {
-      await new Promise((res, rej) => {
-        const s = document.createElement('script');
-        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
-        s.onload = res; s.onerror = rej; document.head.appendChild(s);
-      });
-    }
+    await loadJsPdf();
     if (!window.jspdf?.jsPDF?.API?.autoTable) {
       await new Promise((res, rej) => {
         const s = document.createElement('script');
-        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.1/jspdf.plugin.autotable.min.js';
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js';
         s.onload = res; s.onerror = rej; document.head.appendChild(s);
       });
     }
     const { enriched, agg, filters } = _contentExportSnapshot();
-    if (!enriched.length) { alert('Sem dados pra exportar com os filtros atuais.'); return; }
+    if (!enriched.length) { toast.warning('Sem dados pra exportar com os filtros atuais.'); return; }
 
-    const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    // ── Sanitizadores: emojis + setas + chars fora do CP1252 viram lixo no PDF.
+    // txt() já trata setas/aspas curvas; stripEmoji remove faixas Unicode pesadas.
+    const stripEmoji = s => String(s ?? '')
+      .replace(/[\u{1F300}-\u{1FAFF}]/gu, '')   // emoticons + symbols + pictographs
+      .replace(/[\u{2600}-\u{27BF}]/gu, '')     // misc symbols + dingbats
+      .replace(/[\u{1F000}-\u{1F9FF}]/gu, '')   // mahjong + dominoes + extra
+      .replace(/[\u{2000}-\u{206F}]/gu, ' ')    // general punctuation (incl. zwj/zwnj)
+      .replace(/\s+/g, ' ')
+      .trim();
+    const safe = s => txt(stripEmoji(s));
+    const titleCase = s => safe(s).toUpperCase();
 
-    // Capa
-    doc.setFontSize(20); doc.setTextColor(40, 40, 40);
-    doc.text('Newsletter — Conteúdo & Temas', 14, 22);
-    doc.setFontSize(10); doc.setTextColor(120, 120, 120);
-    doc.text(`Gerado em ${new Date().toLocaleString('pt-BR')}`, 14, 30);
-    doc.setFontSize(9); doc.setTextColor(60, 60, 60);
-    const fSum = _filterSummary(filters);
-    const fLines = doc.splitTextToSize(`Filtros: ${fSum}`, 180);
-    doc.text(fLines, 14, 38);
-    let y = 38 + fLines.length * 4 + 6;
+    // ── Doc + paleta ──────────────────────────────────────────
+    const kit = createDoc({ orientation: 'landscape', margin: 14 });
+    const { doc, W, M, CW, setFill, setText } = kit;
 
-    // KPIs em linha
-    doc.setFontSize(11); doc.setTextColor(40, 40, 40);
-    doc.text(`${enriched.length} campanhas · ${agg.countries.size} países · ${agg.cities.size} cidades · ${agg.hotels.size} hotéis · Open rate médio ${(agg.avgOpenRate||0).toFixed(1)}%`, 14, y);
-    y += 8;
+    // ── Cores das categorias (alinhadas ao dashboard) ─────────
+    // Comercial: sazonal/promocao/parceiro/inspiracional
+    // Turismo: evento/aereo/roteiro/servico/hotelaria/cruzeiro/produto/destino/outros
+    const CAT_COL = {
+      sazonal: COL.orange, promocao: COL.red, parceiro: COL.blue, inspiracional: COL.brand2,
+      evento: COL.gold, aereo: COL.blue, roteiro: COL.brand2, servico: COL.muted,
+      hotelaria: COL.green, cruzeiro: COL.blue, produto: COL.orange, destino: COL.brand,
+      outros: COL.soft,
+    };
+    const catColor = (key) => CAT_COL[String(key || '').toLowerCase()] || COL.brand2;
 
-    // Função pra renderizar uma tabela a partir de map
-    const addMapTable = (title, map, primaryLabel) => {
-      if (!map || map.size === 0) return;
-      doc.setFontSize(12); doc.setTextColor(40,40,40);
-      doc.text(title, 14, y);
-      y += 4;
-      const rows = [...map.entries()].map(([name, d]) => [
-        String(name),
-        d.count,
-        d.totalSent.toLocaleString('pt-BR'),
-        d.totalSent > 0 ? (d.totalOpen / d.totalSent * 100).toFixed(1) + '%' : '—',
-        d.totalSent > 0 ? (d.totalClick/ d.totalSent * 100).toFixed(1) + '%' : '—',
-        d.totalSent > 0 ? (d.totalOptOut/d.totalSent*100).toFixed(2) + '%' : '—',
-      ]).sort((a, b) => b[1] - a[1]).slice(0, 30);
-      doc.autoTable({
-        startY: y,
-        head: [[primaryLabel, 'Disparos', 'Enviados', 'Abertura', 'Cliques', 'Opt-out']],
-        body: rows,
-        styles: { fontSize: 8, cellPadding: 2 },
-        headStyles: { fillColor: [212, 168, 67], textColor: [255,255,255] },
-        margin: { left: 14, right: 14 },
+    // ── Período coberto pelos disparos enriquecidos ──────────
+    const dates = enriched.map(d => d.sentDate?.toDate?.() || (d.sentDate ? new Date(d.sentDate) : null))
+                          .filter(Boolean).sort((a, b) => a - b);
+    const periodTxt = dates.length
+      ? `${dates[0].toLocaleDateString('pt-BR')}  a  ${dates[dates.length - 1].toLocaleDateString('pt-BR')}`
+      : 'Periodo nao definido';
+
+    // ── Capa ──────────────────────────────────────────────────
+    kit.drawCover({
+      title: 'Newsletter  ·  Conteudo & Temas',
+      subtitle: 'PRIMETOUR  ·  Analise editorial dos disparos',
+      meta: `${enriched.length} campanhas  ·  ${periodTxt}`,
+      compact: true,
+    });
+
+    // ── Linha de filtros aplicados ────────────────────────────
+    setText(COL.muted); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5);
+    const fSum = safe(_filterSummary(filters));
+    const fLines = doc.splitTextToSize(`Filtros aplicados: ${fSum}`, CW);
+    doc.text(fLines, M, kit.y);
+    kit.y += Math.max(4, fLines.length * 3.6) + 3;
+
+    // ── KPI Strip (6 blocos) ──────────────────────────────────
+    const totalSent = enriched.reduce((s, d) => s + (+d.totalSent || 0), 0);
+    const kpis = [
+      { label: 'Campanhas',  value: String(enriched.length),                     col: COL.brand },
+      { label: 'Enviados',   value: totalSent.toLocaleString('pt-BR'),           col: COL.brand2 },
+      { label: 'Paises',     value: String(agg.countries.size),                  col: COL.blue },
+      { label: 'Cidades',    value: String(agg.cities.size),                     col: COL.gold },
+      { label: 'Hoteis',     value: String(agg.hotels.size),                     col: COL.green },
+      { label: 'Open rate',  value: `${(agg.avgOpenRate || 0).toFixed(1)}%`,
+        col: agg.avgOpenRate >= 20 ? COL.green : agg.avgOpenRate >= 10 ? COL.orange : COL.red },
+    ];
+    const gap = 3;
+    const kpiW = (CW - gap * (kpis.length - 1)) / kpis.length;
+    const kpiH = 20;
+    let yK = kit.y;
+    kpis.forEach((k, i) => {
+      const x = M + i * (kpiW + gap);
+      setFill(COL.white); doc.roundedRect(x, yK, kpiW, kpiH, 1.5, 1.5, 'F');
+      setFill(k.col);     doc.rect(x, yK, kpiW, 1.5, 'F');
+      setText(COL.text);  doc.setFont('helvetica', 'bold'); doc.setFontSize(15);
+      doc.text(safe(k.value), x + kpiW / 2, yK + 11, { align: 'center' });
+      setText(COL.muted); doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5);
+      doc.text(titleCase(k.label), x + kpiW / 2, yK + 16.5, { align: 'center' });
+    });
+    kit.y = yK + kpiH + 6;
+
+    // ── Helper: barras horizontais a partir de um Map ─────────
+    // Compatível em forma com a UI: nome esquerda, barra meio, contagem direita.
+    const drawBarBlock = (title, map, colorOrFn, opts = {}) => {
+      const list = [...map.entries()]
+        .map(([name, d]) => ({ name: stripEmoji(name), count: d.count, openPct: d.totalSent ? (d.totalOpen / d.totalSent * 100) : null }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, opts.max || 8);
+      const x = opts.x ?? M;
+      const w = opts.w ?? CW;
+      const headerH = 5;
+      const rowH = 6;
+      const totalH = headerH + Math.max(1, list.length) * rowH + 3;
+      kit.ensureSpace(totalH + 4);
+
+      setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
+      doc.text(titleCase(title), x, kit.y);
+      kit.y += headerH;
+
+      if (!list.length) {
+        setText(COL.muted); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5);
+        doc.text(safe('(sem dados nesse recorte)'), x, kit.y + 3);
+        kit.y += rowH;
+        return;
+      }
+
+      const maxC = Math.max(...list.map(l => l.count), 1);
+      const labW = Math.min(50, w * 0.42);
+      const valW = 18;
+      const barW = w - labW - valW - 4;
+      list.forEach(l => {
+        const yy = kit.y;
+        // label
+        setText(COL.text); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5);
+        const lbl = safe(l.name).slice(0, 36);
+        doc.text(lbl, x, yy + 3.4);
+        // bar
+        const col = typeof colorOrFn === 'function' ? colorOrFn(l.name) : colorOrFn;
+        kit.drawBar(x + labW, yy + 1.4, barW, (l.count / maxC) * 100, col, 2.6);
+        // value
+        setText(col); doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5);
+        doc.text(String(l.count), x + labW + barW + 2, yy + 3.4);
+        // open rate sufixo (cinza)
+        if (l.openPct != null) {
+          setText(COL.muted); doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5);
+          doc.text(safe(`${l.openPct.toFixed(1)}%`), x + labW + barW + 2 + valW - 1, yy + 3.4, { align: 'right' });
+        }
+        kit.y += rowH;
       });
-      y = (doc.lastAutoTable?.finalY || y) + 8;
-      if (y > 260) { doc.addPage(); y = 20; }
+      kit.y += 3;
     };
 
-    addMapTable('💼 Classificação Comercial', agg.commercial, 'Categoria');
-    addMapTable('✈️ Classificação Turismo',  agg.tourism,    'Categoria');
-    addMapTable('🌍 Top Países',              agg.countries,  'País');
-    addMapTable('🏙 Top Cidades',             agg.cities,     'Cidade');
-    addMapTable('🏨 Hotéis citados',          agg.hotels,     'Hotel');
-    addMapTable('🚢 Cruzeiros',               agg.cruises,    'Operadora');
-    addMapTable('🎯 Temas',                   agg.themes,     'Tema');
+    // ── Linha A: Classificação Comercial × Turismo (2 col) ────
+    const colW = (CW - gap) / 2;
+    const yA = kit.y;
+    drawBarBlock('Classificacao Comercial', agg.commercial, catColor, { x: M, w: colW, max: 6 });
+    const yAa = kit.y;
+    kit.y = yA;
+    drawBarBlock('Classificacao Turismo', agg.tourism, catColor, { x: M + colW + gap, w: colW, max: 10 });
+    kit.y = Math.max(yAa, kit.y) + 1;
 
+    // ── Linha B: Top Países × Top Cidades (2 col) ─────────────
+    const yB = kit.y;
+    drawBarBlock('Top Paises  (campanhas / open rate)', agg.countries, COL.brand, { x: M, w: colW, max: 8 });
+    const yBb = kit.y;
+    kit.y = yB;
+    drawBarBlock('Top Cidades / Regioes', agg.cities, COL.brand2, { x: M + colW + gap, w: colW, max: 8 });
+    kit.y = Math.max(yBb, kit.y) + 1;
+
+    // ── Linha C: Top Hotéis × Top Marcas (2 col) ──────────────
+    const yC = kit.y;
+    drawBarBlock('Hoteis mais citados', agg.hotels, COL.green, { x: M, w: colW, max: 8 });
+    const yCc = kit.y;
+    kit.y = yC;
+    drawBarBlock('Marcas hoteleiras', agg.brands, COL.gold, { x: M + colW + gap, w: colW, max: 8 });
+    kit.y = Math.max(yCc, kit.y) + 1;
+
+    // ── Linha D: Cruzeiros × Temas (2 col) ────────────────────
+    const yD = kit.y;
+    drawBarBlock('Operadoras de cruzeiro', agg.cruises, COL.blue, { x: M, w: colW, max: 8 });
+    const yDd = kit.y;
+    kit.y = yD;
+    drawBarBlock('Temas / posicionamento', agg.themes, COL.brand2, { x: M + colW + gap, w: colW, max: 8 });
+    kit.y = Math.max(yDd, kit.y) + 4;
+
+    // ── Tabela final: campanhas enriquecidas ──────────────────
+    doc.addPage();
+    kit.y = 17;
+    setText(COL.muted); doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5);
+    doc.text(safe('PRIMETOUR  ·  Conteudo & Temas'), M, 9);
+    kit.setDraw(COL.border); doc.setLineWidth(0.15);
+    doc.line(M, 11, W - M, 11);
+
+    setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+    doc.text(titleCase('Campanhas no recorte'), M, kit.y);
+    setText(COL.gold); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5);
+    doc.text(safe(`— ${enriched.length} disparos enriquecidos`), M + 60, kit.y);
+    kit.y += 4;
+
+    const sortedRows = [...enriched].sort((a, b) => {
+      const ta = a.sentDate?.toDate?.()?.getTime?.() || +new Date(a.sentDate || 0);
+      const tb = b.sentDate?.toDate?.()?.getTime?.() || +new Date(b.sentDate || 0);
+      return tb - ta;
+    });
+
+    doc.autoTable({
+      startY: kit.y, margin: { left: M, right: M, bottom: 14 },
+      head: [['Data', 'BU', 'Subject', 'Comercial', 'Turismo', 'Paises', 'Cidades', 'Enviados', 'Ab.%', 'Cl.%']],
+      body: sortedRows.map(d => {
+        const ex = d.extracted || {};
+        const ts = d.sentDate?.toDate?.() || (d.sentDate ? new Date(d.sentDate) : null);
+        return [
+          ts ? ts.toLocaleDateString('pt-BR') : '-',
+          safe(d.buName || d.buId || '-'),
+          safe((d.subject || '').slice(0, 70)),
+          safe(ex.commercial || '-'),
+          safe(ex.tourism || '-'),
+          safe((ex.countries || []).slice(0, 4).join(', ') || '-'),
+          safe((ex.cities || []).slice(0, 4).join(', ') || '-'),
+          (+d.totalSent || 0).toLocaleString('pt-BR'),
+          d.openRate != null ? `${(+d.openRate).toFixed(1)}%` : '-',
+          d.clickRate != null ? `${(+d.clickRate).toFixed(1)}%` : '-',
+        ];
+      }),
+      styles: { fontSize: 7, cellPadding: 1.8, overflow: 'linebreak', textColor: COL.text },
+      headStyles: { fillColor: COL.brand, textColor: 255, fontStyle: 'bold', fontSize: 6.8 },
+      alternateRowStyles: { fillColor: COL.subBg },
+      columnStyles: {
+        0: { cellWidth: 16 },
+        1: { cellWidth: 22 },
+        2: { cellWidth: 68 },
+        3: { cellWidth: 22 },
+        4: { cellWidth: 22 },
+        5: { cellWidth: 36 },
+        6: { cellWidth: 36 },
+        7: { cellWidth: 18, halign: 'right' },
+        8: { cellWidth: 14, halign: 'right' },
+        9: { cellWidth: 14, halign: 'right' },
+      },
+      didParseCell: (data) => {
+        if (data.section !== 'body') return;
+        const ci = data.column.index;
+        if (ci === 8) {
+          const v = parseFloat(String(data.cell.raw).replace('%', '').replace(',', '.'));
+          if (!isNaN(v)) {
+            data.cell.styles.textColor = v >= 20 ? COL.green : v >= 10 ? COL.orange : COL.red;
+            data.cell.styles.fontStyle = 'bold';
+          }
+        }
+        if (ci === 3 || ci === 4) {
+          data.cell.styles.fontStyle = 'bold';
+          const col = catColor(String(data.cell.raw));
+          if (col) data.cell.styles.textColor = col;
+        }
+      },
+    });
+
+    kit.drawFooter('PRIMETOUR  ·  Conteudo & Temas');
     doc.save(_exportFilename('pdf'));
+    toast.success(`PDF gerado com ${enriched.length} campanhas.`);
   } catch (e) {
     console.error('[contentPdf]', e);
-    alert('Erro ao gerar PDF: ' + e.message);
+    toast.error('Erro ao gerar PDF: ' + e.message);
   }
-}
+});
 
 /* ─── PPT export ──────────────────────────────────────────── */
 async function exportContentPptx() {
