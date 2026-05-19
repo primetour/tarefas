@@ -9,7 +9,7 @@ import {
   fetchDestinations, fetchTip, saveTip,
   SEGMENTS, DEFAULT_CATEGORIES, MONTHS,
 } from '../services/portal.js';
-import { parsePortalPdf } from '../services/portalPdfParser.js';
+import { parsePortalPdf, parsePortalDocx } from '../services/portalPdfParser.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g, c =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -64,12 +64,25 @@ export async function renderPortalImport(container, { embedded = false } = {}) {
         onmouseout="this.style.borderColor='var(--border-subtle)'">
         <div style="font-size:2.5rem;margin-bottom:10px;">📊</div>
         <div style="font-size:1rem;font-weight:600;margin-bottom:6px;">
-          Arraste os arquivos .xlsx ou .pdf aqui ou clique para selecionar
+          Arraste os arquivos .xlsx, .pdf ou .docx aqui ou clique para selecionar
         </div>
         <div style="font-size:0.875rem;color:var(--text-muted);">
-          Aceita múltiplos arquivos · .xlsx (planilha modelo) ou .pdf (dica completa)
+          Aceita múltiplos arquivos · .xlsx (planilha modelo), .pdf ou .docx (dica completa)
         </div>
-        <input type="file" id="import-file-input" multiple accept=".xlsx,.xls,.pdf" style="display:none;">
+        <input type="file" id="import-file-input" multiple accept=".xlsx,.xls,.pdf,.docx" style="display:none;">
+      </div>
+
+      <!-- 4.49.13+ Aviso destacado pra PDFs/DOCX: o parser usa o NOME DO ARQUIVO
+           pra inferir continente/país/cidade. Antes esse requisito ficava
+           escondido no manual e gerava erro sem explicação. -->
+      <div style="margin-top:14px;padding:12px 14px;border-radius:8px;
+        background:rgba(212,168,67,0.06);border-left:3px solid var(--brand-gold);
+        font-size:0.8125rem;color:var(--text-secondary);">
+        <strong>📄 PDFs e DOCX:</strong> o nome do arquivo precisa estar no formato
+        <code style="background:var(--bg-surface);padding:1px 6px;border-radius:4px;">Continente - País - Cidade.pdf</code>
+        ou <code style="background:var(--bg-surface);padding:1px 6px;border-radius:4px;">.docx</code>
+        (ex.: <code style="background:var(--bg-surface);padding:1px 6px;border-radius:4px;">Europa - França - Paris.docx</code>).
+        Sem isso, o parser não consegue identificar o destino e mostra erro.
       </div>
 
       <div id="import-file-list" style="margin-top:12px;display:flex;flex-direction:column;gap:6px;"></div>
@@ -124,14 +137,14 @@ export async function renderPortalImport(container, { embedded = false } = {}) {
 let parsedImportData = [];
 
 async function handleFiles(files) {
-  const accepted = files.filter(f => /\.(xlsx?|pdf)$/i.test(f.name));
-  if (!accepted.length) { toast.error('Selecione arquivos .xlsx ou .pdf'); return; }
+  const accepted = files.filter(f => /\.(xlsx?|pdf|docx)$/i.test(f.name));
+  if (!accepted.length) { toast.error('Selecione arquivos .xlsx, .pdf ou .docx'); return; }
 
   const list = document.getElementById('import-file-list');
   if (list) list.innerHTML = accepted.map(f => `
     <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;
       background:var(--bg-surface);border-radius:var(--radius-sm);">
-      <span style="font-size:1rem;">${/\.pdf$/i.test(f.name) ? '📄' : '📊'}</span>
+      <span style="font-size:1rem;">${/\.pdf$/i.test(f.name) ? '📄' : /\.docx$/i.test(f.name) ? '📝' : '📊'}</span>
       <span style="flex:1;font-size:0.875rem;">${esc(f.name)}</span>
       <span style="font-size:0.75rem;color:var(--text-muted);">${(f.size/1024).toFixed(1)} KB</span>
       <span class="file-parse-status" style="font-size:0.75rem;color:var(--brand-gold);">Lendo…</span>
@@ -156,7 +169,9 @@ async function handleFiles(files) {
     try {
       const result = /\.pdf$/i.test(file.name)
         ? await parsePortalPdf(file)
-        : await parseXLSX(file);
+        : /\.docx$/i.test(file.name)
+          ? await parsePortalDocx(file)
+          : await parseXLSX(file);
       parsedImportData.push(...result);
       if (statusEls[fi]) {
         statusEls[fi].textContent = `✓ ${result.length} item(s)`;

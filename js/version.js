@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 12,
-  build: '20260519-orphans-cleanup-smart-sidebar-home',
+  patch: 13,
+  build: '20260519-portal-tips-fixes',
 };
 
 /** "1.2.0" */

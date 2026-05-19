@@ -6,6 +6,28 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.13+20260519-portal-tips-fixes] — 2026-05-19
+
+Release **PATCH** — Pacote de fixes no Portal de Dicas (relatados em uso real):
+
+- **Bug 1 — Categorias inacessíveis**: criação/edição de categorias só aparecia
+  dentro do dropdown de um item já cadastrado. Adicionado botão **🏷 Categorias**
+  no header de cada painel (place_list e agenda) que abre um modal dedicado
+  de gerenciamento de categorias (`openCategoriesModal`).
+- **Bug 2 — Segmentos só com texto descartados**: `segHasContent` agora também
+  considera `themeDesc` (Bairros/Arredores) e `periodoAgenda` (Agenda Cultural)
+  como conteúdo válido, evitando que segmentos puramente textuais sumam ao salvar.
+- **Bug 3 — Import PDF erro silencioso**: parser agora exibe mensagem clara
+  quando o nome do arquivo não está no formato esperado
+  (`Continente - País - Cidade.pdf`). Aviso destacado na UI de upload.
+- **Feature 4 — Observações internas**: campo `internalNotes` na dica para
+  contexto interno do time (ex.: "RESTAURANTE BOM PARA CASAIS"). Será usado
+  como contexto pela IA no futuro.
+- **Feature 5 — Import via DOCX**: agora aceita `.docx` no upload de dicas,
+  reaproveitando o mesmo pipeline do PDF (mammoth.js carregado on-demand).
+
+---
+
 ## [4.49.8+20260518-roles-reorg-office] — 2026-05-18
 
 Release **PATCH** — Reorganização do catálogo RBAC: `office_view` movido de

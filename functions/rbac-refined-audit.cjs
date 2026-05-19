@@ -49,10 +49,17 @@ const fileForPerm = {};
 allFiles.forEach(f => {
   const src = fs.readFileSync(f, 'utf8');
   const rel = path.relative(ROOT, f);
-  // store.can() direto
-  for (const m of src.matchAll(/store\.can\(['"]([\w_]+)['"]\)/g)) {
+  // store.can() direto + variants:
+  //   store.can('x'), store.can?.('x'), this.can('x')
+  for (const m of src.matchAll(/(?:store|this)\.can\??\.?\(['"]([\w_]+)['"]\)/g)) {
     directChecks.add(m[1]);
     (fileForPerm[m[1]] ||= new Set()).add(rel);
+  }
+  // Sidebar/menu data structures: perm: 'xxx' OR altPerm: 'xxx'
+  // (audit detecta objetos de nav que declaram perm como propriedade)
+  for (const m of src.matchAll(/(?:^|\W)(?:perm|altPerm):\s*['"]([\w_]+)['"]/g)) {
+    directChecks.add(m[1]);
+    (fileForPerm[m[1]] ||= new Set()).add(rel + ' (nav-data)');
   }
   // routeGuard
   for (const m of src.matchAll(/routeGuard\([^,)]+,\s*['"]([\w_]+)['"]/g)) {

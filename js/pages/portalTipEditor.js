@@ -112,6 +112,28 @@ export async function renderPortalTipEditor(container) {
       </div>
     </div>
 
+    <!-- 4.49.13+ Campo observação interna (não-exportada).
+         Vai pro doc da dica em campo internalNotes mas NUNCA aparece em
+         PDF/DOCX/PPTX/web link. Usado pra anotações de contexto pro time
+         (ex: "Restaurante bom para casais", "Sempre lotado em alta") e
+         futuramente como context window pra geração via IA. -->
+    <div id="editor-internal-notes-bar" style="display:none;margin-bottom:16px;">
+      <div class="card" style="padding:14px 20px;">
+        <label style="display:flex;flex-direction:column;gap:6px;font-size:0.8125rem;
+          font-weight:600;user-select:none;">
+          <div style="display:flex;align-items:center;gap:8px;color:var(--text-secondary);">
+            🔒 <span>Observações internas (não aparecem pro cliente)</span>
+          </div>
+          <textarea id="editor-internal-notes" class="portal-field" rows="2"
+            placeholder="Contexto pro time e pra IA. Ex: &quot;Restaurante bom para casais, lotado em alta temporada&quot;…"
+            style="width:100%;resize:vertical;font-size:0.8125rem;"></textarea>
+          <span style="font-size:0.6875rem;color:var(--text-muted);font-weight:400;">
+            Este texto NÃO aparece em PDFs, DOCX, PPTX ou links web — fica só dentro do sistema.
+          </span>
+        </label>
+      </div>
+    </div>
+
     <!-- Editor layout -->
     <div id="editor-layout" style="display:none;">
       <div style="display:grid;grid-template-columns:220px 1fr;gap:20px;align-items:start;">
@@ -150,6 +172,8 @@ export async function renderPortalTipEditor(container) {
   document.getElementById('editor-load-dest-btn')?.addEventListener('click', loadDestination);
   document.getElementById('editor-save-btn')?.addEventListener('click', saveDraft);
   document.getElementById('editor-priority')?.addEventListener('change', () => markDirty());
+  // 4.49.13+ Marca dirty quando user edita observações internas
+  document.getElementById('editor-internal-notes')?.addEventListener('input', () => markDirty());
 
   if (destId) await loadDestinationById(destId);
 }
@@ -246,6 +270,11 @@ async function loadDestinationById(destId, destInfo = null) {
   const priorityChk = document.getElementById('editor-priority');
   if (priorityBar) priorityBar.style.display = 'block';
   if (priorityChk) priorityChk.checked = !!tip?.priority;
+  // 4.49.13+ Carrega observações internas (não-exportadas)
+  const notesBar    = document.getElementById('editor-internal-notes-bar');
+  const notesArea   = document.getElementById('editor-internal-notes');
+  if (notesBar) notesBar.style.display = 'block';
+  if (notesArea) notesArea.value = tip?.internalNotes || '';
 
   const status = document.getElementById('editor-save-status');
   if (status) status.textContent = tip
@@ -660,8 +689,17 @@ function buildPlaceListPanel(seg, data) {
   const items = data.items || [];
   return `<div class="card" style="${CARD_STYLE}">
     <div style="${HEAD_STYLE}">
-      <div>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
         <h2 style="margin:0;font-size:1rem;font-weight:700;">${esc(seg.label)}</h2>
+        <!-- 4.49.13+ Botão dedicado pra gerenciar categorias sem precisar
+             adicionar um lugar primeiro. Resolve relato: "não consigo criar
+             categoria". Abre modal com lista + criar + remover. -->
+        <button type="button" class="btn-manage-cats" data-seg-key="${esc(seg.key)}"
+          style="font-size:0.75rem;padding:4px 10px;border-radius:var(--radius-full);
+          border:1px solid var(--border-subtle);background:var(--bg-card);cursor:pointer;
+          color:var(--text-secondary);font-family:inherit;">
+          🏷 Categorias (${cats.length})
+        </button>
       </div>
       ${expiryControls(data)}
     </div>
@@ -689,8 +727,14 @@ function buildAgendaPanel(seg, data) {
   const items = data.items || [];
   return `<div class="card" style="${CARD_STYLE}">
     <div style="${HEAD_STYLE}">
-      <div>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
         <h2 style="margin:0;font-size:1rem;font-weight:700;">${esc(seg.label)}</h2>
+        <button type="button" class="btn-manage-cats" data-seg-key="${esc(seg.key)}"
+          style="font-size:0.75rem;padding:4px 10px;border-radius:var(--radius-full);
+          border:1px solid var(--border-subtle);background:var(--bg-card);cursor:pointer;
+          color:var(--text-secondary);font-family:inherit;">
+          🏷 Categorias (${cats.length})
+        </button>
       </div>
       ${expiryControls(data)}
     </div>
@@ -815,6 +859,10 @@ function bindPlaceList(key, isAgenda = false) {
     });
     renderSegmentPanel(key); markDirty();
   });
+
+  // 4.49.13+ Botão "🏷 Categorias" no header — abre modal gerenciar
+  document.querySelector('.btn-manage-cats')?.addEventListener('click', () =>
+    openCategoriesModal(key));
 
   // 4.40.17+ Handler do "+ Nova categoria…" inline. Quando user seleciona,
   // pede nome via prompt, persiste em portal_categories/{key} e re-renderiza
@@ -985,12 +1033,15 @@ async function saveDraft() {
       if (segHasContent(seg.key) || data?.hasExpiry) segments[seg.key] = data;
     }
     const priority = document.getElementById('editor-priority')?.checked || false;
+    // 4.49.13+ Inclui observações internas no save (campo separado, não-exportável)
+    const internalNotes = document.getElementById('editor-internal-notes')?.value?.trim() || '';
     const tipId = await saveTip(currentTip?.id || null, {
       destinationId: currentDestId,
       continent:     currentDestInfo?.continent || '',
       country:       currentDestInfo?.country   || '',
       city:          currentDestInfo?.city       || '',
       priority,
+      internalNotes,
       segments,
     });
     if (!currentTip) currentTip = { id: tipId };
@@ -1007,12 +1058,127 @@ async function saveDraft() {
   }
 }
 
+/* ─── 4.49.13+ Modal "Gerenciar categorias" ─────────────────
+ * Resolve relato: "não consigo criar categoria". Antes, criar categoria
+ * só era possível via dropdown DENTRO de um lugar já adicionado. Agora:
+ * botão dedicado no header do segmento que abre modal com lista + criar
+ * + remover, sem precisar criar um lugar primeiro.
+ */
+async function openCategoriesModal(segKey) {
+  const seg = _allSegments.find(s => s.key === segKey);
+  if (!seg) return;
+  const { modal } = await import('../components/modal.js');
+  const refresh = () => categoriesCache[segKey] || [];
+
+  const render = () => {
+    const cats = refresh();
+    return `
+      <div style="display:flex;flex-direction:column;gap:12px;">
+        <div style="font-size:0.8125rem;color:var(--text-secondary);">
+          Categorias usadas em <strong>${esc(seg.label)}</strong>.
+          São compartilhadas entre todas as dicas que usam este segmento.
+        </div>
+        <div id="cats-list" style="display:flex;flex-direction:column;gap:6px;
+          max-height:300px;overflow-y:auto;padding:4px;
+          border:1px solid var(--border-subtle);border-radius:8px;">
+          ${cats.length === 0
+            ? `<div style="padding:24px;text-align:center;color:var(--text-muted);font-size:0.8125rem;">
+                Nenhuma categoria ainda. Crie a primeira abaixo.
+              </div>`
+            : cats.map(c => `
+              <div style="display:flex;align-items:center;justify-content:space-between;
+                padding:8px 12px;background:var(--bg-surface);border-radius:6px;font-size:0.875rem;">
+                <span>🏷 ${esc(c)}</span>
+                <button class="cat-remove-btn" data-cat="${esc(c)}" type="button"
+                  style="background:none;border:none;color:var(--color-danger);
+                  cursor:pointer;padding:2px 8px;font-size:0.75rem;font-family:inherit;">
+                  Remover
+                </button>
+              </div>
+            `).join('')}
+        </div>
+        <div style="display:flex;gap:8px;align-items:stretch;">
+          <input type="text" id="cat-new-name" class="portal-field"
+            placeholder="Nome da nova categoria (ex: Vegetariano, Romântico…)"
+            style="flex:1;" maxlength="50">
+          <button id="cat-add-btn" type="button" class="btn btn-primary btn-sm">
+            + Criar
+          </button>
+        </div>
+      </div>`;
+  };
+
+  const ref = modal.open({
+    dedupeKey: 'cats-mgr-' + segKey,
+    title: `🏷 Gerenciar categorias — ${seg.label}`,
+    size: 'md',
+    closeOnEsc: true,
+    content: render(),
+    footer: [{ label: 'Fechar', class: 'btn-secondary', closeOnClick: true }],
+  });
+
+  const body = ref.getBody();
+  const rerender = () => { body.innerHTML = render(); wire(); };
+
+  function wire() {
+    const newInput = body.querySelector('#cat-new-name');
+    const addBtn   = body.querySelector('#cat-add-btn');
+    addBtn?.addEventListener('click', async () => {
+      const name = (newInput?.value || '').trim();
+      if (!name) { toast.warning('Digite um nome.'); return; }
+      const current = refresh();
+      if (current.some(c => c.toLowerCase() === name.toLowerCase())) {
+        toast.info(`"${name}" já existe.`); return;
+      }
+      addBtn.disabled = true; addBtn.textContent = '…';
+      try {
+        const updated = [...current, name];
+        await saveCategories(segKey, updated);
+        categoriesCache[segKey] = updated;
+        toast.success(`Categoria "${name}" criada.`);
+        rerender();
+        // Atualiza o painel principal pra refletir nova contagem
+        if (activeSegKey === segKey) renderSegmentPanel(segKey);
+      } catch (err) {
+        toast.error('Erro: ' + (err.message || err));
+        addBtn.disabled = false; addBtn.textContent = '+ Criar';
+      }
+    });
+    newInput?.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); addBtn?.click(); }
+    });
+    body.querySelectorAll('.cat-remove-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const cat = btn.dataset.cat;
+        if (!confirm(`Remover categoria "${cat}"?\n\nItens que usam essa categoria perdem o vínculo (texto livre permanece).`)) return;
+        try {
+          const updated = refresh().filter(c => c !== cat);
+          await saveCategories(segKey, updated);
+          categoriesCache[segKey] = updated;
+          toast.success(`Categoria "${cat}" removida.`);
+          rerender();
+          if (activeSegKey === segKey) renderSegmentPanel(segKey);
+        } catch (err) {
+          toast.error('Erro: ' + (err.message || err));
+        }
+      });
+    });
+  }
+  wire();
+}
+
 /* ─── Helpers ─────────────────────────────────────────────── */
 function segHasContent(key) {
   const d = segmentData[key];
   if (!d) return false;
   if (d.info) return Object.values(d.info).some(v => v && String(v).trim() && v !== '{}');
   if (typeof d.content === 'string' && d.content.trim()) return true;
+  // 4.49.13+ Bug fix: themeDesc (texto introdutório do segmento) E periodoAgenda
+  // contam como conteúdo. Antes: segmento com APENAS texto contextual (sem items)
+  // era descartado no save — user reportou que "alguns segmentos são apenas texto
+  // sem atração/categoria e sistema não considera".
+  if (typeof d.themeDesc === 'string' && d.themeDesc.trim()) return true;
+  if (typeof d.periodoAgenda === 'string' && d.periodoAgenda.trim()) return true;
   if (Array.isArray(d.items) && d.items.length > 0) return true;
   return false;
 }
