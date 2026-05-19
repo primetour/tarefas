@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 29,
-  build: '20260519-nl-ver-arte-modal',
+  patch: 31,
+  build: '20260519-csp-img-src-sfmc',
 };
 
 /** "1.2.0" */
