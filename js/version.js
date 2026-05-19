@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 8,
-  build: '20260518-roles-reorg-office',
+  patch: 9,
+  build: '20260519-destinations-import-intra-file-dedup',
 };
 
 /** "1.2.0" */

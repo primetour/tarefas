@@ -173,7 +173,13 @@ async function _handleFile(file) {
     });
     _state.existingSlugs = existingMap;
 
-    // Parse + validate
+    // 4.49.9+ Parse + validate + DUP detection em DOIS níveis:
+    //   1. dupFirestore: linha idêntica a destino já cadastrado no banco
+    //   2. dupInFile: linha idêntica a outra linha ANTERIOR neste mesmo upload
+    //      (evita criar 2 docs idênticos quando o Excel tem repetições)
+    // Critério de "idêntico": slug normalizado (lowercase + sem acentos
+    // + kebab-case) de continent/country/city.
+    const seenInFileFirstRow = new Map(); // slug → primeiro rowNum onde apareceu
     const parsed = rows.map((r, idx) => {
       const continent = pickColumn(r, 'continent');
       const country   = pickColumn(r, 'country');
@@ -184,12 +190,20 @@ async function _handleFile(file) {
       else if (!CONTINENTS.includes(continent)) errors.push(`Continente "${continent}" inválido`);
       if (!country) errors.push('País vazio');
       const slug = (continent && country) ? _slug([continent, country, city]) : '';
-      const dup = slug && existingMap.has(slug);
+      const dupFirestore = slug && existingMap.has(slug);
+      // Intra-file: marca a partir da SEGUNDA ocorrência (1ª passa, demais são dup)
+      const firstSeenAt = slug ? seenInFileFirstRow.get(slug) : null;
+      const dupInFile = !!firstSeenAt;
+      if (slug && !firstSeenAt) seenInFileFirstRow.set(slug, idx + 2);
+
+      const dup = dupFirestore || dupInFile;
       return {
         rowNum: idx + 2, // header é linha 1
         continent, country, city, notes,
-        errors, slug, dup,
-        _selected: errors.length === 0 && !dup, // selecionado por default só se válido e novo
+        errors, slug,
+        dupFirestore, dupInFile, dupOriginRow: firstSeenAt || null,
+        dup,
+        _selected: errors.length === 0 && !dup, // selecionado por default só se válido e ÚNICO
       };
     });
     _state.parsedRows = parsed;
@@ -201,18 +215,21 @@ async function _handleFile(file) {
 }
 
 function _renderPreview(container, rows) {
-  const valid    = rows.filter(r => r.errors.length === 0);
-  const dupCount = rows.filter(r => r.dup).length;
-  const errorCount = rows.filter(r => r.errors.length).length;
-  const newCount   = valid.filter(r => !r.dup).length;
+  const valid     = rows.filter(r => r.errors.length === 0);
+  const dupFsCount  = rows.filter(r => r.dupFirestore && !r.dupInFile).length;
+  const dupFileCount = rows.filter(r => r.dupInFile).length;
+  const errorCount  = rows.filter(r => r.errors.length).length;
+  const newCount    = valid.filter(r => !r.dup).length;
 
   container.innerHTML = `
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;font-size:0.8125rem;">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;font-size:0.8125rem;flex-wrap:wrap;">
       <span style="background:#16A34A20;color:#16A34A;padding:4px 10px;border-radius:12px;">
         ✓ ${newCount} novos
       </span>
-      ${dupCount ? `<span style="background:#F59E0B20;color:#D97706;padding:4px 10px;border-radius:12px;">
-        ⚠ ${dupCount} duplicados</span>` : ''}
+      ${dupFsCount ? `<span style="background:#F59E0B20;color:#D97706;padding:4px 10px;border-radius:12px;"
+        title="Já cadastrados no Portal">⚠ ${dupFsCount} já existem</span>` : ''}
+      ${dupFileCount ? `<span style="background:#F5970020;color:#D97706;padding:4px 10px;border-radius:12px;"
+        title="Linhas que repetem outras linhas do mesmo Excel">⚠ ${dupFileCount} duplicatas na planilha</span>` : ''}
       ${errorCount ? `<span style="background:#DC262620;color:#DC2626;padding:4px 10px;border-radius:12px;">
         ✗ ${errorCount} com erro</span>` : ''}
       <span style="margin-left:auto;color:var(--text-muted);">Total: ${rows.length} linha(s)</span>
@@ -237,7 +254,9 @@ function _renderPreview(container, rows) {
           ${rows.map((r, idx) => {
             const status = r.errors.length
               ? `<span style="color:#DC2626;">✗ ${esc(r.errors.join('; '))}</span>`
-              : r.dup
+              : r.dupInFile
+              ? `<span style="color:#D97706;" title="Repete a linha ${r.dupOriginRow} do mesmo Excel">⚠ duplicata na planilha (linha ${r.dupOriginRow})</span>`
+              : r.dupFirestore
               ? `<span style="color:#D97706;">⚠ já existe</span>`
               : `<span style="color:#16A34A;">✓ novo</span>`;
             const disabled = r.errors.length ? 'disabled' : '';
@@ -299,19 +318,27 @@ async function _doImport() {
   if (importBtn) { importBtn.disabled = true; importBtn.textContent = 'Importando…'; }
 
   const toImport = _state.parsedRows.filter(r => r._selected);
-  let ok = 0, fail = 0;
+  let ok = 0, fail = 0, mergedInBatch = 0;
   const errors = [];
 
+  // 4.49.9+ Rede de segurança: mesmo se user forçar 2 linhas iguais como
+  // selected (override do desmarcado automático), o existingSlugs é atualizado
+  // a cada saveDestination — então a 2ª linha pega o id da 1ª e faz update
+  // (merge) em vez de criar doc novo. Garante "1 destino = 1 doc" sempre.
   for (const r of toImport) {
     try {
-      // Se dup: usa o ID existente (atualiza com merge)
       const existing = _state.existingSlugs.get(r.slug);
-      await saveDestination(existing?.id || null, {
+      const isUpdate = !!existing?.id;
+      const newId = await saveDestination(existing?.id || null, {
         continent: r.continent,
         country:   r.country,
         city:      r.city,
         notes:     r.notes,
       });
+      // Atualiza o map IN-MEMORY com o id retornado (ou existente)
+      // pra próxima linha igual cair em update em vez de criar duplicata
+      _state.existingSlugs.set(r.slug, { id: newId || existing?.id, ...r });
+      if (isUpdate) mergedInBatch++;
       ok++;
     } catch (e) {
       fail++;
