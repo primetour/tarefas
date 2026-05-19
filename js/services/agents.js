@@ -847,8 +847,18 @@ QUANTIDADE
     avatarUrl: '',
     description: 'Lê subject + name + corpo HTML de uma newsletter e devolve a classificação dupla (eixo Comercial + eixo Turismo) seguindo as regras determinísticas curadas em maio/2026.',
     module: 'nl',
-    provider: 'gemini',
-    model: 'gemini-2.5-flash',
+    // v4.49.40: provider Anthropic (decisão do Renê — não usar Gemini).
+    // Claude Haiku 4.5: o mais barato/rápido do catálogo, descrito em
+    // AI_MODELS como "ideal para classificação e triagem" — encaixa
+    // perfeito no caso (output curto, regras determinísticas, temp 0.1).
+    // Roteamento: runAgent() → callLLMSecure() → Cloud Function callLLM
+    // → ANTHROPIC_API_KEY no Secret Manager → api.anthropic.com.
+    // PROMPT CACHING: o system prompt tem ~7k chars, então a Cloud
+    // Function aplica `cache_control: ephemeral` automaticamente (>=1024
+    // chars) → cache hit cobra ~10% do input normal. Em escala diária
+    // (10-20 docs/dia) significa custo desprezível.
+    provider: 'anthropic',
+    model:    'claude-haiku-4-5',
     active: false,                         // ← deploy DESATIVADO conforme spec
     systemPrompt: `Você é o Classificador Editorial de Newsletters da PRIMETOUR (operadora de viagens de luxo).
 

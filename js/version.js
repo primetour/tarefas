@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 39,
-  build: '20260519-agente-classificador-newsletters-seed',
+  patch: 40,
+  build: '20260519-classificador-newsletters-claude-haiku',
 };
 
 /** "1.2.0" */
