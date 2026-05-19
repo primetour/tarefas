@@ -724,6 +724,104 @@ function renderTable(editMode = false) {
       renderTable(editMode);
     });
   });
+
+  // 4.49.29+ Bind click "Ver arte" — abre modal com as top imagens
+  // do email (mesma extração que vai pra Vision IA).
+  wrap.querySelectorAll('.nl-art-link').forEach(link => {
+    link.addEventListener('click', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      openArtworkModal(link.dataset.docId, link.dataset.rowName);
+    });
+  });
+}
+
+/* 4.49.29+ Modal "Ver arte" — mostra as top imagens do email.
+ *
+ * Estado:
+ *   1. Doc tem imageUrls[] preenchido → grid de imagens + métricas
+ *   2. Doc sem imageUrls (legado pré-v4.49.29) → empty state explicando
+ *      que aparece no próximo sync (ou via --reextract).
+ *
+ * URLs vêm do SFMC CDN (públicas, estáveis). Click numa imagem abre em
+ * nova aba (fullsize). Hospedagem na nossa CDN é evolução futura. */
+async function openArtworkModal(docId, rowName) {
+  const { modal } = await import('../components/modal.js');
+  const { doc, getDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+
+  let content;
+  try {
+    const snap = await getDoc(doc(db, 'mc_performance', docId));
+    if (!snap.exists()) {
+      content = `<div style="padding:24px;text-align:center;color:var(--text-muted);">Documento não encontrado.</div>`;
+    } else {
+      const d = snap.data();
+      const imgs = Array.isArray(d.imageUrls) ? d.imageUrls : [];
+      const sent = d.sentDate?.toDate?.() || (d.sentDate ? new Date(d.sentDate) : null);
+      const meta = [
+        d.subject ? `<strong>${esc(d.subject)}</strong>` : '',
+        sent ? sent.toLocaleString('pt-BR', { dateStyle:'medium', timeStyle:'short' }) : '',
+        d.buName || d.buId,
+        d.totalSent ? `${d.totalSent.toLocaleString('pt-BR')} enviados` : '',
+        d.openRate ? `${d.openRate.toFixed(1)}% abertura` : '',
+      ].filter(Boolean).join(' · ');
+
+      if (imgs.length === 0) {
+        content = `
+          <div style="font-size:0.8125rem;color:var(--text-secondary);margin-bottom:16px;line-height:1.5;">
+            ${meta}
+          </div>
+          <div style="padding:24px;border:1px dashed var(--border-subtle);border-radius:8px;text-align:center;">
+            <div style="font-size:2rem;opacity:0.5;margin-bottom:8px;">🖼</div>
+            <div style="font-size:0.875rem;color:var(--text-secondary);">Arte ainda não capturada</div>
+            <div style="font-size:0.75rem;color:var(--text-muted);margin-top:6px;line-height:1.5;">
+              A captura de imagens foi adicionada em <strong>v4.49.29</strong>.
+              Docs novos sincronizados depois dessa versão mostram as imagens aqui automaticamente.<br>
+              Pra capturar deste doc específico: re-rodar o sync MC com <code>--reextract</code>.
+            </div>
+          </div>`;
+      } else {
+        content = `
+          <div style="font-size:0.8125rem;color:var(--text-secondary);margin-bottom:16px;line-height:1.5;">
+            ${meta}
+          </div>
+          <div style="font-size:0.6875rem;color:var(--text-muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.05em;font-weight:600;">
+            ${imgs.length} ${imgs.length === 1 ? 'imagem' : 'imagens'} · servidas pelo SFMC CDN · click pra abrir em tamanho real
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;">
+            ${imgs.map((img, i) => {
+              const url = typeof img === 'string' ? img : img?.url;
+              const alt = (typeof img === 'object' && img?.alt) || '';
+              if (!url) return '';
+              return `<a href="${esc(url)}" target="_blank" rel="noopener"
+                style="display:block;border:1px solid var(--border-subtle);border-radius:8px;
+                overflow:hidden;background:var(--bg-elevated);text-decoration:none;
+                transition:transform 0.15s, border-color 0.15s;"
+                onmouseover="this.style.transform='translateY(-2px)';this.style.borderColor='var(--brand-gold)';"
+                onmouseout="this.style.transform='';this.style.borderColor='var(--border-subtle)';">
+                <div style="aspect-ratio:16/10;overflow:hidden;background:#f5f5f5;">
+                  <img src="${esc(url)}" alt="${esc(alt)}" style="width:100%;height:100%;object-fit:contain;"
+                    loading="lazy" referrerpolicy="no-referrer"
+                    onerror="this.parentElement.innerHTML='<div style=\\'padding:32px;text-align:center;color:#999;\\'>imagem indisponível</div>';">
+                </div>
+                ${alt ? `<div style="padding:6px 8px;font-size:0.6875rem;color:var(--text-muted);
+                  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(alt)}</div>` : ''}
+              </a>`;
+            }).join('')}
+          </div>`;
+      }
+    }
+  } catch (e) {
+    content = `<div style="padding:24px;color:var(--color-danger);">Erro: ${esc(e.message)}</div>`;
+  }
+
+  modal.open({
+    title: `🖼 Arte do email — ${esc(rowName || '').slice(0,60)}`,
+    size: 'xl',
+    content,
+    dedupeKey: `nl-art-${docId}`,
+    footer: [{ label: 'Fechar', class: 'btn-secondary', closeOnClick: true }],
+  });
 }
 
 /** Render de uma célula da tabela Disparos baseado no tipo de coluna. */
@@ -749,12 +847,27 @@ function _renderDisparosCell(col, r, hidden) {
     }
     case 'date':
       return `<td style="${truncTd}color:var(--text-muted);font-size:0.75rem;vertical-align:middle;">${fmt(r.sentDate)}</td>`;
-    case 'name':
+    case 'name': {
+      // 4.49.29+ Click no nome → modal "Ver arte" (mesmas imagens
+      // usadas pela Vision IA). Mostra 🖼 quando há imagens; mostra
+      // 🔍 quando só tem texto (arte pendente — próximo sync).
+      const hasArt = Array.isArray(r.imageUrls) && r.imageUrls.length > 0;
+      const icon   = hasArt ? '🖼' : '🔍';
+      const docId  = r.id || r.docId || r._docIds?.[0] || '';
       return `<td title="${esc(r.name || '')}" style="${wrapTd}">
-        ${esc(r.name || '—')}
+        <a href="#" class="nl-art-link" data-doc-id="${esc(docId)}" data-row-name="${esc(r.name||'')}"
+          style="text-decoration:none;color:var(--text-primary);display:inline-block;
+          padding:1px 4px;border-radius:4px;transition:background 0.12s;"
+          title="Ver arte do email${hasArt?'':' (pendente do próximo sync)'}"
+          onmouseover="this.style.background='rgba(212,168,67,0.08)'"
+          onmouseout="this.style.background=''">
+          <span style="font-size:0.75rem;opacity:0.7;margin-right:3px;">${icon}</span>
+          ${esc(r.name || '—')}
+        </a>
         ${r.waveCount > 1 ? `<br><span title="${esc(r.waveNames)}"
           style="font-size:0.6875rem;color:var(--text-muted);font-weight:400;cursor:help;">⊞ ${r.waveCount} ondas</span>` : ''}
       </td>`;
+    }
     case 'subject':
       return `<td title="${esc(r.subject || '')}" style="${wrapTd}color:var(--text-muted);font-size:0.75rem;line-height:1.4;">
         ${esc(r.subject || '—')}

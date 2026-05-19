@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 28,
-  build: '20260519-nl-content-exports-xls-pdf-ppt',
+  patch: 29,
+  build: '20260519-nl-ver-arte-modal',
 };
 
 /** "1.2.0" */

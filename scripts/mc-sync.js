@@ -932,9 +932,12 @@ async function main() {
               summary.cacheHits += matchingDocIds.length;
               // Mesmo em cache hit, salva htmlText (até 30k chars).
               const htmlText = asset.html ? stripHtml(asset.html).slice(0, 30000) : '';
+              // 4.49.29+ Extrai top imagens pra UI "Ver arte" (mesmo extractor
+              // que vai pra Vision API, mas guarda URLs no doc também).
+              const imageUrls = asset.html ? extractContentImages(asset.html, 5) : [];
               enrichmentMap.set(name, {
                 description: asset.description, htmlHash, structural, extracted: null,
-                htmlText,
+                htmlText, imageUrls,
               });
               return;
             }
@@ -974,11 +977,13 @@ async function main() {
             // real (destinos, hotéis) vem DEPOIS no HTML cru (estrutura de
             // tabelas aninhadas).
             const htmlText = asset.html ? stripHtml(asset.html).slice(0, 30000) : '';
+            // 4.49.29+ Top imagens do email (mesmas que vão pra Vision)
+            const imageUrls = asset.html ? extractContentImages(asset.html, 5) : [];
             enrichmentMap.set(name, {
               description: asset.description,
               htmlHash, structural, extracted, extractedMeta,
               assetId: asset.assetId, assetName: asset.assetName,
-              htmlText,
+              htmlText, imageUrls,
             });
           }));
         }
@@ -1013,6 +1018,13 @@ async function main() {
           // Dump texto stripped (até 10k chars) pra auditoria + re-extração
           // futura sem refazer fetch SFMC.
           if (enrich.htmlText) doc.htmlText = enrich.htmlText;
+          // 4.49.29+ Salva URLs das top imagens (mesma extração que vai pra
+          // Vision API) pra UI "🖼 Ver arte" no dashboard. SFMC CDN URLs são
+          // públicas e estáveis — não precisamos re-hospedar.
+          // Estrutura: { url, alt, width, height, score }
+          if (Array.isArray(enrich.imageUrls) && enrich.imageUrls.length) {
+            doc.imageUrls = enrich.imageUrls.slice(0, 5);
+          }
         }
 
         batch.set(db.collection('mc_performance').doc(docId), doc, { merge: true });

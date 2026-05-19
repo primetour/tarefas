@@ -6,6 +6,53 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.29+20260519-nl-ver-arte-modal] — 2026-05-19
+
+Release **MINOR** — User: "gostaria de clicar na newsletter na aba
+Performance ver a arte. Teríamos que hospedar a arte de qualquer forma
+pra IA ler e interpretar, né?". Implementado.
+
+### Captura de URLs no mc-sync
+
+`scripts/mc-sync.js`: a função `extractContentImages()` já existia (filtra
+trackers, ordena por score visual) mas as URLs eram **descartadas após
+Vision API consumir**. Agora persistimos: `enrich.imageUrls` (top 5) vai
+direto pro doc `mc_performance.imageUrls`. Mesma extração — uma única
+fonte de verdade entre IA e UI.
+
+Salva tanto em **cache hit** (passou pelo Vision antes) quanto em **fresh
+fetch** (asset novo).
+
+### UI: click no nome do email → modal "🖼 Ver arte"
+
+Coluna "Nome" na tabela Disparos vira clicável (`a.nl-art-link`). Ícone
+de hint: 🖼 quando há arte salva, 🔍 quando não há ainda (legado pré-v4.49.29).
+
+Modal mostra:
+- Subject + data + BU + total enviados + open rate
+- Grid responsive (`auto-fit minmax(260px,1fr)`) das imagens
+- Imagens em `aspect-ratio:16/10`, `object-fit:contain` (preserva proporção)
+- Click numa imagem → abre em tamanho real (`target=_blank rel=noopener`)
+- Lazy-loading + fallback "imagem indisponível" se CDN responder 4xx
+
+Empty state honesto pra docs antigos: explica que apareceria quando o
+asset for re-sincronizado.
+
+### Hospedagem: SFMC CDN por enquanto
+
+URLs servidas pelo CDN do SFMC (mesmas URLs que os destinatários veem
+no email). Públicas, estáveis enquanto o asset existir. Hospedagem em
+Firebase Storage (cópia nossa, controle de versão, defesa contra delete
+no SFMC) é evolução natural mas não bloqueia o uso atual.
+
+### IA + UI compartilham a fonte
+
+Antes: Vision API baixava as imagens, analisava, descartava URLs.
+Agora: URLs são salvas, Vision consome do mesmo array, UI exibe igual.
+**Single source of truth** entre IA e UI da arte.
+
+---
+
 ## [4.49.28+20260519-nl-content-exports-xls-pdf-ppt] — 2026-05-19
 
 Release **MINOR** — Exports da aba "Conteúdo & Temas" (ponto 5 do roadmap).
