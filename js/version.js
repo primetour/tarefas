@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 24,
-  build: '20260519-nl-content-sort-expand-drill',
+  patch: 25,
+  build: '20260519-nl-enrich-claude-backfill',
 };
 
 /** "1.2.0" */

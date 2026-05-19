@@ -6,6 +6,58 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.25+20260519-nl-enrich-claude-backfill] — 2026-05-19
+
+Release **PATCH** — Backfill determinístico do `mc_performance.extracted`
+curado por Claude (sem custo de API). User questionou: "4 cidades para
+Centurion em 1.5 meses? Parece muito abaixo". Audit confirmou.
+
+### Por que não API
+
+User: "vc faz a reclassificação e inputa lá. nada de api". Faz sentido —
+o domínio PRIMETOUR (luxury travel) é conhecido, e dicionário curado +
+matching determinístico é mais barato e auditável que LLM. Usado:
+
+- **148 cidades** com país-mãe + aliases (NY→Nova York, Tokyo→Tóquio,
+  "Cidade do Cabo"→"Cape Town"…)
+- **51 países** com aliases PT/EN/ES
+- **50 marcas** de hotel/cruzeiro premium
+
+### Falsos positivos cortados na fase DRY-RUN
+
+- "**Como**" (hotel) eliminado — colidia com palavra interrogativa PT
+- "**Norman**" eliminado — muito genérico
+- "**la**" alias de Los Angeles — colidia com artigo "La" italiano/espanhol
+- "**sf**", "**sp**", "**rio**" aliases — polissêmicos demais
+
+### Resultado (audit pós-backfill)
+
+| BU | Cidades antes → depois | Países antes → depois |
+|---|---|---|
+| **Centurion** | 4 → **6** (+Maldivas, +Nova York) | 5 → **7** |
+| **PTS** | 2 → **6** (+Maldivas, NY, Cancún, Aspen) | 3 → **6** |
+| **Primetour** | 14 → **22** (+8) | 12 → **19** (+7) |
+| **BTG Ultrablue** | 16 → **17** | 9 → **10** (+Turquia) |
+| **BTG Partners** | 16 → 16 | 23 → 23 |
+
+**129 docs enriquecidos · +58 cidades · +93 países · +31 marcas.**
+
+### Limitação conhecida (Centurion)
+
+Centurion continua com **menos cidades** que outras BUs porque os
+subjects são genuinamente inspiracionais: "Refúgios Exclusivos", "Ilhas
+Privativas", "Sua Próxima Fuga" — não mencionam destino. Pra capturar
+mais seria necessário ler o HTML body do email (escopo futuro).
+
+### Idempotente + auditável
+
+`functions/enrich-mc-claude.cjs` pode rodar quantas vezes quiser. Só
+ADICIONA, nunca remove. Marca `extractedBy: 'claude-backfill-v4.49.25'`
+e bump confidence pra `medium` quando enriquece um doc que era `low`.
+`functions/audit-mc-performance.cjs` para diagnóstico contínuo.
+
+---
+
 ## [4.49.24+20260519-nl-content-sort-expand-drill] — 2026-05-19
 
 Release **MINOR** — Quick wins na aba **Conteúdo & Temas** do dashboard
