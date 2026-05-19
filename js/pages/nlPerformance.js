@@ -767,17 +767,31 @@ async function openArtworkModal(docId, rowName) {
       ].filter(Boolean).join(' · ');
 
       if (imgs.length === 0) {
+        // 4.49.32+ Contexto honesto: noArtReason indica POR QUE não tem arte.
+        const reason = d.noArtReason;
+        const reasonInfo = {
+          csat:    { icon: '📋', title: 'Email de pesquisa de satisfação (CSAT)', text: 'Este disparo é um questionário de feedback enviado após uma viagem ou interação. Por design, não tem arte visual — é texto + escala de avaliação.' },
+          warmup:  { icon: '🔥', title: 'Email de warmup (aquecimento de IP)', text: 'Este disparo é parte do processo de aquecimento de IP/domínio pra evitar marcação de spam. Conteúdo intencionalmente neutro, sem arte visual.' },
+          test:    { icon: '🧪', title: 'Email de teste / configuração', text: 'Este disparo foi enviado pra validar setup (remetente, template básico, dados de teste). Não é uma newsletter de marketing real.' },
+          pending: { icon: '⚠',  title: 'Asset não recuperável', text: 'O HTML original deste email não está mais disponível no SFMC (provavelmente deletado ou renomeado). Backfill automático falhou. Se necessário, pode editar manualmente via "✎ Editar".' },
+        };
+        const info = reasonInfo[reason] || {
+          icon: '🖼',
+          title: 'Arte ainda não capturada',
+          text: 'O sync automático ainda não rodou pra este doc. Aparecerá no próximo cron diário (~3h Brasília) ou trigger manual.',
+        };
         content = `
           <div style="font-size:0.8125rem;color:var(--text-secondary);margin-bottom:16px;line-height:1.5;">
             ${meta}
           </div>
-          <div style="padding:24px;border:1px dashed var(--border-subtle);border-radius:8px;text-align:center;">
-            <div style="font-size:2rem;opacity:0.5;margin-bottom:8px;">🖼</div>
-            <div style="font-size:0.875rem;color:var(--text-secondary);">Arte ainda não capturada</div>
-            <div style="font-size:0.75rem;color:var(--text-muted);margin-top:6px;line-height:1.5;">
-              A captura de imagens foi adicionada em <strong>v4.49.29</strong>.
-              Docs novos sincronizados depois dessa versão mostram as imagens aqui automaticamente.<br>
-              Pra capturar deste doc específico: re-rodar o sync MC com <code>--reextract</code>.
+          <div style="padding:24px;border:1px dashed var(--border-subtle);border-radius:8px;text-align:left;
+            background:var(--bg-elevated);">
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">
+              <div style="font-size:2rem;line-height:1;">${info.icon}</div>
+              <div style="font-size:0.9375rem;font-weight:600;color:var(--text-primary);">${esc(info.title)}</div>
+            </div>
+            <div style="font-size:0.8125rem;color:var(--text-secondary);line-height:1.6;">
+              ${esc(info.text)}
             </div>
           </div>`;
       } else {
@@ -848,11 +862,17 @@ function _renderDisparosCell(col, r, hidden) {
     case 'date':
       return `<td style="${truncTd}color:var(--text-muted);font-size:0.75rem;vertical-align:middle;">${fmt(r.sentDate)}</td>`;
     case 'name': {
-      // 4.49.29+ Click no nome → modal "Ver arte" (mesmas imagens
-      // usadas pela Vision IA). Mostra 🖼 quando há imagens; mostra
-      // 🔍 quando só tem texto (arte pendente — próximo sync).
+      // 4.49.29+ Click no nome → modal "Ver arte". 4.49.32+ ícone reflete
+      // a categoria honesta do doc:
+      //   🖼 = tem arte capturada
+      //   📋 = CSAT (pesquisa, sem arte por design)
+      //   🔥 = warmup (aquecimento de IP)
+      //   🧪 = teste/configuração
+      //   ⚠  = asset sumiu no SFMC (não recuperável)
+      //   🔍 = pendente (próximo sync vai popular)
       const hasArt = Array.isArray(r.imageUrls) && r.imageUrls.length > 0;
-      const icon   = hasArt ? '🖼' : '🔍';
+      const iconMap = { csat:'📋', warmup:'🔥', test:'🧪', pending:'⚠' };
+      const icon   = hasArt ? '🖼' : (iconMap[r.noArtReason] || '🔍');
       const docId  = r.id || r.docId || r._docIds?.[0] || '';
       return `<td title="${esc(r.name || '')}" style="${wrapTd}">
         <a href="#" class="nl-art-link" data-doc-id="${esc(docId)}" data-row-name="${esc(r.name||'')}"

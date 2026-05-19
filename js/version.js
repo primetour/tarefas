@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 32,
-  build: '20260519-nl-legado-out-info-modal-100pct',
+  patch: 33,
+  build: '20260519-nl-ui-no-art-honest-contexto',
 };
 
 /** "1.2.0" */
