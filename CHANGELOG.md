@@ -6,6 +6,56 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.47+20260520-changelog-doublecheck] — 2026-05-20
+
+Release **PATCH** — double-check do CHANGELOG + DEV-HOURS pedido pelo Renê:
+"vamos de double check no doc técnico? preciso disso 100%".
+
+**Verificações executadas**:
+1. Ordem + completude das 23 entradas novas (4.49.23 → 4.49.45): ✓ sem
+   gaps, ordem decrescente correta.
+2. Cross-check slugs do CHANGELOG vs git log: 14/14 batem em
+   titulo+versão. Slug `20260519-...` mantido em 4.49.42-45 mesmo
+   tendo sido commitados de madrugada 20/05 (convenção do repo:
+   slug = dia de trabalho; `completedAt` no `dev_hours` tem
+   timestamps reais).
+3. Fatos técnicos: 1 discrepância corrigida em v4.49.41
+   (texto dizia "330 linhas" do classify-content-ai.js; hoje são
+   ~556 com os reforços de v4.49.42-43). Reescrito como "escopo
+   inicial ~330 linhas; cresceu pra ~560".
+4. Markdown sintaxe: 0 headers duplicados, 0 versões duplicadas, 40
+   code fences bem pareadas.
+5. Cross-check Firestore vs CHANGELOG: 23 releases approved no
+   `dev_hours`, todas listadas no CHANGELOG. Sem ghosts, sem missing.
+6. DEV-HOURS.md totais batem com Firestore: 197 entries / 788h 11min
+   / R$ 118.227,00 / subtotais 13,09h + 22,53h = 35,62h ✓.
+
+---
+
+## [4.49.46+20260520-changelog-devhours-sprint-completo] — 2026-05-20
+
+Release **PATCH** — backfill do doc técnico + `dev_hours` cobrindo
+o sprint completo de 19-20/05/2026. Resposta ao Renê: "atualize o
+doc tecnico e o horas dev → eu nao rodo nada manualmente. quem faz
+as coisas é vc. quero pronto".
+
+**Entregue**:
+- `CHANGELOG.md` ganha 23 entradas (4.49.23 → 4.49.45)
+- `functions/add-dev-hours-4.49.23-31.cjs` (criado + executado): 9
+  releases (manhã/tarde) · 13,09h · R$ 1.963,50
+- `functions/add-dev-hours-4.49.32-45.cjs` (criado + executado): 14
+  releases (noite/madrugada) · 22,53h · R$ 3.379,50
+- `docs/DEV-HOURS.md` header atualizado: novo total 788h 11min /
+  R$ 118.227,00 / 180 releases + 17 phases / 7h 22min/dia
+
+**Recalibragem** em v4.49.41 e v4.49.42: de `mega` pra `large` (mega
+daria 36h e 28.8h numa única release — irrealista mesmo pra sprint
+denso). Large com integration+investigation = 4,5h / 3,6h
+respectivamente, coerente com bugs complexos do mesmo dia (ex:
+metaLinks 4.49.21 = 6h base).
+
+---
+
 ## [4.49.45+20260519-regression-defensiveness] — 2026-05-19
 
 Release **PATCH** — regression review após o sprint do shadow mode +
@@ -127,8 +177,10 @@ o caminho da excelencia".
 agentScheduler genérico). IA Hub = registry + governança; orquestração
 nativa do módulo.
 
-**`scripts/classify-content-ai.js`** (330 linhas): lê agente
-`nl-content-classifier` do Firestore (single source of truth — editar
+**`scripts/classify-content-ai.js`** (escopo inicial ~330 linhas;
+cresceu pra ~560 com cost cap + audit + exports nas releases
+seguintes): lê agente `nl-content-classifier` do Firestore (single
+source of truth — editar
 prompt no IA Hub propaga sem deploy), kill switch soft
 (`agent.active === false` → exit 0), idempotência por hash
 `model+systemPrompt`, chama Anthropic com `cache_control` (cache hit

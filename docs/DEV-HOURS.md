@@ -1,6 +1,8 @@
 # Sistema de Horas de Desenvolvimento
 
-> **Última atualização:** v4.49.45 (20/05/2026, madrugada) · 107 dias de calendário · ~788h 11min approved · ~R$ 118.227,00 · 7h 22min/dia médio · 180 releases + 17 phases (197 entradas aprovadas)
+> **Última atualização:** v4.49.47 (20/05/2026, madrugada) · 107 dias de calendário · ~790h 13min approved · ~R$ 118.531,50 · 7h 23min/dia médio · 182 releases + 17 phases (199 entradas aprovadas)
+>
+> _Auto-meta 20/05/2026_: 2 releases de documentação — **v4.49.46** (backfill CHANGELOG + dev_hours do sprint, +1,38h / R$ 207) e **v4.49.47** (double-check do CHANGELOG com 6 verificações + 1 fix de precisão, +0,65h / R$ 97,50).
 >
 > _Backfill 20/05/2026 (madrugada)_: **23 releases novas (4.49.23 → 4.49.45)** — sprint maratona Newsletter centrado no pipeline shadow mode do Classificador IA. **+35,62h ajustado / +R$ 5.343,00** vs snapshot anterior (v4.49.22). Subdividido em 2 blocos:
 >
