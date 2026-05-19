@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 36,
-  build: '20260519-fix-merge-imgs-de-qualquer-wave',
+  patch: 37,
+  build: '20260519-csp-libera-todas-bus-sfmc',
 };
 
 /** "1.2.0" */
