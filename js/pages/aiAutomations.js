@@ -16,7 +16,9 @@ let automations = [];
 
 /* ─── Render principal ──────────────────────────────────── */
 export async function renderAiAutomations(container) {
-  if (!store.can('dashboard_view') && !store.isMaster()) {
+  // 4.49.11+ Migrado de dashboard_view (renomeado) pra ai_dashboard_view +
+  // analytics_view (faz mais sentido — Automações IA é módulo de IA, não dashboard genérico)
+  if (!store.isMaster() && !store.can('ai_dashboard_view') && !store.can('analytics_view')) {
     container.innerHTML = `<div class="empty-state"><span style="font-size:2rem;">🔒</span><p>Acesso restrito</p><p class="text-muted">Você não tem permissão para acessar Automações IA.</p></div>`;
     return;
   }
