@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 14,
-  build: '20260519-analista-portal-dashboard',
+  patch: 15,
+  build: '20260519-meu-calendario-dashboard',
 };
 
 /** "1.2.0" */

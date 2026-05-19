@@ -288,6 +288,8 @@ export async function renderDashboard(container) {
     const $main = document.getElementById('dash-main');
     if (!$main) return; // user navigated away
     $main.innerHTML = `
+      <!-- LEFT COLUMN: Minhas Tarefas + Meu Calendário (4.49.15+) -->
+      <div style="display:flex;flex-direction:column;gap:16px;">
       <!-- My tasks card -->
       <div class="card">
         <div class="card-header">
@@ -382,6 +384,36 @@ export async function renderDashboard(container) {
           })()}
         </div>
       </div>
+
+      <!-- 4.49.15+ Meu Calendário — mini-mês com tarefas do user no dueDate.
+           Adicionado abaixo de Minhas Tarefas pra preencher o espaço em
+           branco da coluna esquerda e dar visão temporal sem precisar
+           navegar pro #calendar inteiro. -->
+      <div class="card" id="dash-mini-cal-card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">📅 Meu Calendário</div>
+            <div class="card-subtitle" id="dash-mini-cal-subtitle"
+              style="font-size:0.75rem;color:var(--text-muted);"></div>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;">
+            <button class="btn btn-ghost btn-sm" id="dash-cal-prev" title="Mês anterior"
+              style="padding:4px 10px;">◀</button>
+            <button class="btn btn-ghost btn-sm" id="dash-cal-today"
+              style="padding:4px 10px;font-size:0.75rem;">Hoje</button>
+            <button class="btn btn-ghost btn-sm" id="dash-cal-next" title="Próximo mês"
+              style="padding:4px 10px;">▶</button>
+            <button class="btn btn-ghost btn-sm" onclick="location.hash='#calendar'"
+              style="padding:4px 10px;">Agenda completa →</button>
+          </div>
+        </div>
+        <div class="card-body" style="padding:8px 16px 16px;">
+          <div id="dash-mini-cal-grid"></div>
+          <div id="dash-mini-cal-detail" style="margin-top:10px;"></div>
+        </div>
+      </div>
+      </div>
+      <!-- /LEFT COLUMN -->
 
       <!-- Right column -->
       <div style="display:flex;flex-direction:column;gap:16px;">
@@ -617,6 +649,10 @@ export async function renderDashboard(container) {
     // 4.24+ Mount Lembretes & Anotações (lazy import + render assíncrono)
     mountUserPanels(container);
 
+    // 4.49.15+ Mount Meu Calendário (mini-mês com tarefas do user)
+    mountMiniCalendar(myTasks, (task) =>
+      openTaskModal({ taskData: task, onSave: () => renderDashboard(container) }));
+
     // Bind task rows
     container.querySelectorAll('.dash-task-row[data-tid]').forEach(row => {
       row.addEventListener('click', () => {
@@ -649,6 +685,236 @@ export async function renderDashboard(container) {
     console.error('Dashboard error:', e);
     toast.error('Erro ao carregar dashboard: ' + e.message);
   }
+}
+
+/* ─── 4.49.15+ Mini-Calendário (Meu Painel) ───────────────────
+   Mini-grid mensal 6×7 das tarefas do user (assignees.includes uid)
+   ancoradas em dueDate. Cada dia mostra dots (1-3) com cor por status,
+   ou número de tarefas se > 3. Click no dia abre lista inline com as
+   tarefas daquele dia + link pra abrir a tarefa no modal padrão.
+
+   Performance: tudo client-side em cima de myTasks (já fetchado pelo
+   render principal). Render do mês é O(n) tarefas × O(42) células.
+*/
+function mountMiniCalendar(myTasks, onTaskClick) {
+  const grid     = document.getElementById('dash-mini-cal-grid');
+  const subtitle = document.getElementById('dash-mini-cal-subtitle');
+  const detailEl = document.getElementById('dash-mini-cal-detail');
+  if (!grid) return;
+
+  // Cursor inicial: mês corrente. Mantemos referência ao "primeiro dia do mês"
+  // pra fugir de bugs de DST/timezone com dias 28-31.
+  const today = new Date(); today.setHours(0,0,0,0);
+  let cursor  = new Date(today.getFullYear(), today.getMonth(), 1);
+  let selectedDayKey = null; // YYYY-MM-DD
+
+  const MONTHS = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
+                  'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const DOW    = ['D','S','T','Q','Q','S','S']; // dom-sáb (estilo pt-BR compacto)
+
+  const dayKey = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+
+  // Indexa tarefas por dayKey do dueDate — só ativas (não cancelled).
+  // done conta também: user pode querer rever o que entregou no dia.
+  const tasksByDay = (() => {
+    const m = new Map();
+    for (const t of myTasks) {
+      if (!t.dueDate || t.status === 'cancelled') continue;
+      const d = t.dueDate?.toDate ? t.dueDate.toDate() : new Date(t.dueDate);
+      if (isNaN(d.getTime())) continue;
+      const key = dayKey(d);
+      if (!m.has(key)) m.set(key, []);
+      m.get(key).push(t);
+    }
+    return m;
+  })();
+
+  // Cor do dot por status — alinhada ao resto do painel
+  const STATUS_COLOR = {
+    not_started: '#38BDF8',
+    in_progress: '#F59E0B',
+    review:      '#A78BFA',
+    rework:      '#F97316',
+    done:        '#22C55E',
+  };
+
+  function renderMonth() {
+    const year  = cursor.getFullYear();
+    const month = cursor.getMonth();
+    if (subtitle) subtitle.textContent = `${MONTHS[month]} ${year}`;
+
+    // Determina o range a renderizar: do domingo da semana do dia 1
+    // até completar 42 células (6 semanas) — padrão clássico de calendar.
+    const firstOfMonth = new Date(year, month, 1);
+    const startDay     = new Date(firstOfMonth);
+    startDay.setDate(startDay.getDate() - firstOfMonth.getDay()); // back to Sun
+
+    // Header com dias da semana
+    let html = `<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:6px;">`;
+    for (const d of DOW) {
+      html += `<div style="font-size:0.625rem;font-weight:700;text-transform:uppercase;
+        letter-spacing:0.05em;color:var(--text-muted);text-align:center;padding:2px 0;">${d}</div>`;
+    }
+    html += `</div>`;
+
+    // Cells
+    html += `<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;">`;
+    for (let i = 0; i < 42; i++) {
+      const d = new Date(startDay);
+      d.setDate(startDay.getDate() + i);
+      const isOtherMonth = d.getMonth() !== month;
+      const isToday      = d.getTime() === today.getTime();
+      const isPast       = d < today;
+      const key          = dayKey(d);
+      const dayTasks     = tasksByDay.get(key) || [];
+      const isSelected   = key === selectedDayKey;
+
+      // Visual:
+      //   - bg sutil hoje (gold), fade pra outros meses
+      //   - borda dourada se selecionado
+      //   - dots empilhados pra cada tarefa (até 3); se >3 mostra "+N"
+      const cellBg =
+        isSelected ? 'rgba(212,168,67,0.18)' :
+        isToday    ? 'rgba(212,168,67,0.10)' :
+                     'transparent';
+      const cellBorder = isSelected ? '1px solid var(--brand-gold)' : '1px solid transparent';
+      const numColor =
+        isOtherMonth ? 'var(--text-muted)' :
+        isToday      ? 'var(--brand-gold)' :
+        isPast       ? 'var(--text-secondary)' :
+                       'var(--text-primary)';
+      const numWeight = isToday ? '700' : '500';
+
+      // Renderiza até 3 dots; se houver mais, dot final vira "+N"
+      let dotsHTML = '';
+      if (dayTasks.length) {
+        const limit = Math.min(3, dayTasks.length);
+        for (let j = 0; j < limit; j++) {
+          const t = dayTasks[j];
+          const c = STATUS_COLOR[t.status] || 'var(--text-muted)';
+          dotsHTML += `<span style="width:4px;height:4px;border-radius:50%;background:${c};"></span>`;
+        }
+        if (dayTasks.length > 3) {
+          dotsHTML += `<span style="font-size:0.5625rem;color:var(--text-muted);font-weight:600;line-height:1;margin-left:2px;">+${dayTasks.length-3}</span>`;
+        }
+      }
+
+      const cursorStyle = dayTasks.length ? 'cursor:pointer;' : 'cursor:default;';
+      html += `<div class="dash-cal-cell" data-day-key="${key}"
+        style="aspect-ratio:1;min-height:32px;border-radius:6px;
+          background:${cellBg};border:${cellBorder};
+          display:flex;flex-direction:column;align-items:center;justify-content:space-between;
+          padding:3px 2px;${cursorStyle}transition:background 0.12s;"
+        ${dayTasks.length ? `title="${dayTasks.length} tarefa${dayTasks.length!==1?'s':''}"` : ''}
+        onmouseover="if(${dayTasks.length}) this.style.background='rgba(212,168,67,0.10)'"
+        onmouseout="this.style.background='${cellBg}'">
+        <span style="font-size:0.6875rem;font-weight:${numWeight};color:${numColor};line-height:1.1;">
+          ${d.getDate()}
+        </span>
+        <div style="display:flex;align-items:center;gap:2px;min-height:6px;">${dotsHTML}</div>
+      </div>`;
+    }
+    html += `</div>`;
+
+    // Legenda — discreta
+    html += `<div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:8px;font-size:0.625rem;color:var(--text-muted);">
+      ${Object.entries({not_started:'A fazer',in_progress:'Em andamento',review:'Revisão',rework:'Retrabalho',done:'Concluída'})
+        .map(([k,l]) => `<span style="display:inline-flex;align-items:center;gap:4px;">
+          <span style="width:6px;height:6px;border-radius:50%;background:${STATUS_COLOR[k]};"></span>${l}
+        </span>`).join('')}
+    </div>`;
+
+    grid.innerHTML = html;
+
+    // Wire clicks: toggle detail
+    grid.querySelectorAll('.dash-cal-cell').forEach(cell => {
+      const key = cell.dataset.dayKey;
+      const list = tasksByDay.get(key) || [];
+      if (!list.length) return;
+      cell.addEventListener('click', () => {
+        selectedDayKey = (selectedDayKey === key) ? null : key;
+        renderMonth();
+        renderDetail();
+      });
+    });
+  }
+
+  function renderDetail() {
+    if (!detailEl) return;
+    if (!selectedDayKey) { detailEl.innerHTML = ''; return; }
+    const list = tasksByDay.get(selectedDayKey) || [];
+    if (!list.length) { detailEl.innerHTML = ''; return; }
+
+    // Header do detalhe: data legível + contador
+    const [y,m,d] = selectedDayKey.split('-').map(Number);
+    const dateObj = new Date(y, m-1, d);
+    const dateLabel = dateObj.toLocaleDateString('pt-BR', {
+      weekday:'long', day:'2-digit', month:'long'
+    });
+
+    detailEl.innerHTML = `
+      <div style="border-top:1px solid var(--border-subtle);padding-top:10px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <div style="font-size:0.75rem;font-weight:600;color:var(--text-secondary);text-transform:capitalize;">
+            ${esc(dateLabel)} · ${list.length} tarefa${list.length!==1?'s':''}
+          </div>
+          <button id="dash-cal-clear" style="background:none;border:none;cursor:pointer;
+            color:var(--text-muted);font-size:0.6875rem;padding:2px 6px;">Fechar</button>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          ${list.map(t => {
+            const c = STATUS_COLOR[t.status] || 'var(--text-muted)';
+            const stLabel = STATUS_MAP[t.status]?.label || t.status;
+            return `<div class="dash-cal-task-row" data-tid="${esc(t.id)}"
+              style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;
+                background:var(--bg-surface);cursor:pointer;font-size:0.8125rem;
+                transition:background 0.12s;"
+              onmouseover="this.style.background='var(--bg-hover, rgba(212,168,67,0.06))'"
+              onmouseout="this.style.background='var(--bg-surface)'">
+              <span style="width:6px;height:6px;border-radius:50%;background:${c};flex-shrink:0;"></span>
+              <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-primary);">
+                ${esc(t.title)}
+              </span>
+              <span style="font-size:0.625rem;color:var(--text-muted);white-space:nowrap;">
+                ${esc(stLabel)}
+              </span>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>`;
+
+    detailEl.querySelector('#dash-cal-clear')?.addEventListener('click', () => {
+      selectedDayKey = null;
+      renderMonth();
+      renderDetail();
+    });
+    detailEl.querySelectorAll('.dash-cal-task-row[data-tid]').forEach(row => {
+      row.addEventListener('click', () => {
+        const t = myTasks.find(x => x.id === row.dataset.tid);
+        if (t) onTaskClick?.(t);
+      });
+    });
+  }
+
+  // Wire nav buttons (uma vez — botões são reescritos pelo card mas só uma
+  // instância do mount roda por render do dashboard).
+  document.getElementById('dash-cal-prev')?.addEventListener('click', () => {
+    cursor = new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1);
+    selectedDayKey = null;
+    renderMonth(); renderDetail();
+  });
+  document.getElementById('dash-cal-next')?.addEventListener('click', () => {
+    cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+    selectedDayKey = null;
+    renderMonth(); renderDetail();
+  });
+  document.getElementById('dash-cal-today')?.addEventListener('click', () => {
+    cursor = new Date(today.getFullYear(), today.getMonth(), 1);
+    selectedDayKey = dayKey(today);
+    renderMonth(); renderDetail();
+  });
+
+  renderMonth();
 }
 
 /* ─── Helpers ─────────────────────────────────────────────── */

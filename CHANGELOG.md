@@ -6,6 +6,25 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.15+20260519-meu-calendario-dashboard] — 2026-05-19
+
+Release **MINOR** — Bloco **📅 Meu Calendário** no Meu Painel: mini-mês 6×7
+abaixo de "Minhas Tarefas" mostrando as tarefas do user ancoradas em `dueDate`.
+
+- Layout: coluna esquerda virou flex vertical (Minhas Tarefas + Meu Calendário),
+  coluna direita inalterada. Preenche o espaço em branco que sobrava abaixo de
+  Minhas Tarefas sem reformatar a grid.
+- Cada célula do mês mostra o número do dia + até 3 dots coloridos por status
+  (azul/laranja/roxo/verde…); se a tarefa do dia for >3, mostra "+N".
+- Click no dia abre detalhe inline com a lista completa daquele dia; click
+  numa tarefa abre o taskModal padrão.
+- Nav: ◀ mês anterior · Hoje · ▶ próximo mês · "Agenda completa →" pra `#calendar`.
+- Legenda compacta dos 5 status (a fazer/em andamento/revisão/retrabalho/concluída).
+- 100% client-side (reusa `myTasks` já fetched pelo render principal — zero
+  query extra, render O(42) células).
+
+---
+
 ## [4.49.14+20260519-analista-portal-dashboard] — 2026-05-19
 
 Release **PATCH** — Liberado `dashboard_portal_view` pro Analista.
