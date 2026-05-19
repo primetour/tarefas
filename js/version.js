@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 23,
-  build: '20260519-feedbacks-1x1-vs-sistema',
+  patch: 24,
+  build: '20260519-nl-content-sort-expand-drill',
 };
 
 /** "1.2.0" */

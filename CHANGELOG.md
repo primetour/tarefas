@@ -6,6 +6,55 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.24+20260519-nl-content-sort-expand-drill] — 2026-05-19
+
+Release **MINOR** — Quick wins na aba **Conteúdo & Temas** do dashboard
+de Newsletters, baseado em feedback estruturado do user (5 pontos:
+classificação dupla, visualização, drill-down, pipeline e exports).
+Esta release entrega **só os quick wins** (visualização + drill); os
+demais pontos (duplo eixo comercial/turismo, auditoria do pipeline,
+PPT export) entram em releases subsequentes.
+
+### Visualização
+
+- **Sortar colunas** por click no header: Disparos, Abertura, Cliques,
+  Opt-out, e nome da entidade. Setas ▼/▲ indicam direção; click no
+  mesmo col alterna asc/desc. Estado persistido in-memory por bloco
+  (`_contentTableState`) — sobrevive re-renders mas reseta ao navegar
+  fora da aba.
+- **Botão "Ver todos"** abaixo de cada tabela/bars. Antes hard-cap em
+  top 12 (países/cidades/temas) ou top 10 (hotéis/cruises). Agora
+  toggle entre top-N e lista completa, com label dinâmico
+  ("+ Ver todos os 47" ↔ "− Colapsar (top 12)").
+- **Colunas novas:** Cliques (% click rate) e Opt-out (% optout rate)
+  em todas as tabelas/bars. Agregador `aggregateContent` ganhou
+  `totalClick` e `totalOptOut` somando dos docs.
+
+### Drill-down
+
+- **Click em qualquer linha** (.nlc-drill-row) abre **modal com os
+  disparos** que compõem aquele item. Antes:
+  - Países/cidades: virava filtro (UX limitada — perdia contexto)
+  - Hotéis/temas/types: nada acontecia
+- Modal mostra: subject + código, BU, data de envio, enviados,
+  abertura, cliques, opt-out, botão **✎** pra editar classificação
+  manual. **Respeita os filtros aplicados** no dashboard (sends[]
+  vem do agregador filtrado).
+- Aplicável a: países, cidades, hotéis, cruises, temas, marcas,
+  audiências, tipos de newsletter.
+
+### O que vem depois (roadmap)
+
+- **Duplo eixo de classificação** (Comercial + Turismo) com ordem de
+  prioridade documentada — migração via mapping determinístico do
+  `newsletterType` atual (sem custo de API).
+- **Auditoria do pipeline** Centurion (4 cidades em 1.5 meses):
+  script de diagnóstico mostrando docs por BU/período/enriched.
+- **Export PPT** + garantir Excel/PPT respeitam BU/período/
+  classificações/insights filtrados.
+
+---
+
 ## [4.49.23+20260519-feedbacks-1x1-vs-sistema] — 2026-05-19
 
 Release **PATCH** — User reportou: "Feedbacks: entrei e atualizei 3x,

@@ -1857,6 +1857,8 @@ async function setupNlCalendarInsights() {
 
 let _contentDataCache = null;       // array de docs com extracted
 let _contentFiltersState = { bu: '', period: '180', country: '', city: '', theme: '', newsletterType: '', search: '' };
+// 4.49.24+ Cache do snapshot filtrado pro drill modal — populado em renderContentTab
+let _lastContentDocs = [];
 
 async function loadContentTab() {
   const root = document.getElementById('nlc-content');
@@ -1944,6 +1946,10 @@ function renderContentTab() {
     root.innerHTML = renderContentEmptyState(totalDocs);
     return;
   }
+
+  // 4.49.24+ Mantém docs filtrados acessíveis ao drill-down modal
+  // (openDrillModal lê _lastContentDocs pra resolver os IDs em docs)
+  _lastContentDocs = enrichedDocs;
 
   // Calcula agregações
   const agg = aggregateContent(enrichedDocs);
@@ -2166,8 +2172,10 @@ function aggregateContent(docs) {
 
   for (const d of docs) {
     const ex = d.extracted || {};
-    const sent = +(d.totalSent || 0);
-    const opens = +(d.openUnique || 0);
+    const sent  = +(d.totalSent   || 0);
+    const opens = +(d.openUnique  || 0);
+    const clk   = +(d.clickUnique || 0);   // 4.49.24+ track cliques
+    const opt   = +(d.optOut      || 0);   // 4.49.24+ track opt-out
     if (sent > 0) { totalOpenRate += +(d.openRate || 0); openRateCount++; }
     if (ex.confidence === 'high') confidenceHigh++;
 
@@ -2175,10 +2183,18 @@ function aggregateContent(docs) {
       if (!name) return;
       const k = String(name).trim();
       if (!k) return;
-      const cur = map.get(k) || { count: 0, totalSent: 0, totalOpen: 0, sends: [] };
+      // 4.49.24+ Adicionei totalClick e totalOptOut pra suportar sort por
+      // qualquer coluna (req do user: "ordenar disparos/abertura/cliques/opt-out")
+      const cur = map.get(k) || {
+        count: 0, totalSent: 0, totalOpen: 0,
+        totalClick: 0, totalOptOut: 0,
+        sends: [],
+      };
       cur.count++;
-      cur.totalSent += sent;
-      cur.totalOpen += opens;
+      cur.totalSent  += sent;
+      cur.totalOpen  += opens;
+      cur.totalClick += clk;
+      cur.totalOptOut+= opt;
       cur.sends.push(d.id);
       map.set(k, cur);
     };
@@ -2266,29 +2282,105 @@ function contentKpi(title, value, sub, tooltip) {
   </div>`;
 }
 
+// 4.49.24+ State global de sort/expand por bloco. Persistido in-memory
+// pra sobreviver re-renders do tab; reset quando user navega fora.
+const _contentTableState = {}; // { 'countries': { sortBy:'count', dir:'desc', expanded:false } }
+
+function _getTblState(key) {
+  if (!_contentTableState[key]) {
+    _contentTableState[key] = { sortBy: 'count', dir: 'desc', expanded: false };
+  }
+  return _contentTableState[key];
+}
+
+function _sortAndCap(rows, state, cap = 12) {
+  const dir = state.dir === 'asc' ? 1 : -1;
+  const sorted = [...rows].sort((a, b) => {
+    const va = a[state.sortBy] ?? 0;
+    const vb = b[state.sortBy] ?? 0;
+    if (typeof va === 'string' || typeof vb === 'string') {
+      return dir * String(va).localeCompare(String(vb), 'pt-BR');
+    }
+    return dir * (vb - va) * -1; // dir invertido pra manter intuição: desc primeiro
+  });
+  return state.expanded ? sorted : sorted.slice(0, cap);
+}
+
+function _sortIcon(state, col) {
+  if (state.sortBy !== col) return '<span style="opacity:0.3;">⇅</span>';
+  return state.dir === 'desc' ? '▼' : '▲';
+}
+
 function renderTopDestinosTable(map, allEnriched, label = 'País') {
   if (!map || map.size === 0) return `<p style="color:var(--text-muted);font-size:0.8125rem;">Nenhum ${String(label).toLowerCase()} identificado ainda.</p>`;
-  const top = [...map.entries()]
-    .map(([name, d]) => ({ name, count: d.count, openRate: d.totalSent > 0 ? (d.totalOpen / d.totalSent * 100) : 0 }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 12);
+  const stateKey = label === 'cidade' ? 'cities' : 'countries';
+  const state = _getTblState(stateKey);
+
+  // 4.49.24+ enriquecido: adiciona clickRate, optOutRate e os totais
+  // pra suportar sort em qualquer eixo.
+  const all = [...map.entries()].map(([name, d]) => ({
+    name,
+    count: d.count,
+    totalSent: d.totalSent,
+    openRate:   d.totalSent > 0 ? (d.totalOpen   / d.totalSent * 100) : 0,
+    clickRate:  d.totalSent > 0 ? (d.totalClick  / d.totalSent * 100) : 0,
+    optOutRate: d.totalSent > 0 ? (d.totalOptOut / d.totalSent * 100) : 0,
+    sends: d.sends,
+  }));
+  const totalCount = all.length;
+  const rows = _sortAndCap(all, state, 12);
+
   const headerLabel = label === 'cidade' ? 'Cidade / Região' : 'País';
   const drillClass = label === 'cidade' ? 'nlc-city-drill' : 'nlc-country-drill';
   const drillAttr  = label === 'cidade' ? 'data-city'      : 'data-country';
 
+  const sortable = (col, lbl) =>
+    `<th class="nlc-sort-th" data-tbl="${stateKey}" data-col="${col}"
+      style="text-align:right;padding:8px 6px;cursor:pointer;user-select:none;">
+      ${esc(lbl)} ${_sortIcon(state, col)}</th>`;
+
+  // Header de "ver todos" abaixo da tabela
+  const expandHint = !state.expanded && totalCount > 12
+    ? `<div style="text-align:center;padding:8px 0;">
+        <button class="nlc-expand-btn" data-tbl="${stateKey}"
+          style="background:none;border:1px solid var(--border-subtle);border-radius:6px;
+          padding:5px 12px;cursor:pointer;font-size:0.75rem;color:var(--text-secondary);">
+          + Ver todos os ${totalCount}
+        </button>
+       </div>`
+    : state.expanded && totalCount > 12
+      ? `<div style="text-align:center;padding:8px 0;">
+          <button class="nlc-expand-btn" data-tbl="${stateKey}"
+            style="background:none;border:1px solid var(--border-subtle);border-radius:6px;
+            padding:5px 12px;cursor:pointer;font-size:0.75rem;color:var(--text-secondary);">
+            − Colapsar (top 12)
+          </button>
+         </div>`
+      : '';
+
   return `<table style="width:100%;font-size:0.8125rem;border-collapse:collapse;">
     <thead><tr style="border-bottom:1px solid var(--border-subtle);color:var(--text-muted);font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.05em;">
-      <th style="text-align:left;padding:8px 6px;">${esc(headerLabel)}</th>
-      <th style="text-align:right;padding:8px 6px;">Disparos</th>
-      <th style="text-align:right;padding:8px 6px;">Open rate</th>
+      <th class="nlc-sort-th" data-tbl="${stateKey}" data-col="name"
+        style="text-align:left;padding:8px 6px;cursor:pointer;user-select:none;">
+        ${esc(headerLabel)} ${_sortIcon(state, 'name')}</th>
+      ${sortable('count', 'Disparos')}
+      ${sortable('openRate', 'Abertura')}
+      ${sortable('clickRate', 'Cliques')}
+      ${sortable('optOutRate', 'Opt-out')}
     </tr></thead>
-    <tbody>${top.map(r => `<tr style="border-bottom:1px solid var(--border-subtle);cursor:pointer;"
-      class="${drillClass}" ${drillAttr}="${esc(r.name)}">
+    <tbody>${rows.map(r => `<tr style="border-bottom:1px solid var(--border-subtle);cursor:pointer;"
+      class="${drillClass} nlc-drill-row" ${drillAttr}="${esc(r.name)}"
+      data-sends="${esc(JSON.stringify(r.sends))}" data-name="${esc(r.name)}"
+      data-entity="${stateKey === 'cities' ? 'city' : 'country'}"
+      title="Click pra ver os ${r.count} disparos de ${esc(r.name)}">
       <td style="padding:7px 6px;font-weight:500;">${esc(r.name)}</td>
       <td style="padding:7px 6px;text-align:right;color:var(--text-secondary);">${r.count}</td>
       <td style="padding:7px 6px;text-align:right;font-weight:600;color:${rateColor2(r.openRate)};">${r.openRate.toFixed(1)}%</td>
+      <td style="padding:7px 6px;text-align:right;color:var(--text-secondary);">${r.clickRate.toFixed(1)}%</td>
+      <td style="padding:7px 6px;text-align:right;color:var(--text-secondary);">${r.optOutRate.toFixed(2)}%</td>
     </tr>`).join('')}</tbody>
-  </table>`;
+  </table>
+  ${expandHint}`;
 }
 
 function renderNewsletterTypesBars(typesMap, allEnriched) {
@@ -2311,50 +2403,95 @@ function renderNewsletterTypesBars(typesMap, allEnriched) {
     inspiracional: '#EC4899', institucional: '#64748B',
     'show/evento': '#F97316', 'retreat/wellness': '#14B8A6',
   };
+  // 4.49.24+ Enriquecido com cliques + opt-out, drill clicável.
   const top = [...typesMap.entries()]
-    .map(([name, d]) => ({ name, count: d.count, openRate: d.totalSent > 0 ? (d.totalOpen / d.totalSent * 100) : 0 }))
+    .map(([name, d]) => ({
+      name, count: d.count, sends: d.sends, totalSent: d.totalSent,
+      openRate:   d.totalSent > 0 ? (d.totalOpen   / d.totalSent * 100) : 0,
+      clickRate:  d.totalSent > 0 ? (d.totalClick  / d.totalSent * 100) : 0,
+      optOutRate: d.totalSent > 0 ? (d.totalOptOut / d.totalSent * 100) : 0,
+    }))
     .sort((a, b) => b.count - a.count);
   const max = top[0]?.count || 1;
-  return top.map(r => `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:0.8125rem;">
+  return top.map(r => `<div class="nlc-drill-row" data-entity="newsletterType" data-name="${esc(r.name)}"
+    data-sends="${esc(JSON.stringify(r.sends))}"
+    style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:0.8125rem;
+    cursor:pointer;padding:2px 4px;border-radius:4px;"
+    title="Click pra ver os ${r.count} disparos do tipo ${esc(labels[r.name]||r.name)}"
+    onmouseover="this.style.background='rgba(212,168,67,0.06)'"
+    onmouseout="this.style.background=''">
     <div style="flex:0 0 140px;">${esc(labels[r.name] || r.name)}</div>
     <div style="flex:1;min-width:60px;height:8px;background:var(--bg-elevated);border-radius:4px;overflow:hidden;">
       <div style="height:100%;width:${(r.count/max*100).toFixed(1)}%;background:${colors[r.name] || '#94A3B8'};"></div>
     </div>
     <div style="flex:0 0 40px;text-align:right;font-weight:600;color:var(--text-secondary);">${r.count}</div>
-    <div style="flex:0 0 60px;text-align:right;font-size:0.75rem;color:${rateColor2(r.openRate)};">${r.openRate.toFixed(1)}%</div>
+    <div style="flex:0 0 60px;text-align:right;font-size:0.75rem;color:${rateColor2(r.openRate)};" title="Abertura">${r.openRate.toFixed(1)}%</div>
+    <div style="flex:0 0 50px;text-align:right;font-size:0.75rem;color:var(--text-muted);" title="Cliques">${r.clickRate.toFixed(1)}%</div>
+    <div style="flex:0 0 50px;text-align:right;font-size:0.75rem;color:var(--text-muted);" title="Opt-out">${r.optOutRate.toFixed(2)}%</div>
   </div>`).join('');
+}
+
+// 4.49.24+ Versão genérica de bars com drill + expand. Usa _contentTableState.
+function _renderBarsList(map, opts) {
+  const { emptyMsg, stateKey, entity, color = 'var(--brand-gold)', capDefault = 10, labels = {} } = opts;
+  if (!map || map.size === 0) return `<p style="color:var(--text-muted);font-size:0.8125rem;">${emptyMsg}</p>`;
+  const state = _getTblState(stateKey);
+  const all = [...map.entries()].map(([name, d]) => ({
+    name, count: d.count, sends: d.sends, totalSent: d.totalSent,
+    openRate:   d.totalSent > 0 ? (d.totalOpen   / d.totalSent * 100) : 0,
+    clickRate:  d.totalSent > 0 ? (d.totalClick  / d.totalSent * 100) : 0,
+    optOutRate: d.totalSent > 0 ? (d.totalOptOut / d.totalSent * 100) : 0,
+  }));
+  // Bars sempre ordenam por count desc (visual); expand muda só o cap
+  all.sort((a, b) => b.count - a.count);
+  const total = all.length;
+  const rows = state.expanded ? all : all.slice(0, capDefault);
+  const max = all[0]?.count || 1;
+
+  const bars = rows.map(r => `<div class="nlc-drill-row" data-entity="${entity}" data-name="${esc(r.name)}"
+    data-sends="${esc(JSON.stringify(r.sends))}"
+    style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:0.8125rem;
+    cursor:pointer;padding:2px 4px;border-radius:4px;"
+    title="Click pra ver os ${r.count} disparos de ${esc(labels[r.name] || r.name)}"
+    onmouseover="this.style.background='rgba(212,168,67,0.06)'"
+    onmouseout="this.style.background=''">
+    <div style="flex:0 0 ${opts.labelWidth || 120}px;${opts.capitalize ? 'text-transform:capitalize;' : ''}
+      overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(labels[r.name] || r.name)}</div>
+    <div style="flex:1;min-width:60px;height:8px;background:var(--bg-elevated);border-radius:4px;overflow:hidden;">
+      <div style="height:100%;width:${(r.count/max*100).toFixed(1)}%;background:${color};"></div>
+    </div>
+    <div style="flex:0 0 40px;text-align:right;font-weight:600;color:var(--text-secondary);">${r.count}</div>
+    <div style="flex:0 0 60px;text-align:right;font-size:0.75rem;color:${rateColor2(r.openRate)};" title="Abertura">${r.openRate.toFixed(1)}%</div>
+    <div style="flex:0 0 50px;text-align:right;font-size:0.75rem;color:var(--text-muted);" title="Cliques">${r.clickRate.toFixed(1)}%</div>
+    <div style="flex:0 0 50px;text-align:right;font-size:0.75rem;color:var(--text-muted);" title="Opt-out">${r.optOutRate.toFixed(2)}%</div>
+  </div>`).join('');
+
+  const expandHint = total > capDefault
+    ? `<div style="text-align:center;padding:6px 0;">
+        <button class="nlc-expand-btn" data-tbl="${stateKey}"
+          style="background:none;border:1px solid var(--border-subtle);border-radius:6px;
+          padding:4px 12px;cursor:pointer;font-size:0.75rem;color:var(--text-secondary);">
+          ${state.expanded ? `− Colapsar (top ${capDefault})` : `+ Ver todos os ${total}`}
+        </button>
+       </div>`
+    : '';
+  return bars + expandHint;
 }
 
 function renderTopHoteisBars(hotelsMap, allEnriched) {
-  if (hotelsMap.size === 0) return '<p style="color:var(--text-muted);font-size:0.8125rem;">Nenhum hotel identificado ainda.</p>';
-  const top = [...hotelsMap.entries()]
-    .map(([name, d]) => ({ name, count: d.count }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 10);
-  const max = top[0]?.count || 1;
-  return top.map(r => `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:0.8125rem;">
-    <div style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(r.name)}</div>
-    <div style="flex:0 0 120px;height:8px;background:var(--bg-elevated);border-radius:4px;overflow:hidden;">
-      <div style="height:100%;width:${(r.count/max*100).toFixed(1)}%;background:var(--brand-gold);"></div>
-    </div>
-    <div style="flex:0 0 30px;text-align:right;font-weight:600;color:var(--text-secondary);">${r.count}</div>
-  </div>`).join('');
+  return _renderBarsList(hotelsMap, {
+    emptyMsg: 'Nenhum hotel identificado ainda.',
+    stateKey: 'hotels', entity: 'hotel',
+    color: 'var(--brand-gold)', capDefault: 10, labelWidth: 180,
+  });
 }
 
 function renderThemesBars(themesMap, allEnriched) {
-  if (themesMap.size === 0) return '<p style="color:var(--text-muted);font-size:0.8125rem;">Nenhum tema identificado ainda.</p>';
-  const top = [...themesMap.entries()]
-    .map(([name, d]) => ({ name, count: d.count, openRate: d.totalSent > 0 ? (d.totalOpen / d.totalSent * 100) : 0 }))
-    .sort((a, b) => b.count - a.count);
-  const max = top[0]?.count || 1;
-  return top.map(r => `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:0.8125rem;">
-    <div style="flex:0 0 120px;text-transform:capitalize;">${esc(r.name)}</div>
-    <div style="flex:1;min-width:60px;height:8px;background:var(--bg-elevated);border-radius:4px;overflow:hidden;">
-      <div style="height:100%;width:${(r.count/max*100).toFixed(1)}%;background:#8B5CF6;"></div>
-    </div>
-    <div style="flex:0 0 50px;text-align:right;font-weight:600;color:var(--text-secondary);">${r.count}</div>
-    <div style="flex:0 0 60px;text-align:right;font-size:0.75rem;color:${rateColor2(r.openRate)};">${r.openRate.toFixed(1)}%</div>
-  </div>`).join('');
+  return _renderBarsList(themesMap, {
+    emptyMsg: 'Nenhum tema identificado ainda.',
+    stateKey: 'themes', entity: 'theme',
+    color: '#8B5CF6', capDefault: 12, labelWidth: 120, capitalize: true,
+  });
 }
 
 function renderBrandsPills(brandsMap, allEnriched) {
@@ -2523,26 +2660,50 @@ function renderContentEmptyState(totalDocs) {
 }
 
 function wireDrillDowns() {
-  // Click em país → seta filtro de país e re-renderiza
-  document.querySelectorAll('.nlc-country-drill').forEach(row => {
-    row.addEventListener('click', () => {
-      const country = row.dataset.country;
-      _contentFiltersState.country = country;
-      const sel = document.getElementById('nlc-country-filter');
-      if (sel) sel.value = country;
+  // 4.49.24+ Click em qualquer linha drill (.nlc-drill-row) → abre MODAL
+  // com a lista de disparos daquela entidade. Antes só setava filtro;
+  // user pediu "ao clicar em Marrocos, abrir tela com todas as artes
+  // classificadas como Marrocos, respeitando filtros já aplicados".
+  document.querySelectorAll('.nlc-drill-row').forEach(row => {
+    row.addEventListener('click', (e) => {
+      // Não dispara se clicou no header de sort/expand
+      if (e.target.closest('.nlc-sort-th, .nlc-expand-btn')) return;
+      const entity = row.dataset.entity;
+      const name   = row.dataset.name;
+      let sends;
+      try { sends = JSON.parse(row.dataset.sends || '[]'); }
+      catch (_) { sends = []; }
+      openDrillModal(entity, name, sends);
+    });
+  });
+
+  // 4.49.24+ Sort por click em column header
+  document.querySelectorAll('.nlc-sort-th').forEach(th => {
+    th.addEventListener('click', () => {
+      const tbl = th.dataset.tbl;
+      const col = th.dataset.col;
+      const state = _getTblState(tbl);
+      if (state.sortBy === col) {
+        state.dir = state.dir === 'desc' ? 'asc' : 'desc';
+      } else {
+        state.sortBy = col;
+        state.dir    = (col === 'name') ? 'asc' : 'desc';
+      }
       renderContentTab();
     });
   });
-  // Click em cidade → seta filtro de cidade e re-renderiza
-  document.querySelectorAll('.nlc-city-drill').forEach(row => {
-    row.addEventListener('click', () => {
-      const city = row.dataset.city;
-      _contentFiltersState.city = city;
-      const sel = document.getElementById('nlc-city-filter');
-      if (sel) sel.value = city;
+
+  // 4.49.24+ Botão "+ Ver todos" / "− Colapsar"
+  document.querySelectorAll('.nlc-expand-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const tbl = btn.dataset.tbl;
+      const state = _getTblState(tbl);
+      state.expanded = !state.expanded;
       renderContentTab();
     });
   });
+
   // Botão "✎" em cada envio → abre modal de edição manual do extracted
   document.querySelectorAll('.nlc-edit-doc').forEach(btn => {
     btn.addEventListener('click', (e) => {
@@ -2552,6 +2713,111 @@ function wireDrillDowns() {
   });
   // Resize de colunas da tabela de envios (idempotente)
   wireEnviosColResize();
+}
+
+/* 4.49.24+ Drill-down modal: abre lista dos disparos que compõem
+ * o item clicado, respeitando os filtros já aplicados na aba (BU,
+ * período, etc. — porque sends[] já vem do agregador filtrado).
+ *
+ * Cada linha = uma campanha (mc_performance doc). Mostra: subject,
+ * BU, sent date, totalSent, openRate, clickRate, optOut. Action:
+ * "✎ Editar" reusa o openExtractedEditor (mesmo modal de override).
+ */
+async function openDrillModal(entity, name, sendIds) {
+  const { modal } = await import('../components/modal.js');
+  const allDocs = _lastContentDocs || [];
+  const docs = allDocs.filter(d => sendIds.includes(d.id))
+    .sort((a, b) => {
+      const ta = a.sentDate?.toDate?.()?.getTime?.() || 0;
+      const tb = b.sentDate?.toDate?.()?.getTime?.() || 0;
+      return tb - ta;
+    });
+
+  const entityLabels = {
+    country: 'país', city: 'cidade', hotel: 'hotel',
+    theme: 'tema', newsletterType: 'tipo de newsletter',
+  };
+  const entityLabel = entityLabels[entity] || entity;
+
+  const fmtDate = (ts) => {
+    if (!ts) return '—';
+    const d = ts.toDate ? ts.toDate() : new Date(ts);
+    return d.toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit', year:'2-digit' });
+  };
+  const pct = (n) => (n == null || n === '') ? '—' : `${Number(n).toFixed(1)}%`;
+  const num = (n) => (n == null) ? '—' : Number(n).toLocaleString('pt-BR');
+
+  const rows = docs.map(d => {
+    const sent  = +(d.totalSent || 0);
+    const opens = +(d.openUnique || 0);
+    const clk   = +(d.clickUnique || 0);
+    const opt   = +(d.optOut || 0);
+    const openR  = sent > 0 ? (opens / sent * 100) : 0;
+    const clickR = sent > 0 ? (clk   / sent * 100) : 0;
+    const optR   = sent > 0 ? (opt   / sent * 100) : 0;
+    return `<tr style="border-bottom:1px solid var(--border-subtle);font-size:0.8125rem;">
+      <td style="padding:8px 6px;font-weight:500;color:var(--text-primary);max-width:340px;">
+        <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(d.subject || '(sem subject)')}</div>
+        <div style="font-size:0.6875rem;color:var(--text-muted);margin-top:2px;">${esc(d.baseCode || d.id || '')}</div>
+      </td>
+      <td style="padding:8px 6px;text-align:center;color:var(--text-secondary);">${esc(d.bu || '—')}</td>
+      <td style="padding:8px 6px;text-align:right;color:var(--text-secondary);">${fmtDate(d.sentDate)}</td>
+      <td style="padding:8px 6px;text-align:right;color:var(--text-secondary);">${num(sent)}</td>
+      <td style="padding:8px 6px;text-align:right;color:${rateColor2(openR)};font-weight:600;">${pct(openR)}</td>
+      <td style="padding:8px 6px;text-align:right;color:var(--text-secondary);">${pct(clickR)}</td>
+      <td style="padding:8px 6px;text-align:right;color:var(--text-muted);">${pct(optR)}</td>
+      <td style="padding:8px 6px;text-align:center;">
+        <button class="nlc-drill-edit" data-doc-id="${esc(d.id)}"
+          style="background:none;border:1px solid var(--border-subtle);border-radius:4px;
+          padding:3px 8px;cursor:pointer;font-size:0.6875rem;color:var(--text-secondary);"
+          title="Editar classificação manual">✎</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  const content = `
+    <div style="margin-bottom:12px;font-size:0.8125rem;color:var(--text-muted);">
+      ${docs.length} disparo${docs.length!==1?'s':''} classificado${docs.length!==1?'s':''} como
+      <strong style="color:var(--text-primary);">${esc(name)}</strong> (${entityLabel}),
+      respeitando filtros aplicados no dashboard.
+    </div>
+    <div style="max-height:60vh;overflow:auto;border:1px solid var(--border-subtle);border-radius:6px;">
+      <table style="width:100%;border-collapse:collapse;">
+        <thead style="position:sticky;top:0;background:var(--bg-elevated);z-index:1;">
+          <tr style="font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted);">
+            <th style="text-align:left;padding:8px 6px;">Subject / Código</th>
+            <th style="text-align:center;padding:8px 6px;">BU</th>
+            <th style="text-align:right;padding:8px 6px;">Envio</th>
+            <th style="text-align:right;padding:8px 6px;">Enviados</th>
+            <th style="text-align:right;padding:8px 6px;">Abertura</th>
+            <th style="text-align:right;padding:8px 6px;">Cliques</th>
+            <th style="text-align:right;padding:8px 6px;">Opt-out</th>
+            <th style="text-align:center;padding:8px 6px;">Ações</th>
+          </tr>
+        </thead>
+        <tbody>${rows || '<tr><td colspan="8" style="padding:24px;text-align:center;color:var(--text-muted);">Nenhum disparo encontrado para este recorte.</td></tr>'}</tbody>
+      </table>
+    </div>`;
+
+  const m = modal.open({
+    title: `🔍 Disparos · ${entityLabel}: ${name}`,
+    size: 'xl',
+    content,
+    dedupeKey: `nlc-drill-${entity}-${name}`,
+    footer: [
+      { label: 'Fechar', class: 'btn-secondary', closeOnClick: true },
+    ],
+  });
+
+  // Wire ✎ buttons no modal
+  setTimeout(() => {
+    const root = m?.getElement?.() || document;
+    root.querySelectorAll('.nlc-drill-edit').forEach(btn => {
+      btn.addEventListener('click', () => {
+        openExtractedEditor(btn.dataset.docId);
+      });
+    });
+  }, 50);
 }
 
 function rateColor2(pct) {
