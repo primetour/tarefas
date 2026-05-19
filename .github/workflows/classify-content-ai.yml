@@ -1,0 +1,64 @@
+name: Classify Newsletter Content via AI Agent (shadow mode)
+
+# v4.49.41+ Shadow mode do classificador IA.
+#
+# Roda 15min APÓS o classify-content.js determinístico (06:30 UTC).
+# Lê o agente nl-content-classifier do Firestore — se estiver pausado
+# no IA Hub (active=false), o script sai sem fazer nada (kill switch
+# soft, sem precisar desabilitar este workflow).
+#
+# Grava em campos PARALELOS (extracted.aiCommercial/aiTourism/...),
+# NUNCA toca em extracted.commercial/tourism de produção.
+
+on:
+  schedule:
+    # 06h45 UTC (3h45 BR) — 15min depois do enrich-content.yml
+    - cron: '45 6 * * *'
+  workflow_dispatch:
+    inputs:
+      dry:
+        description: 'Dry-run (não grava no Firestore)'
+        required: false
+        type: boolean
+        default: false
+      force:
+        description: 'Force — reclassifica TUDO ignorando aiClassifiedAt'
+        required: false
+        type: boolean
+        default: false
+      limit:
+        description: 'Limit (vazio = todos) — útil pra teste'
+        required: false
+        type: string
+        default: ''
+      verbose:
+        description: 'Verbose — loga cada doc'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  classify-ai:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install firebase-admin
+        working-directory: scripts
+      - name: Classify via AI agent (shadow mode)
+        env:
+          FIREBASE_PROJECT_ID:   ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_CLIENT_EMAIL: ${{ secrets.FIREBASE_CLIENT_EMAIL }}
+          FIREBASE_PRIVATE_KEY:  ${{ secrets.FIREBASE_PRIVATE_KEY }}
+          ANTHROPIC_API_KEY:     ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          args=""
+          if [ "${{ github.event.inputs.dry }}"     = "true" ]; then args="$args --dry"; fi
+          if [ "${{ github.event.inputs.force }}"   = "true" ]; then args="$args --force"; fi
+          if [ "${{ github.event.inputs.verbose }}" = "true" ]; then args="$args --verbose"; fi
+          if [ -n "${{ github.event.inputs.limit }}" ]; then args="$args --limit=${{ github.event.inputs.limit }}"; fi
+          node classify-content-ai.js $args
+        working-directory: scripts

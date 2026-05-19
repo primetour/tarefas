@@ -2177,6 +2177,11 @@ function renderContentTab() {
       ${renderContentByBu(enrichedDocs)}
     </div>
 
+    <!-- v4.49.41+ Shadow mode IA — só renderiza se houver docs classificados pela IA. -->
+    <div id="nl-content-shadow-block" class="card" style="padding:18px;margin-top:16px;">
+      ${renderShadowModeBlock(enrichedDocs)}
+    </div>
+
     <!-- Lista de envios filtrados -->
     <div id="nl-content-sends-block" class="card" style="padding:18px;margin-top:16px;">
       ${blockHeader(`📧 Envios (${enrichedDocs.length})`, INFO_TIPS.envios, 'nl-content-sends-block')}
@@ -2188,9 +2193,209 @@ function renderContentTab() {
   `;
 
   wireDrillDowns();
+  wireShadowModeDrill();
 
   // Setup insights da aba Conteúdo (idempotente — remontado a cada renderContentTab)
   setTimeout(() => setupNlContentInsights(enrichedDocs, agg), 50);
+}
+
+/* ─── Shadow mode IA ────────────────────────────────────────────
+ * Bloco que aparece quando há docs com extracted.aiCommercial gravado
+ * pelo script classify-content-ai.js (workflow .github/.../classify-content-ai.yml).
+ * Mostra: cobertura, concordância com regex, divergências top, distribuição
+ * de confidence. Permite ao Renê decidir empiricamente quando promover IA
+ * para produção (substituir extracted.commercial/tourism pelos campos AI).
+ */
+function renderShadowModeBlock(docs) {
+  const aiDocs = docs.filter(d => d.extracted?.aiCommercial);
+  if (!aiDocs.length) {
+    return `
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+        <h3 style="margin:0;font-size:0.8125rem;font-weight:600;color:var(--text-secondary);
+          text-transform:uppercase;letter-spacing:0.06em;">🤖 Classificador IA — Shadow mode</h3>
+      </div>
+      <p style="margin:0;font-size:0.8125rem;color:var(--text-muted);line-height:1.5;">
+        Nenhum disparo classificado pela IA ainda. Pra ativar o shadow mode:<br>
+        <strong>1.</strong> IA Hub → ativar agente <em>Classificador de Newsletters</em> (active=true)<br>
+        <strong>2.</strong> Aguardar o cron diário das 06:45 UTC (workflow <code>classify-content-ai.yml</code>) OU
+        rodar manualmente em GitHub Actions → workflow_dispatch.<br>
+        <strong>3.</strong> Os campos <code>extracted.aiCommercial</code> e <code>aiTourism</code> são gravados em paralelo
+        sem tocar nos campos de produção (<code>commercial</code>/<code>tourism</code>).
+      </p>
+    `;
+  }
+
+  // Concordância por eixo (só docs que têm AMBOS regex e AI)
+  const withProd = aiDocs.filter(d => d.extracted?.commercial && d.extracted?.tourism);
+  const agreesC = withProd.filter(d => d.extracted.aiCommercial === d.extracted.commercial).length;
+  const agreesT = withProd.filter(d => d.extracted.aiTourism    === d.extracted.tourism).length;
+  const agreesBoth = withProd.filter(d =>
+    d.extracted.aiCommercial === d.extracted.commercial &&
+    d.extracted.aiTourism    === d.extracted.tourism
+  ).length;
+  const pctC = withProd.length ? (agreesC / withProd.length * 100) : null;
+  const pctT = withProd.length ? (agreesT / withProd.length * 100) : null;
+  const pctB = withProd.length ? (agreesBoth / withProd.length * 100) : null;
+
+  // Distribuição de confiança
+  const confDist = { high: 0, medium: 0, low: 0 };
+  aiDocs.forEach(d => {
+    const c = d.extracted.aiConfidence || 'medium';
+    confDist[c] = (confDist[c] || 0) + 1;
+  });
+
+  // Divergências (top 10 de cada eixo, ordenadas por confiança IA decrescente)
+  const disagreeC = withProd
+    .filter(d => d.extracted.aiCommercial !== d.extracted.commercial)
+    .sort((a, b) => {
+      const order = { high: 3, medium: 2, low: 1 };
+      return (order[b.extracted.aiConfidence] || 0) - (order[a.extracted.aiConfidence] || 0);
+    })
+    .slice(0, 10);
+  const disagreeT = withProd
+    .filter(d => d.extracted.aiTourism !== d.extracted.tourism)
+    .sort((a, b) => {
+      const order = { high: 3, medium: 2, low: 1 };
+      return (order[b.extracted.aiConfidence] || 0) - (order[a.extracted.aiConfidence] || 0);
+    })
+    .slice(0, 10);
+
+  const lastAt = aiDocs
+    .map(d => d.extracted.aiClassifiedAt)
+    .filter(Boolean)
+    .sort()
+    .slice(-1)[0];
+  const lastDate = lastAt ? new Date(lastAt).toLocaleString('pt-BR') : '—';
+  const sampleModel = aiDocs[0]?.extracted?.aiModel || '—';
+
+  const pctColor = p => p == null ? '#94A3B8' : p >= 90 ? '#16A34A' : p >= 75 ? '#D97706' : '#DC2626';
+  const fmt1 = p => p == null ? '—' : `${p.toFixed(1)}%`;
+
+  const divRow = (d, eixo) => {
+    const ai = eixo === 'comercial' ? d.extracted.aiCommercial : d.extracted.aiTourism;
+    const rx = eixo === 'comercial' ? d.extracted.commercial   : d.extracted.tourism;
+    const conf = d.extracted.aiConfidence || 'medium';
+    const confChip = conf === 'high'
+      ? '<span style="background:#DCFCE7;color:#16A34A;padding:1px 6px;border-radius:8px;font-size:0.6875rem;font-weight:600;">alta</span>'
+      : conf === 'medium'
+      ? '<span style="background:#FEF3C7;color:#D97706;padding:1px 6px;border-radius:8px;font-size:0.6875rem;font-weight:600;">média</span>'
+      : '<span style="background:#FEE2E2;color:#DC2626;padding:1px 6px;border-radius:8px;font-size:0.6875rem;font-weight:600;">baixa</span>';
+    return `
+      <tr style="border-top:1px solid var(--border);">
+        <td style="padding:6px 8px;font-size:0.75rem;color:var(--text-muted);font-family:monospace;">
+          ${esc(d.name || '').slice(0, 8)}
+        </td>
+        <td style="padding:6px 8px;font-size:0.75rem;color:var(--text-primary);">
+          ${esc((d.subject || '').slice(0, 60))}
+        </td>
+        <td style="padding:6px 8px;font-size:0.6875rem;color:#DC2626;font-weight:600;">${esc(rx)}</td>
+        <td style="padding:6px 8px;font-size:0.6875rem;color:#16A34A;font-weight:600;">${esc(ai)}</td>
+        <td style="padding:6px 8px;">${confChip}</td>
+        <td style="padding:6px 8px;font-size:0.6875rem;color:var(--text-muted);font-style:italic;">
+          ${esc((d.extracted.aiReasoning || '').slice(0, 120))}
+        </td>
+      </tr>
+    `;
+  };
+
+  return `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+      <h3 style="margin:0;font-size:0.8125rem;font-weight:600;color:var(--text-secondary);
+        text-transform:uppercase;letter-spacing:0.06em;">🤖 Classificador IA — Shadow mode</h3>
+      <span style="font-size:0.6875rem;color:var(--text-muted);">
+        ${aiDocs.length}/${docs.length} disparos classificados ·
+        modelo <code>${esc(sampleModel)}</code> ·
+        última corrida ${esc(lastDate)}
+      </span>
+    </div>
+
+    <!-- KPIs de concordância -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:14px;">
+      <div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;background:var(--bg-secondary);">
+        <div style="font-size:0.6875rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px;">Concordância eixo COMERCIAL</div>
+        <div style="font-size:1.5rem;font-weight:700;color:${pctColor(pctC)};line-height:1.1;">${fmt1(pctC)}</div>
+        <div style="font-size:0.6875rem;color:var(--text-muted);">${agreesC} de ${withProd.length} (vs regex)</div>
+      </div>
+      <div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;background:var(--bg-secondary);">
+        <div style="font-size:0.6875rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px;">Concordância eixo TURISMO</div>
+        <div style="font-size:1.5rem;font-weight:700;color:${pctColor(pctT)};line-height:1.1;">${fmt1(pctT)}</div>
+        <div style="font-size:0.6875rem;color:var(--text-muted);">${agreesT} de ${withProd.length} (vs regex)</div>
+      </div>
+      <div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;background:var(--bg-secondary);">
+        <div style="font-size:0.6875rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px;">AMBOS eixos batem</div>
+        <div style="font-size:1.5rem;font-weight:700;color:${pctColor(pctB)};line-height:1.1;">${fmt1(pctB)}</div>
+        <div style="font-size:0.6875rem;color:var(--text-muted);">${agreesBoth} de ${withProd.length} — meta de cutover: ≥ 90%</div>
+      </div>
+      <div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;background:var(--bg-secondary);">
+        <div style="font-size:0.6875rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px;">Confiança IA</div>
+        <div style="display:flex;gap:6px;align-items:baseline;font-size:0.875rem;font-weight:600;line-height:1.1;">
+          <span style="color:#16A34A;">${confDist.high}</span>
+          <span style="color:var(--text-muted);font-size:0.6875rem;">alta</span>
+          <span style="color:#D97706;">${confDist.medium}</span>
+          <span style="color:var(--text-muted);font-size:0.6875rem;">média</span>
+          <span style="color:#DC2626;">${confDist.low}</span>
+          <span style="color:var(--text-muted);font-size:0.6875rem;">baixa</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Divergências (collapsible) -->
+    <details style="margin-top:12px;">
+      <summary style="cursor:pointer;font-size:0.8125rem;font-weight:600;color:var(--text-primary);padding:6px 0;">
+        Divergências top — eixo Comercial (${disagreeC.length})
+      </summary>
+      ${disagreeC.length ? `
+        <table style="width:100%;border-collapse:collapse;margin-top:8px;font-size:0.8125rem;">
+          <thead>
+            <tr style="background:var(--bg-secondary);">
+              <th style="padding:6px 8px;text-align:left;font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);">Cód.</th>
+              <th style="padding:6px 8px;text-align:left;font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);">Subject</th>
+              <th style="padding:6px 8px;text-align:left;font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);">Regex</th>
+              <th style="padding:6px 8px;text-align:left;font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);">IA</th>
+              <th style="padding:6px 8px;text-align:left;font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);">Conf.</th>
+              <th style="padding:6px 8px;text-align:left;font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);">Reasoning IA</th>
+            </tr>
+          </thead>
+          <tbody>${disagreeC.map(d => divRow(d, 'comercial')).join('')}</tbody>
+        </table>
+      ` : '<p style="margin:8px 0 0;font-size:0.8125rem;color:var(--text-muted);">Nenhuma divergência no eixo Comercial. 100% concordância.</p>'}
+    </details>
+
+    <details style="margin-top:8px;">
+      <summary style="cursor:pointer;font-size:0.8125rem;font-weight:600;color:var(--text-primary);padding:6px 0;">
+        Divergências top — eixo Turismo (${disagreeT.length})
+      </summary>
+      ${disagreeT.length ? `
+        <table style="width:100%;border-collapse:collapse;margin-top:8px;font-size:0.8125rem;">
+          <thead>
+            <tr style="background:var(--bg-secondary);">
+              <th style="padding:6px 8px;text-align:left;font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);">Cód.</th>
+              <th style="padding:6px 8px;text-align:left;font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);">Subject</th>
+              <th style="padding:6px 8px;text-align:left;font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);">Regex</th>
+              <th style="padding:6px 8px;text-align:left;font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);">IA</th>
+              <th style="padding:6px 8px;text-align:left;font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);">Conf.</th>
+              <th style="padding:6px 8px;text-align:left;font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);">Reasoning IA</th>
+            </tr>
+          </thead>
+          <tbody>${disagreeT.map(d => divRow(d, 'turismo')).join('')}</tbody>
+        </table>
+      ` : '<p style="margin:8px 0 0;font-size:0.8125rem;color:var(--text-muted);">Nenhuma divergência no eixo Turismo. 100% concordância.</p>'}
+    </details>
+
+    <p style="margin:12px 0 0;font-size:0.6875rem;color:var(--text-muted);line-height:1.5;">
+      <strong>Playbook de cutover:</strong> aguardar concordância ≥ 90% em AMBOS eixos por pelo menos 2 corridas consecutivas.
+      Promover via script <code>scripts/promote-ai-to-prod.js</code> (a criar) — copia <code>aiCommercial/aiTourism</code>
+      para <code>commercial/tourism</code> apenas quando <code>aiConfidence ≠ low</code>. Desativar <code>classify-content.js</code>
+      no workflow <code>enrich-content.yml</code> só após o cutover validado.
+    </p>
+  `;
+}
+
+// Wireup futuro (drill-down em divergências, abrir modal de revisão, etc.)
+// Por ora deixa explícito como hook pra evitar TypeError caso seja chamado.
+function wireShadowModeDrill() {
+  // Reservado pra futuras interações (ex: clicar numa divergência → modal
+  // com payload completo enviado à IA + opção de aprovar/rejeitar a IA).
 }
 
 /* ─── Filtros ──────────────────────────────────────────────── */
