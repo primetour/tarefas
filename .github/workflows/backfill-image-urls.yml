@@ -1,0 +1,57 @@
+name: Backfill MC Image URLs (one-off)
+
+# One-off: refetch HTML do SFMC pra docs antigos sem doc.imageUrls.
+# Não precisa rodar regularmente (mc-sync.js v4.49.29+ já popula).
+# Triggered manualmente após v4.49.29.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry:
+        description: 'Dry-run (não escreve)'
+        required: false
+        type: boolean
+        default: false
+      bu:
+        description: 'BU específica (vazio = todas)'
+        required: false
+        default: ''
+      limit:
+        description: 'Limite de assets (0 = todos)'
+        required: false
+        default: '0'
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install node-fetch firebase-admin
+        working-directory: scripts
+
+      - name: Run backfill
+        env:
+          MC_CLIENT_ID:          ${{ secrets.MC_CLIENT_ID }}
+          MC_CLIENT_SECRET:      ${{ secrets.MC_CLIENT_SECRET }}
+          MC_AUTH_URL:           ${{ secrets.MC_AUTH_URL }}
+          MC_REST_URL:           ${{ secrets.MC_REST_URL }}
+          FIREBASE_PROJECT_ID:   ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_CLIENT_EMAIL: ${{ secrets.FIREBASE_CLIENT_EMAIL }}
+          FIREBASE_PRIVATE_KEY:  ${{ secrets.FIREBASE_PRIVATE_KEY }}
+        run: |
+          args=""
+          if [ "${{ github.event.inputs.dry }}" = "true" ]; then args="$args --dry"; fi
+          if [ -n "${{ github.event.inputs.bu }}" ]; then args="$args --bu=${{ github.event.inputs.bu }}"; fi
+          if [ "${{ github.event.inputs.limit }}" != "0" ]; then args="$args --limit=${{ github.event.inputs.limit }}"; fi
+          echo "Running: node backfill-image-urls.js $args"
+          node backfill-image-urls.js $args
+        working-directory: scripts
