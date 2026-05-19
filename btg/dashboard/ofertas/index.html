@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Ofertas — BTG / Primetour</title>
+  <link rel="stylesheet" href="/btg/shared/btg-base.css" />
+  <style>
+    body {
+      background: #f5f6f8;
+      min-height: 100vh;
+      font-family: -apple-system, system-ui, "Segoe UI", Roboto, sans-serif;
+      color: #1f2937;
+    }
+    .wrap {
+      max-width: 1200px;
+      margin: 32px auto;
+      padding: 0 24px;
+    }
+    .head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+      gap: 16px;
+    }
+    .head h1 {
+      font-size: 22px;
+      margin: 0;
+      color: var(--btg-navy, #05132a);
+    }
+    .head__sub {
+      font-size: 13px;
+      color: #6b7280;
+      margin-top: 4px;
+    }
+    .actions { display: flex; gap: 12px; flex-wrap: wrap; }
+    .btn {
+      background: var(--btg-navy, #05132a);
+      color: #fff;
+      border: 0;
+      padding: 10px 18px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .btn--ghost {
+      background: #fff;
+      color: #1f2937;
+      border: 1px solid #d1d5db;
+    }
+    .btn--danger { background: #b91c1c; }
+    .btn--small { padding: 6px 12px; font-size: 12px; }
+
+    .filters {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      background: #fff;
+      padding: 16px;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      margin-bottom: 16px;
+    }
+    .filters select, .filters input {
+      padding: 8px 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      font-size: 13px;
+      background: #fff;
+      color: #1f2937;
+    }
+    .filters input { flex: 1; min-width: 200px; }
+
+    .table {
+      width: 100%;
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      border-collapse: collapse;
+      overflow: hidden;
+    }
+    .table th, .table td {
+      padding: 12px 16px;
+      text-align: left;
+      font-size: 13px;
+      border-bottom: 1px solid #f3f4f6;
+    }
+    .table th {
+      background: #f9fafb;
+      font-weight: 600;
+      color: #4b5563;
+      text-transform: uppercase;
+      font-size: 11px;
+      letter-spacing: 0.04em;
+    }
+    .table tr:last-child td { border-bottom: 0; }
+    .table tr:hover td { background: #f9fafb; }
+    .table img.thumb {
+      width: 56px;
+      height: 40px;
+      border-radius: 4px;
+      object-fit: cover;
+      background: #f3f4f6;
+      vertical-align: middle;
+      margin-right: 8px;
+    }
+    .nome-cell { display: flex; align-items: center; }
+    .nome-cell strong { display: block; font-size: 13px; color: #111827; }
+    .nome-cell .meta { font-size: 11px; color: #9ca3af; margin-top: 2px; }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .badge--published { background: #d1fae5; color: #065f46; }
+    .badge--archived  { background: #f3f4f6; color: #6b7280; }
+    .badge--partners  { background: #05132a; color: #fff; }
+    .badge--ultrablue { background: #10408d; color: #fff; }
+    .badge--operadora { background: #1a2b4a; color: #fff; }
+    .badge--neutral   { background: #e5e7eb; color: #374151; }
+
+    .empty {
+      text-align: center;
+      padding: 64px 24px;
+      color: #6b7280;
+      font-size: 14px;
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+    }
+    .loading {
+      text-align: center;
+      padding: 48px 24px;
+      color: #6b7280;
+      font-size: 13px;
+    }
+    .status-bar {
+      margin-bottom: 12px;
+      font-size: 13px;
+      color: #6b7280;
+    }
+    .status-bar strong { color: #1f2937; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="head">
+      <div>
+        <h1>Ofertas BTG</h1>
+        <div class="head__sub">Lista, filtros e ações sobre as ofertas cadastradas.</div>
+      </div>
+      <div class="actions">
+        <a href="/btg/dashboard/import/" class="btn btn--ghost">⬆️ Importar</a>
+        <a href="/btg/dashboard/nova-oferta/" class="btn">+ Nova oferta</a>
+      </div>
+    </div>
+
+    <div class="filters">
+      <input type="search" id="search" placeholder="Buscar por nome, destino..." />
+      <select id="filter-brand">
+        <option value="">Todas as marcas</option>
+        <option value="Partners">Partners</option>
+        <option value="Ultrablue">Ultrablue</option>
+        <option value="Operadora">Operadora</option>
+      </select>
+      <select id="filter-tipo">
+        <option value="">Todos os tipos</option>
+        <option value="Feriado">Feriado</option>
+        <option value="Destino">Destino</option>
+        <option value="Cruzeiro">Cruzeiro</option>
+        <option value="Hospedagem">Hospedagem</option>
+        <option value="Aéreo &amp; Transfers">Aéreo &amp; Transfers</option>
+        <option value="Concierge">Concierge</option>
+      </select>
+      <select id="filter-status">
+        <option value="published">Apenas publicadas</option>
+        <option value="archived">Apenas arquivadas</option>
+        <option value="all">Todas</option>
+      </select>
+    </div>
+
+    <div class="status-bar" id="status"></div>
+
+    <div id="table-host">
+      <div class="loading">Carregando ofertas...</div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { listOfertas, archiveOferta, restoreOferta } from '/btg/shared/btg-ofertas-service.js';
+
+    const searchEl = document.getElementById('search');
+    const brandEl  = document.getElementById('filter-brand');
+    const tipoEl   = document.getElementById('filter-tipo');
+    const statusEl = document.getElementById('filter-status');
+    const host     = document.getElementById('table-host');
+    const statusBar = document.getElementById('status');
+
+    let allOfertas = [];   // cache da última fetch
+    let lastFilters = null;
+
+    function esc(s) {
+      return String(s ?? '').replace(/[&<>"']/g, (c) =>
+        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    function brandBadge(brands) {
+      if (!Array.isArray(brands) || brands.length === 0) return '<span class="badge badge--neutral">—</span>';
+      return brands.map((b) => `<span class="badge badge--${b.toLowerCase()}">${esc(b)}</span>`).join(' ');
+    }
+
+    function statusBadge(status) {
+      const cls = status === 'archived' ? 'archived' : 'published';
+      const label = status === 'archived' ? 'Arquivada' : 'Publicada';
+      return `<span class="badge badge--${cls}">${label}</span>`;
+    }
+
+    function formatDate(iso) {
+      if (!iso) return '—';
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return iso;
+      return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    }
+
+    function render(ofertas) {
+      if (ofertas.length === 0) {
+        host.innerHTML = `<div class="empty">Nenhuma oferta encontrada com esses filtros.</div>`;
+        return;
+      }
+      host.innerHTML = `
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Oferta</th>
+              <th>Marcas</th>
+              <th>Tipo</th>
+              <th>Destino</th>
+              <th>Status</th>
+              <th>Criada</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${ofertas.map((o) => `
+              <tr data-id="${esc(o.id)}">
+                <td>
+                  <div class="nome-cell">
+                    ${o.imagem_url ? `<img class="thumb" src="${esc(o.imagem_url)}" alt="" />` : '<div class="thumb"></div>'}
+                    <div>
+                      <strong>${esc(o.nome_da_oferta || '(sem nome)')}</strong>
+                      <div class="meta">slug: ${esc(o.slug || '—')}</div>
+                    </div>
+                  </div>
+                </td>
+                <td>${brandBadge(o.tipo_cartao)}</td>
+                <td>${esc(o.tipo_oferta || '—')}</td>
+                <td>${esc(o.destino_rota || '—')}</td>
+                <td>${statusBadge(o.status)}</td>
+                <td>${formatDate(o.createdAt)}</td>
+                <td>
+                  <a href="/btg/dashboard/ofertas/editar/?id=${esc(o.id)}" class="btn btn--ghost btn--small">Editar</a>
+                  ${o.status === 'archived'
+                    ? `<button class="btn btn--ghost btn--small" data-action="restore" data-id="${esc(o.id)}">Restaurar</button>`
+                    : `<button class="btn btn--danger btn--small" data-action="archive" data-id="${esc(o.id)}">Arquivar</button>`}
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+
+    async function load() {
+      const filters = {
+        tipo_cartao: brandEl.value || undefined,
+        tipo_oferta: tipoEl.value || undefined,
+        status: statusEl.value,
+      };
+      lastFilters = filters;
+      host.innerHTML = `<div class="loading">Carregando ofertas...</div>`;
+      try {
+        allOfertas = await listOfertas(filters);
+        statusBar.innerHTML = `<strong>${allOfertas.length}</strong> oferta${allOfertas.length === 1 ? '' : 's'} encontrada${allOfertas.length === 1 ? '' : 's'}.`;
+        applySearch();
+      } catch (err) {
+        host.innerHTML = `<div class="empty" style="color:#b91c1c">Erro: ${esc(err.message)}</div>`;
+      }
+    }
+
+    function applySearch() {
+      const q = (searchEl.value || '').trim().toLowerCase();
+      if (!q) return render(allOfertas);
+      const filtered = allOfertas.filter((o) => {
+        const hay = [o.nome_da_oferta, o.destino_rota, o.slug, o.descricao, (o.tipo_cartao || []).join(' ')].join(' ').toLowerCase();
+        return hay.includes(q);
+      });
+      render(filtered);
+    }
+
+    // Eventos
+    brandEl.addEventListener('change', load);
+    tipoEl.addEventListener('change', load);
+    statusEl.addEventListener('change', load);
+    searchEl.addEventListener('input', applySearch);
+
+    host.addEventListener('click', async (e) => {
+      const btn = e.target.closest('[data-action]');
+      if (!btn) return;
+      const action = btn.dataset.action;
+      const id = btn.dataset.id;
+      if (action === 'archive') {
+        if (!confirm('Arquivar essa oferta? Ela deixa de aparecer nas homes (recuperável depois).')) return;
+        btn.disabled = true;
+        try {
+          await archiveOferta(id);
+          await load();
+        } catch (err) {
+          alert(`Erro: ${err.message}`);
+          btn.disabled = false;
+        }
+      } else if (action === 'restore') {
+        btn.disabled = true;
+        try {
+          await restoreOferta(id);
+          await load();
+        } catch (err) {
+          alert(`Erro: ${err.message}`);
+          btn.disabled = false;
+        }
+      }
+    });
+
+    // Inicial
+    load();
+  </script>
+</body>
+</html>
