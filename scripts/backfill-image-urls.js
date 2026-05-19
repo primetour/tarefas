@@ -92,13 +92,14 @@ async function fetchAssetsByNames(token, names) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({
+        // Body idêntico ao mc-sync.js — sem fields (retorna doc completo).
+        // Tentar especificar 'views.html.content' explicitamente quebra com 400.
+        page: { page: 1, pageSize: 200 },
         query: {
           leftOperand:  { property: 'assetType.name', simpleOperator: 'equals', value: 'htmlemail' },
           logicalOperator: 'AND',
           rightOperand: { property: 'name', simpleOperator: 'in', value: chunk },
         },
-        page: { page: 1, pageSize: chunk.length * 2 },
-        fields: ['id','name','views.html.content','views.subjectline.content'],
       }),
     });
     if (!res.ok) {
@@ -108,12 +109,19 @@ async function fetchAssetsByNames(token, names) {
     }
     const data = await res.json();
     for (const it of (data.items || [])) {
-      const name = it.name;
-      const html = it.views?.html?.content || '';
-      // Se já vimos esse name, mantém o mais recente (assume API retorna ordenado)
-      if (!out.has(name)) {
-        out.set(name, { assetId: it.id, html });
+      const name = (it.name || '').trim();
+      if (!name) continue;
+      // Fallback chain idêntico ao mc-sync.js
+      const html = it.views?.html?.content || it.content || it.views?.text?.content || '';
+      if (!html) continue;
+      // Se há múltiplos assets com mesmo nome, mantém o mais recente
+      const existing = out.get(name);
+      if (existing) {
+        const newDate = new Date(it.modifiedDate || 0).getTime();
+        const oldDate = new Date(existing.modifiedDate || 0).getTime();
+        if (newDate <= oldDate) continue;
       }
+      out.set(name, { assetId: it.id, html, modifiedDate: it.modifiedDate });
     }
   }
   return out;
