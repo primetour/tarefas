@@ -50,13 +50,13 @@ const DRY      = process.argv.includes('--dry');
 const BU_ARG   = (process.argv.find(a => a.startsWith('--bu=')) || '').slice(5);
 const LIMIT    = parseInt((process.argv.find(a => a.startsWith('--limit=')) || '').slice(8)) || 0;
 
-/* ─── BUs MID map (mesmo do mc-sync) ─── */
+/* ─── BUs MID map (mesmo do mc-sync.js BUSINESS_UNITS) ─── */
 const BUS = [
-  { id: 'primetour',     mid: '510006367' },
-  { id: 'btg-partners',  mid: '514006869' },
-  { id: 'btg-ultrablue', mid: '514006963' },
-  { id: 'centurion',     mid: '514008105' },
-  { id: 'pts',           mid: '514008106' },
+  { id: 'primetour',     mid: '546014130' },
+  { id: 'btg-partners',  mid: '546015816' },
+  { id: 'btg-ultrablue', mid: '546015815' },
+  { id: 'centurion',     mid: '546015818' },
+  { id: 'pts',           mid: '546015817' },
 ];
 
 /* ─── SFMC OAuth ─── */
