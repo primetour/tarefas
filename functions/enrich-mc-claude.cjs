@@ -290,11 +290,32 @@ const BRANDS = [
   'St. Regis', 'Waldorf Astoria', 'Conrad', 'Soneva', 'Auberge', 'Singita',
   'Banyan Tree', 'Capella', 'Borgo Egnazia', 'Hotel du Cap', 'Le Sirenuse', 'Splendido',
   'J.K. Place', 'Sandy Lane', 'Round Hill', 'Jumby Bay', 'GoldenEye',
+  // 4.49.26+ Hotéis que aparecem com frequência no htmlText (não no subject)
+  'Patina', 'Patina Maldives', 'Patina Mexico City', 'Patina Bali',
+  'Aman Tokyo', 'Aman Venice', 'Amangiri', 'Amankora', 'Amanyara', 'Amanwana',
+  'Soneva Fushi', 'Soneva Jani', 'Soneva Secret',
+  'Cheval Blanc Randheli', 'Cheval Blanc Paris', 'Cheval Blanc St-Tropez',
+  'Bulgari Resort', 'Bulgari Hotel', 'Bvlgari Maldives',
+  'Le Sirenuse Positano',
+  'EDITION Maldives', 'EDITION Sanya', 'EDITION New York',
+  'Four Seasons Maldives', 'Four Seasons Bora Bora', 'Four Seasons Mauritius',
+  'Six Senses Zighy Bay', 'Six Senses Bhutan', 'Six Senses Crans-Montana',
+  'Six Senses Ibiza', 'Six Senses Yao Noi',
+  'St. Regis Maldives', 'St. Regis Bora Bora', 'St. Regis Punta Mita',
+  'Ritz-Carlton Maldives', 'Ritz-Carlton Reserve',
+  'One&Only Reethi Rah', 'One&Only Le Saint Géran', 'One&Only Mandarina',
+  'Capella Bangkok', 'Capella Singapore', 'Capella Sydney', 'Capella Ubud',
+  'Rosewood Mayakoba', 'Rosewood Bangkok', 'Rosewood Hong Kong',
+  'Park Hyatt Tokyo', 'Park Hyatt Niseko', 'Park Hyatt Mendoza',
+  // Faena Hotel Miami / Buenos Aires (Faena já no dict)
   // 'Como' e 'Norman' EXCLUÍDOS: muito ambíguos com palavras comuns em PT.
   // Cruzeiros
   'Silversea', 'Aqua Expeditions', 'Aqua Nera', 'Aqua Mekong',
   'Ritz-Carlton Yacht', 'Delfin', 'AmaWaterways', 'Orient Express', 'Hiram Bingham',
   'Crystal Cruises', 'Seabourn', 'Regent Seven Seas', 'Explora Journeys',
+  // Trens (importante p/ Centurion / luxo)
+  'La Dolce Vita Orient Express', 'Royal Scotsman', 'Belmond Andean Explorer',
+  'Belmond British Pullman', 'Belmond Venice Simplon',
 ];
 
 /* ─── Matching ─── */
@@ -322,19 +343,46 @@ function buildRegexes() {
 
 function escapeRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
-function extractEntities(text, { cityRegexes, countryRegexes, brandRegexes }) {
-  const haystack = norm(text);
+/**
+ * Extrai entidades com 2 fontes distintas:
+ *   - strong (subject + name): 1 match basta — é texto curto e específico
+ *   - weak (htmlText): exige 2+ menções pra evitar boilerplate
+ *
+ * 4.49.26+ Bug fix: htmlText do BTG Partners tem boilerplate
+ * ("Cartão Partners BTG — Hospedagens na Tailândia") mesmo em emails
+ * que não são sobre Tailândia. Single-mention é ruído. 2+ é genuíno
+ * porque o conteúdo real menciona a entidade no header/título E no
+ * detalhe (parágrafo/oferta).
+ */
+function countMatches(haystack, regex) {
+  // Regex tem flag global removida — quero re-criar com /g
+  const re = new RegExp(regex.source, regex.flags.includes('g') ? regex.flags : regex.flags + 'g');
+  const m = haystack.match(re);
+  return m ? m.length : 0;
+}
+
+function extractEntities({ subject, name, htmlText }, { cityRegexes, countryRegexes, brandRegexes }) {
+  const strongHay = norm(`${subject}\n${name}`);
+  const weakHay   = norm(htmlText || '');
   const cities = new Set();
   const countries = new Set();
   const brands = new Set();
+
   for (const { regex, city, country } of cityRegexes) {
-    if (regex.test(haystack)) { cities.add(city); if (country) countries.add(country); }
+    if (regex.test(strongHay) || countMatches(weakHay, regex) >= 2) {
+      cities.add(city);
+      if (country) countries.add(country);
+    }
   }
   for (const { regex, country } of countryRegexes) {
-    if (regex.test(haystack)) countries.add(country);
+    if (regex.test(strongHay) || countMatches(weakHay, regex) >= 2) {
+      countries.add(country);
+    }
   }
   for (const { regex, brand } of brandRegexes) {
-    if (regex.test(haystack)) brands.add(brand);
+    if (regex.test(strongHay) || countMatches(weakHay, regex) >= 2) {
+      brands.add(brand);
+    }
   }
   return {
     cities: [...cities],
@@ -376,10 +424,26 @@ function mergeUnique(existing, additions) {
     const subject = d.subject || '';
     const name    = d.name    || '';
     const ex      = d.extracted || {};
+    // 4.49.26+ Inclui htmlText (texto extraído do body, sem tags).
+    // User: "ler o html é fundamental. subject entrega muito pouco".
+    //
+    // ARMADILHAS encontradas no DRY-RUN:
+    //   1. Header repetido entre emails (BTG Partners reusa título de outro
+    //      doc num email novo — "Cartão Partners BTG — Hospedagens na
+    //      Tailândia" vira boilerplate em emails sobre São Paulo).
+    //   2. Footer com 800-1000c de regulamentos, atendimento etc.
+    //
+    // Mitigação: stripa primeiros 200c (header reusado) + últimos 800c
+    // (footer regulatório). E exige 2+ menções no body remanescente
+    // pra evitar mention única em texto colado.
+    const htmlRaw = (d.htmlText || '');
+    const htmlBody = htmlRaw.length > 1200
+      ? htmlRaw.slice(200, Math.min(8000, htmlRaw.length - 800))
+      : ''; // doc muito curto → só boilerplate, descarta
 
-    // Texto-fonte: subject + name (sem HTML pra ser determinístico e barato)
-    const text = `${subject}\n${name}`;
-    const found = extractEntities(text, regexes);
+    // Passa as 3 fontes separadamente — extractEntities aplica regra
+    // diferente: subject/name = 1 match basta, htmlText = exige 2+
+    const found = extractEntities({ subject, name, htmlText: htmlBody }, regexes);
 
     // Merge — só adiciona, nunca remove
     const cityMerge    = mergeUnique(ex.cities,    found.cities);

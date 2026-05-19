@@ -6,6 +6,63 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.26+20260519-nl-enrich-htmltext-bodied] — 2026-05-19
+
+Release **PATCH** — User: "ler o html é fundamental. subject entrega muito
+pouco". Aceito. Estendido o backfill pra processar `htmlText` (texto
+extraído do body, ~6-8 KB por doc) além de subject + name.
+
+### Anti-boilerplate (lições do DRY-RUN)
+
+Lendo o body apareceram 2 armadilhas:
+
+1. **Header reusado entre emails**: BTG Partners reaproveitava o título
+   "Cartão Partners BTG — Hospedagens na Tailândia" como header de
+   emails sobre outros temas (São Paulo, Suíça). Resultado: Tailândia
+   adicionada em 50 docs falsamente no primeiro DRY-RUN.
+2. **Footer regulatório de 800-1000c**: contatos, regulamentos,
+   "consulte detalhes" — não tem destino útil mas tem keywords.
+
+Mitigação aplicada em `enrich-mc-claude.cjs`:
+- **Stripa primeiros 200c** (header reusado) + **últimos 800c** (footer)
+- **Descarta docs com htmlText < 1200c** (provavelmente só boilerplate)
+- **Regra dupla de mention**:
+  - Subject + name: **1 match basta** (texto curto, específico)
+  - htmlText: **exige 2+ ocorrências** (header isolado vira ruído)
+
+### Hotéis específicos adicionados
+
+50 → **104 brands** no dicionário. Patina (Maldives/Bali), Aman
+(Tokyo/Venice/Amankora/Amanyara), Soneva (Fushi/Jani/Secret), Cheval
+Blanc (Randheli/Paris/St-Tropez), Bulgari (Maldives), EDITION
+(Maldives/Sanya/NY), Four Seasons (Maldives/Bora Bora/Mauritius),
+Six Senses (vários), St. Regis (Maldives/Bora Bora/Punta Mita),
+Ritz-Carlton (Maldives/Reserve), One&Only (Reethi Rah/Le Saint Géran/
+Mandarina), Capella (Bangkok/Singapore/Sydney/Ubud), Rosewood
+(Mayakoba/Bangkok/Hong Kong), Park Hyatt (Tokyo/Niseko/Mendoza), e trens
+de luxo (La Dolce Vita Orient Express, Belmond Andean Explorer, etc).
+
+### Cobertura final (audit pós v4.49.26)
+
+| BU | Cidades inicial → final | Cobertura cities (% docs) |
+|---|---|---|
+| **Centurion** | 4 → **9** (+125%) | 27/73 (37%) → **39/73 (53%)** |
+| **PTS** | 2 → **10** (+400%) | 17/82 (21%) → **46/82 (56%)** |
+| **Primetour** | 14 → **29** (+107%) | 64/209 (31%) → **93/209 (44%)** |
+| **BTG Ultrablue** | 16 → **18** | 99/240 (41%) → 103/240 (43%) |
+| **BTG Partners** | 16 → **18** | 47/152 (31%) → 51/152 (34%) |
+
+Centurion agora identifica destinos do body: **Itacaré, Cusco, Vale
+Sagrado** (Peru), além de **Maldivas, Nova York, Polinésia Francesa**.
+
+### Auditoria & idempotência
+
+O script registra `extractedBy: 'claude-backfill-v4.49.25'`,
+preserva extracted prévio, e pode ser re-rodado quantas vezes for
+necessário — só adiciona, nunca remove.
+
+---
+
 ## [4.49.25+20260519-nl-enrich-claude-backfill] — 2026-05-19
 
 Release **PATCH** — Backfill determinístico do `mc_performance.extracted`

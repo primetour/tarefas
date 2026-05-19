@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 25,
-  build: '20260519-nl-enrich-claude-backfill',
+  patch: 26,
+  build: '20260519-nl-enrich-htmltext-bodied',
 };
 
 /** "1.2.0" */
