@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 51,
-  build: '20260520-filtros-setor-squad-status-area-removida',
+  patch: 52,
+  build: '20260520-hotfix-tdz-hashcolor-tasks',
 };
 
 /** "1.2.0" */

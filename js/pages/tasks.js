@@ -1936,16 +1936,25 @@ function _attachPageEvents() {
     emptyLabel: 'Todos os squads',
   });
 
+  // Hash determinístico → cor estável por área
+  const HASH_PALETTE = ['#6366F1','#8B5CF6','#EC4899','#F59E0B','#22C55E','#0EA5E9','#D4A843','#64748B','#10B981'];
+  const hashColor = (s) => {
+    let h = 0; for (let i = 0; i < s.length; i++) h = ((h<<5)-h+s.charCodeAt(i))|0;
+    return HASH_PALETTE[Math.abs(h) % HASH_PALETTE.length];
+  };
+
   // v4.49.51+ Picker do filtro Setor — lista vinda do store (master vê todos,
   // demais veem só os sectors visíveis via getVisibleSectors).
+  // IMPORTANTE: bindOptionPicker chama findSelected SINCRONAMENTE no setup
+  // (optionPicker.js linha 383), então hashColor PRECISA estar declarado antes
+  // — TDZ de `const` lança ReferenceError em `typeof`. Hotfix v4.49.52.
   const sectorOpts = () => {
     const visible = store.getVisibleSectors();
     const names = visible === null
       ? (store.get('sectors') || []).filter(s => s.active !== false).map(s => s.name)
       : visible;
     return names.map(name => ({
-      id: name, label: name, icon: '◈',
-      color: (typeof hashColor === 'function' ? hashColor(name) : '#6366F1'),
+      id: name, label: name, icon: '◈', color: hashColor(name),
     }));
   };
   const findSector = (id) => sectorOpts().find(o => o.id === id) || null;
@@ -1960,12 +1969,6 @@ function _attachPageEvents() {
     findSelected: findSector,
     emptyLabel: 'Todos os setores',
   });
-  // Hash determinístico → cor estável por área
-  const HASH_PALETTE = ['#6366F1','#8B5CF6','#EC4899','#F59E0B','#22C55E','#0EA5E9','#D4A843','#64748B','#10B981'];
-  const hashColor = (s) => {
-    let h = 0; for (let i = 0; i < s.length; i++) h = ((h<<5)-h+s.charCodeAt(i))|0;
-    return HASH_PALETTE[Math.abs(h) % HASH_PALETTE.length];
-  };
   const areaOpts = () => REQUESTING_AREAS.map(a => ({ id: a, label: a, icon: '', color: hashColor(a) }));
   const findArea = (id) => areaOpts().find(o => o.id === id) || null;
   bindOptionPicker({
