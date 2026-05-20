@@ -114,14 +114,16 @@ export function createOfertaCard(oferta, brand) {
  * @param {string} opts.title
  * @param {string} [opts.description]
  * @param {string} opts.ctaUrl
+ * @param {string} [opts.ctaLabel]  Texto do botão. Default: "Quero falar com meu concierge".
  * @param {'partners' | 'ultrablue' | 'operadora'} opts.brand
  */
-export function createClosingCta({ title, description, ctaUrl, brand }) {
+export function createClosingCta({ title, description, ctaUrl, ctaLabel, brand }) {
   const bgPerBrand = {
     partners: '#05132a',
     ultrablue: '#0b2859',
     operadora: '#1a2b4a',
   };
+  const label = ctaLabel || 'Quero falar com meu concierge';
   return `
     <section class="btg-closing-cta" style="background:${bgPerBrand[brand] ?? bgPerBrand.partners};">
       <div class="btg-container btg-closing-cta__inner">
@@ -129,8 +131,8 @@ export function createClosingCta({ title, description, ctaUrl, brand }) {
           <h2 class="btg-closing-cta__title">${esc(title)}</h2>
           ${description ? `<p class="btg-closing-cta__desc">${esc(description)}</p>` : ''}
         </div>
-        <a href="${esc(ctaUrl)}" target="_blank" rel="noopener" class="btg-cta-wp">
-          Quero falar com meu concierge ${icon('arrow-up-right', 'icon-sm')}
+        <a href="${esc(ctaUrl)}" target="_blank" rel="noopener noreferrer" class="btg-cta-wp">
+          ${esc(label)} ${icon('arrow-up-right', 'icon-sm')}
         </a>
       </div>
     </section>

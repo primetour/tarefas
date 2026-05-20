@@ -62,7 +62,7 @@ const BRAND_CONFIG = {
     ),
     conciergeUrl:
       'https://wa.me/551148621680?text=' +
-      encodeURIComponent('Olá! Tenho interesse no concierge Partners.'),
+      encodeURIComponent('Cartão Partners: Quero falar sobre as ofertas'),
     cssClass: 'btg-header-partners',
   },
   ultrablue: {
@@ -79,7 +79,7 @@ const BRAND_CONFIG = {
     ),
     conciergeUrl:
       'https://wa.me/551148621688?text=' +
-      encodeURIComponent('Olá! Tenho interesse no concierge Ultrablue.'),
+      encodeURIComponent('Cartão Ultrablue BTG Pactual: Quero falar sobre as ofertas'),
     cssClass: 'btg-header-ultrablue',
   },
   operadora: {
@@ -90,7 +90,7 @@ const BRAND_CONFIG = {
     nav: NAV_OPERADORA,
     conciergeUrl:
       'https://wa.me/551148621680?text=' +
-      encodeURIComponent('Olá! Tenho interesse na Operadora Primetour.'),
+      encodeURIComponent('Operadora Primetour: Quero falar sobre as ofertas'),
     cssClass: 'btg-header-operadora',
   },
 };

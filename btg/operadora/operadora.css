@@ -104,6 +104,10 @@ body {
   color: rgba(26, 43, 74, 0.75);
 }
 
+.operadora-intro__body p + p {
+  margin-top: 16px;
+}
+
 /* ─── CURATED ─── */
 
 .operadora-curated {
