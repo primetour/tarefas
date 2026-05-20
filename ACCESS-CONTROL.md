@@ -118,9 +118,32 @@ match /ai_knowledge/{docId} {
 | `gestor-de-tarefas-primetour@appspot.gserviceaccount.com` | Cloud Functions runtime | datastore.user, secretmanager.secretAccessor, storage.objectAdmin (bucket backups), datastore.importExportAdmin |
 | `1083421353313-compute@developer.gserviceaccount.com` | Cloud Build | cloudbuild.builds.builder, secretmanager.secretAccessor (build-time) |
 | Azure AD App Registration | SharePoint client_credentials | Microsoft Graph: `Files.Read.All`, `Sites.Read.All` (app-only, admin-consented) |
+| GitHub Actions SA (Firestore Admin) | CI scripts (mc-sync, classify-content, classify-content-ai, promote-ai-to-prod, rollback-ai-classification, backfill-image-urls, categorize-no-art) | Firestore Admin SDK via `FIREBASE_*` secrets (bypassa Firestore rules — escrita irrestrita; uso restrito a workflows revisados) |
 
 **Princípio de menor privilégio**: cada SA tem apenas as roles necessárias.
 **Auditoria**: `gcloud iam service-accounts get-iam-policy ...`
+
+### Coleções com escrita SOMENTE via Admin SDK (cliente bloqueado)
+Padrão "append-only via scripts": ler do dashboard é OK; mutação só
+acontece via workflow GitHub Actions com `FIREBASE_PRIVATE_KEY`.
+
+- `mc_performance` — read: auth, write: master (escrita server-side via mc-sync)
+- `nl_ai_classifier_runs` (v4.49.41+) — read: auth, create/update/delete: false
+- `nl_classifier_promotions` (v4.49.42+) — read: admin, create/update/delete: false
+- `nl_classifier_rollbacks` (v4.49.42+) — read: admin, create/update/delete: false
+
+### Gates de UI específicos
+Mesmo quando a rule Firestore permite, certos botões/ações são gated
+no client por permissão (defesa em profundidade + UX):
+
+- Dashboard NL → Conteúdo & Temas → bloco shadow mode → botões
+  "IA certa / regex certo" por divergência: gated por
+  `store.isMaster() || store.can('system_manage_settings')` na render
+  (`canVoteOnDecisions`) E re-validado no click handler (allowlist
+  do eixo/verdict/docId).
+- Dashboard NL → bloco shadow mode → painel admin (botões "Promover
+  IA / Reverter cutover / Disparar classificação"): mesma gate
+  (renderiza `''` para não-admin).
 
 ---
 
