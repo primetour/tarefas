@@ -1,0 +1,190 @@
+.beneficios-hero {
+  padding: var(--header-offset) 20px 32px;
+  background: #fff;
+}
+
+@media (min-width: 1024px) {
+  .beneficios-hero { padding: 96px 32px 32px; }
+}
+
+.beneficios-hero__inner {
+  padding-top: 32px;
+}
+
+.beneficios-hero__grid {
+  margin-top: 32px;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 32px;
+  align-items: center;
+}
+
+@media (min-width: 1024px) {
+  .beneficios-hero__grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 560px);
+    align-items: start;
+    gap: 40px;
+  }
+}
+
+.beneficios-hero__title {
+  font-size: 36px;
+  font-weight: 300;
+  line-height: 1.05;
+  color: var(--btg-navy);
+}
+
+.beneficios-hero__desc {
+  margin-top: 20px;
+  font-size: 24px;
+  line-height: 1.2;
+  color: rgba(5, 19, 42, 0.75);
+}
+
+.beneficios-hero__card {
+  position: relative;
+  height: 300px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+@media (min-width: 1024px) {
+  .beneficios-hero__card { height: 520px; }
+}
+
+.beneficios-hero__card img {
+  max-height: 100%;
+  width: auto;
+  object-fit: contain;
+}
+
+/* ─── Experiência (PARTNERS/ULTRABLUE) — antes era /conheca-mais ─── */
+
+.exp-card-section {
+  background: #fff;
+  padding: 64px 20px;
+}
+
+@media (min-width: 1024px) {
+  .exp-card-section { padding: 96px 32px; }
+}
+
+.exp-card-grid {
+  max-width: 1280px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1fr;
+  align-items: stretch;
+  gap: 40px;
+}
+
+@media (min-width: 1024px) {
+  .exp-card-grid { grid-template-columns: 1fr 1fr; gap: 48px; }
+}
+
+.exp-card-eyebrow {
+  font-size: 14px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(5, 19, 42, 0.6);
+}
+
+.exp-card-title {
+  margin-top: 12px;
+  font-size: 36px;
+  font-weight: 300;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  color: #05132a;
+}
+
+.exp-card-body {
+  margin-top: 24px;
+  font-size: 16px;
+  line-height: 1.6;
+  color: rgba(5, 19, 42, 0.75);
+}
+
+.exp-card-body p + p { margin-top: 16px; }
+
+.exp-card-pdf {
+  display: flex;
+  overflow: hidden;
+  border-radius: 4px;
+  border: 1px solid rgba(5, 19, 42, 0.15);
+  background: #fff;
+  color: inherit;
+  transition: border-color var(--t-fast), box-shadow var(--t-fast);
+}
+
+.exp-card-pdf:hover {
+  border-color: rgba(5, 19, 42, 0.4);
+  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.08);
+}
+
+.exp-card-pdf-media {
+  position: relative;
+  width: 140px;
+  flex-shrink: 0;
+  overflow: hidden;
+  background: #05132a;
+}
+
+@media (min-width: 640px) {
+  .exp-card-pdf-media { width: 180px; }
+}
+
+.exp-card-pdf-media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.5s;
+}
+
+.exp-card-pdf:hover .exp-card-pdf-media img {
+  transform: scale(1.02);
+}
+
+.exp-card-pdf-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 20px;
+}
+
+@media (min-width: 640px) {
+  .exp-card-pdf-body { padding: 24px; }
+}
+
+.exp-card-pdf-eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(5, 19, 42, 0.6);
+}
+
+.exp-card-pdf-title {
+  margin-top: 8px;
+  font-size: 20px;
+  font-weight: 300;
+  line-height: 1.2;
+  color: #05132a;
+}
+
+.exp-card-pdf-desc {
+  margin-top: 12px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: rgba(5, 19, 42, 0.7);
+}
+
+.exp-card-pdf-cta {
+  display: inline-block;
+  margin-top: 20px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #05132a;
+}

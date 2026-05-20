@@ -222,6 +222,15 @@
   color: #fff;
 }
 
+/* Partners: header CTA usa navy (commit abafdcb) em vez do azul claro */
+.btg-header-partners .btg-header__cta {
+  background: #05132a;
+}
+
+.btg-header-partners .btg-header__cta:hover {
+  background: #0a1f3e;
+}
+
 .btg-mobile-menu--open .btg-mobile-menu__panel {
   transform: translateY(0);
   opacity: 1;
