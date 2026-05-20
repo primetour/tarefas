@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Hospedagem — Operadora Primetour</title>
+  <link rel="stylesheet" href="/btg/shared/btg-base.css" />
+  <link rel="stylesheet" href="/btg/shared/btg-header.css" />
+  <link rel="stylesheet" href="/btg/shared/btg-footer.css" />
+  <link rel="stylesheet" href="/btg/shared/btg-components.css" />
+  <link rel="stylesheet" href="/btg/shared/btg-category-page.css" />
+</head>
+<body>
+  <div id="app"></div>
+  <script type="module">
+    import { renderCategoryPage } from '/btg/shared/btg-category-page.js';
+
+    renderCategoryPage({
+      brand: 'operadora',
+      heroVariant: 'text-only',
+      tipoOferta: 'Hospedagem',
+      title: 'Nossa seleção de hotéis com benefícios exclusivos',
+      description: 'Seleção criteriosa de propriedades renomadas, complementada por amenidades especiais, upgrades sujeitos à disponibilidade e vantagens oferecidas por nossa rede global de parceiros.',
+      backHref: '/btg/operadora/',
+      closingTitle: 'A próxima oportunidade para surpreender seu cliente começa aqui',
+      closingDescription: 'Conte com nossos especialistas para construir a melhor solução para cada viagem.',
+      closingCtaLabel: 'Falar com nosso especialista',
+      closingCtaUrl: 'https://wa.me/551148621680?text=' + encodeURIComponent('Operadora Primetour: Quero falar sobre as ofertas'),
+    });
+  </script>
+</body>
+</html>

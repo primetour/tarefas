@@ -36,15 +36,15 @@ const NAV_PARTNERS_ULTRABLUE = [
   { label: 'Viagens', href: '/viagens', children: VIAGENS_CHILDREN },
   { label: 'Cruzeiros', href: '/cruzeiros' },
   { label: 'Concierge', href: '/concierge' },
-  { label: 'Benefícios', href: '/beneficios' },
+  { label: 'Benefícios e Serviços', href: '/beneficios-e-servicos' },
 ];
 
 const NAV_OPERADORA = [
-  { label: 'Feriados', href: '/operadora/viagens/feriados' },
-  { label: 'Destinos', href: '/operadora/viagens/destinos' },
-  { label: 'Hospedagem', href: '/operadora/viagens/hospedagem' },
-  { label: 'Aéreo & Transfers', href: '/operadora/viagens/aereo-transfers' },
-  { label: 'Cruzeiros', href: '/operadora/cruzeiros' },
+  { label: 'Feriados', href: '/btg/operadora/viagens/feriados/' },
+  { label: 'Destinos', href: '/btg/operadora/viagens/destinos/' },
+  { label: 'Hospedagem', href: '/btg/operadora/viagens/hospedagem/' },
+  { label: 'Aéreo & Transfers', href: '/btg/operadora/viagens/aereo-transfers/' },
+  { label: 'Cruzeiros', href: '/btg/operadora/cruzeiros/' },
 ];
 
 const BRAND_CONFIG = {
@@ -57,7 +57,7 @@ const BRAND_CONFIG = {
       i.href === '/viagens' ? { ...i, href: '/btg/partners/viagens/' }
       : i.href === '/cruzeiros' ? { ...i, href: '/btg/partners/cruzeiros/' }
       : i.href === '/concierge' ? { ...i, href: '/btg/partners/concierge/' }
-      : i.href === '/beneficios' ? { ...i, href: '/btg/partners/beneficios/' }
+      : i.href === '/beneficios-e-servicos' ? { ...i, href: '/btg/partners/beneficios-e-servicos/' }
       : i,
     ),
     conciergeUrl:
@@ -74,7 +74,7 @@ const BRAND_CONFIG = {
       i.href === '/viagens' ? { ...i, href: '/btg/ultrablue/viagens/' }
       : i.href === '/cruzeiros' ? { ...i, href: '/btg/ultrablue/cruzeiros/' }
       : i.href === '/concierge' ? { ...i, href: '/btg/ultrablue/concierge/' }
-      : i.href === '/beneficios' ? { ...i, href: '/btg/ultrablue/beneficios/' }
+      : i.href === '/beneficios-e-servicos' ? { ...i, href: '/btg/ultrablue/beneficios-e-servicos/' }
       : i,
     ),
     conciergeUrl:

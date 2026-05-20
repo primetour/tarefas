@@ -182,6 +182,31 @@ export function createCategoryHero({ imageSrc, imageMobileSrc, title, descriptio
 }
 
 /**
+ * Hero TEXT-ONLY pra categoria (Operadora subpages — sem imagem de fundo).
+ * Equivalente do OperadoraCategoryOffersSection no btg-pactual: voltar
+ * + título grande + subtítulo, separador inferior.
+ *
+ * @param {Object} o
+ * @param {string} o.title
+ * @param {string} [o.description]
+ * @param {string} o.backHref
+ * @param {'partners' | 'ultrablue' | 'operadora'} o.brand
+ */
+export function createTextCategoryHero({ title, description, backHref, brand }) {
+  return `
+    <section class="btg-text-hero" data-brand="${brand}">
+      <div class="btg-container btg-text-hero__inner">
+        <a href="${esc(backHref)}" class="btg-text-hero__back">
+          ${icon('chevron-left', 'icon-sm')} voltar
+        </a>
+        <h1 class="btg-text-hero__title">${esc(title)}</h1>
+        ${description ? `<p class="btg-text-hero__desc">${esc(description)}</p>` : ''}
+      </div>
+    </section>
+  `;
+}
+
+/**
  * Parceiros Hotéis — grid de 6 hotéis com overlay e nome.
  * Equivalente do ParceirosHoteis React.
  *

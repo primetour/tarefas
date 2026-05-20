@@ -9,6 +9,7 @@ import {
   createOfertaCard,
   createClosingCta,
   createCategoryHero,
+  createTextCategoryHero,
 } from './btg-components.js';
 import { listOfertas, normalizeForCard } from './btg-ofertas-service.js';
 
@@ -24,11 +25,13 @@ const BRAND_LABEL = {
  * @param {string} cfg.title
  * @param {string} cfg.description
  * @param {string} cfg.backHref
- * @param {string} cfg.heroImage
- * @param {string} cfg.heroImageMobile
+ * @param {'image' | 'text-only'} [cfg.heroVariant]  Default 'image'. 'text-only' usado em subpages Operadora.
+ * @param {string} [cfg.heroImage]      Obrigatório em heroVariant='image'.
+ * @param {string} [cfg.heroImageMobile] Obrigatório em heroVariant='image'.
  * @param {string} cfg.closingCtaUrl
  * @param {string} cfg.closingTitle
  * @param {string} [cfg.closingDescription]
+ * @param {string} [cfg.closingCtaLabel] Texto do botão do closing CTA.
  * @param {string} [cfg.tipoOferta]  Filtra ofertas por tipo_oferta (ex: 'Feriado')
  * @param {Array<Object>} [cfg.ofertasMock]  Usado se Firestore vazio (fallback visual)
  */
@@ -36,19 +39,27 @@ export async function renderCategoryPage(cfg) {
   const root = document.getElementById('app');
   if (!root) return;
 
-  const heroHtml = createCategoryHero({
-    imageSrc: cfg.heroImage,
-    imageMobileSrc: cfg.heroImageMobile,
-    title: cfg.title,
-    description: cfg.description,
-    backHref: cfg.backHref,
-    brand: cfg.brand,
-  });
+  const heroHtml = cfg.heroVariant === 'text-only'
+    ? createTextCategoryHero({
+        title: cfg.title,
+        description: cfg.description,
+        backHref: cfg.backHref,
+        brand: cfg.brand,
+      })
+    : createCategoryHero({
+        imageSrc: cfg.heroImage,
+        imageMobileSrc: cfg.heroImageMobile,
+        title: cfg.title,
+        description: cfg.description,
+        backHref: cfg.backHref,
+        brand: cfg.brand,
+      });
 
   const closingHtml = createClosingCta({
     title: cfg.closingTitle,
     description: cfg.closingDescription,
     ctaUrl: cfg.closingCtaUrl,
+    ctaLabel: cfg.closingCtaLabel,
     brand: cfg.brand,
   });
 

@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Aéreo & Transfers — Operadora Primetour</title>
+  <meta name="description" content="Traslados, locação de veículos e mobilidade terrestre com curadoria Primetour." />
+  <link rel="stylesheet" href="/btg/shared/btg-base.css" />
+  <link rel="stylesheet" href="/btg/shared/btg-header.css" />
+  <link rel="stylesheet" href="/btg/shared/btg-footer.css" />
+  <link rel="stylesheet" href="/btg/shared/btg-components.css" />
+  <link rel="stylesheet" href="/btg/shared/btg-category-page.css" />
+</head>
+<body>
+  <div id="app"></div>
+  <script type="module">
+    import { renderCategoryPage } from '/btg/shared/btg-category-page.js';
+
+    renderCategoryPage({
+      brand: 'operadora',
+      heroVariant: 'text-only',
+      tipoOferta: 'Aéreo & Transfers',
+      title: 'A experiência começa antes do check-in',
+      description: 'Traslados, locação de veículos, mobilidade terrestre e soluções logísticas cuidadosamente selecionadas para garantir conforto e tranquilidade em cada etapa da viagem.',
+      backHref: '/btg/operadora/',
+      closingTitle: 'A próxima oportunidade para surpreender seu cliente começa aqui',
+      closingDescription: 'Conte com nossos especialistas para construir a melhor solução para cada viagem.',
+      closingCtaLabel: 'Falar com nosso especialista',
+      closingCtaUrl: 'https://wa.me/551148621680?text=' + encodeURIComponent('Operadora Primetour: Quero falar sobre as ofertas'),
+    });
+  </script>
+</body>
+</html>
