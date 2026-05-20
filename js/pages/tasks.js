@@ -12,6 +12,9 @@ import { openTaskModal, openTaskDoneOverlay } from '../components/taskModal.js';
 import { APP_CONFIG }    from '../config.js';
 import { openCardPrefsModal }  from '../components/cardPrefsModal.js';
 import { createDoc, loadJsPdf, COL, STATUS_STYLE, txt, withExportGuard } from '../components/pdfKit.js';
+// v4.49.53+ Reusa lógica de setor (UNIÃO dyn + REQUESTING_AREAS + dedup)
+// que já está battle-tested em kanban/calendar/timeline via filterBar.
+import { getUserSectorOptions } from '../components/filterBar.js';
 import { wireUiKitMenus } from '../components/uiKit.js';
 import { userAvatarInner } from '../components/userAvatar.js';
 import {
@@ -331,17 +334,15 @@ export async function renderTasks(container) {
           placeholder="Buscar tarefas..." />
       </div>
       <!-- v4.49.51+ Filtro Setor (proprietário da tarefa = task.sector).
-           Não confundir com "Área solicitante" (legado, requestingArea). -->
+           Não confundir com "Área solicitante" (legado, requestingArea).
+           v4.49.53+ HOTFIX: usa getUserSectorOptions do filterBar (UNIÃO
+           dinâmicos + REQUESTING_AREAS + dedup case-insensitive). Antes:
+           só store.get('sectors') cru → mostrava "Concierge 2x" e sem
+           os setores legados. -->
       <div class="toolbar-filter-wrap" style="${filterVisibility.sector?'':'display:none;'}min-width:170px;">
         <select id="filter-sector" style="display:none;">
           <option value="" ${filterSector===''?'selected':''}>Todos os setores</option>
-          ${(() => {
-            const sectors = store.getVisibleSectors();
-            const list = sectors === null
-              ? (store.get('sectors') || []).filter(s => s.active !== false).map(s => s.name)
-              : sectors;
-            return list.map(name => `<option value="${esc(name)}" ${filterSector===name?'selected':''}>${esc(name)}</option>`).join('');
-          })()}
+          ${getUserSectorOptions().map(name => `<option value="${esc(name)}" ${filterSector===name?'selected':''}>${esc(name)}</option>`).join('')}
         </select>
         ${renderPickerButton({ btnId: 'filter-sector-btn', selected: null, emptyLabel: 'Todos os setores' })}
       </div>
@@ -1943,20 +1944,13 @@ function _attachPageEvents() {
     return HASH_PALETTE[Math.abs(h) % HASH_PALETTE.length];
   };
 
-  // v4.49.51+ Picker do filtro Setor — lista vinda do store (master vê todos,
-  // demais veem só os sectors visíveis via getVisibleSectors).
-  // IMPORTANTE: bindOptionPicker chama findSelected SINCRONAMENTE no setup
-  // (optionPicker.js linha 383), então hashColor PRECISA estar declarado antes
-  // — TDZ de `const` lança ReferenceError em `typeof`. Hotfix v4.49.52.
-  const sectorOpts = () => {
-    const visible = store.getVisibleSectors();
-    const names = visible === null
-      ? (store.get('sectors') || []).filter(s => s.active !== false).map(s => s.name)
-      : visible;
-    return names.map(name => ({
-      id: name, label: name, icon: '◈', color: hashColor(name),
-    }));
-  };
+  // v4.49.51+ Picker do filtro Setor.
+  // v4.49.52 fix TDZ (ordem hashColor).
+  // v4.49.53 hotfix: usa getUserSectorOptions (UNIÃO+dedup) em vez de
+  // store.get('sectors') cru. Causa do "Concierge 2x" foi falta de dedup.
+  const sectorOpts = () => getUserSectorOptions().map(name => ({
+    id: name, label: name, icon: '◈', color: hashColor(name),
+  }));
   const findSector = (id) => sectorOpts().find(o => o.id === id) || null;
   bindOptionPicker({
     btnId: 'filter-sector-btn',

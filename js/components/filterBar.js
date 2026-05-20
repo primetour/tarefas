@@ -141,9 +141,14 @@ const metaOpts = () => [
 /**
  * getUserSectorOptions()
  * Returns the sectors the current user is allowed to see.
- * null means "all" (master). Otherwise returns the filtered list.
+ * Dedup'a (case-insensitive por name) e une dyn Firestore + legacy
+ * REQUESTING_AREAS. Master/system_view_all → todos; demais → visíveis.
+ *
+ * Exportado a partir de v4.49.53 — tasks.js (filtro Setor novo) precisa
+ * usar a MESMA lógica pra evitar duplicatas/ordenação inconsistente com
+ * kanban/calendar/timeline.
  */
-function getUserSectorOptions() {
+export function getUserSectorOptions() {
   const visible = store.getVisibleSectors(); // null | string[]
   // 4.23.2+ — UNIÃO de dinâmicos + legados (não substitui).
   // Mesma lógica de getActiveSectors() em services/sectors.js, inlined pra
@@ -158,10 +163,25 @@ function getUserSectorOptions() {
   for (const name of REQUESTING_AREAS) {
     if (!dynByName.has(name.toLowerCase())) out.push(name);
   }
-  const allSectors = out;
+  // v4.49.53+ Dedup defensivo (case-insensitive) em todas as ramificações.
+  // Causa do bug "Concierge 2x" em /tarefas: dados em store.get('sectors')
+  // ou em userProfile.visibleSectors podem ter o mesmo nome com casing
+  // diferente OU duplicatas literais (ex: importação massiva).
+  const dedup = (arr) => {
+    const seen = new Set();
+    const result = [];
+    for (const name of arr) {
+      const k = String(name || '').trim().toLowerCase();
+      if (!k || seen.has(k)) continue;
+      seen.add(k);
+      result.push(name);
+    }
+    return result;
+  };
+  const allSectors = dedup(out);
   if (visible === null) return allSectors;
   if (visible.length === 0) return allSectors;
-  return visible;
+  return dedup(visible);
 }
 
 /* Helper: select hidden + picker button — mantem data-filter pro bind. */

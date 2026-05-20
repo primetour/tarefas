@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 52,
-  build: '20260520-hotfix-tdz-hashcolor-tasks',
+  patch: 53,
+  build: '20260520-hotfix-setor-dedup-tasks',
 };
 
 /** "1.2.0" */
