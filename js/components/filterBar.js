@@ -13,6 +13,10 @@ import {
   renderMultiPickerButton, bindMultiOptionPicker,
 } from './optionPicker.js';
 import { renderIcon } from './icons.js';
+// v4.49.55+ Single source of truth pra lista de setores ativos:
+// services/sectors.js já trata back-compat (DEFAULT_SECTORS legados),
+// override de admin (replacesLegacyName), dedup case-insensitive.
+import { getActiveSectors } from '../services/sectors.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -96,19 +100,69 @@ function areaOpts() {
 }
 // v4.49.51+ Squads (workspaces) — pra usar como filtro em Calendar/Steps/etc.
 // "Sem squad" é uma opção real (tasks podem ter workspaceId vazio).
+// v4.49.55+ Retorna GROUPS agrupados por setor (pedido do user: "filtro de
+// squad tem que separar por setor dentro do filtro"). Squads multissetor
+// caem em "Multissetor"; squads sem sector caem em "— Outros —".
 function squadOpts() {
+  const grouped = squadOptsGrouped();
+  // Flat fallback (consumers que não passam `groups` ainda recebem array
+  // plano com a mesma semântica). Header "Sem squad" sempre primeiro.
+  const flat = [{ id: '__none__', label: '— Sem squad', icon: '∅', color: 'var(--text-muted)' }];
+  for (const g of grouped) {
+    for (const item of g.items) flat.push(item);
+  }
+  return flat;
+}
+
+export function squadOptsGrouped() {
   const ws = Array.isArray(store.get('userWorkspaces')) ? store.get('userWorkspaces') : [];
-  const out = [];
-  out.push({ id: '__none__', label: '— Sem squad', icon: '∅', color: 'var(--text-muted)' });
+  // Map sector → [items]
+  const bySector = new Map();
+  const multissetorItems = [];
+  const orfaos = [];
   for (const w of ws) {
-    out.push({
+    const item = {
       id: w.id,
-      label: w.name + (w.multiSector ? ' (multissetor)' : ''),
+      label: w.name,
       icon: w.icon || '◈',
       color: w.color || hashColor(w.name),
-    });
+    };
+    if (w.multiSector) {
+      // Multissetor: cai num grupo próprio. Se quiser ver dentro de cada
+      // sector, descomenta o for abaixo (mas dup o item — visual confuso).
+      multissetorItems.push(item);
+      continue;
+    }
+    const sector = w.sector || w.sectorName || '';
+    if (!sector) { orfaos.push(item); continue; }
+    if (!bySector.has(sector)) bySector.set(sector, []);
+    bySector.get(sector).push(item);
   }
-  return out;
+
+  // Ordena setores pela ordem canônica do módulo Setores
+  const sectorOrder = getActiveSectors();
+  const groups = [];
+  // 1) Grupo Header "Sem squad" (uma única opção, sem agrupar)
+  groups.push({
+    id: '__header_none', label: 'Sem squad', color: 'var(--text-muted)',
+    items: [{ id: '__none__', label: '— Sem squad', icon: '∅', color: 'var(--text-muted)' }],
+  });
+  // 2) Por setor (ordem canônica)
+  for (const s of sectorOrder) {
+    const items = bySector.get(s);
+    if (items && items.length) {
+      groups.push({ id: 'sec:' + s, label: s, color: hashColor(s), items });
+    }
+  }
+  // 3) Multissetor
+  if (multissetorItems.length) {
+    groups.push({ id: '__multi', label: 'Multissetor', color: '#A78BFA', items: multissetorItems });
+  }
+  // 4) Órfãos (squads sem campo sector — back-compat)
+  if (orfaos.length) {
+    groups.push({ id: '__orphan', label: '— Sem setor —', color: 'var(--text-muted)', items: orfaos });
+  }
+  return groups;
 }
 // 4.40.25+ Padroniza avatar com perfil do user: avatarColor (cor escolhida
 // em Perfil → Aparência) substitui hashColor. Antes, picker mostrava cor
@@ -148,34 +202,24 @@ const metaOpts = () => [
  * kanban/calendar/timeline.
  */
 export function getUserSectorOptions() {
+  // v4.49.55+ Usa getActiveSectors() como SINGLE SOURCE OF TRUTH.
+  // Essa função (services/sectors.js) já trata:
+  //   1. Setores ativos do módulo Setores (store.get('sectors'))
+  //   2. DEFAULT_SECTORS legados (REQUESTING_AREAS) que ainda existem em
+  //      tarefas históricas, EXCETO os que foram redefinidos via UI
+  //   3. Override admin: replacesLegacyName (admin marca "Concierge Bradesco"
+  //      como substituído por "Concierge" → some da lista)
+  //   4. Dedup case-insensitive
+  // Antes eu reinventei a roda em v4.49.54 e perdi os pontos 2 e 3.
+  const allSectors = getActiveSectors();
   const visible = store.getVisibleSectors(); // null | string[]
-  // v4.49.54+ DESACOPLADO de REQUESTING_AREAS (legacy hardcoded).
-  // Antes: união dyn + REQUESTING_AREAS causava o bug "Concierge Bradesco
-  // aparece no filtro Setor mas não existe no módulo Setores". User reportou
-  // que Setores é a fonte ÚNICA de verdade — REQUESTING_AREAS só vale pra
-  // filtro de "Área solicitante" (legacy do portal de pedidos).
-  const dyn = Array.isArray(store.get('sectors')) ? store.get('sectors') : [];
-  const out = [];
-  for (const s of dyn.slice().sort((a, b) => (a.order ?? 999) - (b.order ?? 999))) {
-    if (s?.name && s.active !== false) out.push(s.name);
-  }
-  // Dedup defensivo (case-insensitive). Cobre dados upstream inconsistentes
-  // em store.get('sectors') ou userProfile.visibleSectors.
-  const dedup = (arr) => {
-    const seen = new Set();
-    const result = [];
-    for (const name of arr) {
-      const k = String(name || '').trim().toLowerCase();
-      if (!k || seen.has(k)) continue;
-      seen.add(k);
-      result.push(name);
-    }
-    return result;
-  };
-  const allSectors = dedup(out);
   if (visible === null) return allSectors;
   if (visible.length === 0) return allSectors;
-  return dedup(visible);
+  // Filtra pela visibilidade do user (head/member). Mantém só os que o
+  // user tem permissão de ver, MAS preserva a ordem canônica de
+  // getActiveSectors (priorizando dinâmicos sobre legados).
+  const allowed = new Set(visible.map(s => String(s).toLowerCase()));
+  return allSectors.filter(s => allowed.has(String(s).toLowerCase()));
 }
 
 /* Helper: select hidden + picker button — mantem data-filter pro bind. */
@@ -385,6 +429,7 @@ export function bindFilterBar(container, state, onChange, ctx = {}) {
 
   // 2) Wire optionPicker em cada select escondido (single-select)
   // assignee é tratado separadamente abaixo (multi-select desde 4.21).
+  // v4.49.55+ squad usa groups (agrupado por setor); demais usam options flat.
   ['sector','type','project','area','squad','status','meta'].forEach(key => {
     const sel = container.querySelector(`[data-filter="${key}"]`);
     if (!sel) return;
@@ -393,11 +438,17 @@ export function bindFilterBar(container, state, onChange, ctx = {}) {
     bindOptionPicker({
       btnId: selectId + '-btn',
       selectId,
-      buildConfig: () => ({
-        options: buildOpts(),
-        empty: { id: '', label: EMPTY_LABELS[key] },
-        searchPlaceholder: 'Buscar…',
-      }),
+      buildConfig: () => key === 'squad'
+        ? ({
+            groups: squadOptsGrouped(),
+            empty: { id: '', label: EMPTY_LABELS[key] },
+            searchPlaceholder: 'Buscar squad…',
+          })
+        : ({
+            options: buildOpts(),
+            empty: { id: '', label: EMPTY_LABELS[key] },
+            searchPlaceholder: 'Buscar…',
+          }),
       findSelected: (id) => buildOpts().find(o => o.id === id) || null,
       emptyLabel: EMPTY_LABELS[key],
     });

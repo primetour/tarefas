@@ -32,7 +32,8 @@ let optimisticTasks = [];
 let activeView   = 'kanban';   // 'kanban' | 'pipeline'
 // v4.49.51+ 'area' removido (legado, igual a sector — feedback do user).
 // 'area' permanece como GROUPBY (agrupador de colunas), mas não mais filtro.
-let kbFilterState = { sector: null, type: null, project: null, assignee: null, observer: null, status: null };
+// v4.49.55+ 'squad' adicionado (pedido do user; agrupado por setor no picker).
+let kbFilterState = { sector: null, type: null, project: null, squad: null, assignee: null, observer: null, status: null };
 
 // 4.13+ — Bulk select compartilhado com lista de tarefas
 const _selectedTaskIds = new Set();
@@ -259,7 +260,8 @@ function _loadKbFilters() {
     const saved = JSON.parse(localStorage.getItem(KB_FILTER_KEY) || '{}');
     // Merge respeitando o shape — qualquer chave estranha é ignorada
     // v4.49.51+ 'area' descartado se vier de localStorage legado (legacy save).
-    ['sector','type','project','assignee','observer','status'].forEach(k => {
+    // v4.49.55+ Inclui 'squad'.
+    ['sector','type','project','squad','assignee','observer','status'].forEach(k => {
       if (saved[k] !== undefined) kbFilterState[k] = saved[k];
     });
   } catch {}
@@ -719,11 +721,12 @@ function _renderKbFilters(container) {
   // tarefas "em andamento" agrupadas por área.
   // v4.49.51+ 'area' removido do filtro em todas as views (era legado/redundante
   // com 'sector'). Continua disponível como GROUPBY (agrupador de colunas).
+  // v4.49.55+ 'squad' adicionado em todas as views (agrupado por setor).
   const show = activeView === 'kanban'
     ? (groupBy === 'status'
-        ? ['sector','type','project','assignee','observer','meta']
-        : ['sector','type','project','assignee','observer','status','meta'])
-    : ['sector','assignee','observer','status','meta'];
+        ? ['sector','type','project','squad','assignee','observer','meta']
+        : ['sector','type','project','squad','assignee','observer','status','meta'])
+    : ['sector','squad','assignee','observer','status','meta'];
   wrap.innerHTML = renderFilterBar({
     show, state: kbFilterState,
     taskTypes: allTaskTypes,

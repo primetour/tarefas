@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 54,
-  build: '20260520-setor-unico-conceito-squad-nucleo',
+  patch: 55,
+  build: '20260520-fix-setor-squad-agrupado-em-3-views',
 };
 
 /** "1.2.0" */

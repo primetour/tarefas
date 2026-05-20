@@ -14,7 +14,7 @@ import { openCardPrefsModal }  from '../components/cardPrefsModal.js';
 import { createDoc, loadJsPdf, COL, STATUS_STYLE, txt, withExportGuard } from '../components/pdfKit.js';
 // v4.49.53+ Reusa lógica de setor (UNIÃO dyn + REQUESTING_AREAS + dedup)
 // que já está battle-tested em kanban/calendar/timeline via filterBar.
-import { getUserSectorOptions } from '../components/filterBar.js';
+import { getUserSectorOptions, squadOptsGrouped } from '../components/filterBar.js';
 import { wireUiKitMenus } from '../components/uiKit.js';
 import { userAvatarInner } from '../components/userAvatar.js';
 import {
@@ -1915,24 +1915,21 @@ function _attachPageEvents() {
     findSelected: findType,
     emptyLabel: 'Todos os tipos',
   });
-  const squadOpts = () => {
-    const ws = store.get('userWorkspaces') || [];
-    return [
-      { id: '__none__', label: '— Sem squad', icon: '○', color: '#6B7280' },
-      ...ws.map(w => ({
-        id: w.id,
-        label: w.name + (w.multiSector ? ' (multissetor)' : ''),
-        icon: w.icon || '◈',
-        color: w.color || '#6366F1',
-      })),
-    ];
+  // v4.49.55+ Filtro Squad agrupado por SETOR (pedido do user).
+  // Flatten apenas pra findSelected (lookup) — picker visual usa groups.
+  const flattenSquadGroups = () => {
+    const flat = [];
+    for (const g of squadOptsGrouped()) {
+      for (const item of g.items) flat.push(item);
+    }
+    return flat;
   };
-  const findSquad = (id) => squadOpts().find(o => o.id === id) || null;
+  const findSquad = (id) => flattenSquadGroups().find(o => o.id === id) || null;
   bindOptionPicker({
     btnId: 'filter-squad-btn',
     selectId: 'filter-squad',
     buildConfig: () => ({
-      options: squadOpts(),
+      groups: squadOptsGrouped(),
       empty: { id: '', label: 'Todos os squads' },
       searchPlaceholder: 'Buscar squad…',
     }),
