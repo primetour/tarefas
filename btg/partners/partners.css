@@ -376,3 +376,23 @@
   background: var(--btg-navy);
   border-radius: 999px;
 }
+
+/* Intro: corpo agora é div com múltiplos <p>, h3 "Experiências selecionadas" */
+.partners-intro__body p { margin: 0; }
+.partners-intro__body p + p { margin-top: 16px; }
+
+.partners-intro__experiencias {
+  margin-top: 48px;
+  font-size: 24px;
+  font-weight: 400;
+  color: var(--btg-navy);
+}
+
+/* Why: novo subtitle abaixo do título */
+.partners-why__subtitle {
+  margin-top: 16px;
+  max-width: 520px;
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--btg-navy-soft);
+}

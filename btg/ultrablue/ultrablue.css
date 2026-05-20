@@ -350,3 +350,23 @@
   background: var(--ultrablue-navy);
   border-radius: 999px;
 }
+
+/* Intro: corpo agora é div com múltiplos <p>, h3 "Experiências selecionadas" */
+.ultrablue-intro__body p { margin: 0; }
+.ultrablue-intro__body p + p { margin-top: 16px; }
+
+.ultrablue-intro__experiencias {
+  margin-top: 48px;
+  font-size: 24px;
+  font-weight: 400;
+  color: var(--ultrablue-navy);
+}
+
+/* Why: novo subtitle abaixo do título */
+.ultrablue-why__subtitle {
+  margin-top: 16px;
+  max-width: 520px;
+  font-size: 16px;
+  line-height: 1.6;
+  color: rgba(5, 19, 42, 0.75);
+}
