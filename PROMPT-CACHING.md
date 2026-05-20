@@ -52,6 +52,13 @@ const systemField = useCache
 - `usage.cache_creation_input_tokens` — tokens escritos no cache
 - `usage.cache_read_input_tokens` — tokens lidos do cache
 
+**Caso de uso fora da Cloud Function** (4.49.41+): `scripts/classify-content-ai.js`
+replica o mesmo padrão diretamente na chamada `api.anthropic.com` do CI:
+o system prompt do agente `nl-content-classifier` tem ~7k chars e é
+cacheado a cada run diária. Cache hit típico cobra ~10% do input total,
+reduzindo o custo da classificação de cada doc pra **~US$ 0,0004** —
+operação completa fica em **< US$ 0,50/mês**.
+
 ### OpenAI — Implícito (passive logging)
 
 A partir de **gpt-4o-2024-12-17** (e gpt-4o-mini correspondente), OpenAI cacheia automaticamente prompts > 1024 tokens. Sem código necessário — funciona sozinho se a API key for usada.

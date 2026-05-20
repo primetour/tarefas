@@ -98,7 +98,7 @@ O PRIMETOUR e uma plataforma SaaS proprietaria de gestao operacional desenvolvid
 
 ### 3.4 Hub de Marketing Multicanal
 - **Calendario de Conteudo** — planejamento editorial com visualizacao Mes/Semana/Lista, 10 plataformas, 10 tipos de conteudo, workflow de 5 etapas (ideia → rascunho → revisao → aprovado → publicado), sugestao IA de conteudo semanal, geracao de descricao via IA, conversao direta de ideia em tarefa, pagina publica `calendario-conteudo.html` (read-only com filtros real-time)
-- **Newsletters (Salesforce Marketing Cloud)** — sync automatico de metricas: disparos, entregas, aberturas, cliques, bounces
+- **Newsletters (Salesforce Marketing Cloud)** — sync automatico de metricas das 5 BUs (Primetour, BTG Partners, BTG Ultrablue, Centurion, PTS): disparos, entregas, aberturas, cliques, bounces. Aba "Conteudo & Temas" com enriquecimento deterministico (148 cidades + 51 paises + 50+ marcas hoteleiras), classificacao dupla Comercial × Turismo (4 × 9 categorias), modal "Ver arte" com preview, exports XLS/PDF/PPTX, classificador IA em shadow mode (Claude Haiku 4.5) com cutover/rollback gated por concordancia ≥90%
 - **Instagram (Meta API)** — seguidores, alcance, engajamento, top posts
 - **Google Analytics 4** — sessoes, pageviews, fontes de trafego, dispositivos, paises, paginas mais visitadas
 - **Landing Pages** — builder com 5 layouts (destino, campanha, experiencia, multi-destino), CMS por secoes, links publicos com tracking
