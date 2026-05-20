@@ -49,6 +49,22 @@ service cloud.firestore {
       return isAdmin() || isManager();
     }
 
+    // v4.49.50+ Helper genérico de permission granular (espelha store.can()):
+    // master → sempre true; override per-user (userDoc.permissionOverrides[perm])
+    // tem prioridade; senão lê role base (roles/{roleId}.permissions[perm]).
+    // Use pra permissions específicas que admin pode delegar a coord/analista
+    // sem precisar de role custom (ex: content_calendar_meta_manage,
+    // portal_destinations_manage, etc.).
+    function hasPermission(perm) {
+      return isMaster() || (isAuth() && (
+        // Override per-user (true OU explicit false). Se undefined → ignora.
+        userDoc().permissionOverrides[perm] == true ||
+        // Role base. exists() defende contra roleId inválido.
+        (exists(/databases/$(database)/documents/roles/$(userDoc().roleId)) &&
+         get(/databases/$(database)/documents/roles/$(userDoc().roleId)).data.permissions[perm] == true)
+      ));
+    }
+
     // ── Usuários ──────────────────────────────────────────────
     // SECURITY NOTE (audit 2026-05-15): read aberto pra auth users por
     // necessidade operacional — UI exibe nome+avatar+role+sector em centenas
@@ -211,23 +227,25 @@ service cloud.firestore {
     // (Post, Reel, ...). Substituem PLATFORM_OPTIONS/CONTENT_TYPE_OPTIONS
     // hardcoded — agora editáveis via /content-config.
     // Leitura aberta (dropdowns precisam carregar mesmo pra users sem
-    // permissão de admin); escrita só admin; delete só master.
+    // permissão de admin); escrita: admin OU permission granular
+    // content_calendar_meta_manage (v4.49.50+ liberou pra analista/coord
+    // quando admin marcar a perm no role ou override); delete só master.
     match /content_platforms/{id} {
       allow read:   if isAuth();
-      allow create: if isAdmin();
-      allow update: if isAdmin();
+      allow create: if isAdmin() || hasPermission('content_calendar_meta_manage');
+      allow update: if isAdmin() || hasPermission('content_calendar_meta_manage');
       allow delete: if isMaster();
     }
     match /content_contents/{id} {
       allow read:   if isAuth();
-      allow create: if isAdmin();
-      allow update: if isAdmin();
+      allow create: if isAdmin() || hasPermission('content_calendar_meta_manage');
+      allow update: if isAdmin() || hasPermission('content_calendar_meta_manage');
       allow delete: if isMaster();
     }
     match /content_categories/{id} {
       allow read:   if isAuth();
-      allow create: if isAdmin();
-      allow update: if isAdmin();
+      allow create: if isAdmin() || hasPermission('content_calendar_meta_manage');
+      allow update: if isAdmin() || hasPermission('content_calendar_meta_manage');
       allow delete: if isMaster();
     }
 

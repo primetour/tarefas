@@ -112,7 +112,15 @@ let CONTENT_TYPE_OPTIONS = [
 // 4.35.13+ Quick create inline: nova plataforma ou tipo direto do modal de slot.
 // Abre um modal pequeno só com nome+icon+cor, salva no Firestore, recarrega
 // listas e re-seleciona o item novo no dropdown.
+// v4.49.50+ Defesa em profundidade: re-checa permission no handler (defesa
+// contra DOM tampering — botão pode ser injetado via console, mas o save é
+// sempre permission-gated). Firestore rules em content_meta também valem.
 async function _quickCreateMeta(kind) {
+  if (!store.can('content_calendar_meta_manage') && !store.can('system_manage_settings') && !store.isMaster()) {
+    const { toast } = await import('../components/toast.js');
+    toast.error('Sem permissão para criar metadados do calendário de conteúdo.');
+    return;
+  }
   const { renderEmojiPicker, bindEmojiPicker } = await import('../components/emojiPicker.js');
   const what = kind === 'platform' ? 'plataforma'
              : kind === 'category' ? 'categoria'
@@ -2764,7 +2772,7 @@ function openSlotModal(slot, prefillDate) {
               ${PLATFORM_LIST.map(p => `<option value="${p.value}" ${s.platform === p.value ? 'selected' : ''}>${esc(p.label)}</option>`).join('')}
             </select>
             ${renderPickerButton({ btnId: 'cc-f-platform-btn', selected: findOption(PLATFORM_OPTIONS, s.platform), emptyLabel: '— Plataforma —' })}
-            ${(store.can('system_manage_settings') || store.isMaster()) ? `
+            ${(store.can('content_calendar_meta_manage') || store.can('system_manage_settings') || store.isMaster()) ? `
               <button type="button" id="cc-f-platform-new" style="font-size:0.7rem;color:var(--brand-gold);
                 background:none;border:none;cursor:pointer;padding:4px 0;margin-top:2px;text-decoration:underline;">
                 + Criar nova plataforma
@@ -2777,7 +2785,7 @@ function openSlotModal(slot, prefillDate) {
               ${CONTENT_TYPE_LIST.map(t => `<option value="${t.value}" ${s.contentType === t.value ? 'selected' : ''}>${esc(t.label)}</option>`).join('')}
             </select>
             ${renderPickerButton({ btnId: 'cc-f-contentType-btn', selected: findOption(CONTENT_TYPE_OPTIONS, s.contentType), emptyLabel: '— Tipo —' })}
-            ${(store.can('system_manage_settings') || store.isMaster()) ? `
+            ${(store.can('content_calendar_meta_manage') || store.can('system_manage_settings') || store.isMaster()) ? `
               <button type="button" id="cc-f-content-new" style="font-size:0.7rem;color:var(--brand-gold);
                 background:none;border:none;cursor:pointer;padding:4px 0;margin-top:2px;text-decoration:underline;">
                 + Criar novo tipo
@@ -2815,7 +2823,7 @@ function openSlotModal(slot, prefillDate) {
             ${CATEGORY_LIST.map(c => `<option value="${c.value}" ${s.category === c.value ? 'selected' : ''}>${esc(c.label)}</option>`).join('')}
           </select>
           ${renderPickerButton({ btnId: 'cc-f-category-btn', selected: findOption(CATEGORY_OPTIONS, s.category), emptyLabel: '— Categoria —' })}
-          ${(store.can('system_manage_settings') || store.isMaster()) ? `
+          ${(store.can('content_calendar_meta_manage') || store.can('system_manage_settings') || store.isMaster()) ? `
             <button type="button" id="cc-f-category-new" style="font-size:0.7rem;color:var(--brand-gold);
               background:none;border:none;cursor:pointer;padding:4px 0;margin-top:2px;text-decoration:underline;">
               + Criar nova categoria

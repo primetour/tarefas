@@ -145,9 +145,14 @@ export const PERMISSION_CATALOG = [
   {
     group: 'Calendário de Conteúdo',
     permissions: [
-      { key: 'content_calendar_view',   label: 'Visualizar calendário de conteúdo', info: 'Ver o calendário de conteúdo e slots de publicação.' },
-      { key: 'content_calendar_create', label: 'Criar e editar slots de conteúdo',  info: 'Criar, editar e sugerir conteúdo com IA.' },
-      { key: 'content_calendar_manage', label: 'Administrar calendário',            info: 'Ver todos os slots, aprovar conteúdos, gerar relatórios.' },
+      { key: 'content_calendar_view',         label: 'Visualizar calendário de conteúdo',        info: 'Ver o calendário de conteúdo e slots de publicação.' },
+      { key: 'content_calendar_create',       label: 'Criar e editar slots de conteúdo',         info: 'Criar, editar e sugerir conteúdo com IA.' },
+      { key: 'content_calendar_manage',       label: 'Administrar calendário',                   info: 'Ver todos os slots, aprovar conteúdos, gerar relatórios.' },
+      // v4.49.50+ Granularidade pra liberar "+ criar nova plataforma/tipo/categoria"
+      // pra analista/coord/gerência sem precisar dar system_manage_settings (perm
+      // "tudo ou nada" da diretoria). Antes desse perm o gate era hardcoded
+      // (system_manage_settings || isMaster) — only diretor podia criar metadados.
+      { key: 'content_calendar_meta_manage',  label: 'Criar plataformas, tipos e categorias',    info: 'Quick create de novas plataformas, tipos de conteúdo e categorias direto do modal de slot (+ Criar nova plataforma/tipo/categoria). Edição/exclusão completa continua em Administração → Conteúdo · Config.' },
     ],
   },
   {
@@ -255,7 +260,7 @@ export const SYSTEM_ROLES = [
       portal_segments_manage: true,
       portal_areas_view: true, portal_areas_manage: true,
       roteiro_access: true, roteiro_create: true, roteiro_manage: true, roteiro_view_cost: true,
-      content_calendar_view: true, content_calendar_create: true, content_calendar_manage: true,
+      content_calendar_view: true, content_calendar_create: true, content_calendar_manage: true, content_calendar_meta_manage: true,
       site_audit_view: true, site_audit_manage: true,
       requests_manage: true,
       absence_view_team: true, absence_manage_team: true,
@@ -301,7 +306,7 @@ export const SYSTEM_ROLES = [
       portal_segments_manage: true,
       portal_areas_view: true, portal_areas_manage: true,
       roteiro_access: true, roteiro_create: true, roteiro_manage: true, roteiro_view_cost: true,
-      content_calendar_view: true, content_calendar_create: true, content_calendar_manage: true,
+      content_calendar_view: true, content_calendar_create: true, content_calendar_manage: true, content_calendar_meta_manage: true,
       site_audit_view: true, site_audit_manage: true,
       requests_manage: true,
       absence_view_team: true, absence_manage_team: true,
@@ -347,7 +352,7 @@ export const SYSTEM_ROLES = [
       portal_segments_manage: true,
       portal_areas_view: true, portal_areas_manage: false,
       roteiro_access: true, roteiro_create: true, roteiro_manage: false, roteiro_view_cost: false,
-      content_calendar_view: true, content_calendar_create: true, content_calendar_manage: false,
+      content_calendar_view: true, content_calendar_create: true, content_calendar_manage: false, content_calendar_meta_manage: true,
       site_audit_view: true, site_audit_manage: false,
       requests_manage: true,
       absence_view_team: true, absence_manage_team: false,
@@ -396,7 +401,7 @@ export const SYSTEM_ROLES = [
       portal_segments_manage: false,
       portal_areas_view: false, portal_areas_manage: false,
       roteiro_access: false, roteiro_create: false, roteiro_manage: false, roteiro_view_cost: false,
-      content_calendar_view: false, content_calendar_create: false, content_calendar_manage: false,
+      content_calendar_view: false, content_calendar_create: false, content_calendar_manage: false, content_calendar_meta_manage: false,
       site_audit_view: false, site_audit_manage: false,
       requests_manage: false,
       absence_view_team: false, absence_manage_team: false,
@@ -457,7 +462,9 @@ export const SYSTEM_ROLES = [
       portal_segments_manage: true,
       portal_areas_view: true, portal_areas_manage: false,
       roteiro_access: true, roteiro_create: true, roteiro_manage: false, roteiro_view_cost: false,
-      content_calendar_view: true, content_calendar_create: true, content_calendar_manage: false,
+      // v4.49.50+ Analista NÃO cria metadados por default; admin pode liberar
+      // via override per-usuário ou na role customizada.
+      content_calendar_view: true, content_calendar_create: true, content_calendar_manage: false, content_calendar_meta_manage: false,
       site_audit_view: true, site_audit_manage: false,
       requests_manage: false,
       absence_view_team: false, absence_manage_team: false,

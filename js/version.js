@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 49,
-  build: '20260520-doc-tecnico-volta-final',
+  patch: 50,
+  build: '20260520-content-calendar-meta-perm-granular',
 };
 
 /** "1.2.0" */
