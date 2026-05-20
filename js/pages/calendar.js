@@ -29,7 +29,9 @@ let currentDate    = new Date();
 let activeView     = 'standard';  // 'standard' | 'pipeline'
 let activeGran     = 'month';     // 'month' | 'week' | 'day'
 let pipelineTypeId = '';
-let calFilterState = { sector: null, type: null, project: null, area: null, assignee: null, observer: null };
+// v4.49.51+ 'area' removido do filtro (legado, redundante com 'sector').
+// 'squad' e 'status' adicionados conforme pedido.
+let calFilterState = { sector: null, type: null, project: null, squad: null, status: null, assignee: null, observer: null };
 
 // 4.48.4+ Persistência de filtros do Calendário em localStorage
 const CAL_FILTER_KEY = 'calendar.filterState.v1';
@@ -39,7 +41,8 @@ function _saveCalFilters() {
 function _loadCalFilters() {
   try {
     const saved = JSON.parse(localStorage.getItem(CAL_FILTER_KEY) || '{}');
-    ['sector','type','project','area','assignee','observer'].forEach(k => {
+    // v4.49.51+ Aceita squad/status; descarta 'area' se vier de save legado.
+    ['sector','type','project','squad','status','assignee','observer'].forEach(k => {
       if (saved[k] !== undefined) calFilterState[k] = saved[k];
     });
   } catch {}
@@ -195,7 +198,8 @@ function renderFilters() {
   const projects  = _calProjects;
   const taskTypes = store.get('taskTypes') || [];
   wrap.innerHTML = renderFilterBar({
-    show: ['sector','type','project','area','assignee','observer','meta'],
+    // v4.49.51+ 'area' removido (legado), 'squad' e 'status' adicionados.
+    show: ['sector','type','project','squad','status','assignee','observer','meta'],
     state: calFilterState,
     taskTypes, projects,
     users: store.get('users') || [],

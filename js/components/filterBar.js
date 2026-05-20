@@ -95,6 +95,22 @@ function areaOpts() {
   }
   return list.map(a => ({ id: a, label: a, icon: '', color: hashColor(a) }));
 }
+// v4.49.51+ Squads (workspaces) — pra usar como filtro em Calendar/Steps/etc.
+// "Sem squad" é uma opção real (tasks podem ter workspaceId vazio).
+function squadOpts() {
+  const ws = Array.isArray(store.get('userWorkspaces')) ? store.get('userWorkspaces') : [];
+  const out = [];
+  out.push({ id: '__none__', label: '— Sem squad', icon: '∅', color: 'var(--text-muted)' });
+  for (const w of ws) {
+    out.push({
+      id: w.id,
+      label: w.name + (w.multiSector ? ' (multissetor)' : ''),
+      icon: w.icon || '◈',
+      color: w.color || hashColor(w.name),
+    });
+  }
+  return out;
+}
 // 4.40.25+ Padroniza avatar com perfil do user: avatarColor (cor escolhida
 // em Perfil → Aparência) substitui hashColor. Antes, picker mostrava cor
 // hash-derivada diferente do avatar real do user, causando confusão visual.
@@ -171,7 +187,13 @@ function pickerField(filterKey, selectId, opts, selectedOption, emptyLabel) {
 /**
  * renderFilterBar({ show, state, taskTypes, projects, users })
  * Returns HTML string. show = array of keys to include.
- * Available keys: 'sector', 'type', 'project', 'area', 'assignee', 'observer', 'status', 'meta'
+ * Available keys: 'sector', 'type', 'project', 'area', 'squad', 'assignee', 'observer', 'status', 'meta'
+ *
+ * Notas:
+ *  - 'area' é LEGADO (sinônimo de 'sector' em alguns docs antigos). v4.49.51+
+ *    removido do default dos views Steps/Calendar/Timeline; mantido aqui pra
+ *    código existente que ainda passa.
+ *  - 'squad' (v4.49.51+) filtra por task.workspaceId. Opção '__none__' = sem squad.
  */
 export function renderFilterBar(opts = {}) {
   const {
@@ -222,6 +244,10 @@ export function renderFilterBar(opts = {}) {
   if (show.includes('area')) {
     const o = areaOpts();
     blocks.push(pickerField('area', 'fb-area', o, findIn(o, state.area), 'Todas as áreas'));
+  }
+  if (show.includes('squad')) {
+    const o = squadOpts();
+    blocks.push(pickerField('squad', 'fb-squad', o, findIn(o, state.squad), 'Todos os squads'));
   }
   if (show.includes('assignee') && users.length) {
     // 4.21+ — assignee passou a aceitar multi-select. state.assignee agora pode
@@ -298,6 +324,7 @@ function buildOptionsForKey(key, opts) {
     }
     case 'project':  return projectOpts(projects);
     case 'area':     return areaOpts();
+    case 'squad':    return squadOpts();
     case 'assignee': return assigneeOpts(users);
     case 'observer': return observerOpts(users);
     case 'status':   return statusOpts();
@@ -311,6 +338,7 @@ const EMPTY_LABELS = {
   type:     'Todos os tipos',
   project:  'Todos os projetos',
   area:     'Todas as áreas',
+  squad:    'Todos os squads',
   assignee: 'Todos os responsáveis',
   observer: '👁 Todos os observadores',
   status:   'Todos os status',
@@ -343,7 +371,7 @@ export function bindFilterBar(container, state, onChange, ctx = {}) {
 
   // 2) Wire optionPicker em cada select escondido (single-select)
   // assignee é tratado separadamente abaixo (multi-select desde 4.21).
-  ['sector','type','project','area','status','meta'].forEach(key => {
+  ['sector','type','project','area','squad','status','meta'].forEach(key => {
     const sel = container.querySelector(`[data-filter="${key}"]`);
     if (!sel) return;
     const selectId = sel.id;
@@ -414,6 +442,10 @@ export function buildFilterFn(state = {}) {
     } else if (state.type     && task.typeId          !== state.type)             return false;
     if (state.project  && task.projectId       !== state.project)                 return false;
     if (state.area     && task.requestingArea  !== state.area)                    return false;
+    // v4.49.51+ Squad filter (workspaceId). '__none__' = tasks sem squad.
+    if (state.squad === '__none__') {
+      if (task.workspaceId) return false;
+    } else if (state.squad && task.workspaceId !== state.squad)                   return false;
     // 4.40.25+ COMBINAÇÃO assignee + observer: UNION quando ambos têm
     // seleção (task passa se assignee match OR observer match). Quando só
     // um dos dois tem seleção, comporta como filtro único (mesma semântica

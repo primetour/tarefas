@@ -21,7 +21,8 @@ const PT_MONTHS_SHORT = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','
 
 let allTasks      = [];
 let allProjects   = [];
-let tlFilterState = { sector: null, type: null, project: null, area: null, assignee: null, observer: null };
+// v4.49.51+ 'area' removido (legado, redundante com 'sector').
+let tlFilterState = { sector: null, type: null, project: null, assignee: null, observer: null };
 
 // 4.48.4+ Persistência de filtros do Timeline em localStorage
 const TL_FILTER_KEY = 'timeline.filterState.v1';
@@ -31,7 +32,8 @@ function _saveTlFilters() {
 function _loadTlFilters() {
   try {
     const saved = JSON.parse(localStorage.getItem(TL_FILTER_KEY) || '{}');
-    ['sector','type','project','area','assignee','observer'].forEach(k => {
+    // v4.49.51+ Aceita keys atuais; descarta 'area' se vier de save legado.
+    ['sector','type','project','assignee','observer'].forEach(k => {
       if (saved[k] !== undefined) tlFilterState[k] = saved[k];
     });
   } catch {}
@@ -159,7 +161,8 @@ function _renderTlFilters() {
   // Listing de tarefas continua filtrado por hierarquia/sector do user.
   const tlTaskTypes = store.get('taskTypes') || [];
   wrap.innerHTML = renderFilterBar({
-    show: ['sector','type','area','assignee','observer','meta'],
+    // v4.49.51+ 'area' removido (legado).
+    show: ['sector','type','assignee','observer','meta'],
     state: tlFilterState,
     taskTypes: tlTaskTypes,
     projects:  allProjects,

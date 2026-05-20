@@ -55,6 +55,10 @@ let filterDatePreset = 'last30Days'; // default: mantém lista leve mesmo com mi
 let filterDateFrom = '';         // ISO YYYY-MM-DD (para custom)
 let filterDateTo   = '';
 let filterArea     = '';
+// v4.49.51+ Filtro Setor — pedido do user (filtra por task.sector que é o
+// setor proprietário da tarefa, diferente do legado requestingArea que era
+// "área solicitante" do portal de pedidos).
+let filterSector   = '';
 let filterTag      = '';
 let filterSquad    = '';   // workspaceId | '' (todos)
 let filterMeta     = '';   // '' | 'with' | 'without' — vínculo com meta (metaLinks[] ou goalId legado)
@@ -91,6 +95,7 @@ const DEFAULT_FILTER_VISIBILITY = {
   datePreset: true, squad: true, area: false, tag: false,
   meta: true,
   type: true, // 4.49.17+ tipo de tarefa (visível por padrão; harmonização c/ Steps/Calendar/Timeline)
+  sector: true, // v4.49.51+ filtro por setor proprietário da tarefa
 };
 let filterVisibility = { ...DEFAULT_FILTER_VISIBILITY };
 function loadFilterVisibility() {
@@ -126,6 +131,7 @@ function loadFilterValues() {
     if (typeof saved.filterDateFrom   === 'string') filterDateFrom   = saved.filterDateFrom;
     if (typeof saved.filterDateTo     === 'string') filterDateTo     = saved.filterDateTo;
     if (typeof saved.filterArea       === 'string') filterArea       = saved.filterArea;
+    if (typeof saved.filterSector     === 'string') filterSector     = saved.filterSector;
     if (typeof saved.filterTag        === 'string') filterTag        = saved.filterTag;
     if (typeof saved.filterSquad      === 'string') filterSquad      = saved.filterSquad;
     if (typeof saved.filterMeta       === 'string') filterMeta       = saved.filterMeta;
@@ -143,7 +149,7 @@ function saveFilterValues() {
   _saveFilterTimer = setTimeout(() => {
     try {
       localStorage.setItem(FILTER_VALUES_KEY, JSON.stringify({
-        filterStatus, filterPriority, filterProject, filterType,
+        filterStatus, filterPriority, filterProject, filterType, filterSector,
         filterAssignee, filterObserver,
         filterDatePreset, filterDateFrom, filterDateTo,
         filterArea, filterTag, filterSquad, filterMeta, filterShowArchived,
@@ -323,6 +329,21 @@ export async function renderTasks(container) {
         <span class="toolbar-search-icon">\ud83d\udd0d</span>
         <input type="text" class="toolbar-search-input" id="tasks-search"
           placeholder="Buscar tarefas..." />
+      </div>
+      <!-- v4.49.51+ Filtro Setor (proprietário da tarefa = task.sector).
+           Não confundir com "Área solicitante" (legado, requestingArea). -->
+      <div class="toolbar-filter-wrap" style="${filterVisibility.sector?'':'display:none;'}min-width:170px;">
+        <select id="filter-sector" style="display:none;">
+          <option value="" ${filterSector===''?'selected':''}>Todos os setores</option>
+          ${(() => {
+            const sectors = store.getVisibleSectors();
+            const list = sectors === null
+              ? (store.get('sectors') || []).filter(s => s.active !== false).map(s => s.name)
+              : sectors;
+            return list.map(name => `<option value="${esc(name)}" ${filterSector===name?'selected':''}>${esc(name)}</option>`).join('');
+          })()}
+        </select>
+        ${renderPickerButton({ btnId: 'filter-sector-btn', selected: null, emptyLabel: 'Todos os setores' })}
       </div>
       <div class="toolbar-filter-wrap" style="${filterVisibility.status?'':'display:none;'}min-width:170px;">
         <select id="filter-status" style="display:none;">
@@ -1122,6 +1143,8 @@ function applyFilters() {
     });
   }
   if (filterArea)     result = result.filter(t => t.requestingArea === filterArea);
+  // v4.49.51+ Setor proprietário da tarefa (task.sector)
+  if (filterSector)   result = result.filter(t => t.sector === filterSector);
   if (filterTag)      result = result.filter(t => (t.tags || []).includes(filterTag));
   if (filterMeta) {
     // "Tem meta" se metaLinks[] preenchido OU goalId legado (back-compat).
@@ -1912,6 +1935,31 @@ function _attachPageEvents() {
     findSelected: findSquad,
     emptyLabel: 'Todos os squads',
   });
+
+  // v4.49.51+ Picker do filtro Setor — lista vinda do store (master vê todos,
+  // demais veem só os sectors visíveis via getVisibleSectors).
+  const sectorOpts = () => {
+    const visible = store.getVisibleSectors();
+    const names = visible === null
+      ? (store.get('sectors') || []).filter(s => s.active !== false).map(s => s.name)
+      : visible;
+    return names.map(name => ({
+      id: name, label: name, icon: '◈',
+      color: (typeof hashColor === 'function' ? hashColor(name) : '#6366F1'),
+    }));
+  };
+  const findSector = (id) => sectorOpts().find(o => o.id === id) || null;
+  bindOptionPicker({
+    btnId: 'filter-sector-btn',
+    selectId: 'filter-sector',
+    buildConfig: () => ({
+      options: sectorOpts(),
+      empty: { id: '', label: 'Todos os setores' },
+      searchPlaceholder: 'Buscar setor…',
+    }),
+    findSelected: findSector,
+    emptyLabel: 'Todos os setores',
+  });
   // Hash determinístico → cor estável por área
   const HASH_PALETTE = ['#6366F1','#8B5CF6','#EC4899','#F59E0B','#22C55E','#0EA5E9','#D4A843','#64748B','#10B981'];
   const hashColor = (s) => {
@@ -2010,6 +2058,8 @@ function _attachPageEvents() {
     emptyLabel: '👁 Todos os observadores',
   });
   document.getElementById('filter-area')?.addEventListener('change', e => { filterArea = e.target.value; saveFilterValues(); applyFilters(); });
+  // v4.49.51+ Setor (proprietário) — change listener
+  document.getElementById('filter-sector')?.addEventListener('change', e => { filterSector = e.target.value; saveFilterValues(); applyFilters(); });
   document.getElementById('filter-tag')?.addEventListener('change', e => { filterTag = e.target.value; saveFilterValues(); applyFilters(); });
   document.getElementById('filter-meta')?.addEventListener('change', e => { filterMeta = e.target.value; saveFilterValues(); applyFilters(); });
   document.getElementById('filter-archived')?.addEventListener('change', e => {

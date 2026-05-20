@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 50,
-  build: '20260520-content-calendar-meta-perm-granular',
+  patch: 51,
+  build: '20260520-filtros-setor-squad-status-area-removida',
 };
 
 /** "1.2.0" */
