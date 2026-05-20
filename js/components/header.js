@@ -65,7 +65,7 @@ const PAGE_TITLES = {
   'roteiro-dashboard':{ title: 'Dashboard de Roteiros' },
   // Administração
   users:              { title: 'Usuários' },
-  sectors:            { title: 'Setores e Núcleos' },
+  sectors:            { title: 'Setores e Squads' },
   'task-types':       { title: 'Tipos de Tarefa' },
   roles:              { title: 'Roles e Acesso' },
   'ai-hub':           { title: 'IA Hub' },

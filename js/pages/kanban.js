@@ -47,7 +47,7 @@ let   _bulkBar = null;
 const GROUPBY_KEY = 'primetour-kanban-groupby';
 const GROUPBY_OPTIONS = [
   { value: 'status',     label: 'Status',          field: 'status'         },
-  { value: 'area',       label: 'Área solicitante', field: 'requestingArea' },
+  { value: 'area',       label: 'Setor solicitante', field: 'requestingArea' },
   { value: 'sector',     label: 'Setor',           field: 'sector'         },
   { value: 'priority',   label: 'Prioridade',      field: 'priority'       },
   { value: 'project',    label: 'Projeto',         field: 'projectId'      },

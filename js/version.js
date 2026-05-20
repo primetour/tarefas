@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 53,
-  build: '20260520-hotfix-setor-dedup-tasks',
+  patch: 54,
+  build: '20260520-setor-unico-conceito-squad-nucleo',
 };
 
 /** "1.2.0" */

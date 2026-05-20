@@ -17,6 +17,8 @@ import {
   NEWSLETTER_STATUSES, TASK_TYPES, REQUESTING_AREAS,
 } from '../services/tasks.js';
 import { fetchProjects }  from '../services/projects.js';
+// v4.49.54+ Setor solicitante = mesma fonte do filtro Setor (módulo Setores)
+import { getUserSectorOptions } from './filterBar.js';
 import { getTaskType } from '../services/taskTypes.js';
 import { resolveUserName, resolveUserSync } from '../services/userResolver.js';
 /* getSubtaskTemplate: lazy-loaded (may not exist in older deployments) */
@@ -1247,8 +1249,10 @@ function buildHTML(task, users, projects, tags, assignees, observers, isEdit, ta
     projectList
       .map(p => `<option value="${p.id}" ${task.projectId===p.id?'selected':''}>${esc(p.icon||'')} ${esc(p.name)}</option>`).join('');
 
+  // v4.49.54+ Lista vem do módulo Setores (mesma fonte do filtro Setor).
+  // requestingArea é o setor SOLICITANTE — mesmo universo de divisões.
   const areaOpts = `<option value="">— Selecione —</option>` +
-    REQUESTING_AREAS.map(a => `<option value="${a}" ${task.requestingArea===a?'selected':''}>${esc(a)}</option>`).join('');
+    getUserSectorOptions().map(a => `<option value="${a}" ${task.requestingArea===a?'selected':''}>${esc(a)}</option>`).join('');
 
   const tagsHTML = tags.map(t => {
     const hue = [...t].reduce((a,c)=>a+c.charCodeAt(0),0)%360;
@@ -1318,7 +1322,7 @@ function buildHTML(task, users, projects, tags, assignees, observers, isEdit, ta
       title: 'Título', description: 'Descrição', desiredDate: 'Data',
       urgency: 'Urgência', outOfCalendar: 'Fora do calendário',
       variationId: 'Variação', variationName: 'Variação',
-      nucleo: 'Núcleo', sector: 'Setor', requestingArea: 'Área solicitante',
+      nucleo: 'Squad', sector: 'Setor', requestingArea: 'Setor solicitante',
     };
     const changedFields = (task.requesterEditChanges || '')
       .split(',').map(f => f.trim()).filter(Boolean)
@@ -1667,7 +1671,7 @@ function buildHTML(task, users, projects, tags, assignees, observers, isEdit, ta
         return '';
       })()}
       <div class="task-detail-field">
-        <div class="task-detail-label">Área solicitante</div>
+        <div class="task-detail-label">Setor solicitante</div>
         <!-- Select escondido = fonte de verdade pro handleSave/listeners.
              Botão visível abaixo é trigger do optionPicker. -->
         <select id="tm-area" style="display:none;">
@@ -1961,17 +1965,18 @@ function bindEvents(task, users, currentTags, currentAssignees, currentObservers
   // handleSave; bindOptionPicker dispara `change` ao selecionar pra que
   // listeners existentes continuem reagindo.
 
-  // Área solicitante (lista fixa de REQUESTING_AREAS)
+  // v4.49.54+ Setor solicitante puxa do módulo Setores (mesma fonte do
+  // filtro Setor). Antes: REQUESTING_AREAS hardcoded.
   bindOptionPicker({
     btnId:    'tm-area-btn',
     selectId: 'tm-area',
-    emptyLabel: '— Selecione área —',
+    emptyLabel: '— Selecione setor —',
     buildConfig: () => ({
-      empty: { id: '', label: '— Selecione área —' },
-      options: REQUESTING_AREAS.map(a => ({ id: a, label: a })),
-      searchPlaceholder: 'Buscar área…',
+      empty: { id: '', label: '— Selecione setor —' },
+      options: getUserSectorOptions().map(a => ({ id: a, label: a, icon: '◈' })),
+      searchPlaceholder: 'Buscar setor…',
     }),
-    findSelected: (id) => id ? { id, label: id } : null,
+    findSelected: (id) => id ? { id, label: id, icon: '◈' } : null,
   });
 
   // Projeto — lookup primário no cache _currentProjects (passado pra

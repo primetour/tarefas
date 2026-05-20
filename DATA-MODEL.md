@@ -14,6 +14,36 @@
 
 ## 📦 Operação
 
+### Modelo conceitual: Setor (v4.49.54+)
+
+**Setor** é a única abstração de divisão da empresa. Há 2 campos derivados,
+diferenciados apenas pelo CONTEXTO em que o setor aparece:
+
+| Campo técnico | Significado | Contexto |
+|---|---|---|
+| `task.sector` | Setor proprietário | Quem **executa** a tarefa |
+| `task.requestingArea` | Setor solicitante | Quem **pediu** a demanda (entre setores) |
+
+⚠ **Convenção**: `requestingArea` mantém o nome técnico antigo por
+back-compat (tarefas históricas com esse campo populado). Na UI o label
+é **"Setor solicitante"** (renomeado de "Área solicitante" em v4.49.54).
+
+**Fonte de verdade**: a collection `sectors` (módulo Setores). Tanto o
+filtro "Setor" quanto o filtro "Setor solicitante" puxam dela via
+`getUserSectorOptions()` em `js/components/filterBar.js`.
+
+`REQUESTING_AREAS` (lista hardcoded em `js/services/tasks.js`) é apenas
+**fallback técnico** pra auto-provisioning de tarefas legadas e
+back-compat com docs que referenciam nomes não-existentes mais no
+módulo (ex: "Concierge Bradesco" foi descontinuado).
+
+### Nomenclatura: Squad (v4.49.54+)
+
+A subdivisão dentro de um setor foi renomeada de **"Núcleo"** para
+**"Squad"** em toda a UI. O campo técnico permanece `nucleos[]` no doc
+da task e a collection segue chamada `nucleos` (back-compat). Apenas
+labels visíveis foram atualizadas.
+
 ### `tasks`
 - `id` (PK)
 - `typeId` (FK → task_types)

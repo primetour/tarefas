@@ -476,12 +476,15 @@ export async function renderTasks(container) {
         </optgroup>
         <option value="custom"      ${filterDatePreset==='custom'?'selected':''}>Período customizado…</option>
       </select>
+      <!-- v4.49.54+ "Área solicitante" agora puxa do mesmo módulo Setores
+           que o filtro Setor (área = setor pedindo demanda a outro setor).
+           Field técnico continua task.requestingArea por back-compat. -->
       <div class="toolbar-filter-wrap" style="${filterVisibility.area?'':'display:none;'}min-width:160px;">
         <select id="filter-area" style="display:none;">
-          <option value="">Todas as áreas</option>
-          ${REQUESTING_AREAS.map(a=>`<option value="${esc(a)}">${esc(a)}</option>`).join('')}
+          <option value="">Todos os setores solicitantes</option>
+          ${getUserSectorOptions().map(a=>`<option value="${esc(a)}">${esc(a)}</option>`).join('')}
         </select>
-        ${renderPickerButton({ btnId: 'filter-area-btn', selected: null, emptyLabel: 'Todas as áreas' })}
+        ${renderPickerButton({ btnId: 'filter-area-btn', selected: null, emptyLabel: 'Todos os setores solicitantes' })}
       </div>
       <select class="filter-select" id="filter-tag" style="${filterVisibility.tag?'':'display:none;'}">
         <option value="">Todas as tags</option>
@@ -1963,18 +1966,24 @@ function _attachPageEvents() {
     findSelected: findSector,
     emptyLabel: 'Todos os setores',
   });
-  const areaOpts = () => REQUESTING_AREAS.map(a => ({ id: a, label: a, icon: '', color: hashColor(a) }));
+  // v4.49.54+ Área solicitante = mesma fonte do filtro Setor (módulo Setores).
+  // Diferença é só de contexto: requestingArea é o setor que PEDIU a demanda;
+  // sector é o setor que EXECUTA. REQUESTING_AREAS hardcoded permanece em
+  // services/tasks.js como fallback técnico pra auto-provisioning legacy.
+  const areaOpts = () => getUserSectorOptions().map(a => ({
+    id: a, label: a, icon: '◈', color: hashColor(a),
+  }));
   const findArea = (id) => areaOpts().find(o => o.id === id) || null;
   bindOptionPicker({
     btnId: 'filter-area-btn',
     selectId: 'filter-area',
     buildConfig: () => ({
       options: areaOpts(),
-      empty: { id: '', label: 'Todas as áreas' },
-      searchPlaceholder: 'Buscar área…',
+      empty: { id: '', label: 'Todos os setores solicitantes' },
+      searchPlaceholder: 'Buscar setor…',
     }),
     findSelected: findArea,
-    emptyLabel: 'Todas as áreas',
+    emptyLabel: 'Todos os setores solicitantes',
   });
   // 4.40.25+ Padroniza avatar com perfil do user: avatarColor (cor escolhida
   // pelo user em Perfil → Aparência) substitui hashColor. Antes, picker
@@ -2121,7 +2130,7 @@ function openFilterConfigModal() {
     { key: 'assignee',   label: 'Responsável' },
     { key: 'observer',   label: '👁 Observador' },
     { key: 'datePreset', label: 'Prazo (hoje, semana, mês…)' },
-    { key: 'area',       label: 'Área solicitante' },
+    { key: 'area',       label: 'Setor solicitante' },
     { key: 'tag',        label: 'Tag' },
     { key: 'meta',       label: 'Meta vinculada (com / sem)' },
   ];

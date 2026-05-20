@@ -82,18 +82,17 @@ function projectOpts(list) {
   }));
 }
 function areaOpts() {
-  // 4.23.2+ — UNIÃO de dinâmicos + legados (mesma lógica de getUserSectorOptions).
-  const dyn = Array.isArray(store.get('sectors')) ? store.get('sectors') : [];
-  const dynByName = new Map(dyn.filter(s => s?.name)
-    .map(s => [String(s.name).toLowerCase(), s]));
-  const list = [];
-  for (const s of dyn.slice().sort((a, b) => (a.order ?? 999) - (b.order ?? 999))) {
-    if (s.active !== false) list.push(s.name);
-  }
-  for (const name of REQUESTING_AREAS) {
-    if (!dynByName.has(name.toLowerCase())) list.push(name);
-  }
-  return list.map(a => ({ id: a, label: a, icon: '', color: hashColor(a) }));
+  // v4.49.54+ FUNDAMENTAÇÃO: "Área solicitante" e "Setor" são o MESMO conceito
+  // (uma divisão da empresa). A diferença é só de CONTEXTO:
+  //   - task.sector          = setor proprietário (quem executa)
+  //   - task.requestingArea  = setor solicitante (quem pediu)
+  // Por isso, o dropdown do filtro de "Área solicitante" usa a MESMA fonte
+  // do filtro Setor (módulo Setores), não mais REQUESTING_AREAS hardcoded.
+  // REQUESTING_AREAS permanece como fallback técnico de back-compat pra
+  // tasks legadas com requestingArea = string que não existe mais no módulo.
+  return getUserSectorOptions().map(a => ({
+    id: a, label: a, icon: '', color: hashColor(a),
+  }));
 }
 // v4.49.51+ Squads (workspaces) — pra usar como filtro em Calendar/Steps/etc.
 // "Sem squad" é uma opção real (tasks podem ter workspaceId vazio).
@@ -150,23 +149,18 @@ const metaOpts = () => [
  */
 export function getUserSectorOptions() {
   const visible = store.getVisibleSectors(); // null | string[]
-  // 4.23.2+ — UNIÃO de dinâmicos + legados (não substitui).
-  // Mesma lógica de getActiveSectors() em services/sectors.js, inlined pra
-  // evitar import cíclico (filterBar é importado em vários lugares hot-path).
+  // v4.49.54+ DESACOPLADO de REQUESTING_AREAS (legacy hardcoded).
+  // Antes: união dyn + REQUESTING_AREAS causava o bug "Concierge Bradesco
+  // aparece no filtro Setor mas não existe no módulo Setores". User reportou
+  // que Setores é a fonte ÚNICA de verdade — REQUESTING_AREAS só vale pra
+  // filtro de "Área solicitante" (legacy do portal de pedidos).
   const dyn = Array.isArray(store.get('sectors')) ? store.get('sectors') : [];
-  const dynByName = new Map(dyn.filter(s => s?.name)
-    .map(s => [String(s.name).toLowerCase(), s]));
   const out = [];
   for (const s of dyn.slice().sort((a, b) => (a.order ?? 999) - (b.order ?? 999))) {
-    if (s.active !== false) out.push(s.name);
+    if (s?.name && s.active !== false) out.push(s.name);
   }
-  for (const name of REQUESTING_AREAS) {
-    if (!dynByName.has(name.toLowerCase())) out.push(name);
-  }
-  // v4.49.53+ Dedup defensivo (case-insensitive) em todas as ramificações.
-  // Causa do bug "Concierge 2x" em /tarefas: dados em store.get('sectors')
-  // ou em userProfile.visibleSectors podem ter o mesmo nome com casing
-  // diferente OU duplicatas literais (ex: importação massiva).
+  // Dedup defensivo (case-insensitive). Cobre dados upstream inconsistentes
+  // em store.get('sectors') ou userProfile.visibleSectors.
   const dedup = (arr) => {
     const seen = new Set();
     const result = [];
@@ -263,7 +257,7 @@ export function renderFilterBar(opts = {}) {
   }
   if (show.includes('area')) {
     const o = areaOpts();
-    blocks.push(pickerField('area', 'fb-area', o, findIn(o, state.area), 'Todas as áreas'));
+    blocks.push(pickerField('area', 'fb-area', o, findIn(o, state.area), 'Todos os setores solicitantes'));
   }
   if (show.includes('squad')) {
     const o = squadOpts();
@@ -357,7 +351,7 @@ const EMPTY_LABELS = {
   sector:   'Todos os setores',
   type:     'Todos os tipos',
   project:  'Todos os projetos',
-  area:     'Todas as áreas',
+  area:     'Todos os setores solicitantes',
   squad:    'Todos os squads',
   assignee: 'Todos os responsáveis',
   observer: '👁 Todos os observadores',

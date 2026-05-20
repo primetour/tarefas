@@ -116,7 +116,7 @@ function renderContent() {
             </select>
           </div>
           <div>
-            <label style="font-size:0.7rem;font-weight:600;display:block;margin-bottom:4px;">Área solicitante</label>
+            <label style="font-size:0.7rem;font-weight:600;display:block;margin-bottom:4px;">Setor solicitante</label>
             <select id="bdef-area" class="form-select" style="width:100%;font-size:0.8125rem;">
               <option value="">— Nenhuma —</option>
               ${REQUESTING_AREAS.map(a => `<option value="${esc(a)}" ${_defaults.requestingArea===a?'selected':''}>${esc(a)}</option>`).join('')}

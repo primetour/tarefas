@@ -98,7 +98,7 @@ const NAV_GROUPS = [
     label: 'Administração',
     items: [
       { route: 'users',      icon: 'users',      label: 'Usuários',          perm: 'system_manage_users' },
-      { route: 'sectors',    icon: 'sectors',    label: 'Setores e Núcleos', perm: 'system_manage_users' },
+      { route: 'sectors',    icon: 'sectors',    label: 'Setores e Squads',  perm: 'system_manage_users' },
       { route: 'task-types', icon: 'task-types', label: 'Tipos de Tarefa',   perm: 'task_type_create',    altPerm: 'system_manage_users' },
       { route: 'roles',      icon: 'roles',      label: 'Roles e Acesso',    perm: 'system_manage_roles', altPerm: 'system_manage_users' },
       // 4.49.12+ IA Hub: perm primária ai_dashboard_view; system_manage_settings é fallback legacy

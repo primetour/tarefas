@@ -21,7 +21,7 @@ import {
   getProductivityByType,
 } from '../services/analytics.js';
 import { fetchSurveys } from '../services/csat.js';
-import { REQUESTING_AREAS } from '../components/filterBar.js';
+import { REQUESTING_AREAS, getUserSectorOptions } from '../components/filterBar.js';
 import { renderPickerButton, bindOptionPicker } from '../components/optionPicker.js';
 
 const HASH_PALETTE = ['#6366F1','#8B5CF6','#EC4899','#F59E0B','#22C55E','#0EA5E9','#D4A843','#64748B','#10B981'];
@@ -104,8 +104,12 @@ export async function renderDashboards(container) {
         if (!uSector) return true;
         return _visibleSectors && _visibleSectors.includes(uSector);
       });
-  const visibleAreasOuter = _isMasterOrAdmin ? REQUESTING_AREAS
-    : REQUESTING_AREAS.filter(s => _visibleSectors && _visibleSectors.includes(s));
+  // v4.49.54+ Setor = divisão da empresa (fonte: módulo Setores). REQUESTING_AREAS
+  // hardcoded fica como fallback técnico de back-compat. Master vê todos os setores
+  // ativos do módulo; demais usuários veem apenas os do seu escopo.
+  const _allSectorsLive = getUserSectorOptions();
+  const visibleAreasOuter = _isMasterOrAdmin ? _allSectorsLive
+    : _allSectorsLive.filter(s => _visibleSectors && _visibleSectors.includes(s));
 
   container.innerHTML = `
     <div class="page-header">
@@ -184,9 +188,10 @@ export async function renderDashboards(container) {
             if (!uSector) return true; // user without sector — show (safe, tasks already filtered)
             return visibleSectors && visibleSectors.includes(uSector);
           });
-      // Filter areas: master sees all; others see only their visible sectors
-      const visibleAreas = isMasterOrAdmin ? REQUESTING_AREAS
-        : REQUESTING_AREAS.filter(s => visibleSectors && visibleSectors.includes(s));
+      // v4.49.54+ Setor = divisão da empresa (fonte: módulo Setores)
+      const allSectorsLive = getUserSectorOptions();
+      const visibleAreas = isMasterOrAdmin ? allSectorsLive
+        : allSectorsLive.filter(s => visibleSectors && visibleSectors.includes(s));
       // Núcleos: show all (núcleos are cross-sector, no permission restriction needed)
       return `
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;align-items:center;">
@@ -214,13 +219,13 @@ export async function renderDashboards(container) {
           return renderPickerButton({
             btnId: 'dash-nucleo-filter-btn',
             selected: n ? { id: n.value, label: n.label, icon: '◇', color: hashColor(n.value) } : null,
-            emptyLabel: 'Todos os núcleos',
+            emptyLabel: 'Todos os squads',
           });
         })()}
       </div>
       <div class="toolbar-filter-wrap" style="min-width:170px;">
         <select id="dash-sector-filter" style="display:none;">
-          <option value="">Todas as áreas</option>
+          <option value="">Todos os setores</option>
           ${visibleAreas.map(s => `<option value="${esc(s)}" ${filterSector===s?'selected':''}>${esc(s)}</option>`).join('')}
         </select>
         ${(() => {
@@ -228,7 +233,7 @@ export async function renderDashboards(container) {
           return renderPickerButton({
             btnId: 'dash-sector-filter-btn',
             selected: s ? { id: s, label: s, icon: '◈', color: hashColor(s) } : null,
-            emptyLabel: 'Todas as áreas',
+            emptyLabel: 'Todos os setores',
           });
         })()}
       </div>
@@ -397,11 +402,11 @@ export async function renderDashboards(container) {
       selectId: 'dash-sector-filter',
       buildConfig: () => ({
         options: dashSectorOpts(),
-        empty: { id: '', label: 'Todas as áreas' },
-        searchPlaceholder: 'Buscar área…',
+        empty: { id: '', label: 'Todos os setores' },
+        searchPlaceholder: 'Buscar setor…',
       }),
       findSelected: (id) => findIn(dashSectorOpts(), id),
-      emptyLabel: 'Todas as áreas',
+      emptyLabel: 'Todos os setores',
     });
   }
   document.getElementById('dash-clear-filters')?.addEventListener('click', () => {

@@ -82,7 +82,7 @@ export function mountBulkActionBar({
     <button data-action="assignees" class="bab-btn" title="Alterar responsáveis">${renderIcon('user',{size:14})} <span>Responsável</span></button>
     <button data-action="area"      class="bab-btn" title="Alterar área">${renderIcon('folder',{size:14})} <span>Área</span></button>
     <button data-action="projectId" class="bab-btn" title="Alterar projeto">${renderIcon('briefcase',{size:14})} <span>Projeto</span></button>
-    <button data-action="nucleos"   class="bab-btn" title="Alterar núcleo">${renderIcon('target',{size:14})} <span>Núcleo</span></button>
+    <button data-action="nucleos"   class="bab-btn" title="Alterar squad">${renderIcon('target',{size:14})} <span>Squad</span></button>
     <button data-action="delete"    class="bab-btn bab-danger" title="Excluir">${renderIcon('trash',{size:14})} <span>Excluir</span></button>
     <button id="${BAR_ID}-close" title="Limpar seleção"
       style="background:none;border:none;color:var(--text-muted);cursor:pointer;

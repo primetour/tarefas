@@ -339,7 +339,7 @@ async function openRequestDetail(req) {
             <div style="font-size:0.8125rem;color:var(--text-muted);">${esc(req.requesterEmail)}</div>
           </div>
           <div>
-            <div style="font-size:0.6875rem;color:var(--text-muted);margin-bottom:2px;">Área solicitante</div>
+            <div style="font-size:0.6875rem;color:var(--text-muted);margin-bottom:2px;">Setor solicitante</div>
             <div style="font-size:0.875rem;">${esc(req.requestingArea||'—')}</div>
             <div style="font-size:0.75rem;color:var(--text-muted);">Recebido: ${fmtDate(req.createdAt)}</div>
           </div>
@@ -555,7 +555,7 @@ async function openRequestDetail(req) {
             title: 'Título', description: 'Descrição', desiredDate: 'Data',
             urgency: 'Urgência', outOfCalendar: 'Fora do calendário',
             variationId: 'Variação', variationName: 'Variação',
-            nucleo: 'Núcleo', sector: 'Setor', requestingArea: 'Área solicitante',
+            nucleo: 'Squad', sector: 'Setor', requestingArea: 'Setor solicitante',
           };
           const history = Array.isArray(req.editHistory) ? req.editHistory : [];
           const hasEdits = history.length > 0;

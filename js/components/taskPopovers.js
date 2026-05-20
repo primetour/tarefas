@@ -205,9 +205,9 @@ export function openStatusPopover(anchor, { onPick, currentValue = null } = {}) 
 
 export function openAreaPopover(anchor, { onPick, currentValue = null } = {}) {
   const pop = mountPopover(anchor, `
-    <div class="tp-pop-header">Alterar área solicitante</div>
+    <div class="tp-pop-header">Alterar setor solicitante</div>
     <div style="padding:0 10px 8px;">
-      <input type="text" class="tp-pop-input" id="tp-area-search" placeholder="Buscar área…" autofocus>
+      <input type="text" class="tp-pop-input" id="tp-area-search" placeholder="Buscar setor…" autofocus>
     </div>
     <div id="tp-area-list" style="max-height:280px;overflow-y:auto;padding:0 4px;">
       ${REQUESTING_AREAS.map(a => `
@@ -403,7 +403,7 @@ export function openProjectPopover(anchor, { onPick, currentValue = null, allPro
 export function openNucleoPopover(anchor, { onPick, currentValue = [] } = {}) {
   const cur = Array.isArray(currentValue) ? currentValue : [];
   const pop = mountPopover(anchor, `
-    <div class="tp-pop-header">Alterar núcleo (substitui)</div>
+    <div class="tp-pop-header">Alterar squad (substitui)</div>
     ${NUCLEOS.map(n => `
       <div class="tp-pop-item" data-val="${esc(n.value)}"
         ${cur.includes(n.value) ? 'style="background:var(--bg-elevated);"' : ''}>
@@ -414,7 +414,7 @@ export function openNucleoPopover(anchor, { onPick, currentValue = [] } = {}) {
     `).join('')}
     <div style="padding:8px 10px;border-top:1px solid var(--border-subtle);margin-top:4px;">
       <button class="tp-pop-btn" id="tp-nuc-clear" style="width:100%;background:transparent;">
-        Remover núcleo
+        Remover squad
       </button>
     </div>
   `);
@@ -423,12 +423,12 @@ export function openNucleoPopover(anchor, { onPick, currentValue = [] } = {}) {
       const v = item.dataset.val;
       const label = NUCLEOS.find(n => n.value === v)?.label || v;
       closeTaskPopover();
-      onPick?.({ nucleos: [v] }, `núcleo: ${label}`);
+      onPick?.({ nucleos: [v] }, `squad: ${label}`);
     });
   });
   pop.querySelector('#tp-nuc-clear').addEventListener('click', () => {
     closeTaskPopover();
-    onPick?.({ nucleos: [] }, 'sem núcleo');
+    onPick?.({ nucleos: [] }, 'sem squad');
   });
 }
 

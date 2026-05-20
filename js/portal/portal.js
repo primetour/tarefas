@@ -384,8 +384,8 @@ async function renderForm(db, taskTypes, auth) {
                     style="background:var(--bg-surface);opacity:0.7;cursor:not-allowed;" />
                 </div>
                 <div class="form-group" id="fg-area">
-                  <label class="form-label">Área solicitante <span class="required">*</span>
-                    <span class="info-tip" title="Pode ser diferente da sua área, caso esteja solicitando em nome de outra.">ℹ</span>
+                  <label class="form-label">Setor solicitante <span class="required">*</span>
+                    <span class="info-tip" title="Setor que está pedindo a demanda. Pode ser diferente do seu setor, caso esteja solicitando em nome de outro.">ℹ</span>
                   </label>
                   <select class="form-select" id="p-area" style="display:none;">
                     ${REQUESTING_AREAS.map(a => `<option value="${a}" ${a===u.department?'selected':''}>${a}</option>`).join('')}
@@ -543,13 +543,13 @@ async function renderForm(db, taskTypes, auth) {
               <!-- Passo 5: Núcleo (pre-preenchido pelo slot) -->
               <div class="form-group" id="fg-nucleo" style="display:none;">
                 <label class="form-label">
-                  Núcleo responsável
-                  <span class="info-tip" title="Núcleo específico dentro do setor. Pode ser preenchido automaticamente ao clicar em um slot do calendário.">ℹ</span>
+                  Squad responsável
+                  <span class="info-tip" title="Squad específico dentro do setor. Pode ser preenchido automaticamente ao clicar em um slot do calendário.">ℹ</span>
                 </label>
                 <select class="form-select" id="p-nucleo" style="display:none;">
-                  <option value="">— Selecione o núcleo —</option>
+                  <option value="">— Selecione o squad —</option>
                 </select>
-                ${renderPickerButton({ btnId: 'p-nucleo-btn', selected: null, emptyLabel: '— Selecione o núcleo —' })}
+                ${renderPickerButton({ btnId: 'p-nucleo-btn', selected: null, emptyLabel: '— Selecione o squad —' })}
               </div>
 
               <!-- Passo 6: Título (pre-preenchido pelo slot) -->
@@ -1462,7 +1462,7 @@ function openFullscreenFormModal(db, taskTypes, opts = {}) {
           <div style="font-size:0.8125rem;font-weight:600;color:var(--text-primary);">${activeType?.icon||'📋'} ${esc(preTipo || '—')}</div>
         </div>
         <div style="padding:8px 12px;border-radius:6px;background:var(--bg-card);border:1px solid var(--border-subtle);">
-          <div style="font-size:0.625rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:2px;">Núcleo responsável</div>
+          <div style="font-size:0.625rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:2px;">Squad responsável</div>
           <div style="font-size:0.8125rem;font-weight:600;color:var(--text-primary);">🎨 ${esc(preNucleo)}</div>
         </div>
         <div style="padding:8px 12px;border-radius:6px;background:var(--bg-card);border:1px solid var(--border-subtle);">
@@ -2023,7 +2023,7 @@ async function openEditRequestModal(db, taskTypes, data) {
         </div>` : ''}
         ${editNucleo ? `
         <div style="padding:8px 12px;border-radius:6px;background:var(--bg-card);border:1px solid var(--border-subtle);">
-          <div style="font-size:0.5625rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:2px;">Núcleo</div>
+          <div style="font-size:0.5625rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:2px;">Squad</div>
           <div style="font-size:0.8125rem;font-weight:600;color:var(--text-primary);">🎨 ${esc(editNucleo)}</div>
         </div>` : ''}
         ${editVariation ? `
@@ -2311,7 +2311,7 @@ async function openEditRequestModal(db, taskTypes, data) {
           title: 'Título', description: 'Descrição', desiredDate: 'Data',
           urgency: 'Urgência', outOfCalendar: 'Fora do calendário',
           variationId: 'Variação', variationName: 'Variação',
-          nucleo: 'Núcleo', sector: 'Setor', requestingArea: 'Área solicitante',
+          nucleo: 'Squad', sector: 'Setor', requestingArea: 'Setor solicitante',
         };
         taskUpdate.requesterEditChanges = Object.keys(changes)
           .map(f => FIELD_LABELS[f] || f).join(', ');
@@ -2826,11 +2826,11 @@ function bindFormEvents(db, taskTypes) {
     selectId: 'p-area',
     buildConfig: () => ({
       options: buildAreaOptions(),
-      empty: { id: '', label: '— Selecione a área —' },
-      searchPlaceholder: 'Buscar área…',
+      empty: { id: '', label: '— Selecione o setor —' },
+      searchPlaceholder: 'Buscar setor…',
     }),
     findSelected: findAreaOption,
-    emptyLabel: '— Selecione a área —',
+    emptyLabel: '— Selecione o setor —',
   });
   bindOptionPicker({
     btnId: 'p-setor-btn',
@@ -2870,11 +2870,11 @@ function bindFormEvents(db, taskTypes) {
     selectId: 'p-nucleo',
     buildConfig: () => ({
       options: optionsFromSelect('p-nucleo', '◇', '#22C55E'),
-      empty: { id: '', label: '— Selecione o núcleo —' },
-      searchPlaceholder: 'Buscar núcleo…',
+      empty: { id: '', label: '— Selecione o squad —' },
+      searchPlaceholder: 'Buscar squad…',
     }),
     findSelected: (id) => findInSelect('p-nucleo', id, { icon: '◇', color: '#22C55E' }),
-    emptyLabel: '— Selecione o núcleo —',
+    emptyLabel: '— Selecione o squad —',
   });
 
   // ── Setor → filter types + nucleos ──────────────────────
@@ -2921,13 +2921,13 @@ function bindFormEvents(db, taskTypes) {
 
     // Show nucleos for this sector
     if (nucleoSel && nucleos.length) {
-      nucleoSel.innerHTML = '<option value="">— Selecione o núcleo —</option>' +
+      nucleoSel.innerHTML = '<option value="">— Selecione o squad —</option>' +
         nucleos.map(n => `<option value="${n.name}">${n.name}</option>`).join('');
       if (nucleoFG) nucleoFG.style.display = 'block';
     } else {
       if (nucleoFG) nucleoFG.style.display = 'none';
     }
-    refreshPickerButton('p-nucleo-btn', { selected: null, emptyLabel: '— Selecione o núcleo —' });
+    refreshPickerButton('p-nucleo-btn', { selected: null, emptyLabel: '— Selecione o squad —' });
   });
 
   // ── Type → show variations + calendar (NO SLA here) ────
