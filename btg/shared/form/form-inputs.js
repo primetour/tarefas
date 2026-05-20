@@ -266,6 +266,73 @@ export function inputImagem(store) {
   `;
 }
 
+// ─── INCLUI NO PACOTE (blocos repetíveis) ──────────────────
+//
+// Lista estruturada de inclusões. Cada bloco tem subtitulo (opcional,
+// destaque em negrito na página), topicos (multi-linha — 1 item por linha,
+// bullet auto) e valor (opcional — destaque tipo "A partir de USD 250").
+//
+// Múltiplos blocos permitem combos (ex: Classic Valentine's + Culinary).
+// Compat: quando vazio, oferece estado-empty com botão "Adicionar inclusão".
+// Bootstrap em modo edit auto-popula 1 bloco a partir do legado
+// `incluso_no_pacote` quando a oferta antiga não tem blocos.
+
+export function inputInclusoes(store) {
+  const blocks = store.get('inclusoes') || [];
+
+  if (blocks.length === 0) {
+    return `
+      <button type="button" class="btg-incluso-empty" data-block-add="inclusoes">
+        <span class="btg-incluso-empty__plus">+</span>
+        <span>Adicionar inclusão</span>
+      </button>
+    `;
+  }
+
+  return `
+    <div class="btg-incluso-list">
+      ${blocks.map((b, idx) => `
+        <div class="btg-incluso-block">
+          <div class="btg-incluso-block__head">
+            <p class="btg-incluso-block__label">Inclusão ${idx + 1}</p>
+            <button type="button" class="btg-incluso-block__remove"
+              data-block-remove="inclusoes" data-block-idx="${idx}">
+              Remover
+            </button>
+          </div>
+          <div class="btg-incluso-block__fields">
+            <label class="btg-incluso-block__field">
+              <span class="btg-incluso-block__field-label">Subtítulo (opcional)</span>
+              <input type="text" class="${INPUT_CLASS}"
+                placeholder="Ex: Classic Valentine's Experience"
+                data-block-path="inclusoes.${idx}.subtitulo"
+                value="${esc(b.subtitulo || '')}" />
+            </label>
+            <label class="btg-incluso-block__field">
+              <span class="btg-incluso-block__field-label">Tópicos da inclusão</span>
+              <textarea class="${TEXTAREA_CLASS}" rows="5"
+                placeholder="Garrafa de vinho no quarto no check-in&#10;Massagem relaxante (50min)&#10;Aula de culinária"
+                data-block-path="inclusoes.${idx}.topicos">${esc(b.topicos || '')}</textarea>
+              <small class="btg-incluso-block__hint">Um item por linha. O bullet (•) é adicionado automaticamente.</small>
+            </label>
+            <label class="btg-incluso-block__field">
+              <span class="btg-incluso-block__field-label">Valor (opcional)</span>
+              <input type="text" class="${INPUT_CLASS}"
+                placeholder="Ex: A partir de USD 250 por pessoa"
+                data-block-path="inclusoes.${idx}.valor"
+                value="${esc(b.valor || '')}" />
+            </label>
+          </div>
+        </div>
+      `).join('')}
+      <button type="button" class="btg-incluso-add" data-block-add="inclusoes">
+        <span class="btg-incluso-add__plus">+</span>
+        <span>Adicionar outra inclusão</span>
+      </button>
+    </div>
+  `;
+}
+
 // ─── EVENT BINDING ──────────────────────────────────────────
 
 /**
@@ -285,6 +352,16 @@ export function bindFormEvents(container, store, opts = {}) {
   // Inputs de texto / textarea / select (digitação — sem re-render pra não perder foco)
   container.addEventListener('input', (e) => {
     const t = e.target;
+    // Inputs aninhados em blocos repetíveis: data-block-path="parent.idx.key"
+    if (t.dataset && t.dataset.blockPath) {
+      const [parent, idxStr, key] = t.dataset.blockPath.split('.');
+      const idx = Number(idxStr);
+      const arr = (store.get(parent) || []).slice();
+      if (!arr[idx]) arr[idx] = {};
+      arr[idx] = { ...arr[idx], [key]: t.value };
+      store.set(parent, arr);
+      return;
+    }
     if (t.dataset && t.dataset.field) {
       store.set(t.dataset.field, t.value);
     }
@@ -389,6 +466,33 @@ export function bindFormEvents(container, store, opts = {}) {
         store.set('imagem_file', null);
         triggerRerender();
       });
+      return;
+    }
+
+    // Blocos repetíveis: adicionar novo bloco vazio
+    const addBlock = e.target.closest('[data-block-add]');
+    if (addBlock) {
+      const field = addBlock.dataset.blockAdd;
+      const arr = (store.get(field) || []).slice();
+      // Shape do bloco depende do campo. Por enquanto só "inclusoes".
+      const empty = field === 'inclusoes'
+        ? { subtitulo: '', topicos: '', valor: '' }
+        : {};
+      arr.push(empty);
+      store.set(field, arr);
+      triggerRerender();
+      return;
+    }
+
+    // Blocos repetíveis: remover bloco em idx
+    const removeBlock = e.target.closest('[data-block-remove]');
+    if (removeBlock) {
+      const field = removeBlock.dataset.blockRemove;
+      const idx = Number(removeBlock.dataset.blockIdx);
+      const arr = (store.get(field) || []).slice();
+      arr.splice(idx, 1);
+      store.set(field, arr);
+      triggerRerender();
       return;
     }
 

@@ -68,6 +68,18 @@ export function mount(opts = {}) {
         state.steps = getStepsForType(state.tipo);
         // Preenche store com valores existentes (sobrescreve defaults)
         store.reset({ ...defaultFormValues(), ...oferta });
+        // Migra legado: oferta antiga só tem `incluso_no_pacote` (texto livre).
+        // Auto-popula 1 bloco em `inclusoes` pra que o editor de blocos
+        // mostre o conteúdo existente em vez de form vazio.
+        const v = store.values();
+        if (
+          (!Array.isArray(v.inclusoes) || v.inclusoes.length === 0) &&
+          (v.incluso_no_pacote || '').trim()
+        ) {
+          store.set('inclusoes', [
+            { subtitulo: '', topicos: v.incluso_no_pacote, valor: '' },
+          ]);
+        }
         // Em edit, draft é por-id (evita conflitar com create)
         try {
           const cachedDraft = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null');

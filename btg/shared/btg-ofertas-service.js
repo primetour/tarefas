@@ -301,6 +301,22 @@ function stripFiles(values) {
   // File objects não serializam — devem ser tratados separadamente
   // (upload pra R2 antes de salvar a oferta).
   const { imagem_file, galeria_files, ...rest } = values;
+  // Sincroniza legado `incluso_no_pacote` a partir dos blocos estruturados
+  // quando preenchidos. Mantém AI prompts, importer e renderização legada
+  // funcionando enquanto a migração não está completa.
+  if (Array.isArray(rest.inclusoes) && rest.inclusoes.length > 0) {
+    const lines = [];
+    rest.inclusoes.forEach((b) => {
+      if (b?.subtitulo) lines.push(b.subtitulo);
+      String(b?.topicos || '')
+        .split(/\n+/)
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .forEach((t) => lines.push(t));
+      if (b?.valor) lines.push(b.valor);
+    });
+    rest.incluso_no_pacote = lines.join('\n');
+  }
   return rest;
 }
 

@@ -122,7 +122,18 @@ function renderCard(v, slot, imageUrl, meta) {
 function renderPage(v, slot, imageUrl, meta) {
   const sobConsulta = v.preco_sob_consulta;
   const dateRange = [fmtDate(v.data_de_inicio), fmtDate(v.data_final)].filter(Boolean).join(' → ');
-  const inclui = (v.incluso_no_pacote || '').split(/[\n;]/).map((s) => s.trim()).filter(Boolean);
+  // Inclui no pacote: prefere blocos estruturados; fallback pro texto livre.
+  const incluiBlocks = Array.isArray(v.inclusoes) && v.inclusoes.length > 0
+    ? v.inclusoes.map((b) => ({
+        subtitulo: b?.subtitulo || '',
+        topicos: String(b?.topicos || '').split(/\n+/).map((s) => s.trim()).filter(Boolean),
+        valor: b?.valor || '',
+      })).filter((b) => b.subtitulo || b.topicos.length || b.valor)
+    : null;
+  const incluiFlat = !incluiBlocks
+    ? (v.incluso_no_pacote || '').split(/[\n;]/).map((s) => s.trim()).filter(Boolean)
+    : null;
+  const hasIncluso = (incluiBlocks && incluiBlocks.length) || (incluiFlat && incluiFlat.length);
   const benef = (v.beneficios_marca || '').split(/[\n;]/).map((s) => s.trim()).filter(Boolean);
   const cond = (v.condicoes_observacoes || '').split(/[\n;]/).map((s) => s.trim()).filter(Boolean);
 
@@ -172,10 +183,16 @@ function renderPage(v, slot, imageUrl, meta) {
         </div>
       `)}
 
-      ${inclui.length ? slot('incluso', `
+      ${hasIncluso ? slot('incluso', `
         <div class="lp-page__list">
           <p class="lp-page__list-title">Inclui no pacote</p>
-          <ul>${inclui.slice(0, 4).map((i) => `<li>${esc(i)}</li>`).join('')}</ul>
+          ${incluiBlocks ? incluiBlocks.slice(0, 2).map((b) => `
+            ${b.subtitulo ? `<p class="lp-page__list-subtitle">${esc(b.subtitulo)}</p>` : ''}
+            ${b.topicos.length ? `<ul>${b.topicos.slice(0, 4).map((t) => `<li>${esc(t)}</li>`).join('')}</ul>` : ''}
+            ${b.valor ? `<p class="lp-page__list-value">${esc(b.valor)}</p>` : ''}
+          `).join('') : `
+            <ul>${incluiFlat.slice(0, 4).map((i) => `<li>${esc(i)}</li>`).join('')}</ul>
+          `}
         </div>
       `) : ''}
 

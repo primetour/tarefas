@@ -22,6 +22,7 @@ import {
   inputDatas,
   inputDataExpiracao,
   inputImagem,
+  inputInclusoes,
 } from './form-inputs.js';
 
 const TIPO_OFERTA = {
@@ -281,14 +282,19 @@ const qExpiracao = {
   render: (s) => inputDataExpiracao(s),
 };
 
-const qIncluso = (label, placeholder) => ({
+// 4.43.0+ (BTG migration Fase F): substitui textarea livre por blocos
+// estruturados (subtitulo + topicos + valor). Os parâmetros `label` e
+// `placeholder` ficam só pro título da pergunta (placeholder dos tópicos
+// é embutido em inputInclusoes). Backward compat: `incluso_no_pacote`
+// continua sendo derivado em btg-ofertas-service.js no save.
+const qIncluso = (label, _placeholder) => ({
   id: 'incluso',
   title: label,
-  hint: 'Liste um item por linha.',
+  hint: 'Cada bloco vira uma seção na página. Use múltiplos blocos pra combos (ex: Classic + Culinary).',
   optional: true,
-  fields: ['incluso_no_pacote'],
+  fields: ['inclusoes'],
   previewTargets: ['incluso'],
-  render: (s) => inputTextarea(s, 'incluso_no_pacote', { rows: 5, placeholder, aiField: 'incluso_no_pacote' }),
+  render: (s) => inputInclusoes(s),
 });
 
 const qBeneficios = {

@@ -319,3 +319,27 @@
 .oferta-detalhe__cta .btg-cta-wp {
   margin-top: 24px;
 }
+
+/* "Inclui no pacote" — blocos estruturados (subtítulo + tópicos + valor) */
+
+.oferta-detalhe__lista--incluso .oferta-detalhe__incluso-block + .oferta-detalhe__incluso-block {
+  margin-top: 28px;
+}
+
+.oferta-detalhe__incluso-subtitulo {
+  margin-top: 20px;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.oferta-detalhe__incluso-block ul {
+  /* Mantém o layout 2-colunas das listas, mas via classe pai .oferta-detalhe__lista */
+  margin-top: 12px;
+}
+
+.oferta-detalhe__incluso-valor {
+  margin-top: 12px;
+  font-size: 15px;
+  font-weight: 600;
+}

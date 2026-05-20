@@ -73,6 +73,10 @@ export function defaultFormValues(tipo = '') {
     contexto_do_preco: '',
     taxas: '',
     incluso_no_pacote: '',
+    // Blocos estruturados "Inclui no pacote" (subtitulo + topicos + valor).
+    // Quando preenchido, prefere-se sobre `incluso_no_pacote` (legado).
+    // Save em ofertas-service deriva o legado a partir destes blocos.
+    inclusoes: [],
     imagem_file: null,        // File object (upload manual; volátil — não persiste)
     imagem_url: '',           // URL pública (escolhida do banco curado ou pós-upload R2)
     imagem_meta: null,        // { name, placeName, country, city } quando vier do banco curado

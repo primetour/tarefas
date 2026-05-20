@@ -70,6 +70,15 @@ export async function renderOfertaDetalheDynamic(brand) {
     localEvento: oferta.local_evento || '',
     categoriaIngresso: oferta.categoria_ingresso || '',
     inclui: splitLines(oferta.incluso_no_pacote),
+    inclusoesBlocks: Array.isArray(oferta.inclusoes) && oferta.inclusoes.length > 0
+      ? oferta.inclusoes
+          .map((b) => ({
+            subtitulo: b?.subtitulo || '',
+            topicos: splitLines(b?.topicos),
+            valor: b?.valor || '',
+          }))
+          .filter((b) => b.subtitulo || b.topicos.length || b.valor)
+      : null,
     beneficios: splitLines(oferta.beneficios_marca),
     condicoes: splitLines(oferta.condicoes_observacoes),
   };
@@ -229,15 +238,23 @@ export function renderOfertaDetalhe(cfg) {
           `}
         </section>
 
-        ${o.inclui && o.inclui.length > 0 ? `
-          <section class="oferta-detalhe__lista">
+        ${(o.inclusoesBlocks && o.inclusoesBlocks.length) || (o.inclui && o.inclui.length > 0) ? `
+          <section class="oferta-detalhe__lista oferta-detalhe__lista--incluso">
             <div class="oferta-detalhe__lista-head">
               ${icon('list-checks', 'icon-md')}
               <h2>Inclui no pacote</h2>
             </div>
-            <ul>
-              ${o.inclui.map((i) => `<li>${esc(i)}</li>`).join('')}
-            </ul>
+            ${o.inclusoesBlocks && o.inclusoesBlocks.length ? `
+              ${o.inclusoesBlocks.map((b) => `
+                <div class="oferta-detalhe__incluso-block">
+                  ${b.subtitulo ? `<p class="oferta-detalhe__incluso-subtitulo" style="color:${t.accent};">${esc(b.subtitulo)}</p>` : ''}
+                  ${b.topicos.length ? `<ul>${b.topicos.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>` : ''}
+                  ${b.valor ? `<p class="oferta-detalhe__incluso-valor" style="color:${t.accent};">${esc(b.valor)}</p>` : ''}
+                </div>
+              `).join('')}
+            ` : `
+              <ul>${o.inclui.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>
+            `}
           </section>
         ` : ''}
 
