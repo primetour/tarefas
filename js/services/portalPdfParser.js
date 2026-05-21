@@ -106,8 +106,10 @@ function normalizeCountry(name) {
 }
 
 function parseFileName(name) {
+  // v4.49.73+ Tira extensão .pdf, .docx e .doc (era só .pdf — DOCX
+  // ficava com "Cape Town.docx" como cidade, não batia em destino cadastrado).
   const base = name
-    .replace(/\.[pP][dD][fF]$/, '')
+    .replace(/\.(pdf|docx?|xlsx?)$/i, '')
     .replace(/_PTS$/i, '')
     .replace(/\s*\(Val\..*?\)\s*/i, '')
     .trim();

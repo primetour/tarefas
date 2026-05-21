@@ -572,7 +572,7 @@ function openOverwriteConfirmModal(overwrites, onConfirm) {
             <strong>${esc([c.dest.cidade, c.dest.pais].filter(Boolean).join(', '))}</strong>
             <span style="color:var(--text-muted);">
               · ${c.existingTip.segmentCount} segmento${c.existingTip.segmentCount > 1 ? 's' : ''}
-              atual${c.existingTip.segmentCount > 1 ? 'is' : ''}:
+              atua${c.existingTip.segmentCount > 1 ? 'is' : 'l'}:
               <em>${c.existingTip.segmentLabels.map(l => esc(l)).join(', ')}</em>
             </span>
           </div>
@@ -624,18 +624,40 @@ function _renderDestCard({ key, dest, destDoc, matchLevel, suggestion, existingT
       'Cadastrado (só país)';
   }
 
-  // Dropdown options pra vincular manualmente — agrupa por continente
+  // v4.49.73+ Dropdown hierárquico: agrupa por continente em <optgroup>,
+  // dentro de cada continente lista "País — Cidade" ordenado.
+  // Antes era flat ("Cidade · País · Continente" em sequência), difícil
+  // de varrer em país com várias cidades. Agora segue padrão browser:
+  //   ── África ──
+  //     África do Sul — Cape Town
+  //     África do Sul — Franschhoek
+  //     Marrocos — Casablanca
+  //     Marrocos — Fès
+  //   ── América do Norte ──
+  //     ...
   const dropdownOptions = (() => {
-    const sorted = [...allDests].sort((a, b) => {
-      const c = (a.continent||'').localeCompare(b.continent||'', 'pt-BR');
-      if (c !== 0) return c;
-      const co = (a.country||'').localeCompare(b.country||'', 'pt-BR');
-      if (co !== 0) return co;
-      return (a.city||'').localeCompare(b.city||'', 'pt-BR');
-    });
-    return sorted.map(d => {
-      const txt = [d.city, d.country, d.continent].filter(Boolean).join(' · ');
-      return `<option value="${esc(d.id)}">${esc(txt)}</option>`;
+    const byContinent = {};
+    for (const d of allDests) {
+      const cont = d.continent || '— sem continente —';
+      if (!byContinent[cont]) byContinent[cont] = [];
+      byContinent[cont].push(d);
+    }
+    const sortedContinents = Object.keys(byContinent).sort((a, b) =>
+      a.localeCompare(b, 'pt-BR'));
+
+    return sortedContinents.map(cont => {
+      const dests = byContinent[cont].sort((a, b) => {
+        const co = (a.country||'').localeCompare(b.country||'', 'pt-BR');
+        if (co !== 0) return co;
+        return (a.city||'').localeCompare(b.city||'', 'pt-BR');
+      });
+      const opts = dests.map(d => {
+        const label = d.city
+          ? `${esc(d.country || '?')} — ${esc(d.city)}`
+          : `${esc(d.country || '?')} (sem cidade)`;
+        return `<option value="${esc(d.id)}">${label}</option>`;
+      }).join('');
+      return `<optgroup label="${esc(cont)}">${opts}</optgroup>`;
     }).join('');
   })();
 
