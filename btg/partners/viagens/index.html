@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Viagens — Cartão Partners BTG Pactual</title>
+  <meta name="description" content="Feriados, destinos curados, hospedagens selecionadas e mobilidade — tudo desenhado para clientes Partners." />
+  <link rel="stylesheet" href="/btg/shared/btg-base.css" />
+  <link rel="stylesheet" href="/btg/shared/btg-header.css" />
+  <link rel="stylesheet" href="/btg/shared/btg-footer.css" />
+  <link rel="stylesheet" href="/btg/shared/btg-components.css" />
+  <link rel="stylesheet" href="/btg/shared/btg-viagens-hub.css" />
+</head>
+<body data-brand="partners">
+  <div id="header"></div>
+
+  <section class="viagens-hub-hero">
+    <div class="viagens-hub-hero__inner">
+      <p class="viagens-hub-hero__eyebrow">Viagens Partners</p>
+      <h1 class="viagens-hub-hero__title">O mundo, do seu jeito</h1>
+      <p class="viagens-hub-hero__desc">
+        Curadoria de feriados, destinos, hospedagens e mobilidade — pensada para cada estilo de jornada. Explore os destaques abaixo ou navegue pelas categorias.
+      </p>
+    </div>
+  </section>
+
+  <main>
+    <section class="viagens-hub-section" data-tipo="Feriado" data-href="/btg/partners/viagens/feriados/">
+      <div class="viagens-hub-section__inner">
+        <div class="viagens-hub-section__head">
+          <div>
+            <p class="viagens-hub-section__eyebrow">Feriados</p>
+            <h2 class="viagens-hub-section__title">Para sair da rotina</h2>
+          </div>
+          <p class="viagens-hub-section__desc">Aproveite as principais datas do calendário para viver experiências memoráveis em destinos cuidadosamente selecionados.</p>
+          <a href="/btg/partners/viagens/feriados/" class="viagens-hub-section__see-all">Ver todas →</a>
+        </div>
+        <div class="ofertas-grid" id="hub-feriado"></div>
+      </div>
+    </section>
+
+    <section class="viagens-hub-section" data-tipo="Destino" data-href="/btg/partners/viagens/destinos/">
+      <div class="viagens-hub-section__inner">
+        <div class="viagens-hub-section__head">
+          <div>
+            <p class="viagens-hub-section__eyebrow">Destaques</p>
+            <h2 class="viagens-hub-section__title">Destinos que inspiram</h2>
+          </div>
+          <p class="viagens-hub-section__desc">De paisagens icônicas a descobertas surpreendentes, encontre inspiração para sua próxima viagem.</p>
+          <a href="/btg/partners/viagens/destinos/" class="viagens-hub-section__see-all">Ver todos →</a>
+        </div>
+        <div class="ofertas-grid" id="hub-destino"></div>
+      </div>
+    </section>
+
+    <section class="viagens-hub-section" data-tipo="Hospedagem" data-href="/btg/partners/viagens/hospedagem/">
+      <div class="viagens-hub-section__inner">
+        <div class="viagens-hub-section__head">
+          <div>
+            <p class="viagens-hub-section__eyebrow">Hospedagem</p>
+            <h2 class="viagens-hub-section__title">Endereços para descobrir</h2>
+          </div>
+          <p class="viagens-hub-section__desc">Uma seleção de hotéis e resorts para diferentes estilos de viagens com benefícios exclusivos para clientes Partners.</p>
+          <a href="/btg/partners/viagens/hospedagem/" class="viagens-hub-section__see-all">Ver todas →</a>
+        </div>
+        <div class="ofertas-grid" id="hub-hospedagem"></div>
+      </div>
+    </section>
+
+    <section class="viagens-hub-section" data-tipo="Aéreo & Transfers" data-href="/btg/partners/viagens/aereo-transfers/">
+      <div class="viagens-hub-section__inner">
+        <div class="viagens-hub-section__head">
+          <div>
+            <p class="viagens-hub-section__eyebrow">Aéreo & Transfers</p>
+            <h2 class="viagens-hub-section__title">Do embarque ao destino</h2>
+          </div>
+          <p class="viagens-hub-section__desc">Soluções de mobilidade para tornar seus deslocamentos mais simples e convenientes.</p>
+          <a href="/btg/partners/viagens/aereo-transfers/" class="viagens-hub-section__see-all">Ver todas →</a>
+        </div>
+        <div class="ofertas-grid" id="hub-aereo"></div>
+      </div>
+    </section>
+  </main>
+
+  <div id="closing-cta"></div>
+  <div id="footer"></div>
+
+  <script type="module">
+    import { renderBtgHeader } from '/btg/shared/btg-header.js';
+    import { renderBtgFooter } from '/btg/shared/btg-footer.js';
+    import { createOfertaCard, createClosingCta } from '/btg/shared/btg-components.js';
+    import { listOfertas, normalizeForCard } from '/btg/shared/btg-ofertas-service.js';
+
+    renderBtgHeader(document.getElementById('header'), 'partners');
+    renderBtgFooter(document.getElementById('footer'), 'partners');
+
+    document.getElementById('closing-cta').innerHTML = createClosingCta({
+      title: 'Um mundo de possibilidades, à sua disposição',
+      description: 'Entre em contato com o seu Concierge Partners. De segunda a segunda, das 8h às 20h.',
+      ctaUrl: 'https://wa.me/551148621680?text=' + encodeURIComponent('Olá! Tenho interesse no Cartão Partners.'),
+      brand: 'partners',
+    });
+
+    const sections = [
+      { id: 'hub-feriado',    tipo: 'Feriado' },
+      { id: 'hub-destino',    tipo: 'Destino' },
+      { id: 'hub-hospedagem', tipo: 'Hospedagem' },
+      { id: 'hub-aereo',      tipo: 'Aéreo & Transfers' },
+    ];
+
+    for (const s of sections) {
+      try {
+        const ofertas = await listOfertas({ tipo_cartao: 'Partners', tipo_oferta: s.tipo, limit: 4 });
+        const grid = document.getElementById(s.id);
+        if (ofertas.length === 0) {
+          grid.innerHTML = '<p class="viagens-hub-section__empty">Em breve, novas ofertas selecionadas.</p>';
+        } else {
+          grid.innerHTML = ofertas.map((o) => createOfertaCard(normalizeForCard(o), 'partners')).join('');
+        }
+      } catch (err) {
+        console.error('[viagens-hub]', s.tipo, err);
+      }
+    }
+  </script>
+</body>
+</html>
