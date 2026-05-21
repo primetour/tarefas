@@ -71,7 +71,6 @@
   <section class="partners-curated">
     <div class="btg-container">
       <div class="partners-curated__head">
-        <h2 class="partners-curated__title">Ofertas em destaque</h2>
         <a href="/btg/partners/viagens/" class="partners-curated__see-all">
           Ver todas as viagens
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
@@ -84,7 +83,7 @@
   <!-- ════════ SERVICOS VIAGEM ════════ -->
   <section class="partners-servicos">
     <div class="btg-container">
-      <h2 class="partners-servicos__title">O que cuidamos pra você</h2>
+      <h2 class="partners-servicos__title">Cada detalhe, planejado</h2>
       <div id="servicos-grid" class="partners-servicos__grid"></div>
       <div id="servicos-arrows" class="partners-servicos__arrows"></div>
     </div>
@@ -95,27 +94,11 @@
     <div class="btg-container">
       <h2 class="partners-why__title">Vantagens para aproveitar mais em cada destino</h2>
       <p class="partners-why__subtitle">Vá mais longe em tudo o que imaginar, com a máxima sofisticação que um cartão pode oferecer.</p>
-      <div class="partners-why__grid">
-        <article class="partners-why__item">
-          <div class="partners-why__icon">★</div>
-          <h3>Atendimento dedicado</h3>
-          <p>Especialista único do briefing à viagem. Sem repetir contexto.</p>
-        </article>
-        <article class="partners-why__item">
-          <div class="partners-why__icon">◆</div>
-          <h3>Seguro internacional</h3>
-          <p>Cobertura completa para você e dependentes em viagens internacionais.</p>
-        </article>
-        <article class="partners-why__item">
-          <div class="partners-why__icon">◇</div>
-          <h3>Acesso preferencial</h3>
-          <p>Reservas em endereços de alta demanda, com upgrade quando possível.</p>
-        </article>
-        <article class="partners-why__item">
-          <div class="partners-why__icon">◈</div>
-          <h3>Salas VIP</h3>
-          <p>Mais de 1.000 lounges ao redor do mundo, com bebidas e Wi-Fi.</p>
-        </article>
+      <div class="partners-why__layout">
+        <div class="partners-why__media">
+          <img src="/btg/assets/parceiros/six-senses-bhutan.jpg" alt="Vantagens do Cartão Partners" loading="lazy" />
+        </div>
+        <ul class="partners-why__features" id="why-features"></ul>
       </div>
     </div>
   </section>
@@ -145,7 +128,7 @@
       {
         id: '1', slug: 'reveillon-pedras-do-patacho',
         imagem: '/btg/assets/parceiros/four-seasons-george-v.jpg',
-        destino: 'ALAGOAS', titulo: 'Réveillon Pedras do Patacho',
+        destino: 'Alagoas', titulo: 'Réveillon Pedras do Patacho',
         descricao: 'Resort à beira-mar com experiências privativas para a família.',
         preco: '4460', moeda: 'R$', parcelamento: '6',
         contextoPreco: 'Por pessoa em apto duplo',
@@ -154,7 +137,7 @@
       {
         id: '2', slug: 'toscana-vinicolas',
         imagem: '/btg/assets/parceiros/amanyangyun-shanghai.jpg',
-        destino: 'TOSCANA, ITÁLIA', titulo: '10 dias na Toscana — vinícolas e villas',
+        destino: 'Toscana, Itália', titulo: '10 dias na Toscana — vinícolas e villas',
         descricao: 'Roteiro privativo entre vinícolas premiadas e villas históricas.',
         preco: '32500', moeda: 'R$', parcelamento: '10',
         contextoPreco: 'Por casal',
@@ -162,7 +145,7 @@
       {
         id: '3', slug: 'mediterraneo-7-noites',
         imagem: '/btg/assets/parceiros/mandarin-oriental-bangkok.jpg',
-        destino: 'MEDITERRÂNEO', titulo: 'Cruzeiro Mediterrâneo — 7 noites',
+        destino: 'Mediterrâneo', titulo: 'Cruzeiro Mediterrâneo — 7 noites',
         descricao: 'Embarque em Barcelona, escalas em Cannes, Roma, Florença.',
         preco: '18900', moeda: 'R$', parcelamento: '10',
         contextoPreco: 'Por pessoa, cabine externa',
@@ -170,7 +153,7 @@
       {
         id: '4', slug: 'tap-sp-paris-executiva',
         imagem: '/btg/assets/parceiros/rosewood-mansion.jpg',
-        destino: 'SP → PARIS', titulo: 'TAP Air São Paulo → Paris',
+        destino: 'SP → Paris', titulo: 'TAP Air São Paulo → Paris',
         descricao: 'Classe executiva com acesso ao lounge e prioridade no embarque.',
         sobConsulta: true,
         ofertaEspecial: '2 BAGAGENS',
@@ -184,14 +167,14 @@
         ofertas.map((o) => createOfertaCard(o, 'partners')).join('');
     })();
 
-    // Servicos (6 cards no carrossel mobile, grid 3-col desktop)
+    // Servicos — "Cada detalhe, planejado" (6 cards, copy completo do btg-pactual)
     const servicos = [
-      { icon: 'sparkles', title: 'Roteiros sob medida', desc: 'Especialista organiza cada etapa com atenção ao detalhe.' },
-      { icon: 'hotel', title: 'Hospedagens selecionadas', desc: 'Reservas em redes premium com condições especiais.' },
-      { icon: 'plane', title: 'Passagens aéreas', desc: 'Nacionais e internacionais, com inclusão de milhas.' },
-      { icon: 'ship', title: 'Trens e cruzeiros de luxo', desc: 'Jornadas fluviais e expedições selecionadas.' },
-      { icon: 'route', title: 'Roteiros personalizados', desc: 'Cultura, gastronomia e entretenimento alinhados ao seu estilo.' },
-      { icon: 'drama', title: 'Acesso a experiências culturais', desc: 'Óperas, balés, museus e feiras internacionais.' },
+      { icon: 'sparkles', title: 'Roteiros sob medida', desc: 'Nossa equipe organiza cada etapa da sua viagem com atenção ao detalhe: destinos, agenda, preferências e experiências que exigem acesso diferenciado. Um especialista dedicado acompanha o planejamento do início ao fim, de segunda a domingo, das 8h às 20h.' },
+      { icon: 'hotel', title: 'Hospedagens selecionadas em hotéis parceiros', desc: 'Reservas em propriedades selecionadas das principais redes internacionais — Four Seasons, Aman, Mandarin Oriental, Six Senses, St. Regis, Rosewood, entre outras — com condições especiais de early check-in, late check-out e upgrade de acomodação.' },
+      { icon: 'plane', title: 'Passagens aéreas nacionais e internacionais', desc: 'Consultoria sobre rotas, classes e companhias. Emissão de bilhetes nacionais e internacionais com inclusão de milhas, comunicação de necessidades especiais e suporte em remarcações.' },
+      { icon: 'ship', title: 'Trens e cruzeiros de luxo', desc: 'De jornadas fluviais intimistas na Europa a expedições e travessias pelos principais oceanos do mundo.' },
+      { icon: 'route', title: 'Roteiros desenhados de forma personalizada', desc: 'Conectando experiências culturais, gastronômicas e de entretenimento alinhadas ao seu estilo de viagem.' },
+      { icon: 'drama', title: 'Acesso a experiências culturais', desc: 'Óperas, balés, musicais, museus, feiras internacionais de arte e exposições — com possibilidade de visitas e programações fora do horário regular.' },
     ];
 
     document.getElementById('servicos-grid').innerHTML = servicos
@@ -218,6 +201,25 @@
       const card = grid.querySelector('article');
       if (card) grid.scrollBy({ left: card.clientWidth + 16, behavior: 'smooth' });
     });
+
+    // Why Partners — 5 features (imagem à esquerda, grid à direita)
+    const whyFeatures = [
+      { icon: 'hotel', title: 'Hotéis parceiros', text: 'Hospede-se em mais de 2.000 hotéis ao redor do mundo com vantagens exclusivas, incluindo redes renomadas como Four Seasons e Rosewood.' },
+      { icon: 'coins', title: 'Pontuação acelerada', text: 'Ganhe 4 pontos a cada US$ 1 gasto em compras nacionais e 7 pontos a cada US$ 1 gasto em compras internacionais.' },
+      { icon: 'shield-check', title: 'Seguro viagem', text: 'Conte com cobertura internacional Omint para você e até 4 dependentes durante suas viagens.' },
+      { icon: 'map-pin', title: 'Terminal BTG Pactual', text: 'Tenha 2 acessos gratuitos ao Terminal BTG Pactual e 20% OFF nos acessos adicionais, além de check-in dedicado, concierge exclusivo, despacho prioritário de bagagens e raio-x sem filas.' },
+      { icon: 'crown', title: 'Salas VIP LoungeKey', text: 'Aproveite acessos ilimitados a mais de 1.000 Salas VIP ao redor do mundo, com direito a bebidas, Wi-Fi e até 12 convidados por ano.' },
+    ];
+    document.getElementById('why-features').innerHTML = whyFeatures
+      .map((f) => `
+        <li class="partners-why__feature">
+          <span class="partners-why__feature-icon">${icon(f.icon, 'icon-md')}</span>
+          <div>
+            <h3>${f.title}</h3>
+            <p>${f.text}</p>
+          </div>
+        </li>
+      `).join('');
 
     // Parceiros hotéis
     const hoteisPartners = [

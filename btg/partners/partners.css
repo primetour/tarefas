@@ -73,7 +73,7 @@
   position: absolute;
   inset: 0;
   z-index: 1;
-  background: linear-gradient(to right, var(--btg-navy) 0%, rgba(5, 19, 42, 0.75) 30%, rgba(5, 19, 42, 0) 60%);
+  background: linear-gradient(to right, var(--btg-navy) 0%, rgba(5, 19, 42, 0.75) 25%, rgba(5, 19, 42, 0) 50%);
   pointer-events: none;
 }
 
@@ -145,12 +145,23 @@
   .partners-intro { padding-left: 32px; padding-right: 32px; }
 }
 
+/* Intro 2-col: título à esquerda, parágrafos à direita, topos alinhados;
+ * h3 "Experiências selecionadas para você" abaixo, full-width à esquerda. */
 .partners-intro__inner {
-  max-width: 720px;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 24px;
+  max-width: 1280px;
+}
+
+@media (min-width: 768px) {
+  .partners-intro__inner {
+    grid-template-columns: 1fr 1fr;
+    column-gap: 80px;
+  }
 }
 
 .partners-intro__title {
-  margin-top: 16px;
   font-size: 36px;
   font-weight: 300;
   line-height: 1.15;
@@ -158,10 +169,13 @@
 }
 
 .partners-intro__body {
-  margin-top: 20px;
   font-size: 16px;
   line-height: 1.6;
   color: var(--btg-navy-soft);
+}
+
+@media (min-width: 768px) {
+  .partners-intro__body { padding-top: 8px; }
 }
 
 /* ─── CURATED OFFERS ─── */
@@ -336,45 +350,71 @@
   color: var(--btg-navy);
 }
 
-.partners-why__grid {
+/* Layout: imagem à esquerda + grid de 5 features à direita. */
+.partners-why__layout {
   margin-top: 48px;
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 24px;
-}
-
-@media (min-width: 640px) {
-  .partners-why__grid { grid-template-columns: 1fr 1fr; }
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
 }
 
 @media (min-width: 1024px) {
-  .partners-why__grid { grid-template-columns: repeat(4, 1fr); }
+  .partners-why__layout { flex-direction: row; gap: 56px; }
 }
 
-.partners-why__item h3 {
-  margin-top: 16px;
-  font-size: 20px;
-  font-weight: 500;
+.partners-why__media {
+  width: 100%;
+  height: 320px;
+  overflow: hidden;
+}
+
+@media (min-width: 640px) {
+  .partners-why__media { height: 420px; }
+}
+
+@media (min-width: 1024px) {
+  .partners-why__media { width: 480px; flex-shrink: 0; height: auto; }
+}
+
+.partners-why__media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.partners-why__features {
+  flex: 1;
+  list-style: none;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 32px;
+}
+
+@media (min-width: 640px) {
+  .partners-why__features { grid-template-columns: 1fr 1fr; column-gap: 32px; gap: 40px 32px; }
+}
+
+.partners-why__feature {
+  display: flex;
+  gap: 16px;
+}
+
+.partners-why__feature-icon {
+  flex-shrink: 0;
   color: var(--btg-navy);
 }
 
-.partners-why__item p {
-  margin-top: 8px;
-  font-size: 15px;
-  line-height: 1.5;
-  color: var(--btg-navy-soft);
+.partners-why__feature h3 {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--btg-navy);
 }
 
-.partners-why__icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  font-size: 22px;
-  color: var(--partners-accent);
-  background: var(--btg-navy);
-  border-radius: 999px;
+.partners-why__feature p {
+  margin-top: 8px;
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--btg-navy-soft);
 }
 
 /* Intro: corpo agora é div com múltiplos <p>, h3 "Experiências selecionadas" */
@@ -382,7 +422,8 @@
 .partners-intro__body p + p { margin-top: 16px; }
 
 .partners-intro__experiencias {
-  margin-top: 48px;
+  grid-column: 1 / -1;
+  margin-top: 24px;
   font-size: 24px;
   font-weight: 400;
   color: var(--btg-navy);
