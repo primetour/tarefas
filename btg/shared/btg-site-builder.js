@@ -1,7 +1,10 @@
 /**
  * Construtor de páginas por blocos — o "Elementor próprio" do Gestor.
- * Editor funcional: biblioteca de blocos, adicionar / reordenar / editar
- * / remover, com preview ao vivo. Persiste via btg-sites-service.
+ * Editor 3 colunas: lista de blocos · preview ao vivo · edição de campos.
+ *
+ * O preview roda num <iframe> que carrega o CSS real dos sites e usa
+ * renderBlock() (btg-blocks.js) — então cada bloco aparece IDÊNTICO ao
+ * site publicado. O que você monta aqui é o que vai pro ar.
  *
  * Uso:
  *   import { mountSiteEditor } from '/btg/shared/btg-site-builder.js';
@@ -9,138 +12,83 @@
  */
 
 import { getSite, saveSite, newBlockId } from './btg-sites-service.js';
+import { renderBlock, SITE_CSS } from './btg-blocks.js';
 
 const esc = (s) =>
   String(s ?? '').replace(/[&<>"']/g, (c) => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
   }[c]));
 
-const nl2 = (s) => String(s ?? '').split(/\n+/).map((x) => x.trim()).filter(Boolean);
-
 /* ─── Biblioteca de blocos ────────────────────────────────
- * Cada bloco: type, label, cor, descrição, defaultData, fields[]
- * (formulário do editor) e render(data) → HTML do preview. */
+ * Metadados + campos do formulário do editor. O render fiel da seção
+ * é o renderBlock() de btg-blocks.js (markup + CSS reais). */
 export const BLOCK_LIBRARY = [
   {
-    type: 'hero',
-    label: 'Hero',
-    cor: '#1a2b4a',
-    desc: 'Banner principal — título grande sobre cor de fundo.',
-    defaultData: { eyebrow: '', titulo: 'Título do hero', subtitulo: '', cor: '#05132a' },
+    type: 'hero', label: 'Hero', cor: '#1a2b4a',
+    desc: 'Banner principal da página.',
+    defaultData: { eyebrow: '', titulo: 'Título do hero', subtitulo: '', imagem: '' },
     fields: [
       { key: 'eyebrow',   label: 'Eyebrow (linha pequena)', type: 'text' },
       { key: 'titulo',    label: 'Título',                  type: 'text' },
       { key: 'subtitulo', label: 'Subtítulo',               type: 'textarea' },
-      { key: 'cor',       label: 'Cor de fundo',            type: 'color' },
+      { key: 'imagem',    label: 'Imagem de fundo (URL)',   type: 'text' },
     ],
-    render: (d) => `
-      <div class="pv-hero" style="background:${esc(d.cor || '#05132a')};">
-        ${d.eyebrow ? `<p class="pv-hero__eyebrow">${esc(d.eyebrow)}</p>` : ''}
-        <h1 class="pv-hero__title">${esc(d.titulo || '')}</h1>
-        ${d.subtitulo ? `<p class="pv-hero__sub">${esc(d.subtitulo)}</p>` : ''}
-      </div>`,
   },
   {
-    type: 'intro',
-    label: 'Intro',
-    cor: '#2E73D4',
-    desc: 'Texto de abertura — título à esquerda, parágrafo à direita.',
-    defaultData: { titulo: 'Título da seção', texto: '' },
+    type: 'intro', label: 'Intro', cor: '#2E73D4',
+    desc: 'Texto de abertura em 2 colunas.',
+    defaultData: { titulo: 'Título da seção', texto: '', experiencias: '' },
     fields: [
-      { key: 'titulo', label: 'Título', type: 'text' },
-      { key: 'texto',  label: 'Texto',  type: 'textarea' },
+      { key: 'titulo',       label: 'Título',                     type: 'text' },
+      { key: 'texto',        label: 'Parágrafos (um por linha)',  type: 'textarea' },
+      { key: 'experiencias', label: 'Subtítulo abaixo (opcional)', type: 'text' },
     ],
-    render: (d) => `
-      <div class="pv-intro">
-        <h2 class="pv-intro__title">${esc(d.titulo || '')}</h2>
-        <p class="pv-intro__text">${esc(d.texto || '')}</p>
-      </div>`,
   },
   {
-    type: 'ofertas',
-    label: 'Grid de ofertas',
-    cor: '#15803d',
-    desc: 'Grade de ofertas — puxa as ofertas publicadas dinamicamente.',
+    type: 'ofertas', label: 'Grid de ofertas', cor: '#15803d',
+    desc: 'Grade de ofertas em destaque (conteúdo dinâmico).',
     defaultData: { titulo: 'Ofertas em destaque' },
     fields: [
       { key: 'titulo', label: 'Título', type: 'text' },
     ],
-    render: (d) => `
-      <div class="pv-ofertas">
-        <h2 class="pv-sec-title">${esc(d.titulo || '')}</h2>
-        <div class="pv-ofertas__grid">
-          ${[0,1,2,3].map(() => `<div class="pv-ofertas__card"><div class="pv-ofertas__img"></div><div class="pv-ofertas__line"></div><div class="pv-ofertas__line pv-ofertas__line--short"></div></div>`).join('')}
-        </div>
-        <p class="pv-hint">conteúdo dinâmico — ofertas publicadas</p>
-      </div>`,
   },
   {
-    type: 'categorias',
-    label: 'Cards de categoria',
-    cor: '#d4a017',
-    desc: 'Lista de categorias / links — um item por linha.',
-    defaultData: { titulo: 'Categorias', itens: 'Categoria A\nCategoria B\nCategoria C' },
+    type: 'categorias', label: 'Cards de categoria', cor: '#d4a017',
+    desc: 'Listas de categorias / links da página.',
+    defaultData: { titulo: '', itens: 'Feriados e Datas Especiais\nDestinos\nHospedagem\nAéreo & Transfers\nCruzeiros' },
     fields: [
-      { key: 'titulo', label: 'Título', type: 'text' },
+      { key: 'titulo', label: 'Título (opcional)',  type: 'text' },
       { key: 'itens',  label: 'Itens (um por linha)', type: 'textarea' },
     ],
-    render: (d) => `
-      <div class="pv-cats">
-        <h2 class="pv-sec-title">${esc(d.titulo || '')}</h2>
-        <div class="pv-cats__grid">
-          ${nl2(d.itens).map((i) => `<div class="pv-cats__card"><span>${esc(i)}</span><span aria-hidden="true">→</span></div>`).join('')}
-        </div>
-      </div>`,
   },
   {
-    type: 'vantagens',
-    label: 'Seção de vantagens',
-    cor: '#7c3aed',
-    desc: 'Título + subtítulo + lista de vantagens (uma por linha).',
-    defaultData: { titulo: 'Vantagens', subtitulo: '', itens: 'Vantagem 1\nVantagem 2\nVantagem 3' },
+    type: 'vantagens', label: 'Seção de vantagens', cor: '#7c3aed',
+    desc: 'Título + subtítulo + imagem + lista de vantagens.',
+    defaultData: { titulo: 'Vantagens', subtitulo: '', imagem: '', itens: 'Vantagem 1\nVantagem 2\nVantagem 3' },
     fields: [
       { key: 'titulo',    label: 'Título',    type: 'text' },
       { key: 'subtitulo', label: 'Subtítulo', type: 'textarea' },
+      { key: 'imagem',    label: 'Imagem (URL)', type: 'text' },
       { key: 'itens',     label: 'Vantagens (uma por linha)', type: 'textarea' },
     ],
-    render: (d) => `
-      <div class="pv-vant">
-        <h2 class="pv-sec-title">${esc(d.titulo || '')}</h2>
-        ${d.subtitulo ? `<p class="pv-vant__sub">${esc(d.subtitulo)}</p>` : ''}
-        <div class="pv-vant__grid">
-          ${nl2(d.itens).map((i) => `<div class="pv-vant__item"><span class="pv-vant__dot"></span><span>${esc(i)}</span></div>`).join('')}
-        </div>
-      </div>`,
   },
   {
-    type: 'closing',
-    label: 'Closing CTA',
-    cor: '#0c4a6e',
+    type: 'closing', label: 'Closing CTA', cor: '#0c4a6e',
     desc: 'Faixa de chamada final — título, descrição e botão.',
-    defaultData: { titulo: 'Pronto para começar?', descricao: '', botao: 'Fale conosco', cor: '#05132a' },
+    defaultData: { titulo: 'Pronto para começar?', descricao: '', botao: 'Fale conosco' },
     fields: [
       { key: 'titulo',    label: 'Título',         type: 'text' },
       { key: 'descricao', label: 'Descrição',      type: 'textarea' },
       { key: 'botao',     label: 'Texto do botão', type: 'text' },
-      { key: 'cor',       label: 'Cor de fundo',   type: 'color' },
     ],
-    render: (d) => `
-      <div class="pv-closing" style="background:${esc(d.cor || '#05132a')};">
-        <h2 class="pv-closing__title">${esc(d.titulo || '')}</h2>
-        ${d.descricao ? `<p class="pv-closing__desc">${esc(d.descricao)}</p>` : ''}
-        ${d.botao ? `<span class="pv-closing__btn">${esc(d.botao)}</span>` : ''}
-      </div>`,
   },
   {
-    type: 'rodape',
-    label: 'Rodapé',
-    cor: '#6b7280',
-    desc: 'Rodapé fino — linha de copyright.',
+    type: 'rodape', label: 'Rodapé', cor: '#6b7280',
+    desc: 'Rodapé fino com a linha de copyright.',
     defaultData: { texto: 'Copyright © 2026. Todos os direitos reservados.' },
     fields: [
       { key: 'texto', label: 'Texto', type: 'text' },
     ],
-    render: (d) => `<div class="pv-rodape">${esc(d.texto || '')}</div>`,
   },
 ];
 
@@ -162,10 +110,9 @@ export function mountSiteEditor(root, { siteId }) {
     libraryOpen: false,
   };
 
-  function blockDef(b) { return BLOCK_BY_TYPE[b.type]; }
-  function selectedBlock() { return state.site.blocks.find((b) => b.id === state.selectedId) || null; }
+  const blockDef = (b) => BLOCK_BY_TYPE[b.type];
+  const selectedBlock = () => state.site.blocks.find((b) => b.id === state.selectedId) || null;
 
-  // ─── Render: shell (1x) ───
   root.innerHTML = `
     <div class="sb-topbar">
       <a class="sb-back" href="/btg/dashboard/sites/">← Sites</a>
@@ -181,14 +128,16 @@ export function mountSiteEditor(root, { siteId }) {
         <button class="sb-add" id="sb-add">+ Adicionar bloco</button>
         <div class="sb-library" id="sb-library" hidden></div>
       </aside>
-      <main class="sb-preview" id="sb-preview"></main>
+      <main class="sb-preview">
+        <iframe id="sb-frame" class="sb-frame" title="Preview do site"></iframe>
+      </main>
       <aside class="sb-panel sb-right" id="sb-edit"></aside>
     </div>
   `;
 
   const elBlocklist = root.querySelector('#sb-blocklist');
   const elLibrary   = root.querySelector('#sb-library');
-  const elPreview   = root.querySelector('#sb-preview');
+  const elFrame     = root.querySelector('#sb-frame');
   const elEdit      = root.querySelector('#sb-edit');
   const elStatus    = root.querySelector('#sb-status');
 
@@ -198,7 +147,7 @@ export function mountSiteEditor(root, { siteId }) {
     elStatus.className = 'sb-status sb-status--dirty';
   }
 
-  // ─── Render: lista de blocos ───
+  // ─── Lista de blocos ───
   function renderBlockList() {
     if (state.site.blocks.length === 0) {
       elBlocklist.innerHTML = `<p class="sb-empty">Nenhum bloco ainda. Adicione abaixo.</p>`;
@@ -219,7 +168,7 @@ export function mountSiteEditor(root, { siteId }) {
     }).join('');
   }
 
-  // ─── Render: biblioteca de blocos ───
+  // ─── Biblioteca de blocos ───
   function renderLibrary() {
     elLibrary.hidden = !state.libraryOpen;
     if (!state.libraryOpen) return;
@@ -228,31 +177,51 @@ export function mountSiteEditor(root, { siteId }) {
       ${BLOCK_LIBRARY.map((def) => `
         <button type="button" class="sb-libitem" data-add-type="${def.type}">
           <span class="sb-block__dot" style="background:${def.cor};"></span>
-          <span>
-            <strong>${esc(def.label)}</strong>
-            <small>${esc(def.desc)}</small>
-          </span>
+          <span><strong>${esc(def.label)}</strong><small>${esc(def.desc)}</small></span>
         </button>`).join('')}
     `;
   }
 
-  // ─── Render: preview ao vivo ───
-  function renderPreview() {
-    if (state.site.blocks.length === 0) {
-      elPreview.innerHTML = `<div class="sb-preview__empty">A página está vazia.<br/>Adicione blocos pela coluna da esquerda.</div>`;
-      return;
-    }
-    elPreview.innerHTML = `
-      <div class="sb-canvas">
-        ${state.site.blocks.map((b) => {
-          const def = blockDef(b);
-          const inner = def ? def.render(b.data || {}) : `<div class="pv-unknown">${esc(b.type)}</div>`;
-          return `<div class="sb-canvasblock${b.id === state.selectedId ? ' is-selected' : ''}" data-block="${b.id}">${inner}</div>`;
-        }).join('')}
-      </div>`;
+  // ─── Preview (iframe com CSS real) ───
+  function buildPreviewDoc() {
+    const css = SITE_CSS.map((h) => `<link rel="stylesheet" href="${h}" />`).join('');
+    const body = state.site.blocks.length === 0
+      ? `<div style="padding:80px 24px;text-align:center;color:#9ca3af;font-family:sans-serif;">Página vazia — adicione blocos na coluna da esquerda.</div>`
+      : state.site.blocks.map((b) =>
+          `<div data-sb-block="${b.id}" class="sb-fr-block${b.id === state.selectedId ? ' is-sel' : ''}">${renderBlock(b.type, b.data, state.site.brand)}</div>`
+        ).join('');
+    return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8" />${css}
+      <style>
+        body { margin: 0; }
+        .sb-fr-block { position: relative; cursor: pointer; }
+        .sb-fr-block:hover { outline: 2px solid #bfdbfe; outline-offset: -2px; }
+        .sb-fr-block.is-sel { outline: 3px solid #2E73D4; outline-offset: -3px; }
+      </style></head>
+      <body data-brand="${esc(state.site.brand)}">
+        ${body}
+        <script>
+          document.addEventListener('click', function (e) {
+            var el = e.target.closest('[data-sb-block]');
+            if (el) parent.postMessage({ sbSelect: el.getAttribute('data-sb-block') }, '*');
+          });
+        <\/script>
+      </body></html>`;
   }
 
-  // ─── Render: painel de edição do bloco selecionado ───
+  function renderPreview() {
+    elFrame.srcdoc = buildPreviewDoc();
+  }
+
+  // Atualiza só 1 bloco dentro do iframe (sem recarregar — preserva scroll/foco).
+  function updateBlockInFrame(id) {
+    const doc = elFrame.contentDocument;
+    const wrap = doc && doc.querySelector(`[data-sb-block="${id}"]`);
+    if (!wrap) { renderPreview(); return; }
+    const b = state.site.blocks.find((x) => x.id === id);
+    if (b) wrap.innerHTML = renderBlock(b.type, b.data, state.site.brand);
+  }
+
+  // ─── Painel de edição ───
   function renderEditPanel() {
     const b = selectedBlock();
     if (!b) {
@@ -266,24 +235,13 @@ export function mountSiteEditor(root, { siteId }) {
         ${(def?.fields || []).map((f) => {
           const val = b.data?.[f.key] ?? '';
           if (f.type === 'textarea') {
-            return `<label class="sb-field">
-              <span>${esc(f.label)}</span>
-              <textarea data-field="${f.key}" rows="4">${esc(val)}</textarea>
-            </label>`;
+            return `<label class="sb-field"><span>${esc(f.label)}</span>
+              <textarea data-field="${f.key}" rows="4">${esc(val)}</textarea></label>`;
           }
-          if (f.type === 'color') {
-            return `<label class="sb-field sb-field--color">
-              <span>${esc(f.label)}</span>
-              <input type="color" data-field="${f.key}" value="${esc(val || '#05132a')}" />
-            </label>`;
-          }
-          return `<label class="sb-field">
-            <span>${esc(f.label)}</span>
-            <input type="text" data-field="${f.key}" value="${esc(val)}" />
-          </label>`;
+          return `<label class="sb-field"><span>${esc(f.label)}</span>
+            <input type="text" data-field="${f.key}" value="${esc(val)}" /></label>`;
         }).join('')}
-      </div>
-    `;
+      </div>`;
   }
 
   function renderStructural() {
@@ -343,15 +301,12 @@ export function mountSiteEditor(root, { siteId }) {
     state.site.name = e.target.value;
     markDirty();
   });
-
   root.querySelector('#sb-save').addEventListener('click', save);
-
   root.querySelector('#sb-add').addEventListener('click', () => {
     state.libraryOpen = !state.libraryOpen;
     renderLibrary();
   });
 
-  // Lista de blocos: selecionar / mover / remover
   elBlocklist.addEventListener('click', (e) => {
     const moveBtn = e.target.closest('[data-move]');
     if (moveBtn) { moveBlock(moveBtn.dataset.block, moveBtn.dataset.move); return; }
@@ -361,19 +316,17 @@ export function mountSiteEditor(root, { siteId }) {
     if (row) selectBlock(row.dataset.block);
   });
 
-  // Biblioteca: adicionar bloco do tipo escolhido
   elLibrary.addEventListener('click', (e) => {
     const item = e.target.closest('[data-add-type]');
     if (item) addBlock(item.dataset.addType);
   });
 
-  // Preview: clicar num bloco seleciona ele
-  elPreview.addEventListener('click', (e) => {
-    const cb = e.target.closest('[data-block]');
-    if (cb) selectBlock(cb.dataset.block);
+  // Clique num bloco dentro do iframe → seleciona (via postMessage)
+  window.addEventListener('message', (e) => {
+    if (e.data && e.data.sbSelect) selectBlock(e.data.sbSelect);
   });
 
-  // Painel de edição: digitar atualiza o dado + preview ao vivo
+  // Edição de campo → atualiza o dado + só o bloco no preview (sem reload)
   elEdit.addEventListener('input', (e) => {
     const f = e.target.closest('[data-field]');
     if (!f) return;
@@ -381,10 +334,9 @@ export function mountSiteEditor(root, { siteId }) {
     if (!b) return;
     b.data = { ...b.data, [f.dataset.field]: f.value };
     markDirty();
-    renderPreview();   // só o preview — não re-renderiza o form (mantém foco)
+    updateBlockInFrame(b.id);
   });
 
-  // Aviso ao sair com alterações não salvas
   window.addEventListener('beforeunload', (e) => {
     if (state.dirty) { e.preventDefault(); e.returnValue = ''; }
   });
