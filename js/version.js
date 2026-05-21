@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 55,
-  build: '20260520-fix-setor-squad-agrupado-em-3-views',
+  patch: 56,
+  build: '20260521-hotfix-csp-content-firebaseappcheck',
 };
 
 /** "1.2.0" */
