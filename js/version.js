@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 62,
-  build: '20260521-retry-log-polish',
+  patch: 63,
+  build: '20260521-portal-import-destino-match-cadastrar-inline',
 };
 
 /** "1.2.0" */

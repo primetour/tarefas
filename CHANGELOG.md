@@ -6,6 +6,54 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.63+20260521-portal-import-destino-match-cadastrar-inline] — 2026-05-21
+
+Release **PATCH** — Portal de Dicas/Importação: matching de destinos
+robusto + cadastro inline.
+
+**Contexto** (Renê): "sistema não permite importação por nao
+identificar destino cadastrado (e ele esta cadastrado). precisamos
+corrigir. isso é falta de leitura do modulo de destinos, certo?"
+
+**Diagnóstico**: o fluxo já lê destinos live a cada import (sem
+cache), mas comparação em `portalImport.js:340` era `===` estrita
+(case-sensitive, accent-sensitive). Falhava em "Brasil" vs
+"brasil", "São Paulo" vs "Sao Paulo", continente preenchido
+diferente, etc. Sem botão de cadastrar quando faltava destino.
+
+**Mudanças em `js/pages/portalImport.js`**:
+
+1. **`_norm()`** — lowercase + NFD strip + trim + collapse whitespace.
+
+2. **`_matchDest(allDests, dest)`** — matching em 3 camadas:
+   - L1 exact: país + cidade + continente normalizados batem.
+   - L2 no-continent: ignora continente (redundante na maioria).
+   - L3 country-only: só país, quando planilha não tem cidade.
+   - Retorna sugestão fuzzy (Levenshtein ≤ 2 no país, ou cidade
+     igual com país errado) se nada bater.
+
+3. **`showReview` async** + **`renderReviewBody()`**:
+   - Faz `fetchDestinations` antes de renderizar.
+   - Cada destino fica com badge ✅ **Cadastrado** (verde) /
+     ⚠️ **Não cadastrado** (âmbar).
+   - Não-cadastrados ganham botão **+ Cadastrar destino** inline.
+   - Sugestão fuzzy aparece ("💡 Você quis dizer X?").
+   - Botão "Confirmar e Importar" fica **disabled** enquanto
+     houver destinos pendentes.
+
+4. **`openInlineCadastrarModal()`** — modal pré-preenchido com
+   continente/país/cidade da planilha; usa `withRetry` no
+   `saveDestination`; após sucesso re-classifica tudo.
+
+5. **`runImport(byDest, preFetchedDests)`** — usa `_matchDest`;
+   refetch sempre antes de iterar (user pode ter cadastrado
+   destinos entre review e import); fuzzy hint no log de cada
+   skip.
+
+**Validação**: `node --check` ok. Falta E2E manual no Chrome.
+
+---
+
 ## [4.49.62+20260521-retry-log-polish] — 2026-05-21
 
 Release **PATCH** — polish do log do `withRetry` descoberto durante
