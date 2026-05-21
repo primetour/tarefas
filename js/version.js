@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 60,
-  build: '20260521-perms-granulares-dashboards-nl-meta-ga',
+  patch: 61,
+  build: '20260521-network-resilience-n1-banner-ack-persistent',
 };
 
 /** "1.2.0" */

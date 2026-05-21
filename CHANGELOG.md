@@ -6,6 +6,69 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.61+20260521-network-resilience-n1-banner-ack-persistent] — 2026-05-21
+
+Release **PATCH** — resiliência de rede (camada N1) + persistência do
+ack do banner de alteração de tarefa.
+
+**Contexto** (Renê): "Internet ruim ou lenta o sistema não lida bem em
+diversos módulos (banner de alerta de alteração de tarefa gerada por
+meio do portal de solicitações, por exemplo, não exibe pra todos os
+users). Vamos olhar para esse tema e identificar se temos de lidar de
+alguma forma?" + "o banner de alteração na tarefa aparece
+insistentemente... não é melhor colocar um botão de que o user está
+ciente do aviso e depois ele para de ser exibido?"
+
+**Novos serviços** (4 arquivos):
+- `js/services/connection.js` — status reativo (`online` /
+  `reconnecting` / `offline`), ring buffer dos últimos 20 erros
+  persistido em localStorage, listeners de `online`/`offline` do
+  browser, exposto em `window.__PRIMETOUR_CONNECTION__` para debug.
+- `js/components/connectionIndicator.js` — chip no topo direito
+  (z-index 10100), invisível quando online, animado em
+  reconnecting/offline. Clique abre painel com erros recentes (admin).
+- `js/services/retry.js` — `withRetry(fn, opts)` com backoff
+  exponencial (800ms × 2^n + jitter), max 3 tentativas, ignora
+  códigos não retriáveis (permission-denied, failed-precondition,
+  invalid-argument, not-found, already-exists, unauthenticated,
+  data-loss, out-of-range). Sinaliza connection em transient errors.
+- `js/services/listenerError.js` — helper `listenerError(source)`
+  retorna onError callback que sinaliza `markNetworkError` via lazy
+  import (evita circular dep).
+
+**Listeners agora sinalizam connection** (8 pontos):
+- `tasks.js subscribeToTasks`
+- `presence.js`
+- `contentCalendar.js` (2 listeners)
+- `csat.js` (onError adicionado onde faltava)
+- `checkin.js` (3 listeners)
+- `vacation.js`
+- `agents.js`
+
+**Banner persistente com ack per-user**:
+- `tasks.js showRequesterEditBanners` + `taskModal.js`: skip se
+  `task.requesterEditAckBy[uid] >= task.requesterEditAt`. Banner tem
+  3 botões (Estou ciente / Depois / ✕), **sem auto-dismiss**.
+- "OK, estou ciente" grava `requesterEditAckBy.<uid>:
+  serverTimestamp()` (era destrutivo antes: `requesterEditFlag: false`
+  apagava o banner pra todo mundo no momento em que um user clicasse).
+- Save usa `withRetry` (3 tentativas).
+
+**Portal save com retry**:
+- `portal/portal.js` (~linha 2316): update de tarefa wrapped em
+  `withRetry`. Se falhar, toast de erro + return (não fecha modal,
+  user pode tentar de novo sem perder edição).
+
+**Indicador montado no app**:
+- `app.js init()`: `mountConnectionIndicator()` (try/catch).
+
+**Validação**:
+- `node --check` passou nos 14 arquivos modificados/novos.
+- Simulação lógica: 5/5 casos de detecção de erro transient vs.
+  permanent corretos.
+
+---
+
 ## [4.49.47+20260520-changelog-doublecheck] — 2026-05-20
 
 Release **PATCH** — double-check do CHANGELOG + DEV-HOURS pedido pelo Renê:

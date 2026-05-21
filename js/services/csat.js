@@ -284,6 +284,10 @@ export function subscribeSurveys(callback) {
   );
   return onSnapshot(q, snap => {
     callback(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+  }, (err) => {
+    // v4.49.61+ Listener error com signaling pro indicador conn
+    console.warn('[csat] subscribe error:', err?.code, err?.message);
+    import('./listenerError.js').then(m => m.listenerError('csat')(err)).catch(() => {});
   });
 }
 

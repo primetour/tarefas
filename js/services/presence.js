@@ -214,8 +214,10 @@ export function startPresence() {
       store.set('onlineUsers', active);
       store.set('idleUsers',   idle);
     },
+    // v4.49.61+ Sinaliza connection pra indicador UI mostrar "Reconectando"
     (err) => {
       console.warn('[presence] snapshot err:', err?.message);
+      import('./listenerError.js').then(m => m.listenerError('presence')(err)).catch(() => {});
     }
   );
 }

@@ -205,7 +205,10 @@ export function subscribeVacationRequests(callback) {
       return tb - ta;
     });
     callback(rows);
-  }, (err) => console.warn('[vacation] subscribe err:', err?.message));
+  }, (err) => {
+    console.warn('[vacation] subscribe err:', err?.message);
+    import('./listenerError.js').then(m => m.listenerError('vacation')(err)).catch(() => {});
+  });
 }
 
 /* ─── Cria solicitação ────────────────────────────────────── */

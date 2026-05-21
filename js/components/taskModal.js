@@ -1312,9 +1312,19 @@ function buildHTML(task, users, projects, tags, assignees, observers, isEdit, ta
       }).join('')
     : `<div style="padding:12px;color:var(--text-muted);font-size:0.875rem;">Nenhum usuário ativo.</div>`;
 
-  // Build requester-edit banner if task was modified by the portal user
+  // Build requester-edit banner if task was modified by the portal user.
+  // v4.49.61+ Suprime se este user já deu ack pro último edit
+  // (requesterEditAckBy[uid] >= requesterEditAt). Garantia: novas edições
+  // futuras geram TS maior → banner reaparece automaticamente.
   const editBanner = (() => {
     if (!task.requesterEditFlag) return '';
+    const myUid = store.get('currentUser')?.uid;
+    const ackEntry = myUid && task.requesterEditAckBy?.[myUid];
+    if (ackEntry) {
+      const editTs = task.requesterEditAt?.toMillis ? task.requesterEditAt.toMillis() : 0;
+      const ackTs  = ackEntry?.toMillis ? ackEntry.toMillis() : 0;
+      if (ackTs >= editTs) return ''; // já vi este edit
+    }
     const editDate = task.requesterEditAt?.toDate
       ? task.requesterEditAt.toDate().toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})
       : '';
@@ -1849,17 +1859,38 @@ function bindEvents(task, users, currentTags, currentAssignees, currentObservers
   const root = rootEl || document;
   const qId = (id) => (rootEl ? rootEl.querySelector('#' + id) : document.getElementById(id));
 
-  // Dismiss requester-edit banner + clear flag on task
-  document.getElementById('tm-dismiss-edit-banner')?.addEventListener('click', async () => {
-    document.getElementById('tm-requester-edit-banner')?.remove();
+  // v4.49.61+ Ack PER-USER (não apaga flag global — outros users também
+  // precisam ver). Antes: updateDoc({requesterEditFlag:false}) → bug,
+  // primeiro user que clicava sumia o aviso pra todo mundo. Agora grava
+  // requesterEditAckBy[uid] = ts, e o filtro _isAckedByMe (em tasks.js)
+  // mostra/esconde individualmente.
+  document.getElementById('tm-dismiss-edit-banner')?.addEventListener('click', async (ev) => {
+    const btn = ev.currentTarget;
+    if (btn) { btn.disabled = true; btn.textContent = 'Salvando…'; btn.style.opacity = '0.6'; }
     if (task.id && task.requesterEditFlag) {
       try {
-        const { doc, updateDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        const { doc, updateDoc, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
         const { db } = await import('../firebase.js');
-        await updateDoc(doc(db, 'tasks', task.id), {
-          requesterEditFlag: false,
-        });
-      } catch(e) { /* silent */ }
+        const { store } = await import('../store.js');
+        const { withRetry } = await import('../services/retry.js');
+        const uid = store.get('currentUser')?.uid;
+        if (uid) {
+          await withRetry(
+            () => updateDoc(doc(db, 'tasks', task.id), {
+              [`requesterEditAckBy.${uid}`]: serverTimestamp(),
+            }),
+            { label: 'task.requesterEdit.ackInModal', maxAttempts: 3 },
+          );
+        }
+        document.getElementById('tm-requester-edit-banner')?.remove();
+      } catch (e) {
+        console.warn('[ack modal] falha:', e);
+        if (btn) { btn.disabled = false; btn.textContent = '✓ OK, estou ciente'; btn.style.opacity = ''; }
+        const { toast } = await import('./toast.js');
+        toast.error('Falha ao confirmar — tente de novo.');
+      }
+    } else {
+      document.getElementById('tm-requester-edit-banner')?.remove();
     }
   });
 

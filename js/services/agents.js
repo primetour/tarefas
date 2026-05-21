@@ -191,6 +191,7 @@ export function subscribeAgents(callback) {
     },
     (err) => {
       console.warn('[agents] subscribe err:', err?.message);
+      import('./listenerError.js').then(m => m.listenerError('agents')(err)).catch(() => {});
       callback([], err);
     });
 }

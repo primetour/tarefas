@@ -140,6 +140,8 @@ export function subscribeToSlots(callback, filters = {}) {
     try { callback(items); } catch (e) { console.warn('[ContentCalendar] subscribe callback error:', e); }
   }, (err) => {
     console.warn('[ContentCalendar] subscribe error:', err?.message);
+    // v4.49.61+ Sinaliza connection pra indicador UI
+    import('./listenerError.js').then(m => m.listenerError('contentCalendar.slots')(err)).catch(() => {});
   });
 }
 
@@ -183,6 +185,8 @@ export function subscribeToTasksByIds(taskIds, callback) {
         }
       }, (err) => {
         console.warn('[ContentCalendar] tasks subscribe error:', err?.message);
+        // v4.49.61+ Sinaliza connection pra indicador UI
+        import('./listenerError.js').then(m => m.listenerError('contentCalendar.tasks')(err)).catch(() => {});
       });
       unsubs.push(unsub);
     } catch (e) {

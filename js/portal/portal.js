@@ -2315,9 +2315,35 @@ async function openEditRequestModal(db, taskTypes, data) {
         };
         taskUpdate.requesterEditChanges = Object.keys(changes)
           .map(f => FIELD_LABELS[f] || f).join(', ');
+        // v4.49.61+ withRetry pra rede instável: 3 tentativas com backoff
+        // exponential. Antes era 1 tentativa e silent fail no catch → portal
+        // user achava que salvou mas a tarefa não recebia o flag, e os
+        // analistas nunca viam o banner de alteração.
+        let saveFailed = false;
         try {
-          await updateDoc(doc(db, 'tasks', taskId), taskUpdate);
-        } catch(e) { console.warn('Task update error:', e.message); }
+          const { withRetry } = await import('../services/retry.js');
+          await withRetry(
+            () => updateDoc(doc(db, 'tasks', taskId), taskUpdate),
+            { label: 'portal.requesterEdit.save', maxAttempts: 3 },
+          );
+        } catch (e) {
+          console.warn('Task update error após retry:', e?.code, e?.message);
+          saveFailed = true;
+        }
+        // Toast de erro se falhou (visível pro portal user)
+        if (saveFailed) {
+          const errToast = document.createElement('div');
+          errToast.style.cssText = `
+            position:fixed;bottom:24px;right:24px;z-index:10003;padding:12px 20px;
+            border-radius:8px;background:#DC2626;color:#fff;font-size:0.875rem;font-weight:600;
+            font-family:var(--font-ui);box-shadow:0 4px 20px rgba(0,0,0,0.3);
+            animation:slideUp 0.2s ease-out;max-width:420px;line-height:1.4;
+          `;
+          errToast.textContent = '⚠ Conexão instável. Sua alteração pode não ter sido salva — tente novamente em alguns segundos.';
+          document.body.appendChild(errToast);
+          setTimeout(() => errToast.remove(), 8000);
+          return; // não fecha modal, user pode tentar de novo
+        }
       }
 
       closeEdit();

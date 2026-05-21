@@ -145,6 +145,7 @@ export function subscribeReservations({ from, to } = {}, callback) {
     callback(rows);
   }, (err) => {
     console.warn('[checkin] subscribe error:', err?.message);
+    import('./listenerError.js').then(m => m.listenerError('checkin.reservations')(err)).catch(() => {});
   });
 }
 
@@ -155,6 +156,9 @@ export function subscribeMyTimeClock(callback) {
   const id = timeClockId(cu.uid, todayISO());
   return onSnapshot(doc(db, 'time_clock', id), (snap) => {
     callback(snap.exists() ? { id: snap.id, ...snap.data() } : null);
+  }, (err) => {
+    // v4.49.61+ Sinaliza connection — silencioso (clockTimer usa subscribe)
+    import('./listenerError.js').then(m => m.listenerError('checkin.myTimeClock')(err)).catch(() => {});
   });
 }
 export async function createReservation({ data, sector, area, baia, fileira, assento, userName }) {
@@ -643,6 +647,7 @@ export function subscribeTimeClockRequests(callback, { status = 'pending' } = {}
     callback(rows);
   }, (err) => {
     console.warn('[checkin] subscribe req error:', err?.message);
+    import('./listenerError.js').then(m => m.listenerError('checkin.requests')(err)).catch(() => {});
     // Notifica o callback com array vazio + erro pra UI poder mostrar fallback
     callback([], err);
   });
