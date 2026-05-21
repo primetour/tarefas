@@ -118,33 +118,8 @@ async function fuzzyFetchAsset(token, name) {
   return it.views?.html?.content || it.content || '';
 }
 
-function extractContentImages(html, topN = 5) {
-  if (!html) return [];
-  const imgs = [];
-  const re = /<img\s+([^>]*?)>/gi;
-  let m;
-  while ((m = re.exec(html)) !== null) {
-    const attrs = m[1];
-    const url = (attrs.match(/\bsrc\s*=\s*["']([^"']+)["']/i) || [])[1] || '';
-    if (!url || /^(data:|javascript:)/i.test(url)) continue;
-    if (/\.gif(\?|$)/i.test(url) && /(open|track|pixel|beacon|t\.gif|spacer)/i.test(url)) continue;
-    const alt = ((attrs.match(/\balt\s*=\s*["']([^"']*)["']/i) || [])[1] || '').trim();
-    const width  = parseInt((attrs.match(/\bwidth\s*=\s*["']?(\d+)/i)  || [])[1], 10) || 0;
-    const height = parseInt((attrs.match(/\bheight\s*=\s*["']?(\d+)/i) || [])[1], 10) || 0;
-    if ((width === 1 && height >= 0) || (height === 1 && width >= 0)) continue;
-    if (width > 0 && width < 10) continue;
-    if (height > 0 && height < 10) continue;
-    if (width > 0 && width < 200 && height > 0 && height < 100) continue;
-    const area = (width || 400) * (height || 300);
-    const altScore = alt.length > 20 ? 1.5 : (alt.length > 5 ? 1.2 : 1.0);
-    imgs.push({ url, alt, width, height, score: area * altScore });
-  }
-  const seen = new Set();
-  return imgs
-    .filter(i => { if (seen.has(i.url)) return false; seen.add(i.url); return true; })
-    .sort((a, b) => b.score - a.score)
-    .slice(0, topN);
-}
+// v4.49.57+ Single source of truth — preserva ordem do HTML + captura links
+const { extractContentImages } = require('./lib/extract-content-images.cjs');
 
 (async () => {
   console.log(`${DRY ? '🔍 DRY-RUN' : '✏  ESCREVENDO'} · Categorização honesta v4.49.32\n`);

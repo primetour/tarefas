@@ -358,52 +358,17 @@ function stripHtml(html) {
 
 /* ─── Extrai URLs de imagens do HTML cru com filtros ──────────
  * Newsletters PRIMETOUR têm o conteúdo principal em IMAGENS (banners
- * de hotéis, cards de destinos), não em texto. Pra analisar via Vision,
- * extraímos URLs filtrando: tracking pixels (1×1), logos pequenos,
- * spacers. Pega top N imagens "de conteúdo" (maiores).
+ * de hotéis, cards de destinos), não em texto.
  *
- * Retorna array de { url, alt, width, height, score } ordenado por score desc.
+ * v4.49.57+ Refatorado pra usar lib/extract-content-images.cjs (single
+ * source of truth com mc-sync, backfill-image-urls e categorize-no-art).
+ * Mudança comportamental: NÃO ordena mais por score — preserva ordem do
+ * HTML (necessário pra composição vertical no modal "Ver arte"). Captura
+ * também o link <a> envolvente quando presente.
+ *
+ * Retorna array de { url, alt, link, width, height, position } na ordem do HTML.
  */
-function extractContentImages(html, topN = 5) {
-  if (!html) return [];
-  const imgs = [];
-  const re = /<img\s+([^>]*?)>/gi;
-  let m;
-  while ((m = re.exec(html)) !== null) {
-    const attrs = m[1];
-    const url = (attrs.match(/\bsrc\s*=\s*["']([^"']+)["']/i) || [])[1] || '';
-    if (!url) continue;
-    // Pula data: URIs e javascript:
-    if (/^(data:|javascript:)/i.test(url)) continue;
-    // Pula tracking pixels conhecidos (analytics, mailing trackers)
-    if (/\.gif(\?|$)/i.test(url) && /(open|track|pixel|beacon|t\.gif|spacer)/i.test(url)) continue;
-
-    const alt = ((attrs.match(/\balt\s*=\s*["']([^"']*)["']/i) || [])[1] || '').trim();
-    const width  = parseInt((attrs.match(/\bwidth\s*=\s*["']?(\d+)/i)  || [])[1], 10) || 0;
-    const height = parseInt((attrs.match(/\bheight\s*=\s*["']?(\d+)/i) || [])[1], 10) || 0;
-
-    // Filtros de tamanho:
-    // 1×1 ou 1×N = tracking pixel
-    if ((width === 1 && height >= 0) || (height === 1 && width >= 0)) continue;
-    // Spacer (<10px qualquer dimensão)
-    if (width > 0 && width < 10) continue;
-    if (height > 0 && height < 10) continue;
-    // Logos típicos: <200×<100
-    if (width > 0 && width < 200 && height > 0 && height < 100) continue;
-
-    // Score: imagens maiores + com alt text descritivo
-    const area = (width || 400) * (height || 300);
-    const altScore = alt.length > 20 ? 1.5 : (alt.length > 5 ? 1.2 : 1.0);
-    const score = area * altScore;
-
-    imgs.push({ url, alt, width, height, score });
-  }
-  // Dedup por URL
-  const seen = new Set();
-  const dedup = imgs.filter(i => { if (seen.has(i.url)) return false; seen.add(i.url); return true; });
-  // Ordena por score desc, pega topN
-  return dedup.sort((a, b) => b.score - a.score).slice(0, topN);
-}
+const { extractContentImages } = require('./lib/extract-content-images.cjs');
 
 /* ─── Download de imagem + base64 (pra Vision API) ─────────── */
 async function fetchImageAsBase64(url) {

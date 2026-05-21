@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 56,
-  build: '20260521-hotfix-csp-content-firebaseappcheck',
+  patch: 57,
+  build: '20260521-nl-composicao-vertical-link-original',
 };
 
 /** "1.2.0" */

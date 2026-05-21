@@ -811,34 +811,58 @@ async function openArtworkModal(docId, rowName) {
             </div>
           </div>`;
       } else {
+        // v4.49.57+ Composição VERTICAL replicando a newsletter real:
+        //   - Coluna única max-width 600px (largura padrão do email)
+        //   - Sem aspect-ratio fixo (cada imagem mantém proporção natural)
+        //   - Ordem do HTML preservada (header → hero → blocos → CTA → footer)
+        //   - Click abre LINK ORIGINAL do <a> (URL de destino real da campanha)
+        //     OU a imagem em si se não houver link
+        // Back-compat: docs antigos com imageUrls = array de strings continuam
+        // funcionando (sem link, sem ordem narrativa — substituídos no próximo
+        // backfill).
+        const hasNewSchema = imgs.some(i => typeof i === 'object' && i !== null);
+        const compositionHint = hasNewSchema
+          ? 'composição vertical · click abre o link original da campanha'
+          : 'doc legado (sem link original) · click abre a imagem · próximo backfill captura a composição completa';
         content = `
           <div style="font-size:0.8125rem;color:var(--text-secondary);margin-bottom:16px;line-height:1.5;">
             ${meta}
           </div>
-          <div style="font-size:0.6875rem;color:var(--text-muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.05em;font-weight:600;">
-            ${imgs.length} ${imgs.length === 1 ? 'imagem' : 'imagens'} · servidas pelo SFMC CDN · click pra abrir em tamanho real
+          <div style="font-size:0.6875rem;color:var(--text-muted);margin-bottom:12px;text-transform:uppercase;letter-spacing:0.05em;font-weight:600;">
+            ${imgs.length} ${imgs.length === 1 ? 'imagem' : 'imagens'} · ${compositionHint}
           </div>
-          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;">
+          <div style="max-width:600px;margin:0 auto;background:#f5f5f5;border:1px solid var(--border-subtle);
+            border-radius:8px;overflow:hidden;">
             ${imgs.map((img, i) => {
-              const url = typeof img === 'string' ? img : img?.url;
-              const alt = (typeof img === 'object' && img?.alt) || '';
+              // Back-compat: string (legado) OU objeto { url, alt, link, ... }
+              const url  = typeof img === 'string' ? img : img?.url;
+              const alt  = (typeof img === 'object' && img?.alt)  || '';
+              const link = (typeof img === 'object' && img?.link) || null;
               if (!url) return '';
-              return `<a href="${esc(url)}" target="_blank" rel="noopener"
-                style="display:block;border:1px solid var(--border-subtle);border-radius:8px;
-                overflow:hidden;background:var(--bg-elevated);text-decoration:none;
-                transition:transform 0.15s, border-color 0.15s;"
-                onmouseover="this.style.transform='translateY(-2px)';this.style.borderColor='var(--brand-gold)';"
-                onmouseout="this.style.transform='';this.style.borderColor='var(--border-subtle)';">
-                <div style="aspect-ratio:16/10;overflow:hidden;background:#f5f5f5;">
-                  <img src="${esc(url)}" alt="${esc(alt)}" style="width:100%;height:100%;object-fit:contain;"
-                    loading="lazy" referrerpolicy="no-referrer"
-                    onerror="this.parentElement.innerHTML='<div style=\\'padding:32px;text-align:center;color:#999;\\'>imagem indisponível</div>';">
-                </div>
-                ${alt ? `<div style="padding:6px 8px;font-size:0.6875rem;color:var(--text-muted);
-                  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(alt)}</div>` : ''}
+              const href = link || url;          // click vai pra link original; fallback = imagem
+              const isLinkOriginal = !!link;
+              return `<a href="${esc(href)}" target="_blank" rel="noopener"
+                style="display:block;text-decoration:none;position:relative;"
+                title="${isLinkOriginal ? 'Abrir destino original: ' + esc(href) : 'Abrir imagem em nova aba'}">
+                <img src="${esc(url)}" alt="${esc(alt)}"
+                  style="display:block;width:100%;height:auto;"
+                  loading="lazy" referrerpolicy="no-referrer"
+                  onerror="this.outerHTML='<div style=\\'padding:24px;text-align:center;color:#999;background:#fff;border-top:1px solid #eee;\\'>⚠ imagem indisponível</div>';">
+                ${isLinkOriginal ? `
+                  <div style="position:absolute;top:6px;right:6px;background:rgba(0,0,0,0.65);color:#fff;
+                    font-size:0.625rem;padding:2px 6px;border-radius:4px;opacity:0;transition:opacity 0.15s;"
+                    onmouseover="this.style.opacity='1';" onmouseout="this.style.opacity='0';">
+                    🔗 ${esc(new URL(href).hostname)}
+                  </div>` : ''}
               </a>`;
             }).join('')}
-          </div>`;
+          </div>
+          ${hasNewSchema ? `
+            <div style="margin-top:12px;font-size:0.6875rem;color:var(--text-muted);text-align:center;">
+              Réplica da composição vertical do SFMC. Cada bloco preserva o link de destino
+              original da campanha (passe o mouse pra ver o domínio).
+            </div>
+          ` : ''}`;
       }
     }
   } catch (e) {

@@ -47,6 +47,10 @@ const MC_CLIENT_ID     = process.env.MC_CLIENT_ID     || '';
 const MC_CLIENT_SECRET = process.env.MC_CLIENT_SECRET || '';
 
 const DRY      = process.argv.includes('--dry');
+// v4.49.57+ --force: re-extrai imageUrls de TODOS os docs (ignora filtro
+// de "sem imageUrls"). Usado quando o schema do extractor muda
+// (ex: strings → objetos {url,alt,link,position}).
+const FORCE    = process.argv.includes('--force');
 const BU_ARG   = (process.argv.find(a => a.startsWith('--bu=')) || '').slice(5);
 const LIMIT    = parseInt((process.argv.find(a => a.startsWith('--limit=')) || '').slice(8)) || 0;
 
@@ -128,36 +132,8 @@ async function fetchAssetsByNames(token, names) {
 }
 
 /* ─── Image extraction (idêntico ao mc-sync) ─── */
-function extractContentImages(html, topN = 5) {
-  if (!html) return [];
-  const imgs = [];
-  const re = /<img\s+([^>]*?)>/gi;
-  let m;
-  while ((m = re.exec(html)) !== null) {
-    const attrs = m[1];
-    const url = (attrs.match(/\bsrc\s*=\s*["']([^"']+)["']/i) || [])[1] || '';
-    if (!url) continue;
-    if (/^(data:|javascript:)/i.test(url)) continue;
-    if (/\.gif(\?|$)/i.test(url) && /(open|track|pixel|beacon|t\.gif|spacer)/i.test(url)) continue;
-
-    const alt = ((attrs.match(/\balt\s*=\s*["']([^"']*)["']/i) || [])[1] || '').trim();
-    const width  = parseInt((attrs.match(/\bwidth\s*=\s*["']?(\d+)/i)  || [])[1], 10) || 0;
-    const height = parseInt((attrs.match(/\bheight\s*=\s*["']?(\d+)/i) || [])[1], 10) || 0;
-
-    if ((width === 1 && height >= 0) || (height === 1 && width >= 0)) continue;
-    if (width > 0 && width < 10) continue;
-    if (height > 0 && height < 10) continue;
-    if (width > 0 && width < 200 && height > 0 && height < 100) continue;
-
-    const area = (width || 400) * (height || 300);
-    const altScore = alt.length > 20 ? 1.5 : (alt.length > 5 ? 1.2 : 1.0);
-    const score = area * altScore;
-    imgs.push({ url, alt, width, height, score });
-  }
-  const seen = new Set();
-  const dedup = imgs.filter(i => { if (seen.has(i.url)) return false; seen.add(i.url); return true; });
-  return dedup.sort((a, b) => b.score - a.score).slice(0, topN);
-}
+// v4.49.57+ Single source of truth — preserva ordem do HTML + captura links
+const { extractContentImages } = require('./lib/extract-content-images.cjs');
 
 /* ─── Main ─── */
 (async () => {
@@ -171,15 +147,28 @@ function extractContentImages(html, topN = 5) {
     process.exit(1);
   }
 
-  // 1. Lê docs sem imageUrls
+  // 1. Lê docs alvo
   let q = db.collection('mc_performance');
   if (BU_ARG) q = q.where('buId', '==', BU_ARG);
   const snap = await q.get();
   const allDocs = snap.docs.map(d => ({ id: d.id, ref: d.ref, ...d.data() }));
-  const needsBackfill = allDocs.filter(d =>
-    !Array.isArray(d.imageUrls) || d.imageUrls.length === 0
-  );
-  console.log(`📊 Total docs: ${allDocs.length} · sem imageUrls: ${needsBackfill.length}`);
+  // v4.49.57+ FORCE: re-extrai tudo (usado quando schema do extractor muda).
+  // Detecta também schema antigo automaticamente: se imageUrls é array de
+  // strings (não objetos), re-extrai pra atualizar pra { url, alt, link, ... }.
+  const isLegacyStringSchema = (d) =>
+    Array.isArray(d.imageUrls) && d.imageUrls.length > 0 &&
+    typeof d.imageUrls[0] === 'string';
+  const needsBackfill = FORCE
+    ? allDocs
+    : allDocs.filter(d =>
+        !Array.isArray(d.imageUrls) || d.imageUrls.length === 0 || isLegacyStringSchema(d)
+      );
+  const legacySchemaCount = allDocs.filter(isLegacyStringSchema).length;
+  console.log(`📊 Total docs: ${allDocs.length}`);
+  console.log(`   sem imageUrls:    ${allDocs.filter(d => !Array.isArray(d.imageUrls) || d.imageUrls.length === 0).length}`);
+  console.log(`   schema legado (strings): ${legacySchemaCount} ${legacySchemaCount > 0 ? '← serão atualizados pra novo schema {url,alt,link}' : ''}`);
+  console.log(`   força (--force):  ${FORCE ? 'SIM (re-extrai TUDO)' : 'não'}`);
+  console.log(`   a processar:      ${needsBackfill.length}`);
 
   // 2. Agrupa por (buId, name) — assets únicos
   const assetMap = new Map(); // "buId|name" → { buId, name, docs[] }
