@@ -124,12 +124,22 @@
   .ultrablue-intro { padding-left: 32px; padding-right: 32px; }
 }
 
+/* Intro 2-col: título esq / parágrafos dir, topos alinhados. */
 .ultrablue-intro__inner {
-  max-width: 720px;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 24px;
+  max-width: 1280px;
+}
+
+@media (min-width: 768px) {
+  .ultrablue-intro__inner {
+    grid-template-columns: 1fr 1fr;
+    column-gap: 80px;
+  }
 }
 
 .ultrablue-intro__title {
-  margin-top: 16px;
   font-size: 36px;
   font-weight: 300;
   line-height: 1.15;
@@ -137,10 +147,13 @@
 }
 
 .ultrablue-intro__body {
-  margin-top: 20px;
   font-size: 16px;
   line-height: 1.6;
   color: rgba(5, 19, 42, 0.75);
+}
+
+@media (min-width: 768px) {
+  .ultrablue-intro__body { padding-top: 8px; }
 }
 
 /* ─── CURATED ─── */
@@ -310,45 +323,71 @@
   color: var(--ultrablue-navy);
 }
 
-.ultrablue-why__grid {
+/* Layout: imagem à esquerda + grid de 6 features à direita. */
+.ultrablue-why__layout {
   margin-top: 48px;
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 24px;
-}
-
-@media (min-width: 640px) {
-  .ultrablue-why__grid { grid-template-columns: 1fr 1fr; }
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
 }
 
 @media (min-width: 1024px) {
-  .ultrablue-why__grid { grid-template-columns: repeat(4, 1fr); }
+  .ultrablue-why__layout { flex-direction: row; gap: 56px; }
 }
 
-.ultrablue-why__item h3 {
-  margin-top: 16px;
-  font-size: 20px;
-  font-weight: 500;
+.ultrablue-why__media {
+  width: 100%;
+  height: 320px;
+  overflow: hidden;
+}
+
+@media (min-width: 640px) {
+  .ultrablue-why__media { height: 420px; }
+}
+
+@media (min-width: 1024px) {
+  .ultrablue-why__media { width: 480px; flex-shrink: 0; height: auto; }
+}
+
+.ultrablue-why__media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ultrablue-why__features {
+  flex: 1;
+  list-style: none;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 32px;
+}
+
+@media (min-width: 640px) {
+  .ultrablue-why__features { grid-template-columns: 1fr 1fr; gap: 40px 32px; }
+}
+
+.ultrablue-why__feature {
+  display: flex;
+  gap: 16px;
+}
+
+.ultrablue-why__feature-icon {
+  flex-shrink: 0;
   color: var(--ultrablue-navy);
 }
 
-.ultrablue-why__item p {
-  margin-top: 8px;
-  font-size: 15px;
-  line-height: 1.5;
-  color: rgba(5, 19, 42, 0.75);
+.ultrablue-why__feature h3 {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ultrablue-navy);
 }
 
-.ultrablue-why__icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  font-size: 22px;
-  color: var(--ultrablue-accent-light);
-  background: var(--ultrablue-navy);
-  border-radius: 999px;
+.ultrablue-why__feature p {
+  margin-top: 8px;
+  font-size: 16px;
+  line-height: 1.5;
+  color: rgba(5, 19, 42, 0.75);
 }
 
 /* Intro: corpo agora é div com múltiplos <p>, h3 "Experiências selecionadas" */
@@ -356,7 +395,8 @@
 .ultrablue-intro__body p + p { margin-top: 16px; }
 
 .ultrablue-intro__experiencias {
-  margin-top: 48px;
+  grid-column: 1 / -1;
+  margin-top: 24px;
   font-size: 24px;
   font-weight: 400;
   color: var(--ultrablue-navy);
