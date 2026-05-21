@@ -17,6 +17,7 @@
     }
   ],
   "hosting": {
+    "target": "btg-staging",
     "public": ".",
     "ignore": [
       "firebase.json",
