@@ -320,6 +320,53 @@
   opacity: 0.9;
 }
 
+/* Aba "Buscar foto" — fallback online ─────────────────────── */
+
+.btg-picker__empty {
+  flex-direction: column;
+  gap: 14px;
+}
+
+.btg-picker__empty-action,
+.btg-picker__btn {
+  background: var(--btg-navy, #05132a);
+  color: #fff;
+  border: 0;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.btg-picker__empty-action {
+  padding: 9px 18px;
+  font-size: 13px;
+}
+
+.btg-picker__btn {
+  padding: 8px 20px;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.btg-picker__empty-action:hover,
+.btg-picker__btn:hover {
+  opacity: 0.9;
+}
+
+.btg-picker__btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.btg-picker__buscar-status {
+  padding: 10px 24px;
+  font-size: 13px;
+  color: #6b7280;
+  border-bottom: 1px solid #f3f4f6;
+  background: #fff;
+}
+
 /* Responsive */
 @media (max-width: 600px) {
   .btg-picker {

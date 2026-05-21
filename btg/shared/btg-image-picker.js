@@ -1,9 +1,12 @@
 /**
- * BTG Image Picker — modal com 2 abas (Banco curado / Upload novo).
+ * BTG Image Picker — modal com 3 abas (Banco curado / Buscar foto / Upload).
  *
  * - Aba "Banco curado": lê coleção `portal_images_dev` (Firestore staging)
  *   ou `portal_images` (produção, quando migrar). Filtra por país/cidade
  *   e busca por texto livre (nome/placeName/tags).
+ * - Aba "Buscar foto": fallback online quando o banco curado não tem foto
+ *   do destino. Usa `btg-photo-search.js` (Unsplash em produção, amostra
+ *   em staging).
  * - Aba "Upload novo": em staging fica desabilitada com mensagem
  *   ("Disponível em produção"). Em produção: TODO Fase 5 (Cloud Function
  *   getR2UploadUrl + CORS dos domínios finais).
@@ -20,6 +23,7 @@
  */
 
 import { getBtgFirebase } from './btg-firebase.js';
+import { searchPhotos } from './btg-photo-search.js';
 
 const COLLECTION = 'portal_images_dev'; // produção: 'portal_images'
 const PAGE_LIMIT = 100;
@@ -103,11 +107,17 @@ function uniqueCountries(images) {
 
 // ─── Render ─────────────────────────────────────────────────
 
-function renderGrid(images, container, onPick) {
+function renderGrid(images, container, onPick, onEmptyAction) {
   container.innerHTML = '';
   if (images.length === 0) {
-    container.appendChild(el('div', { className: 'btg-picker__empty' },
-      'Nenhuma imagem encontrada com esses filtros.'));
+    const empty = el('div', { className: 'btg-picker__empty' },
+      el('div', {}, 'Nenhuma imagem encontrada com esses filtros.'));
+    if (onEmptyAction) {
+      empty.appendChild(el('button', {
+        className: 'btg-picker__empty-action', type: 'button', onClick: onEmptyAction,
+      }, '🔍 Buscar foto do destino online'));
+    }
+    container.appendChild(empty);
     return;
   }
   for (const img of images) {
@@ -125,6 +135,28 @@ function renderGrid(images, container, onPick) {
         el('strong', { className: 'btg-picker__name' }, img.name || ''),
         el('span', { className: 'btg-picker__place' }, [img.city, img.country].filter(Boolean).join(', ')),
       ),
+    );
+    container.appendChild(card);
+  }
+}
+
+// Grid de resultados da busca online de fotos (sem metadados de banco).
+function renderPhotoGrid(photos, container, onPick) {
+  container.innerHTML = '';
+  for (const photo of photos) {
+    const card = el('button', {
+      className: 'btg-picker__card',
+      type: 'button',
+      onClick: () => onPick(photo),
+    },
+      el('div', {
+        className: 'btg-picker__thumb',
+        style: `background-image: url('${esc(photo.url)}')`,
+      }),
+      photo.author
+        ? el('div', { className: 'btg-picker__meta' },
+            el('span', { className: 'btg-picker__place' }, photo.author))
+        : null,
     );
     container.appendChild(card);
   }
@@ -161,8 +193,9 @@ export function openImagePicker(opts = {}) {
 
     // Tabs
     const tabCurado = el('button', { className: 'btg-picker__tab is-active', type: 'button', 'data-tab': 'curado' }, '📚 Banco curado');
+    const tabBuscar = el('button', { className: 'btg-picker__tab', type: 'button', 'data-tab': 'buscar' }, '🔍 Buscar foto');
     const tabUpload = el('button', { className: 'btg-picker__tab', type: 'button', 'data-tab': 'upload' }, '⬆️ Upload novo');
-    const tabs = el('nav', { className: 'btg-picker__tabs' }, tabCurado, tabUpload);
+    const tabs = el('nav', { className: 'btg-picker__tabs' }, tabCurado, tabBuscar, tabUpload);
 
     // Curado panel
     const searchInput = el('input', {
@@ -189,17 +222,33 @@ export function openImagePicker(opts = {}) {
       ),
     );
 
+    // Buscar panel (fallback online de fotos de destino)
+    const buscarInput = el('input', {
+      className: 'btg-picker__search', type: 'search',
+      placeholder: 'Nome do destino — ex: Paris, Maldivas, Bora Bora...',
+    });
+    const buscarBtn = el('button', { className: 'btg-picker__btn', type: 'button' }, 'Buscar');
+    const buscarRow = el('div', { className: 'btg-picker__filters' }, buscarInput, buscarBtn);
+    const buscarStatus = el('div', { className: 'btg-picker__buscar-status' },
+      'Digite o nome do destino e clique em Buscar.');
+    const buscarGrid = el('div', { className: 'btg-picker__grid' });
+    const buscarPanel = el('div', { className: 'btg-picker__panel', 'data-panel': 'buscar', hidden: 'hidden' },
+      buscarRow, buscarStatus, buscarGrid);
+
     // Tab switching
     const switchTab = (which) => {
-      [tabCurado, tabUpload].forEach(t => t.classList.toggle('is-active', t.dataset.tab === which));
+      [tabCurado, tabBuscar, tabUpload].forEach(t => t.classList.toggle('is-active', t.dataset.tab === which));
       curadoPanel.hidden = which !== 'curado';
+      buscarPanel.hidden = which !== 'buscar';
       uploadPanel.hidden = which !== 'upload';
+      if (which === 'buscar') setTimeout(() => buscarInput.focus(), 50);
     };
     tabCurado.addEventListener('click', () => switchTab('curado'));
+    tabBuscar.addEventListener('click', () => switchTab('buscar'));
     tabUpload.addEventListener('click', () => switchTab('upload'));
 
     // Body
-    const body = el('div', { className: 'btg-picker__body' }, curadoPanel, uploadPanel);
+    const body = el('div', { className: 'btg-picker__body' }, curadoPanel, buscarPanel, uploadPanel);
 
     modal.appendChild(header);
     modal.appendChild(tabs);
@@ -230,10 +279,61 @@ export function openImagePicker(opts = {}) {
       });
     };
 
+    // ─── Busca online de fotos (aba "Buscar foto") ───
+    const onPickPhoto = (photo, query) => {
+      close({
+        url: photo.url,
+        name: query || 'Foto do destino',
+        placeName: query || '',
+        country: '', city: '',
+        assetCategory: '',
+        tags: query ? [query.toLowerCase()] : [],
+      });
+    };
+
+    let buscando = false;
+    const doPhotoSearch = async () => {
+      const q = buscarInput.value.trim();
+      if (!q) { buscarInput.focus(); return; }
+      if (buscando) return;
+      buscando = true;
+      buscarBtn.disabled = true;
+      buscarGrid.innerHTML = '';
+      buscarStatus.textContent = 'Buscando fotos…';
+      try {
+        const { photos, mock } = await searchPhotos(q);
+        if (!photos.length) {
+          buscarStatus.textContent = `Nenhuma foto encontrada para "${q}".`;
+        } else {
+          buscarStatus.textContent = mock
+            ? `${photos.length} fotos — amostra de staging (em produção a busca é real, via Unsplash)`
+            : `${photos.length} foto(s) encontrada(s) para "${q}"`;
+          renderPhotoGrid(photos, buscarGrid, (p) => onPickPhoto(p, q));
+        }
+      } catch (e) {
+        buscarStatus.textContent = 'Não foi possível buscar fotos agora. Tente novamente.';
+        console.warn('[btg-image-picker] busca de foto falhou:', e?.message);
+      } finally {
+        buscando = false;
+        buscarBtn.disabled = false;
+      }
+    };
+    buscarBtn.addEventListener('click', doPhotoSearch);
+    buscarInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') doPhotoSearch(); });
+
     let state = { search: '', country: '__all__' };
+
+    // Atalho: banco curado sem resultado → aba de busca já com o termo
+    const goToPhotoSearch = () => {
+      switchTab('buscar');
+      const term = state.search.trim();
+      if (term) { buscarInput.value = term; doPhotoSearch(); }
+      else { buscarInput.focus(); }
+    };
+
     const refresh = () => {
       const filtered = applyFilters(images, state);
-      renderGrid(filtered, grid, onPick);
+      renderGrid(filtered, grid, onPick, goToPhotoSearch);
     };
     refresh();
 
