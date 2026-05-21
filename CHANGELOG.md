@@ -6,6 +6,50 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.67+20260521-portal-import-parser-title-case-items] — 2026-05-21
+
+Release **PATCH** — Portal de Dicas/Importação: parser aceita
+títulos de items em Title Case (não apenas MAIÚSCULAS).
+
+**Contexto**: validando v4.49.66 no Chrome com DOCX sintético
+de Casablanca, descobri 2 bugs adicionais:
+
+1. **`extractDocxLinesWithHeadings`** adicionava blank line após
+   cada `<p>`, criando blocks separados pra cada parágrafo.
+   Resultado: "La Sqala" + "Restaurante tradicional..." +
+   "Endereço: ..." virava 3 blocks de 1 linha em vez de 1 item.
+2. **`parsePlaceList`** (linha 524) exigia `isAllCaps(firstLine)`
+   na primeira linha do bloco. Items Title Case ("La Sqala",
+   "Rick's Café") eram silently dropped.
+
+**Mudanças em `js/services/portalPdfParser.js`**:
+
+1. **`extractDocxLinesWithHeadings`**: blank line agora só envolta
+   de heading e listas (`<ul>/<ol>`). Parágrafos sucessivos `<p>`
+   ficam contíguos pra `splitBlocks` preservar items multi-linha.
+
+2. **`_looksLikeItemTitle(line)`**: heurística pra detectar início
+   de novo item (≤ 60 chars, sem ponto final, sem prefix de
+   endereço/telefone/site, começa com maiúscula).
+
+3. **`splitBlockIntoItems(block)`** dentro de `parsePlaceList`:
+   sub-divide um block em items individuais por linhas que
+   "parecem título". Necessário porque DOCX com Word headings tem
+   items sucessivos sem blank line entre eles.
+
+4. **Validação de item flexível** em `parsePlaceList`: aceita
+   AllCaps (legacy) OU dígito inicial OU `_looksLikeItemTitle`.
+
+5. **`parseSimpleList`** (Bairros/Arredores) refeito: aceita
+   formato "Nome: descrição" (típico Title Case) + linhas de
+   continuação.
+
+**Próximo**: UI granular pra editar/aprovar items por segmento.
+
+**Validação**: `node --check` ok. E2E pendente no Chrome.
+
+---
+
 ## [4.49.66+20260521-portal-import-parser-heuristico-subtitulos] — 2026-05-21
 
 Release **PATCH** — Portal de Dicas/Importação: parser DOCX/PDF

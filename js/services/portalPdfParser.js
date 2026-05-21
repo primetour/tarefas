@@ -496,6 +496,25 @@ function segLabel(key) {
   return (SEGMENTS.find(s => s.key === key) || {}).label || key;
 }
 
+/** v4.49.67+ Detecta se uma linha "parece" começo de novo item dentro
+ *  de um bloco (heurística pra dividir items quando não há blank line):
+ *   - curta (≤ 60 chars)
+ *   - sem ponto final / interrogação / exclamação
+ *   - NÃO é endereço/telefone/site/link (regex prefix)
+ *   - começa com maiúscula
+ *   - tem ≥ 1 letra */
+function _looksLikeItemTitle(line) {
+  const s = String(line || '').trim();
+  if (!s || s.length > 60) return false;
+  if (/[.!?]$/.test(s)) return false;
+  if (/^(?:tel\.?|endere[cç]o|site|link|hor[aá]rio|fone|whatsapp|email|e-mail|metr[oô]|valor|pre[cç]o)\s*[:.-]/i.test(s)) return false;
+  if (/^https?:\/\//i.test(s)) return false;
+  if (/^\+?\d/.test(s) && /\d{4,}/.test(s)) return false; // telefone/codigo
+  const first = s.match(/\p{L}/u)?.[0];
+  if (!first) return false;
+  return first === first.toUpperCase();
+}
+
 function parsePlaceList(bodyLines, segKey, useSubcategories = false) {
   const blocks = splitBlocks(bodyLines);
   const rows = [];
@@ -505,6 +524,29 @@ function parsePlaceList(bodyLines, segKey, useSubcategories = false) {
     ? ATRACOES_SUBCATS
     : (SEGMENT_SUBCATS[segKey] || []);
   const subcatSet = new Set(subcatList.map(norm));
+
+  // v4.49.67+ Pra cada block, sub-divide em items por linhas que "parecem título".
+  // Antes assumia 1 block = 1 item, mas DOCX Title Case com parágrafos contíguos
+  // junta vários items em 1 só block.
+  const splitBlockIntoItems = (block) => {
+    const items = [];
+    let cur = [];
+    for (let i = 0; i < block.length; i++) {
+      const line = block[i];
+      const isFirstLine = cur.length === 0;
+      // Início de NOVO item: linha parece título (curta, capitalizada, sem
+      // prefix de endereço/tel/etc) E não é a primeira linha do block atual
+      // (a primeira sempre vira título do item em curso).
+      if (!isFirstLine && _looksLikeItemTitle(line)) {
+        items.push(cur);
+        cur = [line];
+      } else {
+        cur.push(line);
+      }
+    }
+    if (cur.length) items.push(cur);
+    return items;
+  };
 
   for (const block of blocks) {
     const firstLine = block[0];
@@ -519,22 +561,32 @@ function parsePlaceList(bodyLines, segKey, useSubcategories = false) {
       }
     }
 
-    // Item: primeira linha deve parecer um título
-    if (!isAllCaps(firstLine) && !/^\d/.test(firstLine)) continue;
+    // v4.49.67+ Divide o block em items individuais (suporta Title Case)
+    const items = splitBlockIntoItems(block);
+    for (const itemLines of items) {
+      const itemFirst = itemLines[0];
+      if (!itemFirst) continue;
+      // Aceita: ALL CAPS (legacy), começa com dígito (numbered), OU Title Case
+      // que pareça título (heurística nova).
+      const isValid = isAllCaps(itemFirst)
+                   || /^\d/.test(itemFirst)
+                   || _looksLikeItemTitle(itemFirst);
+      if (!isValid) continue;
 
-    const { descricao, endereco, telefone, site } = extractContactFields(block);
-    rows.push({
-      type: 'dica',
-      segmento:  segLabel(segKey),
-      categoria: currentCategoria,
-      titulo:    firstLine.trim(),
-      descricao,
-      endereco,
-      telefone,
-      site,
-      observacoes: '',
-      periodo:    '',
-    });
+      const { descricao, endereco, telefone, site } = extractContactFields(itemLines);
+      rows.push({
+        type: 'dica',
+        segmento:  segLabel(segKey),
+        categoria: currentCategoria,
+        titulo:    itemFirst.trim(),
+        descricao,
+        endereco,
+        telefone,
+        site,
+        observacoes: '',
+        periodo:    '',
+      });
+    }
   }
 
   return rows;
@@ -616,22 +668,47 @@ function parseSimpleList(bodyLines, segKey) {
 
   for (const block of blocks) {
     if (!block.length) continue;
-    const firstLine = block[0];
-    if (!isAllCaps(firstLine)) continue;
 
-    const descricao = block.slice(1).join(' ').replace(/\s+/g, ' ').trim();
-    rows.push({
-      type: 'dica',
-      segmento:  segLabel(segKey),
-      categoria: '',
-      titulo:    firstLine.trim(),
-      descricao,
-      endereco:  '',
-      telefone:  '',
-      site:      '',
-      observacoes: '',
-      periodo:   '',
-    });
+    // v4.49.67+ Cada linha do block que "pareça título" vira um item.
+    // Para parseSimpleList (Bairros/Arredores), padrão típico no Word:
+    //   "Habous: medina nova construída pelos franceses."
+    //   "Anfa: bairro residencial de elite."
+    // Aceita: ALL CAPS (legacy) ou linha com ":" (padrão Title Case + descrição).
+    for (const rawLine of block) {
+      const line = rawLine.trim();
+      if (!line) continue;
+
+      let titulo = '', descricao = '';
+      if (isAllCaps(line)) {
+        titulo = line;
+      } else if (line.includes(':')) {
+        // "Nome do Bairro: descrição livre"
+        const [t, ...rest] = line.split(':');
+        titulo = t.trim();
+        descricao = rest.join(':').trim();
+        if (!titulo || !_looksLikeItemTitle(titulo)) continue;
+      } else if (_looksLikeItemTitle(line)) {
+        titulo = line;
+      } else {
+        // Linha de continuação da descrição do item anterior
+        if (rows.length) rows[rows.length - 1].descricao =
+          (rows[rows.length - 1].descricao + ' ' + line).trim();
+        continue;
+      }
+
+      rows.push({
+        type: 'dica',
+        segmento:  segLabel(segKey),
+        categoria: '',
+        titulo,
+        descricao,
+        endereco:  '',
+        telefone:  '',
+        site:      '',
+        observacoes: '',
+        periodo:   '',
+      });
+    }
   }
 
   return rows;
@@ -938,6 +1015,10 @@ async function extractDocxLinesWithHeadings(file) {
   if (!html) return extractDocxLines(file);
 
   // Parse no DOM e expande em linhas, marcando headings.
+  // v4.49.67+ NÃO adiciona blank line após cada <p> — mammoth retira <p>
+  // vazios, então emitir blank após cada parágrafo faria splitBlocks criar
+  // 1 block por linha (quebrando items que têm título + descrição + endereço
+  // em parágrafos sucessivos). Blank line só envolta de headings/listas.
   const tmp = document.createElement('div');
   tmp.innerHTML = html;
   const lines = [];
@@ -945,22 +1026,23 @@ async function extractDocxLinesWithHeadings(file) {
     const tag = child.tagName?.toLowerCase();
     const text = (child.textContent || '').trim();
     if (!text) {
-      lines.push(''); // preserva quebras
+      lines.push(''); // preserva quebras explícitas
       continue;
     }
     if (/^h[1-6]$/.test(tag)) {
-      lines.push('');                       // blank antes pra detector identificar
-      lines.push(text + HEADING_MARKER);    // marca heading
-      lines.push('');                       // blank depois
+      // Garante blank antes (se a linha anterior não for blank)
+      if (lines.length && lines[lines.length - 1] !== '') lines.push('');
+      lines.push(text + HEADING_MARKER);
+      lines.push('');
     } else if (tag === 'p') {
-      // Parágrafo: divide em linhas pelo <br> se houver
+      // Cada <p> é UMA linha (sem blank após — preserva continuidade do item)
       const inner = child.innerHTML.split(/<br\s*\/?>/i);
       for (const part of inner) {
         const t = part.replace(/<[^>]+>/g, '').trim();
         if (t) lines.push(t);
       }
-      lines.push(''); // blank entre parágrafos
     } else if (tag === 'ul' || tag === 'ol') {
+      if (lines.length && lines[lines.length - 1] !== '') lines.push('');
       for (const li of child.querySelectorAll('li')) {
         const t = (li.textContent || '').trim();
         if (t) lines.push(t);

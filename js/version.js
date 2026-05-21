@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 66,
-  build: '20260521-portal-import-parser-heuristico-subtitulos',
+  patch: 67,
+  build: '20260521-portal-import-parser-title-case-items',
 };
 
 /** "1.2.0" */
