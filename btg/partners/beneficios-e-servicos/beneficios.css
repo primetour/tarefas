@@ -42,20 +42,17 @@
 }
 
 .beneficios-hero__card {
-  position: relative;
-  height: 300px;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-@media (min-width: 1024px) {
-  .beneficios-hero__card { height: 520px; }
-}
-
+/* Cartão constrangido pela LARGURA da coluna (imagem é horizontal —
+ * constranger por altura estourava a largura). */
 .beneficios-hero__card img {
-  max-height: 100%;
-  width: auto;
+  width: 100%;
+  max-width: 520px;
+  height: auto;
   object-fit: contain;
 }
 
