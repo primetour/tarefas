@@ -257,20 +257,29 @@ function _normKw(s) {
 /** Match fuzzy do subtítulo contra SEGMENT_KEYWORDS.
  *  Retorna { key, confidence: 'high'|'medium' } ou null. */
 function detectByKeywords(line) {
+  const rawLine = String(line || '').trim();
   const norm = _normKw(line);
   if (!norm || norm.length > 80) return null;
-  // O subtítulo deve ser "curto" (até ~6 palavras) pra evitar falso match
+  // O subtítulo deve ser "curto" (até ~4 palavras) pra evitar falso match
   // em parágrafos longos que mencionem a palavra de passagem.
-  if (norm.split(' ').length > 6) return null;
+  // v4.49.71+ Reduzido de 6 → 4 palavras (descrições começando com "Restaurante moderno..." casavam).
+  if (norm.split(' ').length > 4) return null;
+  // v4.49.71+ Linha que termina com pontuação é parágrafo, não subtítulo.
+  if (/[.!?,;]$/.test(rawLine)) return null;
+  // v4.49.71+ Linha com URL/telefone/email/endereço óbvio NÃO é subtítulo.
+  if (/^https?:\/\//i.test(rawLine)) return null;
+  if (/\d{4,}/.test(rawLine)) return null; // dígitos longos sugerem telefone/CEP
 
   let best = null;
   for (const { key, kws } of SEGMENT_KEYWORDS) {
     for (const kw of kws) {
-      // Match exato no início ou contém o termo inteiro (palavra completa).
+      // v4.49.71+ Match mais restrito: EXATO ou linha curta começando com kw.
+      // Antes aceitava startsWith(kw+' ') que casava "restaurante moderno..."
+      // (descrição) como subtítulo "restaurantes". Agora startsWith só vale
+      // se a linha tiver ≤ 1 palavra extra após o kw.
       const matched = norm === kw
-                   || norm.startsWith(kw + ' ')
+                   || (norm.startsWith(kw + ' ') && norm.split(' ').length - kw.split(' ').length <= 1)
                    || norm.endsWith(' ' + kw)
-                   || norm.includes(' ' + kw + ' ')
                    || (norm.length === kw.length && norm === kw);
       if (matched) {
         const conf = norm === kw ? 'high' : 'medium';

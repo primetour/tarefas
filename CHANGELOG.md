@@ -6,6 +6,35 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.71+20260521-portal-import-parser-fuzzy-tighter] — 2026-05-21
+
+Release **PATCH** — fix de detecção falso-positivo: descrições
+começando com palavra-chave de segmento eram tratadas como
+subtítulo, dividindo o block do item em pedaços.
+
+**Bug encontrado** rodando suite adversarial v4.49.70:
+- DOCX com item "21 Restaurant" + descrição "Restaurante moderno
+  fusão árabe-francesa." em parágrafos sucessivos.
+- `detectByKeywords("Restaurante moderno fusão árabe-francesa.")`
+  casava o prefix "restaurante " e criava nova seção
+  `restaurantes` no meio do block. Resultado: "21 Restaurant"
+  ficava órfão sem descrição e era filtrado fora.
+
+**Mudanças em `js/services/portalPdfParser.js`**:
+
+1. **`detectByKeywords` mais restrito**:
+   - Limite reduzido: ≤ 4 palavras (era 6).
+   - Linha com ponto final (`.!?,;`) → não é subtítulo.
+   - Linha com URL → não é subtítulo.
+   - Linha com sequência de 4+ dígitos (telefone/CEP) → não é
+     subtítulo.
+   - `startsWith(kw + ' ')` só vale se a linha tem ≤ 1 palavra
+     extra após o kw (impede "restaurante moderno..." casar).
+
+**Validação**: `node --check` ok. Adversarial test pendente.
+
+---
+
 ## [4.49.70+20260521-portal-import-granular-review-modal] — 2026-05-21
 
 Release **PATCH** — Portal de Dicas/Importação: UI granular de

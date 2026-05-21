@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 70,
-  build: '20260521-portal-import-granular-review-modal',
+  patch: 71,
+  build: '20260521-portal-import-parser-fuzzy-tighter',
 };
 
 /** "1.2.0" */
