@@ -333,7 +333,8 @@ let evoChartInstances = [];   // Chart.js instances para destruir ao re-render
 
 /* ─── Render page ─────────────────────────────────────────── */
 export async function renderGaPerformance(container) {
-  if (!store.can('analytics_view') && !store.isMaster()) {
+  // v4.49.60+ Aceita perm granular dashboard_ga_view + fallback analytics_view
+  if (!store.can('dashboard_ga_view') && !store.can('analytics_view') && !store.isMaster()) {
     container.innerHTML = `<div class="empty-state" style="min-height:60vh;">
       <div class="empty-state-icon">🔒</div>
       <div class="empty-state-title">Acesso restrito</div>

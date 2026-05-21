@@ -69,11 +69,17 @@ export const PERMISSION_CATALOG = [
       { key: 'dashboard_portal_view',       label: 'Ver dashboard do Portal de Dicas',         info: 'Página /portal-dashboard: métricas de geração de dicas, links ativos, top destinos. Antes era gated por portal_manage (que dá acesso administrativo total).' },
       { key: 'dashboard_roteiros_view',     label: 'Ver dashboard de Roteiros',                info: 'Página /roteiro-dashboard: métricas de roteiros gerados, performance por consultor, status. Antes era gated por roteiro_manage.' },
       { key: 'dashboard_csat_view',         label: 'Ver dashboard CSAT',                       info: 'Página /csat: visão consolidada de pesquisas, respostas, NPS. Separado das perms de envio/gestão (csat_send/manage/queue_view).' },
+      // v4.49.60+ Granularidade individual pros 3 dashboards de marketing
+      // (antes todos gated por analytics_view única). Permite liberar
+      // Newsletters pro analista de marketing sem dar Instagram/GA.
+      { key: 'dashboard_nl_view',           label: 'Ver dashboard de Newsletters',             info: 'Página /nl-performance: performance de disparos das 5 BUs SFMC (abertura, cliques, bounces) + aba Conteúdo & Temas com classificação dupla Comercial × Turismo + modal Ver Arte. Antes gated por analytics_view única.' },
+      { key: 'dashboard_meta_view',         label: 'Ver dashboard de Instagram (Meta)',        info: 'Página /meta-performance: alcance, engajamento, top posts do Instagram/Facebook via Graph API. Antes gated por analytics_view única.' },
+      { key: 'dashboard_ga_view',           label: 'Ver dashboard de Google Analytics',        info: 'Página /ga-performance: sessões, pageviews, fontes de tráfego, dispositivos, Core Web Vitals do site primetour.com.br. Antes gated por analytics_view única.' },
       // 4.49.12+ dashboard_customize REMOVIDO — feature nunca foi implementada
       // (sem código consumindo a perm). Removido pra evitar checkbox que não
       // tem efeito prático. Se voltar no futuro, re-adicionar aqui.
       { key: 'report_export',               label: 'Exportar relatórios',                       info: 'Exportar dados em CSV/XLSX/PDF (botão "Exportar" no /dashboards).' },
-      { key: 'analytics_view',              label: 'Ver análises avançadas',                    info: 'Acesso a módulos especiais de análise (newsletters, Instagram). Independente dos dashboards principais.' },
+      { key: 'analytics_view',              label: 'Análises avançadas (fallback genérico)',    info: 'Fallback genérico que libera Newsletters + Instagram + GA juntos (v4.49.60+: cada um tem perm específica dashboard_nl_view/dashboard_meta_view/dashboard_ga_view; analytics_view continua aceita por back-compat). Também controla Pautas e Clipping (#news-monitor).' },
     ],
   },
   {
@@ -250,6 +256,8 @@ export const SYSTEM_ROLES = [
       project_create: true,   project_edit: true,   project_delete: true,
       dashboard_home_view: true, dashboard_productivity_view: true,
       dashboard_portal_view: true, dashboard_roteiros_view: true, dashboard_csat_view: true,
+      // v4.49.60+ Granular por dashboard de marketing
+      dashboard_nl_view: true, dashboard_meta_view: true, dashboard_ga_view: true,
       report_export: true,
       csat_send: true,        csat_view_all: true,    csat_manage: true,    csat_queue_view: true,
       goals_view: true,       goals_manage: true,   goals_evaluate: true,
@@ -296,6 +304,7 @@ export const SYSTEM_ROLES = [
       project_create: true,   project_edit: true,   project_delete: false,
       dashboard_home_view: true, dashboard_productivity_view: true,
       dashboard_portal_view: true, dashboard_roteiros_view: true, dashboard_csat_view: true,
+      dashboard_nl_view: true, dashboard_meta_view: true, dashboard_ga_view: true,
       report_export: true,
       csat_send: true,        csat_view_all: true,    csat_manage: true,    csat_queue_view: true,
       goals_view: true,       goals_manage: true,   goals_evaluate: true,
@@ -342,6 +351,7 @@ export const SYSTEM_ROLES = [
       project_create: true,   project_edit: true,   project_delete: false,
       dashboard_home_view: true, dashboard_productivity_view: true,
       dashboard_portal_view: true, dashboard_roteiros_view: true, dashboard_csat_view: true,
+      dashboard_nl_view: true, dashboard_meta_view: true, dashboard_ga_view: true,
       report_export: true,
       csat_send: true,        csat_view_all: true,    csat_manage: false,   csat_queue_view: true,
       goals_view: true,       goals_manage: true,   goals_evaluate: false,
@@ -390,6 +400,7 @@ export const SYSTEM_ROLES = [
       // 4.49.11+ Parceiro NÃO tem nenhum dashboard (acesso só ao Portal de Dicas)
       dashboard_home_view: false, dashboard_productivity_view: false,
       dashboard_portal_view: false, dashboard_roteiros_view: false, dashboard_csat_view: false,
+      dashboard_nl_view: false, dashboard_meta_view: false, dashboard_ga_view: false,
       report_export: false,
       csat_send: false,        csat_view_all: false,   csat_manage: false,
       goals_view: false,       goals_manage: false,   goals_evaluate: false,
@@ -440,11 +451,16 @@ export const SYSTEM_ROLES = [
       // (produtividade/roteiros/csat) ficam restritos a coord+.
       // 4.49.14+ Liberado dashboard_portal_view pro Analista — operação
       // diária do consultor (vê top destinos, links ativos, dicas geradas).
+      // v4.49.60+ Os 3 dashboards de marketing (NL/Meta/GA) com perm
+      // granular: default false; admin libera por role ou per-user override
+      // conforme o consultor (ex: analista de marketing → liberar todos;
+      // analista de operação → manter false).
       dashboard_home_view: true,
       dashboard_productivity_view: false,
       dashboard_portal_view: true,
       dashboard_roteiros_view: false,
       dashboard_csat_view: false,
+      dashboard_nl_view: false, dashboard_meta_view: false, dashboard_ga_view: false,
       report_export: false,
       csat_send: false,        csat_view_all: false,   csat_manage: false,
       goals_view: true,        goals_manage: false,  goals_evaluate: false,

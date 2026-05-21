@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 59,
-  build: '20260521-fix-contentmeta-clientside-permission-check',
+  patch: 60,
+  build: '20260521-perms-granulares-dashboards-nl-meta-ga',
 };
 
 /** "1.2.0" */

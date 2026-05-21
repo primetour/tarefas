@@ -89,7 +89,9 @@ let hiddenRows    = new Set(); // jobIds ocultos na pré-edição
 
 /* ─── Render page ─────────────────────────────────────────── */
 export async function renderNlPerformance(container) {
+  // v4.49.60+ Aceita perm granular dashboard_nl_view + fallback analytics_view
   if (!store.can('system_manage_users') && !store.isMaster() &&
+      !store.can('dashboard_nl_view') &&
       !store.can('analytics_view')) {
     container.innerHTML = `<div class="empty-state" style="min-height:60vh;">
       <div class="empty-state-icon">🔒</div>

@@ -85,9 +85,10 @@ const NAV_GROUPS = [
     items: [
       // 4.49.12+ Invertido: perm primária é dashboard_productivity_view; analytics_view é fallback
       { route: 'dashboards',        icon: 'dashboards',        label: 'Produtividade',     perm: 'dashboard_productivity_view', altPerm: 'analytics_view' },
-      { route: 'nl-performance',    icon: 'nl-performance',    label: 'Newsletters',       perm: 'analytics_view' },
-      { route: 'meta-performance',  icon: 'meta-performance',  label: 'Instagram',         perm: 'analytics_view' },
-      { route: 'ga-performance',    icon: 'ga-performance',    label: 'Google Analytics',  perm: 'analytics_view' },
+      // v4.49.60+ Granular: perm primária específica + analytics_view como fallback.
+      { route: 'nl-performance',    icon: 'nl-performance',    label: 'Newsletters',       perm: 'dashboard_nl_view',   altPerm: 'analytics_view' },
+      { route: 'meta-performance',  icon: 'meta-performance',  label: 'Instagram',         perm: 'dashboard_meta_view', altPerm: 'analytics_view' },
+      { route: 'ga-performance',    icon: 'ga-performance',    label: 'Google Analytics',  perm: 'dashboard_ga_view',   altPerm: 'analytics_view' },
       // 4.49.11+ Migrado pra perms granulares (aceitam o legado como altPerm)
       { route: 'portal-dashboard',  icon: 'portal-dashboard',  label: 'Portal de Dicas',   perm: 'dashboard_portal_view',   altPerm: 'portal_manage' },
       { route: 'roteiro-dashboard', icon: 'roteiro-dashboard', label: 'Roteiros',          perm: 'dashboard_roteiros_view', altPerm: 'roteiro_manage' },
