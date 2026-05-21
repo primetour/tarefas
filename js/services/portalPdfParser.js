@@ -20,25 +20,59 @@
 
 import { SEGMENTS } from './portal.js';
 
-/* ─── PDF.js loader (CDN, on-demand) ─────────────────────── */
+/* ─── CDN loader resiliente (v4.49.64+) ─────────────────────
+ * Tenta múltiplos CDNs em sequência. Resolve assim que um carrega
+ * ou rejeita após esgotar todos. Trata bloqueio por
+ * Tracking Prevention (Edge/Brave/Firefox) que silencia
+ * carregamentos de jsdelivr/etc — daí o fallback pra cdnjs.
+ * ───────────────────────────────────────────────────────────── */
+function _loadScriptFromAny(urls, globalKey) {
+  if (typeof window === 'undefined') return Promise.reject(new Error('no window'));
+  if (globalKey && window[globalKey]) return Promise.resolve(window[globalKey]);
+
+  return urls.reduce((p, url) => p.catch(() => new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = url;
+    s.async = true;
+    s.onload = () => {
+      if (globalKey && !window[globalKey]) {
+        // Script carregou mas global não populou — algo bloqueou silenciosamente.
+        reject(new Error(`Script ${url} loaded but window.${globalKey} is missing`));
+        return;
+      }
+      resolve(globalKey ? window[globalKey] : true);
+    };
+    s.onerror = () => reject(new Error(`Falha ao carregar ${url}`));
+    document.head.appendChild(s);
+  })), Promise.reject(new Error('init')));
+}
+
+/* ─── PDF.js loader (CDN, on-demand, com fallback) ───────── */
 let _pdfjsPromise = null;
 async function loadPdfJs() {
   if (window.pdfjsLib) return window.pdfjsLib;
   if (_pdfjsPromise) return _pdfjsPromise;
 
-  _pdfjsPromise = new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
-    s.onload = () => {
-      try {
-        window.pdfjsLib.GlobalWorkerOptions.workerSrc =
-          'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-        resolve(window.pdfjsLib);
-      } catch (e) { reject(e); }
-    };
-    s.onerror = () => reject(new Error('Falha ao carregar pdf.js'));
-    document.head.appendChild(s);
-  });
+  _pdfjsPromise = (async () => {
+    try {
+      await _loadScriptFromAny([
+        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
+        'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js',
+        'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js',
+      ], 'pdfjsLib');
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      return window.pdfjsLib;
+    } catch (e) {
+      _pdfjsPromise = null; // permite retry futuro
+      throw new Error(
+        'Não foi possível carregar o parser de PDF. Pode ser bloqueio ' +
+        'da proteção de rastreio do seu navegador (Edge: Prevenção de ' +
+        'Rastreamento; Brave: Shields; Firefox: ETP). Adicione o site ' +
+        'às exceções ou desative para esta página.'
+      );
+    }
+  })();
   return _pdfjsPromise;
 }
 
@@ -672,13 +706,28 @@ let _mammothLoading = null;
 function loadMammoth() {
   if (window.mammoth) return Promise.resolve(window.mammoth);
   if (_mammothLoading) return _mammothLoading;
-  _mammothLoading = new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = 'https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js';
-    s.onload = () => resolve(window.mammoth);
-    s.onerror = () => reject(new Error('Falha ao carregar mammoth (parser DOCX).'));
-    document.head.appendChild(s);
-  });
+  // v4.49.64+ Tracking Prevention do Edge/Brave bloqueia jsdelivr
+  // silenciosamente. Ordem preferencial: cdnjs (mais permitido) →
+  // jsdelivr → unpkg. Se todos falharem, mostra mensagem clara.
+  _mammothLoading = (async () => {
+    try {
+      return await _loadScriptFromAny([
+        'https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.8.0/mammoth.browser.min.js',
+        'https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js',
+        'https://unpkg.com/mammoth@1.6.0/mammoth.browser.min.js',
+      ], 'mammoth');
+    } catch (e) {
+      _mammothLoading = null; // permite retry futuro
+      throw new Error(
+        'Não foi possível carregar o parser DOCX. Provavelmente a ' +
+        'proteção de rastreio do navegador bloqueou a biblioteca ' +
+        '(Edge: Prevenção de Rastreamento; Brave: Shields; ' +
+        'Firefox: ETP). Soluções: (a) adicione este site às ' +
+        'exceções, (b) use o Chrome, ou (c) converta o .docx em ' +
+        '.xlsx pelo modelo de planilha.'
+      );
+    }
+  })();
   return _mammothLoading;
 }
 

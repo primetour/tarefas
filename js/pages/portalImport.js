@@ -216,14 +216,33 @@ async function handleFiles(files) {
     </div>
   `).join('');
 
-  // Load SheetJS se for preciso
+  // v4.49.64+ Load SheetJS com fallback (caso 1º CDN seja bloqueado
+  // por Tracking Prevention do Edge/Brave/Firefox).
   if (accepted.some(f => /\.xlsx?$/i.test(f.name)) && !window.XLSX) {
-    await new Promise((res,rej) => {
-      const s = document.createElement('script');
-      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
-      s.onload = res; s.onerror = rej;
-      document.head.appendChild(s);
-    });
+    const xlsxUrls = [
+      'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
+      'https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js',
+      'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js',
+    ];
+    let loaded = false;
+    for (const url of xlsxUrls) {
+      try {
+        await new Promise((res, rej) => {
+          const s = document.createElement('script');
+          s.src = url; s.async = true;
+          s.onload = () => window.XLSX ? res() : rej(new Error('no global'));
+          s.onerror = () => rej(new Error('script load failed'));
+          document.head.appendChild(s);
+        });
+        loaded = true; break;
+      } catch (e) {
+        console.warn('[portalImport] XLSX fallback:', url, e?.message);
+      }
+    }
+    if (!loaded) {
+      toast.error('Não foi possível carregar o parser de XLSX. Verifique se a proteção de rastreio do navegador não está bloqueando bibliotecas externas.');
+      return;
+    }
   }
 
   parsedImportData = [];
@@ -244,10 +263,22 @@ async function handleFiles(files) {
       }
     } catch(e) {
       console.error('[portalImport] parse error', e);
-      if (statusEls[fi]) {
-        statusEls[fi].textContent = `✗ ${e.message.slice(0,40)}`;
-        statusEls[fi].style.color = '#EF4444';
+      // v4.49.64+ Mensagens mais úteis pra erros comuns
+      let msg = e.message;
+      if (e.name === 'NotReadableError' || /NotReadable|not be read/i.test(msg)) {
+        msg = 'Arquivo inacessível. Se vier de OneDrive/Drive/iCloud, baixe localmente antes (clique direito → "Manter neste dispositivo"). Reabra esta aba se persistir.';
+      } else if (/tracking|prevenção|bloqu/i.test(msg)) {
+        // mantém msg detalhada vinda do loader
       }
+      if (statusEls[fi]) {
+        statusEls[fi].textContent = `✗ ${msg.slice(0, 120)}`;
+        statusEls[fi].style.color = '#EF4444';
+        statusEls[fi].title = msg;
+        statusEls[fi].style.whiteSpace = 'normal';
+        statusEls[fi].style.maxWidth = '60%';
+      }
+      // Toast com a mensagem completa pra usuário ver claramente
+      toast.error(msg);
     }
   }
 

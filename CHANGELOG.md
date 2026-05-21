@@ -6,6 +6,53 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.64+20260521-portal-import-cdn-fallback-notreadable-msg] — 2026-05-21
+
+Release **PATCH** — Portal de Dicas/Importação: resiliência a
+bloqueios de CDN + mensagem clara pra `NotReadableError`.
+
+**Contexto** (Renê reporting console real do navegador):
+- `Tracking Prevention blocked access to storage for
+  cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js`
+- `[portalImport] parse error NotReadableError: The requested
+  file could not be read, typically due to permission problems`
+
+**Diagnóstico**:
+1. Edge/Brave/Firefox bloqueiam scripts de jsdelivr/unpkg
+   silenciosamente quando Tracking Prevention/Shields/ETP estão
+   ativos. Mammoth, sendo carregado **só** de jsdelivr, falhava
+   sem fallback.
+2. `NotReadableError` acontece quando o File reference fica
+   stale — típico de arquivos OneDrive/Drive/iCloud que não foram
+   sincronizados localmente, ou quando o usuário move/renomeia o
+   arquivo após selecioná-lo.
+
+**Mudanças**:
+
+`js/services/portalPdfParser.js`:
+- **`_loadScriptFromAny(urls, globalKey)`** — helper genérico que
+  tenta múltiplos CDNs em sequência, detecta sucesso pela presença
+  do global (não pelo `onload`, que dispara mesmo quando o
+  Tracking Prevention serve script vazio).
+- **`loadPdfJs`** agora tenta: cdnjs → jsdelivr → unpkg.
+- **`loadMammoth`** agora tenta: cdnjs → jsdelivr → unpkg.
+- Mensagens de erro citam as proteções específicas (Prevenção de
+  Rastreamento/Shields/ETP) e dão 3 soluções: adicionar exceção,
+  trocar navegador, ou converter pra .xlsx.
+
+`js/pages/portalImport.js`:
+- **XLSX loader** agora tenta 3 CDNs (cdnjs, sheetjs, jsdelivr)
+  com toast amigável se todos falharem.
+- **Catch de erros de parse** mapeia `NotReadableError` pra
+  mensagem clara: "Arquivo inacessível. Se vier de
+  OneDrive/Drive/iCloud, baixe localmente antes (clique direito
+  → 'Manter neste dispositivo'). Reabra esta aba se persistir."
+- Toast com mensagem completa + label do arquivo com tooltip.
+
+**Validação**: `node --check` ok nos 2 arquivos.
+
+---
+
 ## [4.49.63+20260521-portal-import-destino-match-cadastrar-inline] — 2026-05-21
 
 Release **PATCH** — Portal de Dicas/Importação: matching de destinos

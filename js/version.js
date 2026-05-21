@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 63,
-  build: '20260521-portal-import-destino-match-cadastrar-inline',
+  patch: 64,
+  build: '20260521-portal-import-cdn-fallback-notreadable-msg',
 };
 
 /** "1.2.0" */
