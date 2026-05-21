@@ -152,6 +152,61 @@
       color: #6b7280;
     }
     .status-bar strong { color: #1f2937; }
+
+    /* Seleção de ofertas + barra de solicitação de conteúdo */
+    .col-select { width: 40px; text-align: center; }
+    .row-select { width: 16px; height: 16px; cursor: pointer; accent-color: #05132a; }
+    .req-bar {
+      position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+      display: none; align-items: center; gap: 16px;
+      background: #05132a; color: #fff;
+      padding: 12px 16px 12px 20px; border-radius: 10px;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28); z-index: 50;
+    }
+    .req-bar.is-visible { display: flex; }
+    .req-bar__count { font-size: 13px; }
+    .req-bar__count strong { font-weight: 700; }
+    .req-bar__btn {
+      background: #2E73D4; color: #fff; border: 0;
+      padding: 9px 16px; border-radius: 6px;
+      font-size: 13px; font-weight: 600; cursor: pointer;
+    }
+    .req-bar__btn:hover { background: #3A80E4; }
+    .req-bar__clear {
+      background: transparent; border: 0; color: rgba(255, 255, 255, 0.6);
+      font-size: 12px; cursor: pointer; text-decoration: underline;
+    }
+    .req-overlay {
+      position: fixed; inset: 0; background: rgba(5, 19, 42, 0.5);
+      display: none; align-items: center; justify-content: center;
+      z-index: 60; padding: 24px;
+    }
+    .req-overlay.is-open { display: flex; }
+    .req-modal {
+      background: #fff; border-radius: 12px; max-width: 480px; width: 100%;
+      padding: 24px; box-shadow: 0 24px 64px rgba(0, 0, 0, 0.3);
+    }
+    .req-modal h2 { font-size: 17px; margin: 0 0 4px; color: #05132a; }
+    .req-modal__sub { font-size: 13px; color: #6b7280; margin-bottom: 16px; }
+    .req-modal__list {
+      list-style: none; padding: 0; margin: 0 0 16px;
+      border: 1px solid #e5e7eb; border-radius: 8px;
+      max-height: 180px; overflow-y: auto;
+    }
+    .req-modal__list li {
+      padding: 8px 12px; font-size: 13px; color: #374151;
+      border-bottom: 1px solid #f3f4f6;
+    }
+    .req-modal__list li:last-child { border-bottom: 0; }
+    .req-modal label { display: block; font-size: 12px; font-weight: 600; color: #4b5563; margin-bottom: 6px; }
+    .req-modal input[type=text] {
+      width: 100%; padding: 9px 12px; border: 1px solid #d1d5db;
+      border-radius: 6px; font-size: 13px; margin-bottom: 8px;
+    }
+    .req-modal__msg { font-size: 13px; margin: 8px 0; min-height: 18px; }
+    .req-modal__msg.ok { color: #065f46; }
+    .req-modal__msg.err { color: #b91c1c; }
+    .req-modal__actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 8px; }
   </style>
 </head>
 <body>
@@ -198,8 +253,32 @@
     </div>
   </div>
 
+  <!-- Barra de solicitação (aparece com 1+ ofertas selecionadas) -->
+  <div class="req-bar" id="req-bar">
+    <span class="req-bar__count" id="req-bar-count"></span>
+    <button type="button" class="req-bar__btn" id="req-bar-btn">Solicitar conteúdo e newsletter</button>
+    <button type="button" class="req-bar__clear" id="req-bar-clear">limpar</button>
+  </div>
+
+  <!-- Modal de confirmação da solicitação -->
+  <div class="req-overlay" id="req-overlay">
+    <div class="req-modal">
+      <h2>Solicitar conteúdo e newsletter</h2>
+      <p class="req-modal__sub">Uma solicitação será aberta para o setor de Marketing com as ofertas selecionadas.</p>
+      <ul class="req-modal__list" id="req-modal-list"></ul>
+      <label for="req-modal-name">Seu nome (consultor)</label>
+      <input type="text" id="req-modal-name" placeholder="Ex: Maria Silva" />
+      <div class="req-modal__msg" id="req-modal-msg"></div>
+      <div class="req-modal__actions">
+        <button type="button" class="btn btn--ghost" id="req-modal-cancel">Cancelar</button>
+        <button type="button" class="btn" id="req-modal-send">Enviar solicitação</button>
+      </div>
+    </div>
+  </div>
+
   <script type="module">
     import { listOfertas, archiveOferta, restoreOferta } from '/btg/shared/btg-ofertas-service.js';
+    import { createContentRequest } from '/btg/shared/btg-requests-service.js';
 
     const searchEl = document.getElementById('search');
     const brandEl  = document.getElementById('filter-brand');
@@ -210,6 +289,8 @@
 
     let allOfertas = [];   // cache da última fetch
     let lastFilters = null;
+    const selected = new Map();   // id -> oferta selecionada
+    const MAX_SELECT = 5;
 
     function esc(s) {
       return String(s ?? '').replace(/[&<>"']/g, (c) =>
@@ -243,6 +324,7 @@
         <table class="table">
           <thead>
             <tr>
+              <th class="col-select"></th>
               <th>Oferta</th>
               <th>Marcas</th>
               <th>Tipo</th>
@@ -255,6 +337,9 @@
           <tbody>
             ${ofertas.map((o) => `
               <tr data-id="${esc(o.id)}">
+                <td class="col-select">
+                  <input type="checkbox" class="row-select" data-id="${esc(o.id)}"${selected.has(o.id) ? ' checked' : ''} />
+                </td>
                 <td>
                   <div class="nome-cell">
                     ${o.imagem_url ? `<img class="thumb" src="${esc(o.imagem_url)}" alt="" />` : '<div class="thumb"></div>'}
@@ -289,6 +374,8 @@
         status: statusEl.value,
       };
       lastFilters = filters;
+      selected.clear();
+      updateReqBar();
       host.innerHTML = `<div class="loading">Carregando ofertas...</div>`;
       try {
         allOfertas = await listOfertas(filters);
@@ -339,6 +426,85 @@
           alert(`Erro: ${err.message}`);
           btn.disabled = false;
         }
+      }
+    });
+
+    // ─── Seleção de ofertas + solicitação de conteúdo ───────
+    function updateReqBar() {
+      const n = selected.size;
+      document.getElementById('req-bar').classList.toggle('is-visible', n > 0);
+      document.getElementById('req-bar-count').innerHTML =
+        `<strong>${n}</strong> oferta${n === 1 ? '' : 's'} selecionada${n === 1 ? '' : 's'}`;
+    }
+
+    host.addEventListener('change', (e) => {
+      const cb = e.target.closest('.row-select');
+      if (!cb) return;
+      const id = cb.dataset.id;
+      if (cb.checked) {
+        if (selected.size >= MAX_SELECT) {
+          cb.checked = false;
+          alert(`Selecione no máximo ${MAX_SELECT} ofertas por solicitação.`);
+          return;
+        }
+        const oferta = allOfertas.find((o) => o.id === id);
+        if (oferta) selected.set(id, oferta);
+      } else {
+        selected.delete(id);
+      }
+      updateReqBar();
+    });
+
+    const reqOverlay = document.getElementById('req-overlay');
+
+    document.getElementById('req-bar-clear').addEventListener('click', () => {
+      selected.clear();
+      updateReqBar();
+      applySearch();
+    });
+
+    document.getElementById('req-bar-btn').addEventListener('click', () => {
+      document.getElementById('req-modal-list').innerHTML = [...selected.values()]
+        .map((o) => `<li>${esc(o.nome_da_oferta || '(sem nome)')}</li>`)
+        .join('');
+      const msg = document.getElementById('req-modal-msg');
+      msg.textContent = '';
+      msg.className = 'req-modal__msg';
+      document.getElementById('req-modal-send').disabled = false;
+      reqOverlay.classList.add('is-open');
+    });
+
+    document.getElementById('req-modal-cancel').addEventListener('click', () => {
+      reqOverlay.classList.remove('is-open');
+    });
+    reqOverlay.addEventListener('click', (e) => {
+      if (e.target === reqOverlay) reqOverlay.classList.remove('is-open');
+    });
+
+    document.getElementById('req-modal-send').addEventListener('click', async () => {
+      const sendBtn = document.getElementById('req-modal-send');
+      const msg = document.getElementById('req-modal-msg');
+      const name = document.getElementById('req-modal-name').value.trim();
+      sendBtn.disabled = true;
+      msg.className = 'req-modal__msg';
+      msg.textContent = 'Enviando solicitação...';
+      try {
+        const res = await createContentRequest({
+          ofertas: [...selected.values()],
+          requesterName: name,
+        });
+        msg.className = 'req-modal__msg ok';
+        msg.textContent = `Solicitação criada (${res.source === 'firestore' ? 'Firestore' : 'modo local'}) — o Marketing recebe na fila de solicitações.`;
+        selected.clear();
+        updateReqBar();
+        setTimeout(() => {
+          reqOverlay.classList.remove('is-open');
+          applySearch();
+        }, 1800);
+      } catch (err) {
+        msg.className = 'req-modal__msg err';
+        msg.textContent = `Erro: ${err.message}`;
+        sendBtn.disabled = false;
       }
     });
 

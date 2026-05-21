@@ -1019,5 +1019,16 @@ service cloud.firestore {
     match /portal_images_dev/{docId} {
       allow read, write: if true;
     }
+
+    // ── BTG Solicitações de conteúdo (DEV/STAGING) ───────────
+    // Solicitações "Conteúdo e newsletter" geradas pela lista de
+    // ofertas BTG (btg/dashboard/ofertas). Mesmo shape da coleção
+    // `requests` real do Gestor — no cutover pra prod, o service
+    // aponta pra `requests` e a solicitação cai no módulo de
+    // Tarefas & Solicitações (setor Marketing).
+    // Mesma postura permissiva/justificativa do btg_ofertas_dev.
+    match /btg_requests_dev/{docId} {
+      allow read, write: if true;
+    }
   }
 }
