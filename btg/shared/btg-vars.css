@@ -71,15 +71,76 @@
   --t-slow: 500ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-/* Fontes locais — referencia os arquivos que já estão no projeto Gestor */
+/* ─── Fontes locais (paridade com btg-pactual Next.js) ───────────────
+ * Arquivos reais em /btg/assets/fonts/, copiados de btg-pactual/fonts/.
+ * Operadora usa Figtree; Partners/Ultrablue usam BTG Pactual Sans;
+ * Fantasm é só pro título script "Operadora" no hero.
+ */
+
+/* BTG Pactual Sans — Partners + Ultrablue (família institucional) */
 @font-face {
   font-family: 'BTGPactualSans';
-  src: local('BTG Pactual Sans'), local('BTGPactualSans');
+  src: url('/btg/assets/fonts/BTGPactualSans-Thin.otf') format('opentype');
+  font-weight: 200;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'BTGPactualSans';
+  src: url('/btg/assets/fonts/BTGPactualSans-Light.otf') format('opentype');
+  font-weight: 300;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'BTGPactualSans';
+  src: url('/btg/assets/fonts/BTGPactualSans-Regular.otf') format('opentype');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'BTGPactualSans';
+  src: url('/btg/assets/fonts/BTGPactualSans-SemiBold.otf') format('opentype');
+  font-weight: 600;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'BTGPactualSans';
+  src: url('/btg/assets/fonts/BTGPactualSans-Bold.otf') format('opentype');
+  font-weight: 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'BTGPactualSans';
+  src: url('/btg/assets/fonts/BTGPactualSans-ExtraBold.otf') format('opentype');
+  font-weight: 800;
   font-display: swap;
 }
 
+/* Figtree — Operadora (variável, cobre 100-900 num arquivo) */
+@font-face {
+  font-family: 'Figtree';
+  src: url('/btg/assets/fonts/Figtree-Variable.ttf') format('truetype-variations');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Figtree';
+  src: url('/btg/assets/fonts/Figtree-Italic-Variable.ttf') format('truetype-variations');
+  font-weight: 100 900;
+  font-style: italic;
+  font-display: swap;
+}
+
+/* Fantasm — script, só pro hero da Operadora */
 @font-face {
   font-family: 'Fantasm';
-  src: url('/btg/shared/Fantasm.ttf') format('truetype');
+  src: url('/btg/assets/fonts/Fantasm.ttf') format('truetype');
+  font-weight: 400;
   font-display: swap;
+}
+
+/* Operadora renderiza com Figtree; Partners/Ultrablue/dashboard usam
+ * --font-btg (default no btg-base.css). Marca via data-brand no <body>. */
+body[data-brand="operadora"] {
+  font-family: var(--font-figtree);
 }
