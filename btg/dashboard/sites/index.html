@@ -150,58 +150,8 @@
     </div>
 
     <div class="section-label">Sites publicados</div>
-    <div class="sites-grid">
-      <!-- Operadora -->
-      <div class="site-card">
-        <div class="site-card__bar" style="background:#1a2b4a;"></div>
-        <div class="site-card__body">
-          <p class="site-card__brand">Primetour</p>
-          <p class="site-card__name">Operadora</p>
-          <p class="site-card__meta">6 páginas · home, cruzeiros e 4 de viagens</p>
-          <span class="site-card__status">Publicado</span>
-        </div>
-        <div class="site-card__actions">
-          <a class="btn btn--primary" href="/btg/operadora/" target="_blank" rel="noopener">Ver site</a>
-          <span class="btn btn--soft" title="Editor visual de blocos — em desenvolvimento">Abrir editor</span>
-        </div>
-      </div>
-
-      <!-- Partners -->
-      <div class="site-card">
-        <div class="site-card__bar" style="background:#05132a;"></div>
-        <div class="site-card__body">
-          <p class="site-card__brand">BTG Pactual</p>
-          <p class="site-card__name">Cartão Partners</p>
-          <p class="site-card__meta">10 páginas · home, viagens, concierge, benefícios</p>
-          <span class="site-card__status">Publicado</span>
-        </div>
-        <div class="site-card__actions">
-          <a class="btn btn--primary" href="/btg/partners/" target="_blank" rel="noopener">Ver site</a>
-          <span class="btn btn--soft" title="Editor visual de blocos — em desenvolvimento">Abrir editor</span>
-        </div>
-      </div>
-
-      <!-- Ultrablue -->
-      <div class="site-card">
-        <div class="site-card__bar" style="background:#0b2859;"></div>
-        <div class="site-card__body">
-          <p class="site-card__brand">BTG Pactual</p>
-          <p class="site-card__name">Cartão Ultrablue</p>
-          <p class="site-card__meta">10 páginas · home, viagens, concierge, benefícios</p>
-          <span class="site-card__status">Publicado</span>
-        </div>
-        <div class="site-card__actions">
-          <a class="btn btn--primary" href="/btg/ultrablue/" target="_blank" rel="noopener">Ver site</a>
-          <span class="btn btn--soft" title="Editor visual de blocos — em desenvolvimento">Abrir editor</span>
-        </div>
-      </div>
-
-      <!-- Novo site (visão) -->
-      <div class="site-card site-card--new">
-        <span class="plus">+</span>
-        <strong>Novo site</strong>
-        <span>Criar a partir de blocos — em desenvolvimento</span>
-      </div>
+    <div class="sites-grid" id="sites-grid">
+      <div style="grid-column:1/-1;color:#9ca3af;font-size:13px;">Carregando sites…</div>
     </div>
 
     <div class="section-label">Anatomia de um site</div>
@@ -256,5 +206,50 @@
       <span class="lib__chip"><a href="/btg/dashboard/import/">Importar oferta</a></span>
     </div>
   </div>
+
+  <script type="module">
+    import { listSites, createSite } from '/btg/shared/btg-sites-service.js';
+
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+    const BAR = { operadora: '#1a2b4a', partners: '#05132a', ultrablue: '#0b2859' };
+    const grid = document.getElementById('sites-grid');
+
+    function renderGrid() {
+      const sites = listSites();
+      grid.innerHTML = sites.map((s) => `
+        <div class="site-card">
+          <div class="site-card__bar" style="background:${BAR[s.brand] || '#05132a'};"></div>
+          <div class="site-card__body">
+            <p class="site-card__brand">${esc(s.brand)}</p>
+            <p class="site-card__name">${esc(s.name)}</p>
+            <p class="site-card__meta">${s.blocks.length} bloco${s.blocks.length === 1 ? '' : 's'} na home</p>
+            <span class="site-card__status">Publicado</span>
+          </div>
+          <div class="site-card__actions">
+            <a class="btn btn--primary" href="/btg/dashboard/sites/editor.html?site=${encodeURIComponent(s.id)}">Abrir editor</a>
+            <a class="btn" href="/btg/${esc(s.brand)}/" target="_blank" rel="noopener">Ver site</a>
+          </div>
+        </div>
+      `).join('') + `
+        <button type="button" class="site-card site-card--new" id="btn-novo-site">
+          <span class="plus">+</span>
+          <strong>Novo site</strong>
+          <span>Criar do zero a partir de blocos</span>
+        </button>`;
+
+      document.getElementById('btn-novo-site').addEventListener('click', () => {
+        const name = prompt('Nome do novo site:');
+        if (!name || !name.trim()) return;
+        const brand = (prompt('Marca (partners, ultrablue ou operadora):', 'partners') || 'partners')
+          .trim().toLowerCase();
+        const site = createSite({ name: name.trim(), brand: BAR[brand] ? brand : 'partners' });
+        location.href = '/btg/dashboard/sites/editor.html?site=' + encodeURIComponent(site.id);
+      });
+    }
+
+    renderGrid();
+  </script>
 </body>
 </html>
