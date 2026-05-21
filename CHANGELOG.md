@@ -6,6 +6,373 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.72+20260521-portal-import-overwrite-existing-tip-warn] — 2026-05-21
+
+Release **PATCH** — Portal de Dicas/Importação: detecta tips
+existentes e exige confirmação antes de sobrescrever.
+
+**Contexto** (Renê): "ele não aceita destinos que já possuem
+conteúdo, correto? ele deve, ao menos, informar o user que já tem
+dica cadastrada e que essa ação vai remover a informação antiga
+e colocar a nova".
+
+**Bug pré-existente identificado**: linha 999 do `portalImport.js`
+fazia `segments = tip?.segments ? { ...tip.segments } : {}` — isto
+é, MERGE com tip existente. Ao reimportar, items eram **duplicados**
+em vez de substituídos.
+
+**Mudanças em `js/pages/portalImport.js`**:
+
+1. **`renderReviewBody` pre-fetch de tips**: após classificar destinos,
+   `Promise.all` chama `fetchTip(destDoc.id)` em paralelo. Tip
+   encontrado fica em `c.existingTip` com `{id, segmentCount,
+   segmentLabels}` + também em `dest.__existingTip` pra acesso no
+   runImport.
+
+2. **Card mostra warning**: bloco vermelho com border `#EF4444`:
+   *"🔄 Este destino já tem dica cadastrada (N segmentos: <lista>).
+   Importar vai SUBSTITUIR o conteúdo antigo pelos items deste
+   arquivo."*
+
+3. **`openOverwriteConfirmModal`**: ao clicar "Confirmar e Importar",
+   se houver ≥ 1 destino com `existingTip`, abre modal listando os
+   destinos afetados + segmentos atuais. Botão **"🔄 Confirmar
+   substituição"** (vermelho) explícito pra prosseguir. Cancelar
+   aborta sem mudança.
+
+4. **`runImport` OVERWRITE**: `segments = {}` sempre (era merge).
+   Log adiciona linha âmbar *"🔄 Sobrescrevendo dica existente (N
+   segmento(s) antigo(s))"* pra cada destino afetado.
+
+**Validação**: `node --check` ok.
+
+---
+
+## [4.49.71+20260521-portal-import-parser-fuzzy-tighter] — 2026-05-21
+
+Release **PATCH** — fix de detecção falso-positivo: descrições
+começando com palavra-chave de segmento eram tratadas como
+subtítulo, dividindo o block do item em pedaços.
+
+**Bug encontrado** rodando suite adversarial v4.49.70:
+- DOCX com item "21 Restaurant" + descrição "Restaurante moderno
+  fusão árabe-francesa." em parágrafos sucessivos.
+- `detectByKeywords("Restaurante moderno fusão árabe-francesa.")`
+  casava o prefix "restaurante " e criava nova seção
+  `restaurantes` no meio do block. Resultado: "21 Restaurant"
+  ficava órfão sem descrição e era filtrado fora.
+
+**Mudanças em `js/services/portalPdfParser.js`**:
+
+1. **`detectByKeywords` mais restrito**:
+   - Limite reduzido: ≤ 4 palavras (era 6).
+   - Linha com ponto final (`.!?,;`) → não é subtítulo.
+   - Linha com URL → não é subtítulo.
+   - Linha com sequência de 4+ dígitos (telefone/CEP) → não é
+     subtítulo.
+   - `startsWith(kw + ' ')` só vale se a linha tem ≤ 1 palavra
+     extra após o kw (impede "restaurante moderno..." casar).
+
+**Validação**: `node --check` ok. Adversarial test pendente.
+
+---
+
+## [4.49.70+20260521-portal-import-granular-review-modal] — 2026-05-21
+
+Release **PATCH** — Portal de Dicas/Importação: UI granular de
+revisão de items detectados.
+
+**Contexto**: o parser v4.49.66-69 detecta items via heurística
+de subtítulos. Agora o usuário precisa de uma tela pra **revisar
+a alocação proposta** antes de importar — editar título/descrição,
+mover items entre segmentos, ou remover items errados.
+
+**Mudanças em `js/pages/portalImport.js`**:
+
+1. **Botão "📝 Revisar items (N)"** em cada card de destino no
+   review, ao lado do badge de cadastro.
+
+2. **Modal granular** (`openGranularReviewModal`):
+   - Items agrupados por segmento em `<details>` expansíveis.
+   - Items sem segmento atribuído ficam em grupo "⚠ Items sem
+     segmento" sempre aberto, com border âmbar.
+   - Cada item é uma row com formulário:
+     - Título (texto)
+     - Segmento (dropdown com SEGMENTS — obrigatório pra items
+       órfãos, com asterisco vermelho)
+     - Categoria (texto, opcional)
+     - Descrição (textarea)
+     - Endereço, Telefone, Site (texto)
+   - Linha "📄 Detectado a partir de: ..." mostra o
+     `__originalHeading` quando o item veio de heading não
+     reconhecido.
+   - Botão "🗑 Remover item" por linha.
+   - Botões globais "Cancelar" (rollback via snapshot) e
+     "✓ Aplicar revisão" (sincroniza com `parsedImportData`).
+
+3. **`_syncDestItemsToParsedImportData`**: reconstrói
+   `parsedImportData` global a partir das edições, filtrando
+   items sem segmento ou sem título.
+
+4. **Persistência via reference**: como `dest.items` é referência
+   pros mesmos objetos do `parsedImportData`, edições inline
+   atualizam o estado vivo. "Cancelar" restaura via snapshot.
+
+**Próximo**: validação real com DOCX de produção.
+
+---
+
+## [4.49.69+20260521-portal-import-parser-prefix-no-split] — 2026-05-21
+
+Release **PATCH** — fix: `_looksLikeItemTitle` agora exclui
+prefixes COMPLETOS de contato (não só "Tel"/"Site" curtos).
+
+**Bug encontrado validando v4.49.68**: La Sqala ficou com endereço
+mas SEM telefone. Causa: `_looksLikeItemTitle("Telefone: +212...")`
+retornava `true` (porque o regex de exclusão só pegava "Tel:"
+curto, não "Telefone:"). Resultado: `splitBlockIntoItems` quebrava
+o block do La Sqala em 2 items, e o segundo ("Telefone: +212...")
+sem descrição era filtrado fora.
+
+**Mudança**: `_looksLikeItemTitle` agora usa `CONTACT_PREFIXES`
+completo (mesma fonte de verdade do `extractContactFields`) pra
+excluir telefone/site/endereco/email + outros padrões
+(horário/metrô/valor/preço/categoria/tipo/estilo).
+
+---
+
+## [4.49.68+20260521-portal-import-parser-contact-prefixes] — 2026-05-21
+
+Release **PATCH** — Portal de Dicas/Importação: parser reconhece
+prefixes completos de contato ("Telefone:", "Endereço:", "Site:").
+
+**Bug encontrado validando v4.49.67**: `extractContactFields` só
+reconhecia "Tel:" e "Link:". Linhas como "Telefone: +212..." ou
+"Endereço: Boulevard..." eram tratadas como descrição livre,
+poluindo o campo `descricao` dos items.
+
+**Mudança em `js/services/portalPdfParser.js`**:
+
+- **`CONTACT_PREFIXES`** — tabela de regex por campo:
+  - `telefone`: `tel | telefone | fone | phone | telephone | whatsapp | wpp`
+  - `site`: `site | website | url | link | web`
+  - `endereco`: `endereço | endereco | address | end. | location | local`
+  - `email`: `email | e-mail | correio` (concatena em telefone se vazio)
+  - Aceita separadores `:`, `.`, `-`, `–` opcionais.
+
+- **`extractContactFields`** reescrito: varre na ordem (start→end)
+  em vez de backwards, classifica cada linha pelo prefix, faz
+  fallback de endereço pra última linha com dígito ou keyword
+  de rua (Boulevard, Avenida, Rue, etc).
+
+**Validação no Chrome**: rodar com DOCX sintético deve agora
+preencher corretamente endereco/telefone/site dos items.
+
+---
+
+## [4.49.67+20260521-portal-import-parser-title-case-items] — 2026-05-21
+
+Release **PATCH** — Portal de Dicas/Importação: parser aceita
+títulos de items em Title Case (não apenas MAIÚSCULAS).
+
+**Contexto**: validando v4.49.66 no Chrome com DOCX sintético
+de Casablanca, descobri 2 bugs adicionais:
+
+1. **`extractDocxLinesWithHeadings`** adicionava blank line após
+   cada `<p>`, criando blocks separados pra cada parágrafo.
+   Resultado: "La Sqala" + "Restaurante tradicional..." +
+   "Endereço: ..." virava 3 blocks de 1 linha em vez de 1 item.
+2. **`parsePlaceList`** (linha 524) exigia `isAllCaps(firstLine)`
+   na primeira linha do bloco. Items Title Case ("La Sqala",
+   "Rick's Café") eram silently dropped.
+
+**Mudanças em `js/services/portalPdfParser.js`**:
+
+1. **`extractDocxLinesWithHeadings`**: blank line agora só envolta
+   de heading e listas (`<ul>/<ol>`). Parágrafos sucessivos `<p>`
+   ficam contíguos pra `splitBlocks` preservar items multi-linha.
+
+2. **`_looksLikeItemTitle(line)`**: heurística pra detectar início
+   de novo item (≤ 60 chars, sem ponto final, sem prefix de
+   endereço/telefone/site, começa com maiúscula).
+
+3. **`splitBlockIntoItems(block)`** dentro de `parsePlaceList`:
+   sub-divide um block em items individuais por linhas que
+   "parecem título". Necessário porque DOCX com Word headings tem
+   items sucessivos sem blank line entre eles.
+
+4. **Validação de item flexível** em `parsePlaceList`: aceita
+   AllCaps (legacy) OU dígito inicial OU `_looksLikeItemTitle`.
+
+5. **`parseSimpleList`** (Bairros/Arredores) refeito: aceita
+   formato "Nome: descrição" (típico Title Case) + linhas de
+   continuação.
+
+**Próximo**: UI granular pra editar/aprovar items por segmento.
+
+**Validação**: `node --check` ok. E2E pendente no Chrome.
+
+---
+
+## [4.49.66+20260521-portal-import-parser-heuristico-subtitulos] — 2026-05-21
+
+Release **PATCH** — Portal de Dicas/Importação: parser DOCX/PDF
+heurístico (sem LLM) que correlaciona subtítulos a segmentos.
+
+**Contexto** (Renê): "vc correlaciona o conteúdo e propoe a
+alocacao do conteudo a partir dos subtitles... sem LLM."
+
+**Antes**: `splitIntoSections` em `portalPdfParser.js` exigia
+match exato com `TOP_SECTIONS` (MAIÚSCULAS, sem variação).
+Arquivos com "Restaurantes" em Title Case ou "Onde Comer" eram
+ignorados.
+
+**Mudanças em `js/services/portalPdfParser.js`**:
+
+1. **Tabela `SEGMENT_KEYWORDS`** — mapeia subtítulos comuns pra
+   segment keys via palavras-chave normalizadas (lowercase, sem
+   acento, sem pontuação):
+   - `restaurantes` ← "Restaurante", "Onde Comer", "Gastronomia"
+   - `vida_noturna` ← "Vida Noturna", "Bares", "Baladas"
+   - `atracoes` ← "Atrações", "Pontos Turísticos", "O Que Fazer"
+   - `bairros` ← "Bairros", "Regiões"
+   - `arredores` ← "Arredores", "Day Trip", "Bate-Volta"
+   - `compras` ← "Compras", "Shoppings"
+   - `espetaculos` ← "Espetáculos", "Teatros", "Broadway"
+   - `highlights` ← "Highlights", "Destaques"
+   - etc.
+
+2. **`detectByKeywords(line)`** — match fuzzy do subtítulo
+   contra `SEGMENT_KEYWORDS`. Vence o segmento com palavra-chave
+   mais longa casada. Restringe a linhas curtas (≤ 6 palavras)
+   pra evitar match em parágrafo.
+
+3. **`looksLikeHeading(line)`** — heurística: linha é curta,
+   sem ponto final, capitalizada, sem URL/telefone/endereço.
+   Reforça confidence quando combinada com keyword match.
+
+4. **`extractDocxLinesWithHeadings(file)`** — usa
+   `mammoth.convertToHtml()` (em vez de `extractRawText`) e
+   detecta `<h1-h6>` do estilo do Word. Linhas que vinham de
+   headings recebem marker `​` (zero-width space).
+   Headings reconhecidos pelo Word elevam confidence pra `high`
+   mesmo em Title Case. Fallback pra `extractRawText` se HTML
+   falhar.
+
+5. **`detectSection(line, surrounding)`** — 2 estágios:
+   - Estágio 1: match exato em `TOP_SECTIONS` (alta).
+   - Estágio 2: match fuzzy por keywords (high/medium/low
+     conforme o "format score" + "isolated score").
+
+6. **Seção `__unclassified`** — headings reconhecidos pelo
+   Word mas sem match em keywords criam seção marcada como
+   "precisa revisão". Items recebem `__needsReview: true` e
+   `__originalHeading` pra UI surfacear.
+
+**Mudanças em `js/pages/portalImport.js`**:
+- Card de destino no review mostra aviso âmbar
+  "⚠ N item(s) precisam revisão de segmento" listando os
+  subtítulos originais não reconhecidos.
+
+**Próximo passo**: UI de revisão por item (editar
+título/descrição/segmento inline) — fica pra v4.49.67.
+
+**Validação**: `node --check` ok nos 2 arquivos.
+
+---
+
+## [4.49.65+20260521-portal-import-vincular-manual-destino] — 2026-05-21
+
+Release **PATCH** — Portal de Dicas/Importação: vinculação manual a
+destino existente.
+
+**Contexto** (Renê): "tentei subir o arquivo
+áfrica - marccos - casablanca.docx e o sistema não identificou o
+destino, mas ele já está cadastrado. não é melhor vc solicitar ao
+user pra ele vincular ao destino que deseja?"
+
+**Diagnóstico**: usuário digitou "marccos" no nome do arquivo
+(typo de "Marrocos"). O `_matchDest` falhava em todas as camadas
+porque a normalização não cobre typos. A sugestão fuzzy mostrava
+"Casablanca, Marrocos" (achou pela cidade), mas usuário tinha que
+renomear o arquivo ou cadastrar de novo — fluxo ruim quando o
+destino já existe.
+
+**Mudanças em `js/pages/portalImport.js`**:
+
+1. **Vinculação manual** — cada card de destino "não cadastrado"
+   ganha um painel novo com 3 ações:
+   - **✓ Vincular a este** — botão que aceita a sugestão fuzzy
+     direto.
+   - **Escolher manualmente** — dropdown com TODOS os destinos
+     cadastrados (ordenados por continente → país → cidade).
+   - **+ Cadastrar novo destino** — caminho original preservado.
+
+2. **`byDest[key].manualMapping`** — guarda o `destDoc.id` quando
+   user vincula. Persiste no re-render. Botão **Desfazer**
+   aparece quando vinculação é manual.
+
+3. **`_matchDest` ainda corre primeiro**; manualMapping tem
+   precedência apenas se existir. Garante que matches automáticos
+   bons continuam funcionando.
+
+4. **`runImport`** — checa `dest.manualMapping` antes de
+   `_matchDest`. Log mostra "🔗 Vinculado a X" quando usado.
+
+5. **`renderReviewBody`** detecta ID stale (destino deletado
+   entre review e re-render) e descarta `manualMapping` órfão.
+
+**Validação**: `node --check` ok. E2E pendente no Chrome.
+
+---
+
+## [4.49.64+20260521-portal-import-cdn-fallback-notreadable-msg] — 2026-05-21
+
+Release **PATCH** — Portal de Dicas/Importação: resiliência a
+bloqueios de CDN + mensagem clara pra `NotReadableError`.
+
+**Contexto** (Renê reporting console real do navegador):
+- `Tracking Prevention blocked access to storage for
+  cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js`
+- `[portalImport] parse error NotReadableError: The requested
+  file could not be read, typically due to permission problems`
+
+**Diagnóstico**:
+1. Edge/Brave/Firefox bloqueiam scripts de jsdelivr/unpkg
+   silenciosamente quando Tracking Prevention/Shields/ETP estão
+   ativos. Mammoth, sendo carregado **só** de jsdelivr, falhava
+   sem fallback.
+2. `NotReadableError` acontece quando o File reference fica
+   stale — típico de arquivos OneDrive/Drive/iCloud que não foram
+   sincronizados localmente, ou quando o usuário move/renomeia o
+   arquivo após selecioná-lo.
+
+**Mudanças**:
+
+`js/services/portalPdfParser.js`:
+- **`_loadScriptFromAny(urls, globalKey)`** — helper genérico que
+  tenta múltiplos CDNs em sequência, detecta sucesso pela presença
+  do global (não pelo `onload`, que dispara mesmo quando o
+  Tracking Prevention serve script vazio).
+- **`loadPdfJs`** agora tenta: cdnjs → jsdelivr → unpkg.
+- **`loadMammoth`** agora tenta: cdnjs → jsdelivr → unpkg.
+- Mensagens de erro citam as proteções específicas (Prevenção de
+  Rastreamento/Shields/ETP) e dão 3 soluções: adicionar exceção,
+  trocar navegador, ou converter pra .xlsx.
+
+`js/pages/portalImport.js`:
+- **XLSX loader** agora tenta 3 CDNs (cdnjs, sheetjs, jsdelivr)
+  com toast amigável se todos falharem.
+- **Catch de erros de parse** mapeia `NotReadableError` pra
+  mensagem clara: "Arquivo inacessível. Se vier de
+  OneDrive/Drive/iCloud, baixe localmente antes (clique direito
+  → 'Manter neste dispositivo'). Reabra esta aba se persistir."
+- Toast com mensagem completa + label do arquivo com tooltip.
+
+**Validação**: `node --check` ok nos 2 arquivos.
+
+---
+
 ## [4.49.63+20260521-portal-import-destino-match-cadastrar-inline] — 2026-05-21
 
 Release **PATCH** — Portal de Dicas/Importação: matching de destinos

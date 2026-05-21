@@ -20,25 +20,59 @@
 
 import { SEGMENTS } from './portal.js';
 
-/* ─── PDF.js loader (CDN, on-demand) ─────────────────────── */
+/* ─── CDN loader resiliente (v4.49.64+) ─────────────────────
+ * Tenta múltiplos CDNs em sequência. Resolve assim que um carrega
+ * ou rejeita após esgotar todos. Trata bloqueio por
+ * Tracking Prevention (Edge/Brave/Firefox) que silencia
+ * carregamentos de jsdelivr/etc — daí o fallback pra cdnjs.
+ * ───────────────────────────────────────────────────────────── */
+function _loadScriptFromAny(urls, globalKey) {
+  if (typeof window === 'undefined') return Promise.reject(new Error('no window'));
+  if (globalKey && window[globalKey]) return Promise.resolve(window[globalKey]);
+
+  return urls.reduce((p, url) => p.catch(() => new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = url;
+    s.async = true;
+    s.onload = () => {
+      if (globalKey && !window[globalKey]) {
+        // Script carregou mas global não populou — algo bloqueou silenciosamente.
+        reject(new Error(`Script ${url} loaded but window.${globalKey} is missing`));
+        return;
+      }
+      resolve(globalKey ? window[globalKey] : true);
+    };
+    s.onerror = () => reject(new Error(`Falha ao carregar ${url}`));
+    document.head.appendChild(s);
+  })), Promise.reject(new Error('init')));
+}
+
+/* ─── PDF.js loader (CDN, on-demand, com fallback) ───────── */
 let _pdfjsPromise = null;
 async function loadPdfJs() {
   if (window.pdfjsLib) return window.pdfjsLib;
   if (_pdfjsPromise) return _pdfjsPromise;
 
-  _pdfjsPromise = new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
-    s.onload = () => {
-      try {
-        window.pdfjsLib.GlobalWorkerOptions.workerSrc =
-          'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-        resolve(window.pdfjsLib);
-      } catch (e) { reject(e); }
-    };
-    s.onerror = () => reject(new Error('Falha ao carregar pdf.js'));
-    document.head.appendChild(s);
-  });
+  _pdfjsPromise = (async () => {
+    try {
+      await _loadScriptFromAny([
+        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js',
+        'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js',
+        'https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.min.js',
+      ], 'pdfjsLib');
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      return window.pdfjsLib;
+    } catch (e) {
+      _pdfjsPromise = null; // permite retry futuro
+      throw new Error(
+        'Não foi possível carregar o parser de PDF. Pode ser bloqueio ' +
+        'da proteção de rastreio do seu navegador (Edge: Prevenção de ' +
+        'Rastreamento; Brave: Shields; Firefox: ETP). Adicione o site ' +
+        'às exceções ou desative para esta página.'
+      );
+    }
+  })();
   return _pdfjsPromise;
 }
 
@@ -183,10 +217,132 @@ const TOP_SECTIONS = [
   { match: /^DICA$/i,                           key: '__dica' },
 ];
 
+/* ─── v4.49.66+ Mapeamento subtítulo → segment key por palavras-chave
+ * Usado quando o subtítulo do arquivo não bate exato com TOP_SECTIONS
+ * (ex: "Restaurante" em vez de "RESTAURANTES", "Onde comer" em vez de
+ * "GASTRONOMIA"). Heurística determinística, sem LLM.
+ *
+ * Algoritmo:
+ *   1. Normaliza o subtítulo (lowercase, sem acento, sem pontuação).
+ *   2. Procura qual conjunto de keywords tem maior match.
+ *   3. Vence o segment com o keyword mais longo casado.
+ *   4. Se nenhum casar, retorna __unclassified (vai pra revisão manual
+ *      do usuário no fluxo de import).
+ * ──────────────────────────────────────────────────────────────────── */
+const SEGMENT_KEYWORDS = [
+  { key: 'informacoes_gerais', kws: ['informacoes gerais', 'informacoes', 'info geral', 'dados gerais', 'sobre a cidade', 'sobre o destino'] },
+  { key: '__clima',            kws: ['clima', 'temperatura', 'tempo', 'estacoes'] },
+  { key: '__representacao',    kws: ['representacao brasileira', 'consulado', 'embaixada brasileira'] },
+  { key: 'bairros',            kws: ['bairros', 'regioes', 'neighborhoods', 'distritos'] },
+  { key: 'arredores',          kws: ['arredores', 'ao redor', 'around', 'day trip', 'bate volta', 'proximidades'] },
+  { key: 'atracoes_criancas',  kws: ['atracoes para criancas', 'atracoes infantis', 'com criancas', 'para criancas', 'kids', 'familia'] },
+  { key: 'atracoes',           kws: ['atracoes', 'pontos turisticos', 'o que fazer', 'passeios', 'tours', 'sightseeing', 'imperdivel', 'imperdiveis', 'visitar'] },
+  { key: 'restaurantes',       kws: ['restaurantes', 'restaurante', 'gastronomia', 'onde comer', 'comida', 'food', 'culinaria', 'bares e restaurantes'] },
+  { key: 'vida_noturna',       kws: ['vida noturna', 'noturna', 'bares', 'baladas', 'night', 'drinks', 'pubs', 'clubs'] },
+  { key: 'espetaculos',        kws: ['casas de espetaculos', 'espetaculos', 'teatros', 'shows', 'broadway', 'west end', 'opera'] },
+  { key: 'compras',            kws: ['compras', 'shopping', 'shoppings', 'lojas', 'mercados', 'feiras'] },
+  { key: 'highlights',         kws: ['highlights', 'destaques', 'recomendado', 'top picks', 'must see'] },
+  { key: 'agenda_cultural',    kws: ['agenda cultural', 'agenda', 'eventos culturais', 'calendario cultural', 'festivais'] },
+  { key: '__eventos_esportivos', kws: ['eventos esportivos', 'esportes', 'esporte', 'sports', 'football', 'futebol'] },
+];
+
+function _normKw(s) {
+  return String(s || '').toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^\w\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** Match fuzzy do subtítulo contra SEGMENT_KEYWORDS.
+ *  Retorna { key, confidence: 'high'|'medium' } ou null. */
+function detectByKeywords(line) {
+  const rawLine = String(line || '').trim();
+  const norm = _normKw(line);
+  if (!norm || norm.length > 80) return null;
+  // O subtítulo deve ser "curto" (até ~4 palavras) pra evitar falso match
+  // em parágrafos longos que mencionem a palavra de passagem.
+  // v4.49.71+ Reduzido de 6 → 4 palavras (descrições começando com "Restaurante moderno..." casavam).
+  if (norm.split(' ').length > 4) return null;
+  // v4.49.71+ Linha que termina com pontuação é parágrafo, não subtítulo.
+  if (/[.!?,;]$/.test(rawLine)) return null;
+  // v4.49.71+ Linha com URL/telefone/email/endereço óbvio NÃO é subtítulo.
+  if (/^https?:\/\//i.test(rawLine)) return null;
+  if (/\d{4,}/.test(rawLine)) return null; // dígitos longos sugerem telefone/CEP
+
+  let best = null;
+  for (const { key, kws } of SEGMENT_KEYWORDS) {
+    for (const kw of kws) {
+      // v4.49.71+ Match mais restrito: EXATO ou linha curta começando com kw.
+      // Antes aceitava startsWith(kw+' ') que casava "restaurante moderno..."
+      // (descrição) como subtítulo "restaurantes". Agora startsWith só vale
+      // se a linha tiver ≤ 1 palavra extra após o kw.
+      const matched = norm === kw
+                   || (norm.startsWith(kw + ' ') && norm.split(' ').length - kw.split(' ').length <= 1)
+                   || norm.endsWith(' ' + kw)
+                   || (norm.length === kw.length && norm === kw);
+      if (matched) {
+        const conf = norm === kw ? 'high' : 'medium';
+        if (!best || kw.length > best.kwLen) {
+          best = { key, confidence: conf, kwLen: kw.length };
+        }
+      }
+    }
+  }
+  return best ? { key: best.key, confidence: best.confidence } : null;
+}
+
+/** Heurística adicional: linha "parece" um subtítulo?
+ *  Critérios cumulativos:
+ *   - curta (3..80 chars)
+ *   - sem ponto final
+ *   - 1ª letra maiúscula OU toda maiúscula
+ *   - NÃO contém URL/telefone/endereço óbvio
+ *   - cercada por linha em branco (callsite valida) */
+function looksLikeHeading(line) {
+  const s = String(line || '').trim();
+  if (s.length < 3 || s.length > 80) return false;
+  if (/[.!?]$/.test(s)) return false;
+  if (/^https?:\/\//i.test(s)) return false;
+  if (/\bTel\b|\bend\b|\bSite\b|\bLink\b/i.test(s)) return false;
+  if (/\d{2,}[-/]\d{2}/.test(s)) return false;          // datas
+  if (/\+?\d{2}\s*\(\d/.test(s)) return false;          // telefone formatado
+  const firstLetter = s.match(/\p{L}/u)?.[0];
+  if (!firstLetter) return false;
+  return firstLetter === firstLetter.toUpperCase();
+}
+
 function detectTopSection(line) {
   const s = line.trim();
   for (const rule of TOP_SECTIONS) {
-    if (rule.match.test(s)) return rule.key;
+    if (rule.match.test(s)) return { key: rule.key, confidence: 'high', source: 'exact' };
+  }
+  return null;
+}
+
+/** v4.49.66+ Detector de subtítulo em 2 estágios:
+ *   1. Match exato em TOP_SECTIONS (confidence: high)
+ *   2. Match fuzzy por SEGMENT_KEYWORDS (confidence: high/medium)
+ *
+ *  `surrounding` é { prev, next } pra checar se a linha está cercada
+ *  por linhas em branco (sinal forte de subtítulo). */
+function detectSection(line, surrounding = {}) {
+  const exact = detectTopSection(line);
+  if (exact) return exact;
+
+  const kw = detectByKeywords(line);
+  if (kw) {
+    // Reforça confidence se a linha "parece" subtítulo no formato
+    // (caps/short/sem ponto) E está cercada por blank lines.
+    const formatScore = looksLikeHeading(line) ? 1 : 0;
+    const isolatedScore = ((surrounding.prev ?? '').trim() === '' &&
+                           (surrounding.next ?? '').trim() === '') ? 1 : 0;
+    const score = formatScore + isolatedScore;
+    return {
+      key: kw.key,
+      confidence: score >= 1 ? kw.confidence : 'low',
+      source: 'keyword',
+    };
   }
   return null;
 }
@@ -260,40 +416,55 @@ function parseClima(lines) {
 
 /* ─── Description / location parsing for items ──────────── */
 // Para place_list (ATRAÇÕES/RESTAURANTES/...), detecta endereço/telefone/link
+/** v4.49.68+ Regexes de prefix expandidas. Antes só pegava "Tel:" e
+ *  "Link:". Agora reconhece Telefone/Phone/Fone/WhatsApp/Site/Website/
+ *  URL/Endereço/End./Address/Email — incluindo variações com acento
+ *  e Title Case. */
+const CONTACT_PREFIXES = {
+  telefone: /^(?:tel(?:efone|\.|\b)|fone|phone|telephone|whatsapp|wpp)\s*[:.\-–]?\s*/i,
+  site:     /^(?:site|website|url|link|web)\s*[:.\-–]?\s*/i,
+  endereco: /^(?:endere[cç]o|address|end\.|location|local)\s*[:.\-–]?\s*/i,
+  email:    /^(?:e-?mail|email|correio)\s*[:.\-–]?\s*/i,
+};
+
+function _stripPrefix(line, regex) {
+  return line.replace(regex, '').trim();
+}
+
 function extractContactFields(block) {
   // block = array of lines (primeira linha já é o título, ignoramos aqui)
   const body = block.slice(1);
   let telefone = '', site = '', endereco = '';
-  const descLines = [];
-
-  // Varre de trás para frente catando Tel./Link e endereço
   const tail = [];
-  for (let i = body.length - 1; i >= 0; i--) {
-    const l = body[i];
-    if (/^tel\.?\s*[:]?/i.test(l)) {
-      telefone = l.replace(/^tel\.?\s*[:]?\s*/i, '').trim();
-    } else if (/^link\s*[:]/i.test(l)) {
-      site = l.replace(/^link\s*[:]\s*/i, '').trim();
-    } else if (!telefone && !site && !endereco && l && !descLines.length && tail.length === 0) {
-      // linha imediatamente acima dos contatos (se ainda não pegou nada) é o endereço
-      tail.unshift(l);
+
+  // v4.49.68+ Varre na ORDEM (start → end) pra preservar a sequência natural
+  // do texto. Antes varria backwards pra agarrar tel/link no fim, mas com os
+  // prefixes explícitos não precisa.
+  for (const l of body) {
+    if (!l || !l.trim()) continue;
+
+    if (CONTACT_PREFIXES.telefone.test(l)) {
+      telefone = _stripPrefix(l, CONTACT_PREFIXES.telefone);
+    } else if (CONTACT_PREFIXES.site.test(l)) {
+      site = _stripPrefix(l, CONTACT_PREFIXES.site);
+    } else if (CONTACT_PREFIXES.endereco.test(l)) {
+      endereco = _stripPrefix(l, CONTACT_PREFIXES.endereco);
+    } else if (CONTACT_PREFIXES.email.test(l)) {
+      // sem campo dedicado pra email — concatena no telefone se vazio,
+      // senão deixa no descricao
+      if (!telefone) telefone = _stripPrefix(l, CONTACT_PREFIXES.email);
+      else tail.push(l);
     } else {
-      tail.unshift(l);
+      tail.push(l);
     }
   }
 
-  // Se não achou tel/link, mas a última linha parece endereço, usa como endereço
-  if (!telefone && !site && tail.length > 1) {
+  // Fallback: se não encontrou endereco via prefix, e a última linha de
+  // tail tem dígitos OU palavras-chave de rua, usa como endereço.
+  if (!endereco && tail.length > 1) {
     const last = tail[tail.length - 1];
-    if (/\d/.test(last) || /street|avenue|road|rue|strasse|rua|avenida/i.test(last)) {
+    if (/\d/.test(last) || /street|avenue|road|rue|strasse|rua|avenida|boulevard|av\./i.test(last)) {
       endereco = last;
-      tail.pop();
-    }
-  } else if (tail.length) {
-    // A "última linha útil" de tail é o endereço (linha acima de tel/link)
-    // Se ainda não definiu, usa-a.
-    if (!endereco) {
-      endereco = tail[tail.length - 1];
       tail.pop();
     }
   }
@@ -349,6 +520,34 @@ function segLabel(key) {
   return (SEGMENTS.find(s => s.key === key) || {}).label || key;
 }
 
+/** v4.49.67+ Detecta se uma linha "parece" começo de novo item dentro
+ *  de um bloco (heurística pra dividir items quando não há blank line):
+ *   - curta (≤ 60 chars)
+ *   - sem ponto final / interrogação / exclamação
+ *   - NÃO é endereço/telefone/site/link/etc (qualquer CONTACT_PREFIX completo)
+ *   - começa com maiúscula
+ *   - tem ≥ 1 letra
+ *
+ *  v4.49.68+ Usa CONTACT_PREFIXES completos (incluindo "Telefone:",
+ *  "Endereço:", "Site:") em vez de regex curto que só pegava "Tel:". */
+function _looksLikeItemTitle(line) {
+  const s = String(line || '').trim();
+  if (!s || s.length > 60) return false;
+  if (/[.!?]$/.test(s)) return false;
+  // Linhas que são prefixes de contato NUNCA são título de item.
+  if (CONTACT_PREFIXES.telefone.test(s)) return false;
+  if (CONTACT_PREFIXES.site.test(s))     return false;
+  if (CONTACT_PREFIXES.endereco.test(s)) return false;
+  if (CONTACT_PREFIXES.email.test(s))    return false;
+  // Outros padrões que NÃO são título de item
+  if (/^(?:hor[aá]rio|metr[oô]|valor|pre[cç]o|categoria|tipo|estilo)\s*[:.\-–]/i.test(s)) return false;
+  if (/^https?:\/\//i.test(s)) return false;
+  if (/^\+?\d/.test(s) && /\d{4,}/.test(s)) return false; // telefone/codigo
+  const first = s.match(/\p{L}/u)?.[0];
+  if (!first) return false;
+  return first === first.toUpperCase();
+}
+
 function parsePlaceList(bodyLines, segKey, useSubcategories = false) {
   const blocks = splitBlocks(bodyLines);
   const rows = [];
@@ -358,6 +557,29 @@ function parsePlaceList(bodyLines, segKey, useSubcategories = false) {
     ? ATRACOES_SUBCATS
     : (SEGMENT_SUBCATS[segKey] || []);
   const subcatSet = new Set(subcatList.map(norm));
+
+  // v4.49.67+ Pra cada block, sub-divide em items por linhas que "parecem título".
+  // Antes assumia 1 block = 1 item, mas DOCX Title Case com parágrafos contíguos
+  // junta vários items em 1 só block.
+  const splitBlockIntoItems = (block) => {
+    const items = [];
+    let cur = [];
+    for (let i = 0; i < block.length; i++) {
+      const line = block[i];
+      const isFirstLine = cur.length === 0;
+      // Início de NOVO item: linha parece título (curta, capitalizada, sem
+      // prefix de endereço/tel/etc) E não é a primeira linha do block atual
+      // (a primeira sempre vira título do item em curso).
+      if (!isFirstLine && _looksLikeItemTitle(line)) {
+        items.push(cur);
+        cur = [line];
+      } else {
+        cur.push(line);
+      }
+    }
+    if (cur.length) items.push(cur);
+    return items;
+  };
 
   for (const block of blocks) {
     const firstLine = block[0];
@@ -372,22 +594,32 @@ function parsePlaceList(bodyLines, segKey, useSubcategories = false) {
       }
     }
 
-    // Item: primeira linha deve parecer um título
-    if (!isAllCaps(firstLine) && !/^\d/.test(firstLine)) continue;
+    // v4.49.67+ Divide o block em items individuais (suporta Title Case)
+    const items = splitBlockIntoItems(block);
+    for (const itemLines of items) {
+      const itemFirst = itemLines[0];
+      if (!itemFirst) continue;
+      // Aceita: ALL CAPS (legacy), começa com dígito (numbered), OU Title Case
+      // que pareça título (heurística nova).
+      const isValid = isAllCaps(itemFirst)
+                   || /^\d/.test(itemFirst)
+                   || _looksLikeItemTitle(itemFirst);
+      if (!isValid) continue;
 
-    const { descricao, endereco, telefone, site } = extractContactFields(block);
-    rows.push({
-      type: 'dica',
-      segmento:  segLabel(segKey),
-      categoria: currentCategoria,
-      titulo:    firstLine.trim(),
-      descricao,
-      endereco,
-      telefone,
-      site,
-      observacoes: '',
-      periodo:    '',
-    });
+      const { descricao, endereco, telefone, site } = extractContactFields(itemLines);
+      rows.push({
+        type: 'dica',
+        segmento:  segLabel(segKey),
+        categoria: currentCategoria,
+        titulo:    itemFirst.trim(),
+        descricao,
+        endereco,
+        telefone,
+        site,
+        observacoes: '',
+        periodo:    '',
+      });
+    }
   }
 
   return rows;
@@ -469,22 +701,47 @@ function parseSimpleList(bodyLines, segKey) {
 
   for (const block of blocks) {
     if (!block.length) continue;
-    const firstLine = block[0];
-    if (!isAllCaps(firstLine)) continue;
 
-    const descricao = block.slice(1).join(' ').replace(/\s+/g, ' ').trim();
-    rows.push({
-      type: 'dica',
-      segmento:  segLabel(segKey),
-      categoria: '',
-      titulo:    firstLine.trim(),
-      descricao,
-      endereco:  '',
-      telefone:  '',
-      site:      '',
-      observacoes: '',
-      periodo:   '',
-    });
+    // v4.49.67+ Cada linha do block que "pareça título" vira um item.
+    // Para parseSimpleList (Bairros/Arredores), padrão típico no Word:
+    //   "Habous: medina nova construída pelos franceses."
+    //   "Anfa: bairro residencial de elite."
+    // Aceita: ALL CAPS (legacy) ou linha com ":" (padrão Title Case + descrição).
+    for (const rawLine of block) {
+      const line = rawLine.trim();
+      if (!line) continue;
+
+      let titulo = '', descricao = '';
+      if (isAllCaps(line)) {
+        titulo = line;
+      } else if (line.includes(':')) {
+        // "Nome do Bairro: descrição livre"
+        const [t, ...rest] = line.split(':');
+        titulo = t.trim();
+        descricao = rest.join(':').trim();
+        if (!titulo || !_looksLikeItemTitle(titulo)) continue;
+      } else if (_looksLikeItemTitle(line)) {
+        titulo = line;
+      } else {
+        // Linha de continuação da descrição do item anterior
+        if (rows.length) rows[rows.length - 1].descricao =
+          (rows[rows.length - 1].descricao + ' ' + line).trim();
+        continue;
+      }
+
+      rows.push({
+        type: 'dica',
+        segmento:  segLabel(segKey),
+        categoria: '',
+        titulo,
+        descricao,
+        endereco:  '',
+        telefone:  '',
+        site:      '',
+        observacoes: '',
+        periodo:   '',
+      });
+    }
   }
 
   return rows;
@@ -492,18 +749,61 @@ function parseSimpleList(bodyLines, segKey) {
 
 /* ─── Section splitter ───────────────────────────────────── */
 // Agrupa linhas por seção top-level identificada
-function splitIntoSections(lines) {
+/** v4.49.66+ Divide o documento em seções usando 3 estratégias em ordem:
+ *   1. Linha é heading marcado pelo Word (DOCX h1/h2/h3) — confidence: high
+ *      mesmo em Title Case, porque o style do Word é signal forte.
+ *   2. Match exato em TOP_SECTIONS (legado) — confidence: high.
+ *   3. Match fuzzy por SEGMENT_KEYWORDS — confidence: high/medium/low
+ *      dependendo do quão "subtítulo" a linha parece.
+ *
+ *  `headingHints` (opcional) é um Set<number> com índices de linhas que
+ *  vieram de tags <h1-h6> do DOCX. Quando presente, eleva a confidence
+ *  do match por keyword.
+ *
+ *  Linhas que parecem heading (looksLikeHeading) mas não batem com
+ *  nenhuma keyword viram seção `__unclassified` — vai pra UI de revisão. */
+function splitIntoSections(lines, { headingHints = null } = {}) {
   const sections = [];
-  let current = { key: '__header', lines: [] };
+  let current = { key: '__header', confidence: 'high', source: 'header', lines: [] };
 
-  for (const line of lines) {
-    const top = detectTopSection(line);
-    if (top) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const isWordHeading = headingHints?.has(i) === true;
+
+    const det = detectSection(line, {
+      prev: lines[i - 1],
+      next: lines[i + 1],
+    });
+
+    if (det) {
+      // Se o Word marcou como heading, eleva confidence pra high
+      const confidence = isWordHeading ? 'high' : det.confidence;
       sections.push(current);
-      current = { key: top, lines: [] };
-    } else {
-      current.lines.push(line);
+      current = {
+        key: det.key,
+        confidence,
+        source: isWordHeading ? `${det.source}+word-heading` : det.source,
+        title: line.trim(),
+        lines: [],
+      };
+      continue;
     }
+
+    // Linha marcada como heading pelo Word mas não casou em nenhum keyword:
+    // cria seção __unclassified com o título original (UI pede vinculação).
+    if (isWordHeading && looksLikeHeading(line)) {
+      sections.push(current);
+      current = {
+        key: '__unclassified',
+        confidence: 'low',
+        source: 'word-heading-unmapped',
+        title: line.trim(),
+        lines: [],
+      };
+      continue;
+    }
+
+    current.lines.push(line);
   }
   sections.push(current);
   return sections;
@@ -541,8 +841,8 @@ export async function parsePortalPdf(file, overrideMeta = null) {
  * continente/pais/cidade, e retorna o array de rows pronto pro
  * fluxo do portalImport.
  */
-function linesToRows(lines, meta) {
-  const sections = splitIntoSections(lines);
+function linesToRows(lines, meta, { headingHints = null } = {}) {
+  const sections = splitIntoSections(lines, { headingHints });
 
   // ─── Montagem do resultado ───
   const rows       = [];
@@ -634,6 +934,24 @@ function linesToRows(lines, meta) {
         }
         break;
       }
+      case '__unclassified': {
+        // v4.49.66+ Bloco com heading reconhecido pelo Word mas que não
+        // bateu em nenhuma keyword. Cria rows tipo place_list marcadas
+        // como precisando de vinculação manual de segmento (UI exibe
+        // dropdown "Mover pra segmento…").
+        const items = parsePlaceList(sec.lines, 'atracoes', /* useSubcategories */ false);
+        const kept = items.filter(it => it.descricao || it.endereco || it.telefone || it.site || it.titulo);
+        for (const it of kept) {
+          rows.push({
+            ...it,
+            ...meta,
+            __needsReview: true,
+            __originalHeading: sec.title || '(sem título)',
+            segmento: '', // user precisa atribuir
+          });
+        }
+        break;
+      }
       default:
         break;
     }
@@ -672,13 +990,28 @@ let _mammothLoading = null;
 function loadMammoth() {
   if (window.mammoth) return Promise.resolve(window.mammoth);
   if (_mammothLoading) return _mammothLoading;
-  _mammothLoading = new Promise((resolve, reject) => {
-    const s = document.createElement('script');
-    s.src = 'https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js';
-    s.onload = () => resolve(window.mammoth);
-    s.onerror = () => reject(new Error('Falha ao carregar mammoth (parser DOCX).'));
-    document.head.appendChild(s);
-  });
+  // v4.49.64+ Tracking Prevention do Edge/Brave bloqueia jsdelivr
+  // silenciosamente. Ordem preferencial: cdnjs (mais permitido) →
+  // jsdelivr → unpkg. Se todos falharem, mostra mensagem clara.
+  _mammothLoading = (async () => {
+    try {
+      return await _loadScriptFromAny([
+        'https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.8.0/mammoth.browser.min.js',
+        'https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js',
+        'https://unpkg.com/mammoth@1.6.0/mammoth.browser.min.js',
+      ], 'mammoth');
+    } catch (e) {
+      _mammothLoading = null; // permite retry futuro
+      throw new Error(
+        'Não foi possível carregar o parser DOCX. Provavelmente a ' +
+        'proteção de rastreio do navegador bloqueou a biblioteca ' +
+        '(Edge: Prevenção de Rastreamento; Brave: Shields; ' +
+        'Firefox: ETP). Soluções: (a) adicione este site às ' +
+        'exceções, (b) use o Chrome, ou (c) converta o .docx em ' +
+        '.xlsx pelo modelo de planilha.'
+      );
+    }
+  })();
   return _mammothLoading;
 }
 
@@ -693,6 +1026,68 @@ async function extractDocxLines(file) {
   return raw.split(/\r?\n/).map(l => l.trimEnd());
 }
 
+/** v4.49.66+ Extrai linhas do DOCX preservando indicadores de heading
+ *  (h1, h2, h3 do estilo do Word). Linhas que vinham de headings ficam
+ *  marcadas com '​' no fim — sentinela invisível usada pelo
+ *  detector pra elevar confidence sem afetar o texto visível.
+ *
+ *  Fallback: se convertToHtml falhar, cai pro extractRawText (legado).
+ *  ─────────────────────────────────────────────────────────────────── */
+const HEADING_MARKER = '​'; // zero-width space — invisível
+async function extractDocxLinesWithHeadings(file) {
+  const mammoth = await loadMammoth();
+  const arrayBuffer = await file.arrayBuffer();
+  let html;
+  try {
+    const result = await mammoth.convertToHtml({ arrayBuffer });
+    html = result?.value || '';
+  } catch (e) {
+    console.warn('[parser] convertToHtml falhou, usando raw text:', e?.message);
+    return extractDocxLines(file);
+  }
+  if (!html) return extractDocxLines(file);
+
+  // Parse no DOM e expande em linhas, marcando headings.
+  // v4.49.67+ NÃO adiciona blank line após cada <p> — mammoth retira <p>
+  // vazios, então emitir blank após cada parágrafo faria splitBlocks criar
+  // 1 block por linha (quebrando items que têm título + descrição + endereço
+  // em parágrafos sucessivos). Blank line só envolta de headings/listas.
+  const tmp = document.createElement('div');
+  tmp.innerHTML = html;
+  const lines = [];
+  for (const child of tmp.children) {
+    const tag = child.tagName?.toLowerCase();
+    const text = (child.textContent || '').trim();
+    if (!text) {
+      lines.push(''); // preserva quebras explícitas
+      continue;
+    }
+    if (/^h[1-6]$/.test(tag)) {
+      // Garante blank antes (se a linha anterior não for blank)
+      if (lines.length && lines[lines.length - 1] !== '') lines.push('');
+      lines.push(text + HEADING_MARKER);
+      lines.push('');
+    } else if (tag === 'p') {
+      // Cada <p> é UMA linha (sem blank após — preserva continuidade do item)
+      const inner = child.innerHTML.split(/<br\s*\/?>/i);
+      for (const part of inner) {
+        const t = part.replace(/<[^>]+>/g, '').trim();
+        if (t) lines.push(t);
+      }
+    } else if (tag === 'ul' || tag === 'ol') {
+      if (lines.length && lines[lines.length - 1] !== '') lines.push('');
+      for (const li of child.querySelectorAll('li')) {
+        const t = (li.textContent || '').trim();
+        if (t) lines.push(t);
+      }
+      lines.push('');
+    } else {
+      lines.push(text);
+    }
+  }
+  return lines;
+}
+
 export async function parsePortalDocx(file, overrideMeta = null) {
   if (!file || !/\.docx$/i.test(file.name || '')) {
     throw new Error('Arquivo DOCX inválido.');
@@ -705,7 +1100,13 @@ export async function parsePortalDocx(file, overrideMeta = null) {
       `(ex.: "Europa - França - Paris.docx").`
     );
   }
-  const lines = await extractDocxLines(file);
+  // v4.49.66+ Usa extractor com marker de heading (Word styles h1/h2/h3)
+  // pra ajudar o detector a identificar subtítulos mesmo em Title Case.
+  const lines = await extractDocxLinesWithHeadings(file);
   if (!lines.length) throw new Error('DOCX vazio ou ilegível.');
-  return linesToRows(lines, meta);
+  return linesToRows(lines.map(l => l.replace(/​$/, '')), meta, {
+    headingHints: new Set(lines
+      .map((l, i) => l.endsWith(HEADING_MARKER) ? i : null)
+      .filter(i => i !== null)),
+  });
 }

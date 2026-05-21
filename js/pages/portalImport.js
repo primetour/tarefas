@@ -216,14 +216,33 @@ async function handleFiles(files) {
     </div>
   `).join('');
 
-  // Load SheetJS se for preciso
+  // v4.49.64+ Load SheetJS com fallback (caso 1º CDN seja bloqueado
+  // por Tracking Prevention do Edge/Brave/Firefox).
   if (accepted.some(f => /\.xlsx?$/i.test(f.name)) && !window.XLSX) {
-    await new Promise((res,rej) => {
-      const s = document.createElement('script');
-      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
-      s.onload = res; s.onerror = rej;
-      document.head.appendChild(s);
-    });
+    const xlsxUrls = [
+      'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
+      'https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js',
+      'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js',
+    ];
+    let loaded = false;
+    for (const url of xlsxUrls) {
+      try {
+        await new Promise((res, rej) => {
+          const s = document.createElement('script');
+          s.src = url; s.async = true;
+          s.onload = () => window.XLSX ? res() : rej(new Error('no global'));
+          s.onerror = () => rej(new Error('script load failed'));
+          document.head.appendChild(s);
+        });
+        loaded = true; break;
+      } catch (e) {
+        console.warn('[portalImport] XLSX fallback:', url, e?.message);
+      }
+    }
+    if (!loaded) {
+      toast.error('Não foi possível carregar o parser de XLSX. Verifique se a proteção de rastreio do navegador não está bloqueando bibliotecas externas.');
+      return;
+    }
   }
 
   parsedImportData = [];
@@ -244,10 +263,22 @@ async function handleFiles(files) {
       }
     } catch(e) {
       console.error('[portalImport] parse error', e);
-      if (statusEls[fi]) {
-        statusEls[fi].textContent = `✗ ${e.message.slice(0,40)}`;
-        statusEls[fi].style.color = '#EF4444';
+      // v4.49.64+ Mensagens mais úteis pra erros comuns
+      let msg = e.message;
+      if (e.name === 'NotReadableError' || /NotReadable|not be read/i.test(msg)) {
+        msg = 'Arquivo inacessível. Se vier de OneDrive/Drive/iCloud, baixe localmente antes (clique direito → "Manter neste dispositivo"). Reabra esta aba se persistir.';
+      } else if (/tracking|prevenção|bloqu/i.test(msg)) {
+        // mantém msg detalhada vinda do loader
       }
+      if (statusEls[fi]) {
+        statusEls[fi].textContent = `✗ ${msg.slice(0, 120)}`;
+        statusEls[fi].style.color = '#EF4444';
+        statusEls[fi].title = msg;
+        statusEls[fi].style.whiteSpace = 'normal';
+        statusEls[fi].style.maxWidth = '60%';
+      }
+      // Toast com a mensagem completa pra usuário ver claramente
+      toast.error(msg);
     }
   }
 
@@ -372,11 +403,43 @@ async function showReview() {
 async function renderReviewBody(byDest, content) {
   const allDests = await fetchDestinations();
 
-  // Para cada destino, classifica
+  // Para cada destino, classifica.
+  // v4.49.65+ se houver manualMapping (user vinculou explicitamente),
+  // ele tem precedência sobre o _matchDest automático.
   const classified = Object.entries(byDest).map(([key, dest]) => {
+    if (dest.manualMapping) {
+      const linked = allDests.find(d => d.id === dest.manualMapping);
+      if (linked) return { key, dest, destDoc: linked, matchLevel: 'manual' };
+      // ID guardado já não existe (foi deletado entre as ações) — descarta
+      delete dest.manualMapping;
+    }
     const { destDoc, matchLevel, suggestion } = _matchDest(allDests, dest);
     return { key, dest, destDoc, matchLevel, suggestion };
   });
+
+  // v4.49.72+ Pre-fetch tips existentes pra destinos cadastrados.
+  // Anexa em c.existingTip pra UI surfacear "já tem dica cadastrada".
+  await Promise.all(classified.map(async (c) => {
+    if (!c.destDoc) return;
+    try {
+      const tip = await fetchTip(c.destDoc.id);
+      if (tip && tip.segments && Object.keys(tip.segments).length > 0) {
+        c.existingTip = {
+          id: tip.id,
+          segmentCount: Object.keys(tip.segments).length,
+          segmentLabels: Object.keys(tip.segments).map(k => {
+            const seg = SEGMENTS.find(s => s.key === k);
+            return seg ? seg.label : k;
+          }),
+        };
+        // Também guarda em c.dest pra runImport ler
+        c.dest.__existingTip = c.existingTip;
+        c.dest.__existingTipId = tip.id;
+      }
+    } catch (e) {
+      console.warn('[review] fetchTip failed', c.destDoc.id, e?.message);
+    }
+  }));
 
   const okCount     = classified.filter(c => c.destDoc).length;
   const missingCount = classified.length - okCount;
@@ -398,13 +461,53 @@ async function renderReviewBody(byDest, content) {
         A importação só pode prosseguir quando todos estiverem cadastrados.
       </div>` : ''}
     <div style="display:flex;flex-direction:column;gap:10px;max-height:400px;overflow-y:auto;">
-      ${classified.map(c => _renderDestCard(c)).join('')}
+      ${classified.map(c => _renderDestCard(c, allDests)).join('')}
     </div>
   `;
 
   // Bind cadastrar inline buttons
   content.querySelectorAll('[data-cadastrar-key]').forEach(btn => {
     btn.addEventListener('click', () => openInlineCadastrarModal(btn.dataset.cadastrarKey, byDest, content));
+  });
+
+  // v4.49.65+ Bind vincular dropdowns + botão "aceitar sugestão"
+  content.querySelectorAll('[data-vincular-key]').forEach(sel => {
+    sel.addEventListener('change', () => {
+      const key = sel.dataset.vincularKey;
+      const destId = sel.value;
+      if (!destId) return;
+      if (byDest[key]) {
+        byDest[key].manualMapping = destId;
+        renderReviewBody(byDest, content);
+      }
+    });
+  });
+  content.querySelectorAll('[data-aceitar-sugestao]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const key = btn.dataset.aceitarSugestao;
+      const destId = btn.dataset.destId;
+      if (byDest[key] && destId) {
+        byDest[key].manualMapping = destId;
+        renderReviewBody(byDest, content);
+      }
+    });
+  });
+  content.querySelectorAll('[data-desvincular-key]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const key = btn.dataset.desvincularKey;
+      if (byDest[key]) {
+        delete byDest[key].manualMapping;
+        renderReviewBody(byDest, content);
+      }
+    });
+  });
+
+  // v4.49.70+ Bind botão "Revisar items" → modal granular
+  content.querySelectorAll('[data-revisar-key]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const key = btn.dataset.revisarKey;
+      openGranularReviewModal(key, byDest, content);
+    });
   });
 
   // Confirm só habilitado se zero missing
@@ -426,18 +529,115 @@ async function renderReviewBody(byDest, content) {
     confirmBtn.parentNode.replaceChild(clone, confirmBtn);
     clone.addEventListener('click', () => {
       if (clone.disabled) return;
-      runImport(byDest, allDests);
+      // v4.49.72+ Se houver destinos com tip existente, abre modal de
+      // confirmação de overwrite antes de prosseguir.
+      const overwrites = classified.filter(c => c.existingTip && c.destDoc);
+      if (overwrites.length > 0) {
+        openOverwriteConfirmModal(overwrites, () => runImport(byDest, allDests));
+      } else {
+        runImport(byDest, allDests);
+      }
     });
   }
 }
 
-function _renderDestCard({ key, dest, destDoc, matchLevel, suggestion }) {
+/** v4.49.72+ Modal de confirmação antes de sobrescrever tips
+ *  existentes. Lista os destinos afetados e exige clique explícito
+ *  no "Confirmar substituição" pra prosseguir. */
+function openOverwriteConfirmModal(overwrites, onConfirm) {
+  const modal = document.createElement('div');
+  modal.dataset.overwriteConfirm = '1';
+  modal.style.cssText = `
+    position:fixed;inset:0;z-index:10250;background:rgba(0,0,0,0.65);
+    display:flex;align-items:center;justify-content:center;padding:20px;
+  `;
+  modal.innerHTML = `
+    <div style="background:var(--bg-elevated);border:1px solid var(--border-subtle);
+      border-radius:var(--radius-lg);padding:24px;max-width:560px;width:100%;
+      box-shadow:0 12px 40px rgba(0,0,0,0.4);">
+      <h3 style="margin:0 0 8px;font-size:1.0625rem;color:#EF4444;">
+        ⚠ Sobrescrever ${overwrites.length} dica${overwrites.length > 1 ? 's' : ''} existente${overwrites.length > 1 ? 's' : ''}?
+      </h3>
+      <p style="margin:0 0 16px;font-size:0.875rem;color:var(--text-secondary);">
+        Os destinos abaixo <strong>já têm dica cadastrada no sistema</strong>. Continuar com a
+        importação <strong>vai REMOVER o conteúdo antigo</strong> e substituir pelos items deste arquivo.
+        Esta ação <strong>não pode ser desfeita</strong>.
+      </p>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:18px;
+        max-height:240px;overflow-y:auto;padding:8px 10px;
+        background:var(--bg-surface);border-radius:var(--radius-sm);
+        border:1px solid var(--border-subtle);">
+        ${overwrites.map(c => `
+          <div style="font-size:0.8125rem;border-bottom:1px solid var(--border-subtle);padding-bottom:6px;">
+            <strong>${esc([c.dest.cidade, c.dest.pais].filter(Boolean).join(', '))}</strong>
+            <span style="color:var(--text-muted);">
+              · ${c.existingTip.segmentCount} segmento${c.existingTip.segmentCount > 1 ? 's' : ''}
+              atual${c.existingTip.segmentCount > 1 ? 'is' : ''}:
+              <em>${c.existingTip.segmentLabels.map(l => esc(l)).join(', ')}</em>
+            </span>
+          </div>
+        `).join('')}
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;">
+        <button class="btn btn-secondary btn-sm" id="overwrite-cancel">Cancelar</button>
+        <button class="btn btn-primary btn-sm" id="overwrite-confirm"
+          style="background:#EF4444;border-color:#EF4444;">
+          🔄 Confirmar substituição
+        </button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.querySelector('#overwrite-cancel').addEventListener('click', () => modal.remove());
+  modal.querySelector('#overwrite-confirm').addEventListener('click', () => {
+    modal.remove();
+    onConfirm();
+  });
+}
+
+function _renderDestCard({ key, dest, destDoc, matchLevel, suggestion, existingTip }, allDests = []) {
   const label = esc([dest.cidade, dest.pais, dest.continente].filter(Boolean).join(', '));
   const isOk = !!destDoc;
+  const isManual = matchLevel === 'manual';
   const borderColor = isOk ? '#22C55E' : '#F59E0B';
   const bgTint = isOk ? 'rgba(34,197,94,0.04)' : 'rgba(245,158,11,0.04)';
 
   const segments = [...new Set(dest.items.map(i => i.segmento).filter(Boolean))];
+
+  // v4.49.66+ Itens marcados pelo parser como precisando revisão de segmento
+  const needsReviewCount = dest.items.filter(i => i.__needsReview).length;
+  const unrecognizedHeadings = [...new Set(
+    dest.items.filter(i => i.__needsReview && i.__originalHeading)
+      .map(i => i.__originalHeading)
+  )];
+
+  // v4.49.72+ Tip já existente — flag pra warning
+  const hasExistingTip = !!existingTip;
+
+  // Status badge text
+  let statusText = '';
+  if (isOk) {
+    statusText =
+      matchLevel === 'manual' ? `🔗 Vinculado a ${esc([destDoc.city, destDoc.country].filter(Boolean).join(', '))}` :
+      matchLevel === 'exact' ? 'Cadastrado' :
+      matchLevel === 'no-continent' ? 'Cadastrado (sem continente)' :
+      'Cadastrado (só país)';
+  }
+
+  // Dropdown options pra vincular manualmente — agrupa por continente
+  const dropdownOptions = (() => {
+    const sorted = [...allDests].sort((a, b) => {
+      const c = (a.continent||'').localeCompare(b.continent||'', 'pt-BR');
+      if (c !== 0) return c;
+      const co = (a.country||'').localeCompare(b.country||'', 'pt-BR');
+      if (co !== 0) return co;
+      return (a.city||'').localeCompare(b.city||'', 'pt-BR');
+    });
+    return sorted.map(d => {
+      const txt = [d.city, d.country, d.continent].filter(Boolean).join(' · ');
+      return `<option value="${esc(d.id)}">${esc(txt)}</option>`;
+    }).join('');
+  })();
 
   return `
     <div style="border:1px solid var(--border-subtle);border-left:3px solid ${borderColor};
@@ -448,29 +648,91 @@ function _renderDestCard({ key, dest, destDoc, matchLevel, suggestion }) {
         </div>
         <div style="display:flex;align-items:center;gap:8px;">
           ${isOk
-            ? `<span style="font-size:0.75rem;color:#22C55E;font-weight:600;">
-                ${matchLevel === 'exact' ? 'Cadastrado' :
-                  matchLevel === 'no-continent' ? 'Cadastrado (sem continente)' :
-                  'Cadastrado (só país)'}
-              </span>`
-            : `<button type="button" class="btn btn-primary btn-sm" data-cadastrar-key="${esc(key)}"
-                 style="padding:4px 12px;font-size:0.8125rem;">
-                 + Cadastrar destino
-               </button>`}
+            ? `<span style="font-size:0.75rem;color:#22C55E;font-weight:600;">${statusText}</span>
+               ${isManual ? `<button type="button" class="btn btn-ghost btn-sm" data-desvincular-key="${esc(key)}"
+                  title="Desfazer vinculação manual"
+                  style="padding:2px 8px;font-size:0.75rem;color:var(--text-muted);">
+                  Desfazer
+                </button>` : ''}`
+            : ''}
         </div>
       </div>
-      ${!isOk && suggestion
-        ? `<div style="font-size:0.8125rem;color:var(--text-muted);margin-bottom:8px;">
-            💡 Você quis dizer <strong>${esc([suggestion.city, suggestion.country].filter(Boolean).join(', '))}</strong>?
-            Corrija na planilha ou cadastre o destino exato.
-          </div>` : ''}
-      <div style="display:flex;flex-wrap:wrap;gap:6px;">
-        ${segments.map(s =>
-          `<span style="font-size:0.75rem;padding:2px 8px;background:var(--bg-surface);
-            border-radius:var(--radius-full);border:1px solid var(--border-subtle);">
-            ${esc(s)} (${dest.items.filter(i=>i.segmento===s).length})
-          </span>`).join('')}
+
+      ${!isOk ? `
+        <div style="display:flex;flex-direction:column;gap:8px;margin:10px 0;
+          padding:10px;border-radius:8px;background:var(--bg-surface);
+          border:1px dashed var(--border-subtle);">
+          <div style="font-size:0.8125rem;color:var(--text-secondary);font-weight:600;">
+            Como você quer resolver este destino?
+          </div>
+          ${suggestion ? `
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+              <span style="font-size:0.8125rem;color:var(--text-muted);">
+                💡 Parece com <strong>${esc([suggestion.city, suggestion.country].filter(Boolean).join(', '))}</strong>
+              </span>
+              <button type="button" class="btn btn-secondary btn-sm"
+                data-aceitar-sugestao="${esc(key)}" data-dest-id="${esc(suggestion.id)}"
+                style="padding:4px 12px;font-size:0.8125rem;">
+                ✓ Vincular a este
+              </button>
+            </div>` : ''}
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <label style="font-size:0.8125rem;color:var(--text-muted);">Ou escolha manualmente:</label>
+            <select data-vincular-key="${esc(key)}" class="form-input"
+              style="font-size:0.8125rem;padding:4px 8px;flex:1;min-width:240px;">
+              <option value="">— selecione um destino cadastrado —</option>
+              ${dropdownOptions}
+            </select>
+          </div>
+          <div style="display:flex;justify-content:flex-end;">
+            <button type="button" class="btn btn-primary btn-sm" data-cadastrar-key="${esc(key)}"
+              style="padding:4px 12px;font-size:0.8125rem;">
+              + Cadastrar novo destino
+            </button>
+          </div>
+        </div>` : ''}
+
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">
+          ${segments.map(s =>
+            `<span style="font-size:0.75rem;padding:2px 8px;background:var(--bg-surface);
+              border-radius:var(--radius-full);border:1px solid var(--border-subtle);">
+              ${esc(s)} (${dest.items.filter(i=>i.segmento===s).length})
+            </span>`).join('')}
+          ${dest.items.filter(i => i.type !== 'info_geral' && !i.segmento).length > 0
+            ? `<span style="font-size:0.75rem;padding:2px 8px;background:rgba(245,158,11,0.15);
+                border-radius:var(--radius-full);border:1px solid #F59E0B;color:#F59E0B;font-weight:600;">
+                sem segmento (${dest.items.filter(i => i.type !== 'info_geral' && !i.segmento).length})
+              </span>` : ''}
+        </div>
+        <button type="button" class="btn btn-secondary btn-sm" data-revisar-key="${esc(key)}"
+          style="padding:4px 12px;font-size:0.8125rem;">
+          📝 Revisar items (${dest.items.filter(i => i.type !== 'info_geral').length})
+        </button>
       </div>
+
+      ${needsReviewCount > 0 ? `
+        <div style="margin-top:10px;padding:8px 10px;border-radius:6px;
+          background:rgba(245,158,11,0.08);border:1px dashed #F59E0B;
+          font-size:0.8125rem;color:var(--text-secondary);">
+          ⚠ <strong>${needsReviewCount} item(s) precisam revisão de segmento.</strong>
+          O parser detectou subtítulo(s) que não bate(m) com nenhuma categoria conhecida:
+          ${unrecognizedHeadings.length > 0
+            ? `<em>${unrecognizedHeadings.map(h => esc(h)).join(', ')}</em>.`
+            : ''}
+          Clique em <strong>📝 Revisar items</strong> pra editar e atribuir segmento antes de importar.
+        </div>` : ''}
+
+      ${hasExistingTip ? `
+        <div style="margin-top:10px;padding:10px 12px;border-radius:6px;
+          background:rgba(239,68,68,0.06);border:1px solid #EF4444;
+          font-size:0.8125rem;color:var(--text-secondary);">
+          🔄 <strong style="color:#EF4444;">Este destino já tem dica cadastrada</strong>
+          (${existingTip.segmentCount} segmento${existingTip.segmentCount > 1 ? 's' : ''}:
+          <em>${existingTip.segmentLabels.map(l => esc(l)).join(', ')}</em>).
+          <br>
+          <strong>Importar vai SUBSTITUIR</strong> o conteúdo antigo pelos items deste arquivo.
+        </div>` : ''}
     </div>
   `;
 }
@@ -552,6 +814,232 @@ function openInlineCadastrarModal(key, byDest, content) {
   });
 }
 
+/* ─── v4.49.70+ Modal granular de revisão de items ────────────
+ * Mostra todos os items detectados pelo parser, agrupados por
+ * segmento. User pode:
+ *   - Editar inline: titulo, descrição, endereço, telefone, site, categoria
+ *   - Mover item pra outro segmento (dropdown)
+ *   - Remover item (lixeira)
+ *   - Atribuir segmento pra items órfãos (__needsReview)
+ * Alterações persistem em byDest[key].items + parsedImportData.
+ * ──────────────────────────────────────────────────────────── */
+function openGranularReviewModal(destKey, byDest, contentRef) {
+  const dest = byDest[destKey];
+  if (!dest) return;
+
+  // SEGMENTS importado no topo do arquivo. Filtra fora "informacoes_gerais"
+  // (não é editável como item).
+  const editableSegments = SEGMENTS.filter(s => s.key !== 'informacoes_gerais');
+
+  const modal = document.createElement('div');
+  modal.dataset.granularReview = '1';
+  modal.style.cssText = `
+    position:fixed;inset:0;z-index:10300;background:rgba(0,0,0,0.65);
+    display:flex;align-items:center;justify-content:center;padding:20px;
+  `;
+  modal.innerHTML = `
+    <div style="background:var(--bg-elevated);border:1px solid var(--border-subtle);
+      border-radius:var(--radius-lg);padding:0;max-width:900px;width:100%;
+      max-height:90vh;display:flex;flex-direction:column;
+      box-shadow:0 12px 40px rgba(0,0,0,0.4);">
+      <div style="padding:18px 24px;border-bottom:1px solid var(--border-subtle);
+        display:flex;align-items:center;justify-content:space-between;gap:14px;">
+        <div>
+          <h3 style="margin:0;font-size:1.0625rem;">Revisar items</h3>
+          <p style="margin:4px 0 0;font-size:0.8125rem;color:var(--text-muted);">
+            ${esc([dest.cidade, dest.pais].filter(Boolean).join(', '))}
+            · edite, mova entre segmentos ou remova items antes de importar
+          </p>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-secondary btn-sm" id="granular-cancel">Cancelar</button>
+          <button class="btn btn-primary btn-sm" id="granular-save">✓ Aplicar revisão</button>
+        </div>
+      </div>
+      <div id="granular-body" style="overflow-y:auto;padding:18px 24px;flex:1;">
+        ${_renderGranularBody(dest, editableSegments)}
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  // Snapshot dos items pra rollback em "Cancelar"
+  const snapshot = dest.items.map(it => ({ ...it }));
+
+  modal.querySelector('#granular-cancel').addEventListener('click', () => {
+    dest.items = snapshot.map(it => ({ ...it }));
+    modal.remove();
+  });
+
+  modal.querySelector('#granular-save').addEventListener('click', () => {
+    // Atualiza parsedImportData global a partir de dest.items.
+    // parsedImportData é a fonte usada pelo runImport.
+    _syncDestItemsToParsedImportData(destKey, byDest);
+    modal.remove();
+    renderReviewBody(byDest, contentRef);
+    toast.success('Revisão aplicada.');
+  });
+
+  // Bind dos inputs/selects/botões dentro do body
+  _bindGranularBody(modal, dest, editableSegments);
+}
+
+function _renderGranularBody(dest, editableSegments) {
+  // Agrupa items por segmento (ou "__sem-segmento")
+  const groups = {};
+  dest.items.forEach((it, idx) => {
+    if (it.type === 'info_geral') return; // info geral é editável em outro lugar
+    const key = it.segmento || '__sem-segmento';
+    if (!groups[key]) groups[key] = [];
+    groups[key].push({ idx, it });
+  });
+
+  // Ordem dos grupos: __sem-segmento primeiro (precisa atenção),
+  // depois os outros em ordem de SEGMENTS.
+  const orderedKeys = [
+    ...(groups['__sem-segmento'] ? ['__sem-segmento'] : []),
+    ...editableSegments.map(s => s.label).filter(lbl => groups[lbl]),
+    // Custom segments não previstos: o que sobrou
+    ...Object.keys(groups).filter(k => k !== '__sem-segmento' && !editableSegments.some(s => s.label === k)),
+  ];
+
+  if (orderedKeys.length === 0) {
+    return `<div style="text-align:center;padding:40px;color:var(--text-muted);">
+      Nenhum item detectado nesse destino.
+    </div>`;
+  }
+
+  return orderedKeys.map(groupKey => {
+    const items = groups[groupKey];
+    const isOrphan = groupKey === '__sem-segmento';
+    const groupLabel = isOrphan ? '⚠ Items sem segmento atribuído' : groupKey;
+    const groupColor = isOrphan ? '#F59E0B' : '#22C55E';
+    return `
+      <details ${isOrphan ? 'open' : ''} style="margin-bottom:14px;
+        border:1px solid var(--border-subtle);border-radius:var(--radius-md);
+        border-left:3px solid ${groupColor};overflow:hidden;">
+        <summary style="padding:10px 14px;cursor:pointer;font-weight:600;
+          background:${isOrphan ? 'rgba(245,158,11,0.05)' : 'var(--bg-surface)'};
+          display:flex;align-items:center;justify-content:space-between;gap:10px;">
+          <span>${esc(groupLabel)} <span style="color:var(--text-muted);font-weight:400;">(${items.length})</span></span>
+        </summary>
+        <div style="padding:10px 14px;display:flex;flex-direction:column;gap:10px;">
+          ${items.map(({ idx, it }) => _renderItemRow(idx, it, editableSegments, isOrphan)).join('')}
+        </div>
+      </details>
+    `;
+  }).join('');
+}
+
+function _renderItemRow(idx, it, editableSegments, isOrphan = false) {
+  const needsReview = it.__needsReview === true || isOrphan;
+  const borderColor = needsReview ? '#F59E0B' : 'var(--border-subtle)';
+  const bgTint = needsReview ? 'rgba(245,158,11,0.04)' : 'transparent';
+
+  return `
+    <div data-item-idx="${idx}" style="border:1px solid ${borderColor};border-radius:8px;
+      padding:12px;background:${bgTint};">
+      ${it.__originalHeading ? `
+        <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:8px;">
+          📄 Detectado a partir de: <em>"${esc(it.__originalHeading)}"</em>
+        </div>` : ''}
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:0.8125rem;">
+        <label style="display:flex;flex-direction:column;gap:3px;grid-column:span 2;">
+          <span style="color:var(--text-muted);font-size:0.75rem;">Título</span>
+          <input data-field="titulo" type="text" class="form-input"
+            value="${esc(it.titulo || '')}" style="font-size:0.875rem;" />
+        </label>
+        <label style="display:flex;flex-direction:column;gap:3px;">
+          <span style="color:var(--text-muted);font-size:0.75rem;">Segmento ${needsReview ? '<span style="color:#F59E0B;">*</span>' : ''}</span>
+          <select data-field="segmento" class="form-input" style="font-size:0.875rem;">
+            ${needsReview ? '<option value="">— selecione —</option>' : ''}
+            ${editableSegments.map(s =>
+              `<option value="${esc(s.label)}" ${it.segmento === s.label ? 'selected' : ''}>${esc(s.label)}</option>`
+            ).join('')}
+          </select>
+        </label>
+        <label style="display:flex;flex-direction:column;gap:3px;">
+          <span style="color:var(--text-muted);font-size:0.75rem;">Categoria</span>
+          <input data-field="categoria" type="text" class="form-input"
+            value="${esc(it.categoria || '')}" placeholder="opcional" style="font-size:0.875rem;" />
+        </label>
+        <label style="display:flex;flex-direction:column;gap:3px;grid-column:span 2;">
+          <span style="color:var(--text-muted);font-size:0.75rem;">Descrição</span>
+          <textarea data-field="descricao" class="form-input" rows="2"
+            style="font-size:0.875rem;resize:vertical;">${esc(it.descricao || '')}</textarea>
+        </label>
+        <label style="display:flex;flex-direction:column;gap:3px;">
+          <span style="color:var(--text-muted);font-size:0.75rem;">Endereço</span>
+          <input data-field="endereco" type="text" class="form-input"
+            value="${esc(it.endereco || '')}" style="font-size:0.875rem;" />
+        </label>
+        <label style="display:flex;flex-direction:column;gap:3px;">
+          <span style="color:var(--text-muted);font-size:0.75rem;">Telefone</span>
+          <input data-field="telefone" type="text" class="form-input"
+            value="${esc(it.telefone || '')}" style="font-size:0.875rem;" />
+        </label>
+        <label style="display:flex;flex-direction:column;gap:3px;grid-column:span 2;">
+          <span style="color:var(--text-muted);font-size:0.75rem;">Site</span>
+          <input data-field="site" type="text" class="form-input"
+            value="${esc(it.site || '')}" style="font-size:0.875rem;" />
+        </label>
+      </div>
+      <div style="display:flex;justify-content:flex-end;margin-top:8px;">
+        <button type="button" class="btn btn-ghost btn-sm" data-remove-item="${idx}"
+          style="font-size:0.75rem;color:#EF4444;padding:2px 8px;">
+          🗑 Remover item
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+function _bindGranularBody(modal, dest, editableSegments) {
+  // Inputs/selects/textareas: salvam no item ao mudar
+  modal.querySelectorAll('[data-item-idx]').forEach(row => {
+    const idx = parseInt(row.dataset.itemIdx, 10);
+    if (!dest.items[idx]) return;
+    row.querySelectorAll('[data-field]').forEach(input => {
+      input.addEventListener('input', () => {
+        const field = input.dataset.field;
+        dest.items[idx][field] = input.value;
+        // Se atribuiu segmento, limpa __needsReview
+        if (field === 'segmento' && input.value) {
+          delete dest.items[idx].__needsReview;
+        }
+      });
+    });
+  });
+
+  // Botão remover
+  modal.querySelectorAll('[data-remove-item]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = parseInt(btn.dataset.removeItem, 10);
+      if (!confirm('Remover este item da importação?')) return;
+      dest.items[idx] = null;
+      // Re-render limpando o item
+      dest.items = dest.items.filter(Boolean);
+      modal.querySelector('#granular-body').innerHTML = _renderGranularBody(dest, editableSegments);
+      _bindGranularBody(modal, dest, editableSegments);
+    });
+  });
+}
+
+function _syncDestItemsToParsedImportData(destKey, byDest) {
+  // dest.items é referência viva pros items que vieram do parsedImportData.
+  // Como esse fluxo agrupa por destKey, basta reconstruir parsedImportData
+  // a partir de TODOS os byDest[].items.
+  const fresh = [];
+  for (const [, d] of Object.entries(byDest)) {
+    for (const it of d.items) {
+      // Pula items sem segmento ou sem título — não deveria importar
+      if (it.type !== 'info_geral' && (!it.segmento || !it.titulo)) continue;
+      fresh.push(it);
+    }
+  }
+  parsedImportData = fresh;
+}
+
 /* ─── Import ──────────────────────────────────────────────────
  * v4.49.63+ Usa _matchDest (normalizado, multi-camada). Aceita
  * allDests pre-fetched do review pra evitar double-fetch.
@@ -580,22 +1068,40 @@ async function runImport(byDest, preFetchedDests = null) {
     const label = [dest.cidade, dest.pais, dest.continente].filter(Boolean).join(', ');
     addLog(`\n📍 ${label}`);
 
-    // Match normalizado (case/accent-insensitive, multi-camada)
-    const { destDoc, suggestion } = _matchDest(allDests, dest);
+    // v4.49.65+ Vinculação manual tem prioridade sobre _matchDest.
+    let destDoc = null;
+    let suggestion = null;
+    if (dest.manualMapping) {
+      destDoc = allDests.find(d => d.id === dest.manualMapping);
+      if (destDoc) {
+        addLog(`  🔗 Vinculado a "${[destDoc.city, destDoc.country].filter(Boolean).join(', ')}"`, '#94a3b8');
+      }
+    }
+    if (!destDoc) {
+      const r = _matchDest(allDests, dest);
+      destDoc = r.destDoc;
+      suggestion = r.suggestion;
+    }
 
     if (!destDoc) {
       const hint = suggestion
-        ? `  💡 Sugestão: "${[suggestion.city, suggestion.country].filter(Boolean).join(', ')}". Corrija planilha ou cadastre o destino.`
-        : `  💡 Cadastre o destino em Portal de Dicas → Destinos antes de re-importar.`;
+        ? `  💡 Sugestão: "${[suggestion.city, suggestion.country].filter(Boolean).join(', ')}". Corrija planilha, vincule manualmente ou cadastre o destino.`
+        : `  💡 Cadastre o destino em Portal de Dicas → Destinos antes de re-importar, ou vincule manualmente no review.`;
       addLog(`  ⚠ Destino não cadastrado — pulando.`, '#F59E0B');
       addLog(hint, '#94a3b8');
       errors++;
       continue;
     }
 
-    // Load existing tip or start fresh
+    // v4.49.72+ OVERWRITE: começa SEMPRE com segments zerado.
+    // Antes era `segments = tip?.segments ? { ...tip.segments } : {}` (merge),
+    // gerando duplicações ao reimportar. User confirmou substituição no modal
+    // de overwrite antes do runImport disparar.
     let tip      = await fetchTip(destDoc.id);
-    let segments = tip?.segments ? { ...tip.segments } : {};
+    let segments = {};
+    if (tip) {
+      addLog(`  🔄 Sobrescrevendo dica existente (${Object.keys(tip.segments || {}).length} segmento(s) antigo(s))`, '#F59E0B');
+    }
 
     // Group items by segment
     const bySegment = {};
