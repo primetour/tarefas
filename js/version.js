@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 69,
-  build: '20260521-portal-import-parser-prefix-no-split',
+  patch: 70,
+  build: '20260521-portal-import-granular-review-modal',
 };
 
 /** "1.2.0" */

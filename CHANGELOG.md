@@ -6,6 +6,51 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.70+20260521-portal-import-granular-review-modal] — 2026-05-21
+
+Release **PATCH** — Portal de Dicas/Importação: UI granular de
+revisão de items detectados.
+
+**Contexto**: o parser v4.49.66-69 detecta items via heurística
+de subtítulos. Agora o usuário precisa de uma tela pra **revisar
+a alocação proposta** antes de importar — editar título/descrição,
+mover items entre segmentos, ou remover items errados.
+
+**Mudanças em `js/pages/portalImport.js`**:
+
+1. **Botão "📝 Revisar items (N)"** em cada card de destino no
+   review, ao lado do badge de cadastro.
+
+2. **Modal granular** (`openGranularReviewModal`):
+   - Items agrupados por segmento em `<details>` expansíveis.
+   - Items sem segmento atribuído ficam em grupo "⚠ Items sem
+     segmento" sempre aberto, com border âmbar.
+   - Cada item é uma row com formulário:
+     - Título (texto)
+     - Segmento (dropdown com SEGMENTS — obrigatório pra items
+       órfãos, com asterisco vermelho)
+     - Categoria (texto, opcional)
+     - Descrição (textarea)
+     - Endereço, Telefone, Site (texto)
+   - Linha "📄 Detectado a partir de: ..." mostra o
+     `__originalHeading` quando o item veio de heading não
+     reconhecido.
+   - Botão "🗑 Remover item" por linha.
+   - Botões globais "Cancelar" (rollback via snapshot) e
+     "✓ Aplicar revisão" (sincroniza com `parsedImportData`).
+
+3. **`_syncDestItemsToParsedImportData`**: reconstrói
+   `parsedImportData` global a partir das edições, filtrando
+   items sem segmento ou sem título.
+
+4. **Persistência via reference**: como `dest.items` é referência
+   pros mesmos objetos do `parsedImportData`, edições inline
+   atualizam o estado vivo. "Cancelar" restaura via snapshot.
+
+**Próximo**: validação real com DOCX de produção.
+
+---
+
 ## [4.49.69+20260521-portal-import-parser-prefix-no-split] — 2026-05-21
 
 Release **PATCH** — fix: `_looksLikeItemTitle` agora exclui

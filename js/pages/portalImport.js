@@ -478,6 +478,14 @@ async function renderReviewBody(byDest, content) {
     });
   });
 
+  // v4.49.70+ Bind botão "Revisar items" → modal granular
+  content.querySelectorAll('[data-revisar-key]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const key = btn.dataset.revisarKey;
+      openGranularReviewModal(key, byDest, content);
+    });
+  });
+
   // Confirm só habilitado se zero missing
   const confirmBtn = document.getElementById('import-confirm-btn');
   if (confirmBtn) {
@@ -596,12 +604,23 @@ function _renderDestCard({ key, dest, destDoc, matchLevel, suggestion }, allDest
           </div>
         </div>` : ''}
 
-      <div style="display:flex;flex-wrap:wrap;gap:6px;">
-        ${segments.map(s =>
-          `<span style="font-size:0.75rem;padding:2px 8px;background:var(--bg-surface);
-            border-radius:var(--radius-full);border:1px solid var(--border-subtle);">
-            ${esc(s)} (${dest.items.filter(i=>i.segmento===s).length})
-          </span>`).join('')}
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+        <div style="display:flex;flex-wrap:wrap;gap:6px;">
+          ${segments.map(s =>
+            `<span style="font-size:0.75rem;padding:2px 8px;background:var(--bg-surface);
+              border-radius:var(--radius-full);border:1px solid var(--border-subtle);">
+              ${esc(s)} (${dest.items.filter(i=>i.segmento===s).length})
+            </span>`).join('')}
+          ${dest.items.filter(i => i.type !== 'info_geral' && !i.segmento).length > 0
+            ? `<span style="font-size:0.75rem;padding:2px 8px;background:rgba(245,158,11,0.15);
+                border-radius:var(--radius-full);border:1px solid #F59E0B;color:#F59E0B;font-weight:600;">
+                sem segmento (${dest.items.filter(i => i.type !== 'info_geral' && !i.segmento).length})
+              </span>` : ''}
+        </div>
+        <button type="button" class="btn btn-secondary btn-sm" data-revisar-key="${esc(key)}"
+          style="padding:4px 12px;font-size:0.8125rem;">
+          📝 Revisar items (${dest.items.filter(i => i.type !== 'info_geral').length})
+        </button>
       </div>
 
       ${needsReviewCount > 0 ? `
@@ -613,7 +632,7 @@ function _renderDestCard({ key, dest, destDoc, matchLevel, suggestion }, allDest
           ${unrecognizedHeadings.length > 0
             ? `<em>${unrecognizedHeadings.map(h => esc(h)).join(', ')}</em>.`
             : ''}
-          Edite os items no Portal de Dicas após importar pra atribuir o segmento correto.
+          Clique em <strong>📝 Revisar items</strong> pra editar e atribuir segmento antes de importar.
         </div>` : ''}
     </div>
   `;
@@ -694,6 +713,232 @@ function openInlineCadastrarModal(key, byDest, content) {
       saveBtn.disabled = false; saveBtn.textContent = 'Salvar destino';
     }
   });
+}
+
+/* ─── v4.49.70+ Modal granular de revisão de items ────────────
+ * Mostra todos os items detectados pelo parser, agrupados por
+ * segmento. User pode:
+ *   - Editar inline: titulo, descrição, endereço, telefone, site, categoria
+ *   - Mover item pra outro segmento (dropdown)
+ *   - Remover item (lixeira)
+ *   - Atribuir segmento pra items órfãos (__needsReview)
+ * Alterações persistem em byDest[key].items + parsedImportData.
+ * ──────────────────────────────────────────────────────────── */
+function openGranularReviewModal(destKey, byDest, contentRef) {
+  const dest = byDest[destKey];
+  if (!dest) return;
+
+  // SEGMENTS importado no topo do arquivo. Filtra fora "informacoes_gerais"
+  // (não é editável como item).
+  const editableSegments = SEGMENTS.filter(s => s.key !== 'informacoes_gerais');
+
+  const modal = document.createElement('div');
+  modal.dataset.granularReview = '1';
+  modal.style.cssText = `
+    position:fixed;inset:0;z-index:10300;background:rgba(0,0,0,0.65);
+    display:flex;align-items:center;justify-content:center;padding:20px;
+  `;
+  modal.innerHTML = `
+    <div style="background:var(--bg-elevated);border:1px solid var(--border-subtle);
+      border-radius:var(--radius-lg);padding:0;max-width:900px;width:100%;
+      max-height:90vh;display:flex;flex-direction:column;
+      box-shadow:0 12px 40px rgba(0,0,0,0.4);">
+      <div style="padding:18px 24px;border-bottom:1px solid var(--border-subtle);
+        display:flex;align-items:center;justify-content:space-between;gap:14px;">
+        <div>
+          <h3 style="margin:0;font-size:1.0625rem;">Revisar items</h3>
+          <p style="margin:4px 0 0;font-size:0.8125rem;color:var(--text-muted);">
+            ${esc([dest.cidade, dest.pais].filter(Boolean).join(', '))}
+            · edite, mova entre segmentos ou remova items antes de importar
+          </p>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-secondary btn-sm" id="granular-cancel">Cancelar</button>
+          <button class="btn btn-primary btn-sm" id="granular-save">✓ Aplicar revisão</button>
+        </div>
+      </div>
+      <div id="granular-body" style="overflow-y:auto;padding:18px 24px;flex:1;">
+        ${_renderGranularBody(dest, editableSegments)}
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  // Snapshot dos items pra rollback em "Cancelar"
+  const snapshot = dest.items.map(it => ({ ...it }));
+
+  modal.querySelector('#granular-cancel').addEventListener('click', () => {
+    dest.items = snapshot.map(it => ({ ...it }));
+    modal.remove();
+  });
+
+  modal.querySelector('#granular-save').addEventListener('click', () => {
+    // Atualiza parsedImportData global a partir de dest.items.
+    // parsedImportData é a fonte usada pelo runImport.
+    _syncDestItemsToParsedImportData(destKey, byDest);
+    modal.remove();
+    renderReviewBody(byDest, contentRef);
+    toast.success('Revisão aplicada.');
+  });
+
+  // Bind dos inputs/selects/botões dentro do body
+  _bindGranularBody(modal, dest, editableSegments);
+}
+
+function _renderGranularBody(dest, editableSegments) {
+  // Agrupa items por segmento (ou "__sem-segmento")
+  const groups = {};
+  dest.items.forEach((it, idx) => {
+    if (it.type === 'info_geral') return; // info geral é editável em outro lugar
+    const key = it.segmento || '__sem-segmento';
+    if (!groups[key]) groups[key] = [];
+    groups[key].push({ idx, it });
+  });
+
+  // Ordem dos grupos: __sem-segmento primeiro (precisa atenção),
+  // depois os outros em ordem de SEGMENTS.
+  const orderedKeys = [
+    ...(groups['__sem-segmento'] ? ['__sem-segmento'] : []),
+    ...editableSegments.map(s => s.label).filter(lbl => groups[lbl]),
+    // Custom segments não previstos: o que sobrou
+    ...Object.keys(groups).filter(k => k !== '__sem-segmento' && !editableSegments.some(s => s.label === k)),
+  ];
+
+  if (orderedKeys.length === 0) {
+    return `<div style="text-align:center;padding:40px;color:var(--text-muted);">
+      Nenhum item detectado nesse destino.
+    </div>`;
+  }
+
+  return orderedKeys.map(groupKey => {
+    const items = groups[groupKey];
+    const isOrphan = groupKey === '__sem-segmento';
+    const groupLabel = isOrphan ? '⚠ Items sem segmento atribuído' : groupKey;
+    const groupColor = isOrphan ? '#F59E0B' : '#22C55E';
+    return `
+      <details ${isOrphan ? 'open' : ''} style="margin-bottom:14px;
+        border:1px solid var(--border-subtle);border-radius:var(--radius-md);
+        border-left:3px solid ${groupColor};overflow:hidden;">
+        <summary style="padding:10px 14px;cursor:pointer;font-weight:600;
+          background:${isOrphan ? 'rgba(245,158,11,0.05)' : 'var(--bg-surface)'};
+          display:flex;align-items:center;justify-content:space-between;gap:10px;">
+          <span>${esc(groupLabel)} <span style="color:var(--text-muted);font-weight:400;">(${items.length})</span></span>
+        </summary>
+        <div style="padding:10px 14px;display:flex;flex-direction:column;gap:10px;">
+          ${items.map(({ idx, it }) => _renderItemRow(idx, it, editableSegments, isOrphan)).join('')}
+        </div>
+      </details>
+    `;
+  }).join('');
+}
+
+function _renderItemRow(idx, it, editableSegments, isOrphan = false) {
+  const needsReview = it.__needsReview === true || isOrphan;
+  const borderColor = needsReview ? '#F59E0B' : 'var(--border-subtle)';
+  const bgTint = needsReview ? 'rgba(245,158,11,0.04)' : 'transparent';
+
+  return `
+    <div data-item-idx="${idx}" style="border:1px solid ${borderColor};border-radius:8px;
+      padding:12px;background:${bgTint};">
+      ${it.__originalHeading ? `
+        <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:8px;">
+          📄 Detectado a partir de: <em>"${esc(it.__originalHeading)}"</em>
+        </div>` : ''}
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:0.8125rem;">
+        <label style="display:flex;flex-direction:column;gap:3px;grid-column:span 2;">
+          <span style="color:var(--text-muted);font-size:0.75rem;">Título</span>
+          <input data-field="titulo" type="text" class="form-input"
+            value="${esc(it.titulo || '')}" style="font-size:0.875rem;" />
+        </label>
+        <label style="display:flex;flex-direction:column;gap:3px;">
+          <span style="color:var(--text-muted);font-size:0.75rem;">Segmento ${needsReview ? '<span style="color:#F59E0B;">*</span>' : ''}</span>
+          <select data-field="segmento" class="form-input" style="font-size:0.875rem;">
+            ${needsReview ? '<option value="">— selecione —</option>' : ''}
+            ${editableSegments.map(s =>
+              `<option value="${esc(s.label)}" ${it.segmento === s.label ? 'selected' : ''}>${esc(s.label)}</option>`
+            ).join('')}
+          </select>
+        </label>
+        <label style="display:flex;flex-direction:column;gap:3px;">
+          <span style="color:var(--text-muted);font-size:0.75rem;">Categoria</span>
+          <input data-field="categoria" type="text" class="form-input"
+            value="${esc(it.categoria || '')}" placeholder="opcional" style="font-size:0.875rem;" />
+        </label>
+        <label style="display:flex;flex-direction:column;gap:3px;grid-column:span 2;">
+          <span style="color:var(--text-muted);font-size:0.75rem;">Descrição</span>
+          <textarea data-field="descricao" class="form-input" rows="2"
+            style="font-size:0.875rem;resize:vertical;">${esc(it.descricao || '')}</textarea>
+        </label>
+        <label style="display:flex;flex-direction:column;gap:3px;">
+          <span style="color:var(--text-muted);font-size:0.75rem;">Endereço</span>
+          <input data-field="endereco" type="text" class="form-input"
+            value="${esc(it.endereco || '')}" style="font-size:0.875rem;" />
+        </label>
+        <label style="display:flex;flex-direction:column;gap:3px;">
+          <span style="color:var(--text-muted);font-size:0.75rem;">Telefone</span>
+          <input data-field="telefone" type="text" class="form-input"
+            value="${esc(it.telefone || '')}" style="font-size:0.875rem;" />
+        </label>
+        <label style="display:flex;flex-direction:column;gap:3px;grid-column:span 2;">
+          <span style="color:var(--text-muted);font-size:0.75rem;">Site</span>
+          <input data-field="site" type="text" class="form-input"
+            value="${esc(it.site || '')}" style="font-size:0.875rem;" />
+        </label>
+      </div>
+      <div style="display:flex;justify-content:flex-end;margin-top:8px;">
+        <button type="button" class="btn btn-ghost btn-sm" data-remove-item="${idx}"
+          style="font-size:0.75rem;color:#EF4444;padding:2px 8px;">
+          🗑 Remover item
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+function _bindGranularBody(modal, dest, editableSegments) {
+  // Inputs/selects/textareas: salvam no item ao mudar
+  modal.querySelectorAll('[data-item-idx]').forEach(row => {
+    const idx = parseInt(row.dataset.itemIdx, 10);
+    if (!dest.items[idx]) return;
+    row.querySelectorAll('[data-field]').forEach(input => {
+      input.addEventListener('input', () => {
+        const field = input.dataset.field;
+        dest.items[idx][field] = input.value;
+        // Se atribuiu segmento, limpa __needsReview
+        if (field === 'segmento' && input.value) {
+          delete dest.items[idx].__needsReview;
+        }
+      });
+    });
+  });
+
+  // Botão remover
+  modal.querySelectorAll('[data-remove-item]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const idx = parseInt(btn.dataset.removeItem, 10);
+      if (!confirm('Remover este item da importação?')) return;
+      dest.items[idx] = null;
+      // Re-render limpando o item
+      dest.items = dest.items.filter(Boolean);
+      modal.querySelector('#granular-body').innerHTML = _renderGranularBody(dest, editableSegments);
+      _bindGranularBody(modal, dest, editableSegments);
+    });
+  });
+}
+
+function _syncDestItemsToParsedImportData(destKey, byDest) {
+  // dest.items é referência viva pros items que vieram do parsedImportData.
+  // Como esse fluxo agrupa por destKey, basta reconstruir parsedImportData
+  // a partir de TODOS os byDest[].items.
+  const fresh = [];
+  for (const [, d] of Object.entries(byDest)) {
+    for (const it of d.items) {
+      // Pula items sem segmento ou sem título — não deveria importar
+      if (it.type !== 'info_geral' && (!it.segmento || !it.titulo)) continue;
+      fresh.push(it);
+    }
+  }
+  parsedImportData = fresh;
 }
 
 /* ─── Import ──────────────────────────────────────────────────
