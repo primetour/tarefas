@@ -6,6 +6,51 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.65+20260521-portal-import-vincular-manual-destino] — 2026-05-21
+
+Release **PATCH** — Portal de Dicas/Importação: vinculação manual a
+destino existente.
+
+**Contexto** (Renê): "tentei subir o arquivo
+áfrica - marccos - casablanca.docx e o sistema não identificou o
+destino, mas ele já está cadastrado. não é melhor vc solicitar ao
+user pra ele vincular ao destino que deseja?"
+
+**Diagnóstico**: usuário digitou "marccos" no nome do arquivo
+(typo de "Marrocos"). O `_matchDest` falhava em todas as camadas
+porque a normalização não cobre typos. A sugestão fuzzy mostrava
+"Casablanca, Marrocos" (achou pela cidade), mas usuário tinha que
+renomear o arquivo ou cadastrar de novo — fluxo ruim quando o
+destino já existe.
+
+**Mudanças em `js/pages/portalImport.js`**:
+
+1. **Vinculação manual** — cada card de destino "não cadastrado"
+   ganha um painel novo com 3 ações:
+   - **✓ Vincular a este** — botão que aceita a sugestão fuzzy
+     direto.
+   - **Escolher manualmente** — dropdown com TODOS os destinos
+     cadastrados (ordenados por continente → país → cidade).
+   - **+ Cadastrar novo destino** — caminho original preservado.
+
+2. **`byDest[key].manualMapping`** — guarda o `destDoc.id` quando
+   user vincula. Persiste no re-render. Botão **Desfazer**
+   aparece quando vinculação é manual.
+
+3. **`_matchDest` ainda corre primeiro**; manualMapping tem
+   precedência apenas se existir. Garante que matches automáticos
+   bons continuam funcionando.
+
+4. **`runImport`** — checa `dest.manualMapping` antes de
+   `_matchDest`. Log mostra "🔗 Vinculado a X" quando usado.
+
+5. **`renderReviewBody`** detecta ID stale (destino deletado
+   entre review e re-render) e descarta `manualMapping` órfão.
+
+**Validação**: `node --check` ok. E2E pendente no Chrome.
+
+---
+
 ## [4.49.64+20260521-portal-import-cdn-fallback-notreadable-msg] — 2026-05-21
 
 Release **PATCH** — Portal de Dicas/Importação: resiliência a

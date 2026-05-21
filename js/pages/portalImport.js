@@ -403,8 +403,16 @@ async function showReview() {
 async function renderReviewBody(byDest, content) {
   const allDests = await fetchDestinations();
 
-  // Para cada destino, classifica
+  // Para cada destino, classifica.
+  // v4.49.65+ se houver manualMapping (user vinculou explicitamente),
+  // ele tem precedência sobre o _matchDest automático.
   const classified = Object.entries(byDest).map(([key, dest]) => {
+    if (dest.manualMapping) {
+      const linked = allDests.find(d => d.id === dest.manualMapping);
+      if (linked) return { key, dest, destDoc: linked, matchLevel: 'manual' };
+      // ID guardado já não existe (foi deletado entre as ações) — descarta
+      delete dest.manualMapping;
+    }
     const { destDoc, matchLevel, suggestion } = _matchDest(allDests, dest);
     return { key, dest, destDoc, matchLevel, suggestion };
   });
@@ -429,13 +437,45 @@ async function renderReviewBody(byDest, content) {
         A importação só pode prosseguir quando todos estiverem cadastrados.
       </div>` : ''}
     <div style="display:flex;flex-direction:column;gap:10px;max-height:400px;overflow-y:auto;">
-      ${classified.map(c => _renderDestCard(c)).join('')}
+      ${classified.map(c => _renderDestCard(c, allDests)).join('')}
     </div>
   `;
 
   // Bind cadastrar inline buttons
   content.querySelectorAll('[data-cadastrar-key]').forEach(btn => {
     btn.addEventListener('click', () => openInlineCadastrarModal(btn.dataset.cadastrarKey, byDest, content));
+  });
+
+  // v4.49.65+ Bind vincular dropdowns + botão "aceitar sugestão"
+  content.querySelectorAll('[data-vincular-key]').forEach(sel => {
+    sel.addEventListener('change', () => {
+      const key = sel.dataset.vincularKey;
+      const destId = sel.value;
+      if (!destId) return;
+      if (byDest[key]) {
+        byDest[key].manualMapping = destId;
+        renderReviewBody(byDest, content);
+      }
+    });
+  });
+  content.querySelectorAll('[data-aceitar-sugestao]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const key = btn.dataset.aceitarSugestao;
+      const destId = btn.dataset.destId;
+      if (byDest[key] && destId) {
+        byDest[key].manualMapping = destId;
+        renderReviewBody(byDest, content);
+      }
+    });
+  });
+  content.querySelectorAll('[data-desvincular-key]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const key = btn.dataset.desvincularKey;
+      if (byDest[key]) {
+        delete byDest[key].manualMapping;
+        renderReviewBody(byDest, content);
+      }
+    });
   });
 
   // Confirm só habilitado se zero missing
@@ -462,13 +502,39 @@ async function renderReviewBody(byDest, content) {
   }
 }
 
-function _renderDestCard({ key, dest, destDoc, matchLevel, suggestion }) {
+function _renderDestCard({ key, dest, destDoc, matchLevel, suggestion }, allDests = []) {
   const label = esc([dest.cidade, dest.pais, dest.continente].filter(Boolean).join(', '));
   const isOk = !!destDoc;
+  const isManual = matchLevel === 'manual';
   const borderColor = isOk ? '#22C55E' : '#F59E0B';
   const bgTint = isOk ? 'rgba(34,197,94,0.04)' : 'rgba(245,158,11,0.04)';
 
   const segments = [...new Set(dest.items.map(i => i.segmento).filter(Boolean))];
+
+  // Status badge text
+  let statusText = '';
+  if (isOk) {
+    statusText =
+      matchLevel === 'manual' ? `🔗 Vinculado a ${esc([destDoc.city, destDoc.country].filter(Boolean).join(', '))}` :
+      matchLevel === 'exact' ? 'Cadastrado' :
+      matchLevel === 'no-continent' ? 'Cadastrado (sem continente)' :
+      'Cadastrado (só país)';
+  }
+
+  // Dropdown options pra vincular manualmente — agrupa por continente
+  const dropdownOptions = (() => {
+    const sorted = [...allDests].sort((a, b) => {
+      const c = (a.continent||'').localeCompare(b.continent||'', 'pt-BR');
+      if (c !== 0) return c;
+      const co = (a.country||'').localeCompare(b.country||'', 'pt-BR');
+      if (co !== 0) return co;
+      return (a.city||'').localeCompare(b.city||'', 'pt-BR');
+    });
+    return sorted.map(d => {
+      const txt = [d.city, d.country, d.continent].filter(Boolean).join(' · ');
+      return `<option value="${esc(d.id)}">${esc(txt)}</option>`;
+    }).join('');
+  })();
 
   return `
     <div style="border:1px solid var(--border-subtle);border-left:3px solid ${borderColor};
@@ -479,22 +545,50 @@ function _renderDestCard({ key, dest, destDoc, matchLevel, suggestion }) {
         </div>
         <div style="display:flex;align-items:center;gap:8px;">
           ${isOk
-            ? `<span style="font-size:0.75rem;color:#22C55E;font-weight:600;">
-                ${matchLevel === 'exact' ? 'Cadastrado' :
-                  matchLevel === 'no-continent' ? 'Cadastrado (sem continente)' :
-                  'Cadastrado (só país)'}
-              </span>`
-            : `<button type="button" class="btn btn-primary btn-sm" data-cadastrar-key="${esc(key)}"
-                 style="padding:4px 12px;font-size:0.8125rem;">
-                 + Cadastrar destino
-               </button>`}
+            ? `<span style="font-size:0.75rem;color:#22C55E;font-weight:600;">${statusText}</span>
+               ${isManual ? `<button type="button" class="btn btn-ghost btn-sm" data-desvincular-key="${esc(key)}"
+                  title="Desfazer vinculação manual"
+                  style="padding:2px 8px;font-size:0.75rem;color:var(--text-muted);">
+                  Desfazer
+                </button>` : ''}`
+            : ''}
         </div>
       </div>
-      ${!isOk && suggestion
-        ? `<div style="font-size:0.8125rem;color:var(--text-muted);margin-bottom:8px;">
-            💡 Você quis dizer <strong>${esc([suggestion.city, suggestion.country].filter(Boolean).join(', '))}</strong>?
-            Corrija na planilha ou cadastre o destino exato.
-          </div>` : ''}
+
+      ${!isOk ? `
+        <div style="display:flex;flex-direction:column;gap:8px;margin:10px 0;
+          padding:10px;border-radius:8px;background:var(--bg-surface);
+          border:1px dashed var(--border-subtle);">
+          <div style="font-size:0.8125rem;color:var(--text-secondary);font-weight:600;">
+            Como você quer resolver este destino?
+          </div>
+          ${suggestion ? `
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+              <span style="font-size:0.8125rem;color:var(--text-muted);">
+                💡 Parece com <strong>${esc([suggestion.city, suggestion.country].filter(Boolean).join(', '))}</strong>
+              </span>
+              <button type="button" class="btn btn-secondary btn-sm"
+                data-aceitar-sugestao="${esc(key)}" data-dest-id="${esc(suggestion.id)}"
+                style="padding:4px 12px;font-size:0.8125rem;">
+                ✓ Vincular a este
+              </button>
+            </div>` : ''}
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+            <label style="font-size:0.8125rem;color:var(--text-muted);">Ou escolha manualmente:</label>
+            <select data-vincular-key="${esc(key)}" class="form-input"
+              style="font-size:0.8125rem;padding:4px 8px;flex:1;min-width:240px;">
+              <option value="">— selecione um destino cadastrado —</option>
+              ${dropdownOptions}
+            </select>
+          </div>
+          <div style="display:flex;justify-content:flex-end;">
+            <button type="button" class="btn btn-primary btn-sm" data-cadastrar-key="${esc(key)}"
+              style="padding:4px 12px;font-size:0.8125rem;">
+              + Cadastrar novo destino
+            </button>
+          </div>
+        </div>` : ''}
+
       <div style="display:flex;flex-wrap:wrap;gap:6px;">
         ${segments.map(s =>
           `<span style="font-size:0.75rem;padding:2px 8px;background:var(--bg-surface);
@@ -611,13 +705,25 @@ async function runImport(byDest, preFetchedDests = null) {
     const label = [dest.cidade, dest.pais, dest.continente].filter(Boolean).join(', ');
     addLog(`\n📍 ${label}`);
 
-    // Match normalizado (case/accent-insensitive, multi-camada)
-    const { destDoc, suggestion } = _matchDest(allDests, dest);
+    // v4.49.65+ Vinculação manual tem prioridade sobre _matchDest.
+    let destDoc = null;
+    let suggestion = null;
+    if (dest.manualMapping) {
+      destDoc = allDests.find(d => d.id === dest.manualMapping);
+      if (destDoc) {
+        addLog(`  🔗 Vinculado a "${[destDoc.city, destDoc.country].filter(Boolean).join(', ')}"`, '#94a3b8');
+      }
+    }
+    if (!destDoc) {
+      const r = _matchDest(allDests, dest);
+      destDoc = r.destDoc;
+      suggestion = r.suggestion;
+    }
 
     if (!destDoc) {
       const hint = suggestion
-        ? `  💡 Sugestão: "${[suggestion.city, suggestion.country].filter(Boolean).join(', ')}". Corrija planilha ou cadastre o destino.`
-        : `  💡 Cadastre o destino em Portal de Dicas → Destinos antes de re-importar.`;
+        ? `  💡 Sugestão: "${[suggestion.city, suggestion.country].filter(Boolean).join(', ')}". Corrija planilha, vincule manualmente ou cadastre o destino.`
+        : `  💡 Cadastre o destino em Portal de Dicas → Destinos antes de re-importar, ou vincule manualmente no review.`;
       addLog(`  ⚠ Destino não cadastrado — pulando.`, '#F59E0B');
       addLog(hint, '#94a3b8');
       errors++;
