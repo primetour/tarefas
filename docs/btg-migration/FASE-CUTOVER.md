@@ -126,8 +126,8 @@ rápida — o estado bom de produção está salvo no backup:
 | Referência | Valor |
 |---|---|
 | Branch de backup (no GitHub) | `backup/main-pre-btg-merge` |
-| Tag | `backup-main-v4.49.72` |
-| Commit | `00e54e7` — produção v4.49.72, estado anterior ao merge BTG |
+| Tag | `backup-main-v4.49.73` |
+| Commit | `3c373a8` — produção v4.49.73, estado anterior ao merge BTG |
 
 ### Antes do merge — anotar 1 informação
 
