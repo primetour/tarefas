@@ -6,6 +6,33 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.62+20260521-retry-log-polish] — 2026-05-21
+
+Release **PATCH** — polish do log do `withRetry` descoberto durante
+validação live no Chrome da v4.49.61.
+
+**Contexto**: ao testar `withRetry` com `code: 'permission-denied'`
+(non-retriable), o console exibia `[retry:label] attempt 1/3 failed:
+permission-denied`. Mensagem confusa porque sugere que vai retentar
+2x mais — quando na verdade o fluxo aborta imediatamente.
+
+**Mudança em `retry.js`**:
+- Non-retriable: `[retry:label] non-retriable error, aborting: <code>`.
+- Esgotou tentativas: `[retry:label] attempt N/M failed (final): <code>`.
+- Retentando: `[retry:label] attempt N/M failed, retrying: <code>`.
+
+**Auditoria de call sites** (3 pontos, todos com `label`):
+- `portal.js`: `portal.requesterEdit.save` ✓
+- `taskModal.js`: `task.requesterEdit.ackInModal` ✓
+- `tasks.js`: `task.requesterEdit.ack` ✓
+
+**Validação rule Firestore**:
+- `tasks/{taskId}` allow update: any assignee/observer/manager/creator.
+- Não há restrição field-level — `requesterEditAckBy.<uid>` é
+  writable por quem vê o banner. ✓
+
+---
+
 ## [4.49.61+20260521-network-resilience-n1-banner-ack-persistent] — 2026-05-21
 
 Release **PATCH** — resiliência de rede (camada N1) + persistência do

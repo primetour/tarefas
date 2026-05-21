@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 61,
-  build: '20260521-network-resilience-n1-banner-ack-persistent',
+  patch: 62,
+  build: '20260521-retry-log-polish',
 };
 
 /** "1.2.0" */

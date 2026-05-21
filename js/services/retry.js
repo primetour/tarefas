@@ -73,17 +73,22 @@ export async function withRetry(fn, opts = {}) {
     } catch (err) {
       lastErr = err;
       const retriable = _isRetriable(err);
-      console.warn(`[retry:${label}] attempt ${attempt}/${maxAttempts} failed:`,
-        err?.code || err?.message || err);
+      const code = err?.code || err?.message || err;
 
       // Sinaliza erro de rede pro indicador (só se for transiente)
       if (isFirestoreError(err)) {
         markNetworkError(label, err);
       }
 
-      if (!retriable || attempt >= maxAttempts) {
+      if (!retriable) {
+        console.warn(`[retry:${label}] non-retriable error, aborting:`, code);
         throw err;
       }
+      if (attempt >= maxAttempts) {
+        console.warn(`[retry:${label}] attempt ${attempt}/${maxAttempts} failed (final):`, code);
+        throw err;
+      }
+      console.warn(`[retry:${label}] attempt ${attempt}/${maxAttempts} failed, retrying:`, code);
       // Backoff exponential com jitter (±20%)
       const baseMs = baseDelay * Math.pow(2, attempt - 1);
       const jitter = baseMs * (0.8 + Math.random() * 0.4);
