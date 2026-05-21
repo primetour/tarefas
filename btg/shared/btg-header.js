@@ -50,7 +50,7 @@ const NAV_OPERADORA = [
 const BRAND_CONFIG = {
   partners: {
     homeHref: '/btg/partners/',
-    logoSrc: '/btg/assets/partners/btgpactual_logo.png',
+    logoSrc: '/btg/assets/partners/btgpactual_logo.svg',
     logoAlt: 'BTG Pactual',
     logoClass: 'btg-logo',
     nav: NAV_PARTNERS_ULTRABLUE.map((i) =>
