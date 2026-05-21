@@ -417,6 +417,30 @@ async function renderReviewBody(byDest, content) {
     return { key, dest, destDoc, matchLevel, suggestion };
   });
 
+  // v4.49.72+ Pre-fetch tips existentes pra destinos cadastrados.
+  // Anexa em c.existingTip pra UI surfacear "já tem dica cadastrada".
+  await Promise.all(classified.map(async (c) => {
+    if (!c.destDoc) return;
+    try {
+      const tip = await fetchTip(c.destDoc.id);
+      if (tip && tip.segments && Object.keys(tip.segments).length > 0) {
+        c.existingTip = {
+          id: tip.id,
+          segmentCount: Object.keys(tip.segments).length,
+          segmentLabels: Object.keys(tip.segments).map(k => {
+            const seg = SEGMENTS.find(s => s.key === k);
+            return seg ? seg.label : k;
+          }),
+        };
+        // Também guarda em c.dest pra runImport ler
+        c.dest.__existingTip = c.existingTip;
+        c.dest.__existingTipId = tip.id;
+      }
+    } catch (e) {
+      console.warn('[review] fetchTip failed', c.destDoc.id, e?.message);
+    }
+  }));
+
   const okCount     = classified.filter(c => c.destDoc).length;
   const missingCount = classified.length - okCount;
 
@@ -505,12 +529,73 @@ async function renderReviewBody(byDest, content) {
     confirmBtn.parentNode.replaceChild(clone, confirmBtn);
     clone.addEventListener('click', () => {
       if (clone.disabled) return;
-      runImport(byDest, allDests);
+      // v4.49.72+ Se houver destinos com tip existente, abre modal de
+      // confirmação de overwrite antes de prosseguir.
+      const overwrites = classified.filter(c => c.existingTip && c.destDoc);
+      if (overwrites.length > 0) {
+        openOverwriteConfirmModal(overwrites, () => runImport(byDest, allDests));
+      } else {
+        runImport(byDest, allDests);
+      }
     });
   }
 }
 
-function _renderDestCard({ key, dest, destDoc, matchLevel, suggestion }, allDests = []) {
+/** v4.49.72+ Modal de confirmação antes de sobrescrever tips
+ *  existentes. Lista os destinos afetados e exige clique explícito
+ *  no "Confirmar substituição" pra prosseguir. */
+function openOverwriteConfirmModal(overwrites, onConfirm) {
+  const modal = document.createElement('div');
+  modal.dataset.overwriteConfirm = '1';
+  modal.style.cssText = `
+    position:fixed;inset:0;z-index:10250;background:rgba(0,0,0,0.65);
+    display:flex;align-items:center;justify-content:center;padding:20px;
+  `;
+  modal.innerHTML = `
+    <div style="background:var(--bg-elevated);border:1px solid var(--border-subtle);
+      border-radius:var(--radius-lg);padding:24px;max-width:560px;width:100%;
+      box-shadow:0 12px 40px rgba(0,0,0,0.4);">
+      <h3 style="margin:0 0 8px;font-size:1.0625rem;color:#EF4444;">
+        ⚠ Sobrescrever ${overwrites.length} dica${overwrites.length > 1 ? 's' : ''} existente${overwrites.length > 1 ? 's' : ''}?
+      </h3>
+      <p style="margin:0 0 16px;font-size:0.875rem;color:var(--text-secondary);">
+        Os destinos abaixo <strong>já têm dica cadastrada no sistema</strong>. Continuar com a
+        importação <strong>vai REMOVER o conteúdo antigo</strong> e substituir pelos items deste arquivo.
+        Esta ação <strong>não pode ser desfeita</strong>.
+      </p>
+      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:18px;
+        max-height:240px;overflow-y:auto;padding:8px 10px;
+        background:var(--bg-surface);border-radius:var(--radius-sm);
+        border:1px solid var(--border-subtle);">
+        ${overwrites.map(c => `
+          <div style="font-size:0.8125rem;border-bottom:1px solid var(--border-subtle);padding-bottom:6px;">
+            <strong>${esc([c.dest.cidade, c.dest.pais].filter(Boolean).join(', '))}</strong>
+            <span style="color:var(--text-muted);">
+              · ${c.existingTip.segmentCount} segmento${c.existingTip.segmentCount > 1 ? 's' : ''}
+              atual${c.existingTip.segmentCount > 1 ? 'is' : ''}:
+              <em>${c.existingTip.segmentLabels.map(l => esc(l)).join(', ')}</em>
+            </span>
+          </div>
+        `).join('')}
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;">
+        <button class="btn btn-secondary btn-sm" id="overwrite-cancel">Cancelar</button>
+        <button class="btn btn-primary btn-sm" id="overwrite-confirm"
+          style="background:#EF4444;border-color:#EF4444;">
+          🔄 Confirmar substituição
+        </button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  modal.querySelector('#overwrite-cancel').addEventListener('click', () => modal.remove());
+  modal.querySelector('#overwrite-confirm').addEventListener('click', () => {
+    modal.remove();
+    onConfirm();
+  });
+}
+
+function _renderDestCard({ key, dest, destDoc, matchLevel, suggestion, existingTip }, allDests = []) {
   const label = esc([dest.cidade, dest.pais, dest.continente].filter(Boolean).join(', '));
   const isOk = !!destDoc;
   const isManual = matchLevel === 'manual';
@@ -525,6 +610,9 @@ function _renderDestCard({ key, dest, destDoc, matchLevel, suggestion }, allDest
     dest.items.filter(i => i.__needsReview && i.__originalHeading)
       .map(i => i.__originalHeading)
   )];
+
+  // v4.49.72+ Tip já existente — flag pra warning
+  const hasExistingTip = !!existingTip;
 
   // Status badge text
   let statusText = '';
@@ -633,6 +721,17 @@ function _renderDestCard({ key, dest, destDoc, matchLevel, suggestion }, allDest
             ? `<em>${unrecognizedHeadings.map(h => esc(h)).join(', ')}</em>.`
             : ''}
           Clique em <strong>📝 Revisar items</strong> pra editar e atribuir segmento antes de importar.
+        </div>` : ''}
+
+      ${hasExistingTip ? `
+        <div style="margin-top:10px;padding:10px 12px;border-radius:6px;
+          background:rgba(239,68,68,0.06);border:1px solid #EF4444;
+          font-size:0.8125rem;color:var(--text-secondary);">
+          🔄 <strong style="color:#EF4444;">Este destino já tem dica cadastrada</strong>
+          (${existingTip.segmentCount} segmento${existingTip.segmentCount > 1 ? 's' : ''}:
+          <em>${existingTip.segmentLabels.map(l => esc(l)).join(', ')}</em>).
+          <br>
+          <strong>Importar vai SUBSTITUIR</strong> o conteúdo antigo pelos items deste arquivo.
         </div>` : ''}
     </div>
   `;
@@ -994,9 +1093,15 @@ async function runImport(byDest, preFetchedDests = null) {
       continue;
     }
 
-    // Load existing tip or start fresh
+    // v4.49.72+ OVERWRITE: começa SEMPRE com segments zerado.
+    // Antes era `segments = tip?.segments ? { ...tip.segments } : {}` (merge),
+    // gerando duplicações ao reimportar. User confirmou substituição no modal
+    // de overwrite antes do runImport disparar.
     let tip      = await fetchTip(destDoc.id);
-    let segments = tip?.segments ? { ...tip.segments } : {};
+    let segments = {};
+    if (tip) {
+      addLog(`  🔄 Sobrescrevendo dica existente (${Object.keys(tip.segments || {}).length} segmento(s) antigo(s))`, '#F59E0B');
+    }
 
     // Group items by segment
     const bySegment = {};

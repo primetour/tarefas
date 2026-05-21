@@ -6,6 +6,48 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.72+20260521-portal-import-overwrite-existing-tip-warn] — 2026-05-21
+
+Release **PATCH** — Portal de Dicas/Importação: detecta tips
+existentes e exige confirmação antes de sobrescrever.
+
+**Contexto** (Renê): "ele não aceita destinos que já possuem
+conteúdo, correto? ele deve, ao menos, informar o user que já tem
+dica cadastrada e que essa ação vai remover a informação antiga
+e colocar a nova".
+
+**Bug pré-existente identificado**: linha 999 do `portalImport.js`
+fazia `segments = tip?.segments ? { ...tip.segments } : {}` — isto
+é, MERGE com tip existente. Ao reimportar, items eram **duplicados**
+em vez de substituídos.
+
+**Mudanças em `js/pages/portalImport.js`**:
+
+1. **`renderReviewBody` pre-fetch de tips**: após classificar destinos,
+   `Promise.all` chama `fetchTip(destDoc.id)` em paralelo. Tip
+   encontrado fica em `c.existingTip` com `{id, segmentCount,
+   segmentLabels}` + também em `dest.__existingTip` pra acesso no
+   runImport.
+
+2. **Card mostra warning**: bloco vermelho com border `#EF4444`:
+   *"🔄 Este destino já tem dica cadastrada (N segmentos: <lista>).
+   Importar vai SUBSTITUIR o conteúdo antigo pelos items deste
+   arquivo."*
+
+3. **`openOverwriteConfirmModal`**: ao clicar "Confirmar e Importar",
+   se houver ≥ 1 destino com `existingTip`, abre modal listando os
+   destinos afetados + segmentos atuais. Botão **"🔄 Confirmar
+   substituição"** (vermelho) explícito pra prosseguir. Cancelar
+   aborta sem mudança.
+
+4. **`runImport` OVERWRITE**: `segments = {}` sempre (era merge).
+   Log adiciona linha âmbar *"🔄 Sobrescrevendo dica existente (N
+   segmento(s) antigo(s))"* pra cada destino afetado.
+
+**Validação**: `node --check` ok.
+
+---
+
 ## [4.49.71+20260521-portal-import-parser-fuzzy-tighter] — 2026-05-21
 
 Release **PATCH** — fix de detecção falso-positivo: descrições

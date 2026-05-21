@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 71,
-  build: '20260521-portal-import-parser-fuzzy-tighter',
+  patch: 72,
+  build: '20260521-portal-import-overwrite-existing-tip-warn',
 };
 
 /** "1.2.0" */
