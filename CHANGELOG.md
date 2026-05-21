@@ -6,6 +6,73 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.66+20260521-portal-import-parser-heuristico-subtitulos] — 2026-05-21
+
+Release **PATCH** — Portal de Dicas/Importação: parser DOCX/PDF
+heurístico (sem LLM) que correlaciona subtítulos a segmentos.
+
+**Contexto** (Renê): "vc correlaciona o conteúdo e propoe a
+alocacao do conteudo a partir dos subtitles... sem LLM."
+
+**Antes**: `splitIntoSections` em `portalPdfParser.js` exigia
+match exato com `TOP_SECTIONS` (MAIÚSCULAS, sem variação).
+Arquivos com "Restaurantes" em Title Case ou "Onde Comer" eram
+ignorados.
+
+**Mudanças em `js/services/portalPdfParser.js`**:
+
+1. **Tabela `SEGMENT_KEYWORDS`** — mapeia subtítulos comuns pra
+   segment keys via palavras-chave normalizadas (lowercase, sem
+   acento, sem pontuação):
+   - `restaurantes` ← "Restaurante", "Onde Comer", "Gastronomia"
+   - `vida_noturna` ← "Vida Noturna", "Bares", "Baladas"
+   - `atracoes` ← "Atrações", "Pontos Turísticos", "O Que Fazer"
+   - `bairros` ← "Bairros", "Regiões"
+   - `arredores` ← "Arredores", "Day Trip", "Bate-Volta"
+   - `compras` ← "Compras", "Shoppings"
+   - `espetaculos` ← "Espetáculos", "Teatros", "Broadway"
+   - `highlights` ← "Highlights", "Destaques"
+   - etc.
+
+2. **`detectByKeywords(line)`** — match fuzzy do subtítulo
+   contra `SEGMENT_KEYWORDS`. Vence o segmento com palavra-chave
+   mais longa casada. Restringe a linhas curtas (≤ 6 palavras)
+   pra evitar match em parágrafo.
+
+3. **`looksLikeHeading(line)`** — heurística: linha é curta,
+   sem ponto final, capitalizada, sem URL/telefone/endereço.
+   Reforça confidence quando combinada com keyword match.
+
+4. **`extractDocxLinesWithHeadings(file)`** — usa
+   `mammoth.convertToHtml()` (em vez de `extractRawText`) e
+   detecta `<h1-h6>` do estilo do Word. Linhas que vinham de
+   headings recebem marker `​` (zero-width space).
+   Headings reconhecidos pelo Word elevam confidence pra `high`
+   mesmo em Title Case. Fallback pra `extractRawText` se HTML
+   falhar.
+
+5. **`detectSection(line, surrounding)`** — 2 estágios:
+   - Estágio 1: match exato em `TOP_SECTIONS` (alta).
+   - Estágio 2: match fuzzy por keywords (high/medium/low
+     conforme o "format score" + "isolated score").
+
+6. **Seção `__unclassified`** — headings reconhecidos pelo
+   Word mas sem match em keywords criam seção marcada como
+   "precisa revisão". Items recebem `__needsReview: true` e
+   `__originalHeading` pra UI surfacear.
+
+**Mudanças em `js/pages/portalImport.js`**:
+- Card de destino no review mostra aviso âmbar
+  "⚠ N item(s) precisam revisão de segmento" listando os
+  subtítulos originais não reconhecidos.
+
+**Próximo passo**: UI de revisão por item (editar
+título/descrição/segmento inline) — fica pra v4.49.67.
+
+**Validação**: `node --check` ok nos 2 arquivos.
+
+---
+
 ## [4.49.65+20260521-portal-import-vincular-manual-destino] — 2026-05-21
 
 Release **PATCH** — Portal de Dicas/Importação: vinculação manual a

@@ -217,10 +217,123 @@ const TOP_SECTIONS = [
   { match: /^DICA$/i,                           key: '__dica' },
 ];
 
+/* ─── v4.49.66+ Mapeamento subtítulo → segment key por palavras-chave
+ * Usado quando o subtítulo do arquivo não bate exato com TOP_SECTIONS
+ * (ex: "Restaurante" em vez de "RESTAURANTES", "Onde comer" em vez de
+ * "GASTRONOMIA"). Heurística determinística, sem LLM.
+ *
+ * Algoritmo:
+ *   1. Normaliza o subtítulo (lowercase, sem acento, sem pontuação).
+ *   2. Procura qual conjunto de keywords tem maior match.
+ *   3. Vence o segment com o keyword mais longo casado.
+ *   4. Se nenhum casar, retorna __unclassified (vai pra revisão manual
+ *      do usuário no fluxo de import).
+ * ──────────────────────────────────────────────────────────────────── */
+const SEGMENT_KEYWORDS = [
+  { key: 'informacoes_gerais', kws: ['informacoes gerais', 'informacoes', 'info geral', 'dados gerais', 'sobre a cidade', 'sobre o destino'] },
+  { key: '__clima',            kws: ['clima', 'temperatura', 'tempo', 'estacoes'] },
+  { key: '__representacao',    kws: ['representacao brasileira', 'consulado', 'embaixada brasileira'] },
+  { key: 'bairros',            kws: ['bairros', 'regioes', 'neighborhoods', 'distritos'] },
+  { key: 'arredores',          kws: ['arredores', 'ao redor', 'around', 'day trip', 'bate volta', 'proximidades'] },
+  { key: 'atracoes_criancas',  kws: ['atracoes para criancas', 'atracoes infantis', 'com criancas', 'para criancas', 'kids', 'familia'] },
+  { key: 'atracoes',           kws: ['atracoes', 'pontos turisticos', 'o que fazer', 'passeios', 'tours', 'sightseeing', 'imperdivel', 'imperdiveis', 'visitar'] },
+  { key: 'restaurantes',       kws: ['restaurantes', 'restaurante', 'gastronomia', 'onde comer', 'comida', 'food', 'culinaria', 'bares e restaurantes'] },
+  { key: 'vida_noturna',       kws: ['vida noturna', 'noturna', 'bares', 'baladas', 'night', 'drinks', 'pubs', 'clubs'] },
+  { key: 'espetaculos',        kws: ['casas de espetaculos', 'espetaculos', 'teatros', 'shows', 'broadway', 'west end', 'opera'] },
+  { key: 'compras',            kws: ['compras', 'shopping', 'shoppings', 'lojas', 'mercados', 'feiras'] },
+  { key: 'highlights',         kws: ['highlights', 'destaques', 'recomendado', 'top picks', 'must see'] },
+  { key: 'agenda_cultural',    kws: ['agenda cultural', 'agenda', 'eventos culturais', 'calendario cultural', 'festivais'] },
+  { key: '__eventos_esportivos', kws: ['eventos esportivos', 'esportes', 'esporte', 'sports', 'football', 'futebol'] },
+];
+
+function _normKw(s) {
+  return String(s || '').toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^\w\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** Match fuzzy do subtítulo contra SEGMENT_KEYWORDS.
+ *  Retorna { key, confidence: 'high'|'medium' } ou null. */
+function detectByKeywords(line) {
+  const norm = _normKw(line);
+  if (!norm || norm.length > 80) return null;
+  // O subtítulo deve ser "curto" (até ~6 palavras) pra evitar falso match
+  // em parágrafos longos que mencionem a palavra de passagem.
+  if (norm.split(' ').length > 6) return null;
+
+  let best = null;
+  for (const { key, kws } of SEGMENT_KEYWORDS) {
+    for (const kw of kws) {
+      // Match exato no início ou contém o termo inteiro (palavra completa).
+      const matched = norm === kw
+                   || norm.startsWith(kw + ' ')
+                   || norm.endsWith(' ' + kw)
+                   || norm.includes(' ' + kw + ' ')
+                   || (norm.length === kw.length && norm === kw);
+      if (matched) {
+        const conf = norm === kw ? 'high' : 'medium';
+        if (!best || kw.length > best.kwLen) {
+          best = { key, confidence: conf, kwLen: kw.length };
+        }
+      }
+    }
+  }
+  return best ? { key: best.key, confidence: best.confidence } : null;
+}
+
+/** Heurística adicional: linha "parece" um subtítulo?
+ *  Critérios cumulativos:
+ *   - curta (3..80 chars)
+ *   - sem ponto final
+ *   - 1ª letra maiúscula OU toda maiúscula
+ *   - NÃO contém URL/telefone/endereço óbvio
+ *   - cercada por linha em branco (callsite valida) */
+function looksLikeHeading(line) {
+  const s = String(line || '').trim();
+  if (s.length < 3 || s.length > 80) return false;
+  if (/[.!?]$/.test(s)) return false;
+  if (/^https?:\/\//i.test(s)) return false;
+  if (/\bTel\b|\bend\b|\bSite\b|\bLink\b/i.test(s)) return false;
+  if (/\d{2,}[-/]\d{2}/.test(s)) return false;          // datas
+  if (/\+?\d{2}\s*\(\d/.test(s)) return false;          // telefone formatado
+  const firstLetter = s.match(/\p{L}/u)?.[0];
+  if (!firstLetter) return false;
+  return firstLetter === firstLetter.toUpperCase();
+}
+
 function detectTopSection(line) {
   const s = line.trim();
   for (const rule of TOP_SECTIONS) {
-    if (rule.match.test(s)) return rule.key;
+    if (rule.match.test(s)) return { key: rule.key, confidence: 'high', source: 'exact' };
+  }
+  return null;
+}
+
+/** v4.49.66+ Detector de subtítulo em 2 estágios:
+ *   1. Match exato em TOP_SECTIONS (confidence: high)
+ *   2. Match fuzzy por SEGMENT_KEYWORDS (confidence: high/medium)
+ *
+ *  `surrounding` é { prev, next } pra checar se a linha está cercada
+ *  por linhas em branco (sinal forte de subtítulo). */
+function detectSection(line, surrounding = {}) {
+  const exact = detectTopSection(line);
+  if (exact) return exact;
+
+  const kw = detectByKeywords(line);
+  if (kw) {
+    // Reforça confidence se a linha "parece" subtítulo no formato
+    // (caps/short/sem ponto) E está cercada por blank lines.
+    const formatScore = looksLikeHeading(line) ? 1 : 0;
+    const isolatedScore = ((surrounding.prev ?? '').trim() === '' &&
+                           (surrounding.next ?? '').trim() === '') ? 1 : 0;
+    const score = formatScore + isolatedScore;
+    return {
+      key: kw.key,
+      confidence: score >= 1 ? kw.confidence : 'low',
+      source: 'keyword',
+    };
   }
   return null;
 }
@@ -526,18 +639,61 @@ function parseSimpleList(bodyLines, segKey) {
 
 /* ─── Section splitter ───────────────────────────────────── */
 // Agrupa linhas por seção top-level identificada
-function splitIntoSections(lines) {
+/** v4.49.66+ Divide o documento em seções usando 3 estratégias em ordem:
+ *   1. Linha é heading marcado pelo Word (DOCX h1/h2/h3) — confidence: high
+ *      mesmo em Title Case, porque o style do Word é signal forte.
+ *   2. Match exato em TOP_SECTIONS (legado) — confidence: high.
+ *   3. Match fuzzy por SEGMENT_KEYWORDS — confidence: high/medium/low
+ *      dependendo do quão "subtítulo" a linha parece.
+ *
+ *  `headingHints` (opcional) é um Set<number> com índices de linhas que
+ *  vieram de tags <h1-h6> do DOCX. Quando presente, eleva a confidence
+ *  do match por keyword.
+ *
+ *  Linhas que parecem heading (looksLikeHeading) mas não batem com
+ *  nenhuma keyword viram seção `__unclassified` — vai pra UI de revisão. */
+function splitIntoSections(lines, { headingHints = null } = {}) {
   const sections = [];
-  let current = { key: '__header', lines: [] };
+  let current = { key: '__header', confidence: 'high', source: 'header', lines: [] };
 
-  for (const line of lines) {
-    const top = detectTopSection(line);
-    if (top) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const isWordHeading = headingHints?.has(i) === true;
+
+    const det = detectSection(line, {
+      prev: lines[i - 1],
+      next: lines[i + 1],
+    });
+
+    if (det) {
+      // Se o Word marcou como heading, eleva confidence pra high
+      const confidence = isWordHeading ? 'high' : det.confidence;
       sections.push(current);
-      current = { key: top, lines: [] };
-    } else {
-      current.lines.push(line);
+      current = {
+        key: det.key,
+        confidence,
+        source: isWordHeading ? `${det.source}+word-heading` : det.source,
+        title: line.trim(),
+        lines: [],
+      };
+      continue;
     }
+
+    // Linha marcada como heading pelo Word mas não casou em nenhum keyword:
+    // cria seção __unclassified com o título original (UI pede vinculação).
+    if (isWordHeading && looksLikeHeading(line)) {
+      sections.push(current);
+      current = {
+        key: '__unclassified',
+        confidence: 'low',
+        source: 'word-heading-unmapped',
+        title: line.trim(),
+        lines: [],
+      };
+      continue;
+    }
+
+    current.lines.push(line);
   }
   sections.push(current);
   return sections;
@@ -575,8 +731,8 @@ export async function parsePortalPdf(file, overrideMeta = null) {
  * continente/pais/cidade, e retorna o array de rows pronto pro
  * fluxo do portalImport.
  */
-function linesToRows(lines, meta) {
-  const sections = splitIntoSections(lines);
+function linesToRows(lines, meta, { headingHints = null } = {}) {
+  const sections = splitIntoSections(lines, { headingHints });
 
   // ─── Montagem do resultado ───
   const rows       = [];
@@ -668,6 +824,24 @@ function linesToRows(lines, meta) {
         }
         break;
       }
+      case '__unclassified': {
+        // v4.49.66+ Bloco com heading reconhecido pelo Word mas que não
+        // bateu em nenhuma keyword. Cria rows tipo place_list marcadas
+        // como precisando de vinculação manual de segmento (UI exibe
+        // dropdown "Mover pra segmento…").
+        const items = parsePlaceList(sec.lines, 'atracoes', /* useSubcategories */ false);
+        const kept = items.filter(it => it.descricao || it.endereco || it.telefone || it.site || it.titulo);
+        for (const it of kept) {
+          rows.push({
+            ...it,
+            ...meta,
+            __needsReview: true,
+            __originalHeading: sec.title || '(sem título)',
+            segmento: '', // user precisa atribuir
+          });
+        }
+        break;
+      }
       default:
         break;
     }
@@ -742,6 +916,63 @@ async function extractDocxLines(file) {
   return raw.split(/\r?\n/).map(l => l.trimEnd());
 }
 
+/** v4.49.66+ Extrai linhas do DOCX preservando indicadores de heading
+ *  (h1, h2, h3 do estilo do Word). Linhas que vinham de headings ficam
+ *  marcadas com '​' no fim — sentinela invisível usada pelo
+ *  detector pra elevar confidence sem afetar o texto visível.
+ *
+ *  Fallback: se convertToHtml falhar, cai pro extractRawText (legado).
+ *  ─────────────────────────────────────────────────────────────────── */
+const HEADING_MARKER = '​'; // zero-width space — invisível
+async function extractDocxLinesWithHeadings(file) {
+  const mammoth = await loadMammoth();
+  const arrayBuffer = await file.arrayBuffer();
+  let html;
+  try {
+    const result = await mammoth.convertToHtml({ arrayBuffer });
+    html = result?.value || '';
+  } catch (e) {
+    console.warn('[parser] convertToHtml falhou, usando raw text:', e?.message);
+    return extractDocxLines(file);
+  }
+  if (!html) return extractDocxLines(file);
+
+  // Parse no DOM e expande em linhas, marcando headings.
+  const tmp = document.createElement('div');
+  tmp.innerHTML = html;
+  const lines = [];
+  for (const child of tmp.children) {
+    const tag = child.tagName?.toLowerCase();
+    const text = (child.textContent || '').trim();
+    if (!text) {
+      lines.push(''); // preserva quebras
+      continue;
+    }
+    if (/^h[1-6]$/.test(tag)) {
+      lines.push('');                       // blank antes pra detector identificar
+      lines.push(text + HEADING_MARKER);    // marca heading
+      lines.push('');                       // blank depois
+    } else if (tag === 'p') {
+      // Parágrafo: divide em linhas pelo <br> se houver
+      const inner = child.innerHTML.split(/<br\s*\/?>/i);
+      for (const part of inner) {
+        const t = part.replace(/<[^>]+>/g, '').trim();
+        if (t) lines.push(t);
+      }
+      lines.push(''); // blank entre parágrafos
+    } else if (tag === 'ul' || tag === 'ol') {
+      for (const li of child.querySelectorAll('li')) {
+        const t = (li.textContent || '').trim();
+        if (t) lines.push(t);
+      }
+      lines.push('');
+    } else {
+      lines.push(text);
+    }
+  }
+  return lines;
+}
+
 export async function parsePortalDocx(file, overrideMeta = null) {
   if (!file || !/\.docx$/i.test(file.name || '')) {
     throw new Error('Arquivo DOCX inválido.');
@@ -754,7 +985,13 @@ export async function parsePortalDocx(file, overrideMeta = null) {
       `(ex.: "Europa - França - Paris.docx").`
     );
   }
-  const lines = await extractDocxLines(file);
+  // v4.49.66+ Usa extractor com marker de heading (Word styles h1/h2/h3)
+  // pra ajudar o detector a identificar subtítulos mesmo em Title Case.
+  const lines = await extractDocxLinesWithHeadings(file);
   if (!lines.length) throw new Error('DOCX vazio ou ilegível.');
-  return linesToRows(lines, meta);
+  return linesToRows(lines.map(l => l.replace(/​$/, '')), meta, {
+    headingHints: new Set(lines
+      .map((l, i) => l.endsWith(HEADING_MARKER) ? i : null)
+      .filter(i => i !== null)),
+  });
 }

@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 65,
-  build: '20260521-portal-import-vincular-manual-destino',
+  patch: 66,
+  build: '20260521-portal-import-parser-heuristico-subtitulos',
 };
 
 /** "1.2.0" */

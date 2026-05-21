@@ -511,6 +511,13 @@ function _renderDestCard({ key, dest, destDoc, matchLevel, suggestion }, allDest
 
   const segments = [...new Set(dest.items.map(i => i.segmento).filter(Boolean))];
 
+  // v4.49.66+ Itens marcados pelo parser como precisando revisão de segmento
+  const needsReviewCount = dest.items.filter(i => i.__needsReview).length;
+  const unrecognizedHeadings = [...new Set(
+    dest.items.filter(i => i.__needsReview && i.__originalHeading)
+      .map(i => i.__originalHeading)
+  )];
+
   // Status badge text
   let statusText = '';
   if (isOk) {
@@ -596,6 +603,18 @@ function _renderDestCard({ key, dest, destDoc, matchLevel, suggestion }, allDest
             ${esc(s)} (${dest.items.filter(i=>i.segmento===s).length})
           </span>`).join('')}
       </div>
+
+      ${needsReviewCount > 0 ? `
+        <div style="margin-top:10px;padding:8px 10px;border-radius:6px;
+          background:rgba(245,158,11,0.08);border:1px dashed #F59E0B;
+          font-size:0.8125rem;color:var(--text-secondary);">
+          ⚠ <strong>${needsReviewCount} item(s) precisam revisão de segmento.</strong>
+          O parser detectou subtítulo(s) que não bate(m) com nenhuma categoria conhecida:
+          ${unrecognizedHeadings.length > 0
+            ? `<em>${unrecognizedHeadings.map(h => esc(h)).join(', ')}</em>.`
+            : ''}
+          Edite os items no Portal de Dicas após importar pra atribuir o segmento correto.
+        </div>` : ''}
     </div>
   `;
 }
