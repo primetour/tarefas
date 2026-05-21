@@ -11,6 +11,85 @@ import {
 import { db }       from '../firebase.js';
 import { store }    from '../store.js';
 import { auditLog } from '../auth/audit.js';
+import { getBtgFirebase } from '../../btg/shared/btg-firebase.js';
+
+/* ─── Solicitações BTG (staging) ──────────────────────────────
+ * As "Solicitações de conteúdo e newsletter" geradas pela lista de
+ * ofertas BTG são gravadas na coleção `btg_requests_dev` do projeto
+ * Firebase de staging (gestor-btg-lp-builder-staging), separado do
+ * projeto principal do Gestor. Aqui essas solicitações são mescladas
+ * na lista de Solicitações pra ficarem visíveis no módulo de Tarefas.
+ *
+ * Isolamento: a mescla só acontece em staging/localhost — em produção
+ * a página de Solicitações continua lendo só a coleção `requests`. */
+const BTG_REQUESTS_COLLECTION = 'btg_requests_dev';
+const BTG_REQUESTS_LOCAL_KEY  = 'btg-requests-dev';
+
+function isBtgStagingHost() {
+  const h = window.location.hostname;
+  return h === 'gestor-btg-lp-builder-staging.web.app'
+    || h === 'localhost'
+    || h === '127.0.0.1';
+}
+
+/** Normaliza qualquer createdAt (Timestamp, {seconds}, ISO string) em ms. */
+function requestTimeMs(ts) {
+  if (!ts) return 0;
+  if (typeof ts.toMillis === 'function') return ts.toMillis();
+  if (typeof ts.seconds === 'number') return ts.seconds * 1000;
+  const t = new Date(ts).getTime();
+  return Number.isFinite(t) ? t : 0;
+}
+
+/* ─── Acesso à coleção de solicitações BTG (staging) ─────────── */
+async function subscribeBtgRequests(callback) {
+  try {
+    const { db: btgDb, configured } = await getBtgFirebase();
+    if (configured && btgDb) {
+      const q = query(collection(btgDb, BTG_REQUESTS_COLLECTION), limit(200));
+      return onSnapshot(
+        q,
+        (snap) => callback(snap.docs.map((d) => ({ id: d.id, ...d.data(), _btg: true }))),
+        (err) => { console.warn('[requests] snapshot BTG indisponível:', err.code || err.message); callback([]); },
+      );
+    }
+  } catch (e) {
+    console.warn('[requests] subscribe BTG falhou:', e.message);
+  }
+  // Fallback localStorage (Firebase de staging não configurado)
+  try {
+    const list = JSON.parse(localStorage.getItem(BTG_REQUESTS_LOCAL_KEY) || '[]')
+      .map((r) => ({ ...r, _btg: true }));
+    callback(list);
+  } catch { callback([]); }
+  return () => {};
+}
+
+async function updateBtgRequest(docId, patch) {
+  const data = { ...patch, updatedAt: new Date().toISOString() };
+  const { db: btgDb, configured } = await getBtgFirebase();
+  if (configured && btgDb) {
+    await updateDoc(doc(btgDb, BTG_REQUESTS_COLLECTION, docId), data);
+    return;
+  }
+  const list = JSON.parse(localStorage.getItem(BTG_REQUESTS_LOCAL_KEY) || '[]');
+  const i = list.findIndex((r) => r.id === docId);
+  if (i >= 0) {
+    list[i] = { ...list[i], ...data };
+    localStorage.setItem(BTG_REQUESTS_LOCAL_KEY, JSON.stringify(list));
+  }
+}
+
+async function deleteBtgRequest(docId) {
+  const { db: btgDb, configured } = await getBtgFirebase();
+  if (configured && btgDb) {
+    await deleteDoc(doc(btgDb, BTG_REQUESTS_COLLECTION, docId));
+    return;
+  }
+  const list = JSON.parse(localStorage.getItem(BTG_REQUESTS_LOCAL_KEY) || '[]')
+    .filter((r) => r.id !== docId);
+  localStorage.setItem(BTG_REQUESTS_LOCAL_KEY, JSON.stringify(list));
+}
 
 /* ─── Status de solicitação ──────────────────────────────── */
 export const REQUEST_STATUSES = [
@@ -95,12 +174,37 @@ export async function fetchRequests({ status = null, limitN = 200 } = {}) {
   return snap.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
-/* ─── Real-time listener ─────────────────────────────────── */
+/* ─── Real-time listener ───────────────────────────────────
+ * Mescla a coleção `requests` (projeto principal) com as solicitações
+ * BTG de staging (`btg_requests_dev`). Em produção só a primeira é lida.
+ * Resiliente: se um dos snapshots falhar (ex.: sem auth no staging),
+ * ainda entrega o que o outro retornou. */
 export function subscribeRequests(callback) {
+  let mainReqs = [];
+  let btgReqs  = [];
+  let stopped  = false;
+
+  const emit = () => {
+    if (stopped) return;
+    callback([...mainReqs, ...btgReqs].sort(
+      (a, b) => requestTimeMs(b.createdAt) - requestTimeMs(a.createdAt),
+    ));
+  };
+
   const q = query(collection(db, 'requests'), orderBy('createdAt', 'desc'), limit(200));
-  return onSnapshot(q, snap => {
-    callback(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-  });
+  const unsubMain = onSnapshot(
+    q,
+    (snap) => { mainReqs = snap.docs.map((d) => ({ id: d.id, ...d.data() })); emit(); },
+    (err)  => { console.warn('[requests] snapshot principal indisponível:', err.code || err.message); mainReqs = []; emit(); },
+  );
+
+  let unsubBtg = () => {};
+  if (isBtgStagingHost()) {
+    subscribeBtgRequests((list) => { btgReqs = list; emit(); })
+      .then((fn) => { if (stopped) fn(); else unsubBtg = fn; });
+  }
+
+  return () => { stopped = true; unsubMain(); unsubBtg(); };
 }
 
 /* ─── Refresh badge de pendentes (chamado após mudança de status) ── */
@@ -117,8 +221,15 @@ async function refreshRequestsBadge() {
   } catch (e) { /* non-blocking */ }
 }
 
-/* ─── Atualizar status ───────────────────────────────────── */
-export async function updateRequestStatus(reqId, status, extra = {}) {
+/* ─── Atualizar status ───────────────────────────────────────
+ * `source === 'btg'` → a solicitação vive na coleção de staging
+ * `btg_requests_dev`; grava lá em vez de `requests`. */
+export async function updateRequestStatus(reqId, status, extra = {}, source) {
+  if (source === 'btg') {
+    await updateBtgRequest(reqId, { status, ...extra });
+    return;
+  }
+
   const user = store.get('currentUser');
   await updateDoc(doc(db, 'requests', reqId), {
     status,
@@ -142,7 +253,11 @@ export async function convertToTask(reqId, taskData) {
 }
 
 /* ─── Excluir solicitação (admin only) ──────────────────── */
-export async function deleteRequest(reqId) {
+export async function deleteRequest(reqId, source) {
+  if (source === 'btg') {
+    await deleteBtgRequest(reqId);
+    return;
+  }
   await deleteDoc(doc(db, 'requests', reqId));
   await auditLog('requests.delete', 'request', reqId, {});
 }
