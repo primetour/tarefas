@@ -117,6 +117,56 @@ Cada passo é reversível e não-destrutivo:
 - O cutover marca a marca garante que um problema afeta **apenas uma marca**,
   nunca as três ao mesmo tempo.
 
+## Rollback do merge na `main` (se produção quebrar)
+
+Como o `main` faz deploy automático, um merge problemático vai pro ar. Se o
+Gestor de produção apresentar falha depois do merge BTG, a recuperação é
+rápida — o estado bom de produção está salvo no backup:
+
+| Referência | Valor |
+|---|---|
+| Branch de backup (no GitHub) | `backup/main-pre-btg-merge` |
+| Tag | `backup-main-v4.49.72` |
+| Commit | `00e54e7` — produção v4.49.72, estado anterior ao merge BTG |
+
+### Antes do merge — anotar 1 informação
+
+Logo após fazer o merge BTG na `main`, anotar o **hash do commit de merge**
+(aparece no `git log` da `main` como o commit "Merge ... btg ..."). É esse
+commit que será desfeito, se necessário.
+
+### Procedimento de rollback (recomendado — `revert`)
+
+Não reescreve histórico, não usa force-push e preserva commits de outras
+equipes que tenham entrado na `main` depois do merge BTG:
+
+```
+git fetch origin
+git checkout main
+git pull origin main
+git revert -m 1 <hash-do-commit-de-merge-btg>
+git push origin main
+```
+
+O `git revert` cria um commit novo que desfaz o merge BTG. O push na `main`
+dispara o deploy automático — produção volta à versão boa em ~1-2 minutos.
+
+### O que NÃO fazer
+
+Evitar `git reset --hard` + `git push --force` na `main`: apaga o histórico
+e qualquer commit de outras equipes que tenha entrado depois do merge BTG.
+Só em último caso e com a TI ciente.
+
+### Tempo de recuperação
+
+~2-3 minutos no total: o `revert` é instantâneo; o deploy automático do
+Cloudflare Pages republica a versão boa logo em seguida.
+
+### Importante
+
+Este procedimento deve estar **em mãos da TI antes do merge** — a
+recuperação não pode depender de ninguém específico estar disponível.
+
 ## A confirmar com a TI
 
 1. **Provedor de DNS:** confirmar que `primetour.com.br` está mesmo na
