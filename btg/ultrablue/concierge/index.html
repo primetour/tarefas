@@ -62,7 +62,7 @@
     import { renderBtgFooter } from '/btg/shared/btg-footer.js';
     import { createOfertaCard, createClosingCta } from '/btg/shared/btg-components.js';
     import { renderTabsSection } from '/btg/shared/btg-tabs-section.js';
-    import { CONCIERGE_TABS } from '/btg/shared/btg-concierge-tabs-data.js';
+    import { getConciergeTabs } from '/btg/shared/btg-concierge-tabs-data.js';
 
     renderBtgHeader(document.getElementById('header'), 'ultrablue');
     renderBtgFooter(document.getElementById('footer'), 'ultrablue');
@@ -71,7 +71,7 @@
       eyebrow: 'Concierge Ultrablue',
       title: 'Conte com especialistas dedicados, diretamente no WhatsApp',
       description: 'Especialistas para planejar suas viagens, celebrações, eventos, gastronomia e muito mais — com a discrição que cada situação exige.',
-      tabs: CONCIERGE_TABS,
+      tabs: getConciergeTabs('ultrablue'),
       theme: {
         sectionBg: '#012A5B',
         titleColor: '#ffffff',
