@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 58,
-  build: '20260521-fix-haspermission-permissionoverrides-undefined',
+  patch: 59,
+  build: '20260521-fix-contentmeta-clientside-permission-check',
 };
 
 /** "1.2.0" */
