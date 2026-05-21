@@ -1,0 +1,14 @@
+/* Apenas overrides do background de hero para Ultrablue */
+.concierge-hero--ultrablue {
+  background: var(--ultrablue-navy-deep);
+}
+
+.concierge-hero--ultrablue .concierge-hero__overlay {
+  background: linear-gradient(to bottom, rgba(1, 42, 91, 0.75) 0%, rgba(1, 42, 91, 0.6) 50%, rgba(1, 42, 91, 0));
+}
+
+@media (min-width: 768px) {
+  .concierge-hero--ultrablue .concierge-hero__overlay {
+    background: linear-gradient(to right, rgba(1, 42, 91, 0.55) 0%, rgba(1, 42, 91, 0.15) 50%, rgba(1, 42, 91, 0) 70%);
+  }
+}

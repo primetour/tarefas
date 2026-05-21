@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Cartão Ultrablue BTG Pactual</title>
+
+  <link rel="stylesheet" href="/btg/shared/btg-base.css" />
+  <link rel="stylesheet" href="/btg/shared/btg-header.css" />
+  <link rel="stylesheet" href="/btg/shared/btg-footer.css" />
+  <link rel="stylesheet" href="/btg/shared/btg-components.css" />
+  <link rel="stylesheet" href="./ultrablue.css" />
+</head>
+<body>
+  <div id="header"></div>
+
+  <!-- ════════ HERO MOBILE ════════ -->
+  <section class="ultrablue-hero ultrablue-hero--mobile">
+    <div class="ultrablue-hero__mobile-wrap">
+      <img src="/btg/assets/ultrablue/hero_ultrablue_mobile.jpg" alt="Cartão Ultrablue BTG Pactual" class="ultrablue-hero__img" />
+    </div>
+    <div class="ultrablue-hero__mobile-content">
+      <p class="ultrablue-hero__eyebrow">Cartão Ultrablue BTG Pactual</p>
+      <h1 class="ultrablue-hero__title">
+        Uma jornada<br />
+        desenhada ao<br />
+        seu estilo
+      </h1>
+      <p class="ultrablue-hero__desc">Porque viajar vai além do destino.</p>
+    </div>
+  </section>
+
+  <!-- ════════ HERO DESKTOP ════════ -->
+  <section class="ultrablue-hero ultrablue-hero--desktop">
+    <img src="/btg/assets/ultrablue/hero_ultrablue.jpg" alt="Cartão Ultrablue BTG Pactual" class="ultrablue-hero__img" />
+    <div class="btg-container ultrablue-hero__inner">
+      <p class="ultrablue-hero__eyebrow">Cartão Ultrablue BTG Pactual</p>
+      <h1 class="ultrablue-hero__title">
+        Uma jornada<br />
+        desenhada ao seu estilo
+      </h1>
+      <p class="ultrablue-hero__desc">Porque viajar vai além do destino.</p>
+    </div>
+  </section>
+
+  <!-- ════════ INTRO ════════ -->
+  <section class="ultrablue-intro">
+    <div class="btg-container ultrablue-intro__inner">
+      <h2 class="ultrablue-intro__title">Suas viagens ainda mais inesquecíveis</h2>
+      <div class="ultrablue-intro__body">
+        <p>Com o Ultrablue, você conta com uma curadoria dedicada para criar roteiros personalizados, reservas estratégicas e experiências alinhadas ao seu estilo de vida.</p>
+        <p>Da escolha do hotel ideal ao acesso a destinos e vivências selecionadas, cada etapa é pensada para elevar sua jornada.</p>
+      </div>
+      <h3 class="ultrablue-intro__experiencias">Experiências selecionadas para você</h3>
+    </div>
+  </section>
+
+  <!-- ════════ CURATED ════════ -->
+  <section class="ultrablue-curated">
+    <div class="btg-container">
+      <div class="ultrablue-curated__head">
+        <a href="/btg/ultrablue/viagens/" class="ultrablue-curated__see-all">
+          Ver todas as viagens
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
+        </a>
+      </div>
+      <div id="curated-grid" class="ofertas-grid"></div>
+    </div>
+  </section>
+
+  <!-- ════════ SERVICOS VIAGEM ════════ -->
+  <section class="ultrablue-servicos">
+    <div class="btg-container">
+      <h2 class="ultrablue-servicos__title">Cada detalhe, planejado</h2>
+      <div id="servicos-grid" class="ultrablue-servicos__grid"></div>
+      <div id="servicos-arrows" class="ultrablue-servicos__arrows"></div>
+    </div>
+  </section>
+
+  <!-- ════════ WHY ULTRABLUE ════════ -->
+  <section class="ultrablue-why">
+    <div class="btg-container">
+      <h2 class="ultrablue-why__title">Vantagens para aproveitar mais em cada destino</h2>
+      <p class="ultrablue-why__subtitle">Vá mais longe em tudo o que imaginar, com a máxima sofisticação que um cartão pode oferecer.</p>
+      <div class="ultrablue-why__layout">
+        <div class="ultrablue-why__media">
+          <img src="/btg/assets/ultrablue/why_ultrablue.jpg" alt="Vantagens do Cartão Ultrablue" loading="lazy" />
+        </div>
+        <ul class="ultrablue-why__features" id="why-features"></ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════ PARCEIROS HOTÉIS ════════ -->
+  <div id="parceiros"></div>
+
+  <!-- ════════ CLOSING ════════ -->
+  <div id="closing-cta"></div>
+
+  <div id="footer"></div>
+
+  <script type="module">
+    import { renderBtgHeader } from '/btg/shared/btg-header.js';
+    import { renderBtgFooter } from '/btg/shared/btg-footer.js';
+    import { createOfertaCard, createClosingCta, createParceirosHoteis } from '/btg/shared/btg-components.js';
+    import { icon } from '/btg/shared/btg-icons.js';
+    import { listOfertas, normalizeForCard } from '/btg/shared/btg-ofertas-service.js';
+
+    renderBtgHeader(document.getElementById('header'), 'ultrablue');
+    renderBtgFooter(document.getElementById('footer'), 'ultrablue');
+
+    const MOCK = [
+      {
+        id: '1', slug: 'reveillon-pedras-do-patacho',
+        imagem: '/btg/assets/parceiros/four-seasons-bora-bora.jpg',
+        destino: 'Alagoas', titulo: 'Réveillon Pedras do Patacho',
+        descricao: 'Resort à beira-mar com experiências privativas para a família.',
+        preco: '4460', moeda: 'R$', parcelamento: '6',
+        contextoPreco: 'Por pessoa em apto duplo',
+        ofertaEspecial: 'ALL-INCLUSIVE',
+      },
+      {
+        id: '2', slug: 'bora-bora-honeymoon',
+        imagem: '/btg/assets/parceiros/amangiri-utah.jpg',
+        destino: 'Bora Bora', titulo: 'Bora Bora — overwater bungalow',
+        descricao: 'Sete noites em bungalow privativo, com jantares românticos.',
+        preco: '52000', moeda: 'R$', parcelamento: '10',
+        contextoPreco: 'Por casal, all-inclusive',
+      },
+      {
+        id: '3', slug: 'mediterraneo-luxury',
+        imagem: '/btg/assets/parceiros/mandarin-oriental-tokyo.jpg',
+        destino: 'Mediterrâneo', titulo: 'Cruzeiro Mediterrâneo de luxo',
+        descricao: 'Embarque em Veneza com escalas em Capri, Sorrento e Mykonos.',
+        sobConsulta: true,
+      },
+      {
+        id: '4', slug: 'aman-tokyo',
+        imagem: '/btg/assets/parceiros/six-senses-ibiza.jpg',
+        destino: 'Tóquio', titulo: 'Aman Tokyo — primavera no Japão',
+        descricao: 'Hospedagem em suíte premium com vista para o Imperial Garden.',
+        preco: '38900', moeda: 'R$', parcelamento: '10',
+      },
+    ];
+
+    (async () => {
+      const fromFs = await listOfertas({ tipo_cartao: 'Ultrablue', destaque: true, limit: 4 });
+      const ofertas = fromFs.length ? fromFs.map(normalizeForCard) : MOCK;
+      document.getElementById('curated-grid').innerHTML =
+        ofertas.map((o) => createOfertaCard(o, 'ultrablue')).join('');
+    })();
+
+    // Servicos — "Cada detalhe, planejado" (6 cards, copy completo do btg-pactual)
+    const servicos = [
+      { icon: 'sparkles', title: 'Roteiros sob medida', desc: 'Nossa equipe organiza cada etapa da sua viagem com atenção ao detalhe: destinos, agenda, preferências e experiências que exigem acesso diferenciado. Um especialista dedicado acompanha o planejamento do início ao fim, de segunda a domingo, das 8h às 20h.' },
+      { icon: 'hotel', title: 'Hospedagens selecionadas em hotéis parceiros', desc: 'Reservas em propriedades selecionadas das principais redes internacionais — Four Seasons, Aman, Mandarin Oriental, Six Senses, St. Regis, Rosewood, entre outras — com condições especiais de early check-in, late check-out e upgrade de acomodação.' },
+      { icon: 'plane', title: 'Passagens aéreas nacionais e internacionais', desc: 'Consultoria sobre rotas, classes e companhias. Emissão de bilhetes nacionais e internacionais com inclusão de milhas, comunicação de necessidades especiais e suporte em remarcações.' },
+      { icon: 'ship', title: 'Trens e cruzeiros de luxo', desc: 'De jornadas fluviais intimistas na Europa a expedições e travessias pelos principais oceanos do mundo.' },
+      { icon: 'route', title: 'Roteiros desenhados de forma personalizada', desc: 'Conectando experiências culturais, gastronômicas e de entretenimento alinhadas ao seu estilo de viagem.' },
+      { icon: 'drama', title: 'Acesso a experiências culturais', desc: 'Óperas, balés, musicais, museus, feiras internacionais de arte e exposições — com possibilidade de visitas e programações fora do horário regular.' },
+    ];
+
+    document.getElementById('servicos-grid').innerHTML = servicos
+      .map((s) => `
+        <article class="ultrablue-servico-card">
+          <span class="ultrablue-servico-icon">${icon(s.icon, 'icon-md')}</span>
+          <h3>${s.title}</h3>
+          <p>${s.desc}</p>
+        </article>
+      `).join('');
+
+    document.getElementById('servicos-arrows').innerHTML = `
+      <button type="button" aria-label="Card anterior" data-nav="prev">${icon('chevron-left', 'icon-sm')}</button>
+      <button type="button" aria-label="Próximo card" data-nav="next">${icon('chevron-right', 'icon-sm')}</button>
+    `;
+    const grid = document.getElementById('servicos-grid');
+    document.querySelector('[data-nav="prev"]').addEventListener('click', () => {
+      const c = grid.querySelector('article');
+      if (c) grid.scrollBy({ left: -(c.clientWidth + 16), behavior: 'smooth' });
+    });
+    document.querySelector('[data-nav="next"]').addEventListener('click', () => {
+      const c = grid.querySelector('article');
+      if (c) grid.scrollBy({ left: c.clientWidth + 16, behavior: 'smooth' });
+    });
+
+    // Why Ultrablue — 6 features (imagem à esquerda, grid à direita)
+    const whyFeatures = [
+      { icon: 'hotel', title: 'Hotéis parceiros', text: 'Hospede-se em mais de 2.000 hotéis ao redor do mundo com vantagens exclusivas, incluindo redes renomadas como Four Seasons e Rosewood.' },
+      { icon: 'trophy', title: 'Pontuação acelerada', text: 'Acumule 3 pontos por dólar gasto em compras nacionais e 3,5 pontos por dólar gasto em compras internacionais.' },
+      { icon: 'coins', title: 'Cashback', text: 'Receba 1,5% de cashback em compras nacionais ou 1,7% em compras internacionais para gastar ou investir como quiser.' },
+      { icon: 'shield-check', title: 'Seguro viagem', text: 'Conte com cobertura internacional Omint para você e até 4 dependentes durante suas viagens.' },
+      { icon: 'map-pin', title: 'Terminal BTG Pactual', text: '20% OFF, check-in dedicado, concierge exclusivo, despacho de bagagens sem filas, raio-x prioritário e muito mais.' },
+      { icon: 'crown', title: 'Salas VIP LoungeKey', text: 'Aproveite acessos ilimitados a mais de 1.000 Salas VIP ao redor do mundo, com direito a bebidas, Wi-Fi e até 12 convidados por ano.' },
+    ];
+    document.getElementById('why-features').innerHTML = whyFeatures
+      .map((f) => `
+        <li class="ultrablue-why__feature">
+          <span class="ultrablue-why__feature-icon">${icon(f.icon, 'icon-md')}</span>
+          <div>
+            <h3>${f.title}</h3>
+            <p>${f.text}</p>
+          </div>
+        </li>
+      `).join('');
+
+    const hoteisUltrablue = [
+      { rede: 'Four Seasons', nome: 'Four Seasons Bora Bora', imagem: '/btg/assets/parceiros/four-seasons-bora-bora.jpg' },
+      { rede: 'Aman', nome: 'Amangiri, Utah', imagem: '/btg/assets/parceiros/amangiri-utah.jpg' },
+      { rede: 'Mandarin Oriental', nome: 'Mandarin Oriental, Tóquio', imagem: '/btg/assets/parceiros/mandarin-oriental-tokyo.jpg' },
+      { rede: 'Six Senses', nome: 'Six Senses Ibiza', imagem: '/btg/assets/parceiros/six-senses-ibiza.jpg' },
+      { rede: 'St. Regis', nome: 'The St. Regis Veneza', imagem: '/btg/assets/parceiros/st-regis-venice.jpg' },
+      { rede: 'Rosewood', nome: 'Rosewood Sand Hill, Califórnia', imagem: '/btg/assets/parceiros/rosewood-sand-hill.jpg' },
+    ];
+    document.getElementById('parceiros').innerHTML = createParceirosHoteis({
+      title: 'Parceiros globais selecionados',
+      tagline: 'Reservas nas principais redes internacionais — Four Seasons, Aman, Mandarin Oriental, Six Senses, St. Regis, Rosewood — com condições especiais e curadoria dedicada.',
+      hoteis: hoteisUltrablue,
+      brand: 'ultrablue',
+    });
+
+    document.getElementById('closing-cta').innerHTML = createClosingCta({
+      title: 'Um mundo de possibilidades, à sua disposição',
+      description: 'Entre em contato com o seu Concierge Ultrablue. De segunda a segunda, das 8h às 20h.',
+      ctaUrl: 'https://wa.me/551148621688?text=' + encodeURIComponent('Olá! Tenho interesse no Concierge Ultrablue.'),
+      brand: 'ultrablue',
+    });
+  </script>
+</body>
+</html>

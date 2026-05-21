@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Operadora Primetour — Viagens & Experiências</title>
+
+  <link rel="stylesheet" href="/btg/shared/btg-base.css" />
+  <link rel="stylesheet" href="/btg/shared/btg-header.css" />
+  <link rel="stylesheet" href="/btg/shared/btg-footer.css" />
+  <link rel="stylesheet" href="/btg/shared/btg-components.css" />
+  <link rel="stylesheet" href="./operadora.css" />
+</head>
+<body data-brand="operadora">
+  <div id="header"></div>
+
+  <!-- ════════ HERO COM VÍDEO FULL-SCREEN ════════ -->
+  <section class="operadora-hero">
+    <video
+      class="operadora-hero__video"
+      src="/btg/assets/operadora/hero_operadora.mp4"
+      poster="/btg/assets/operadora/hero_operadora.jpg"
+      autoplay muted loop playsinline preload="metadata"
+      aria-hidden="true"
+    ></video>
+    <div class="operadora-hero__overlay"></div>
+    <div class="operadora-hero__inner btg-container">
+      <h1 class="operadora-hero__title">Operadora</h1>
+      <p class="operadora-hero__subtitle">
+        Novidades e oportunidades selecionadas pelo<br />
+        time de especialistas da <span class="operadora-hero__primetour">PRIMETOUR</span>
+      </p>
+    </div>
+  </section>
+
+  <!-- ════════ INTRO ════════ -->
+  <section class="operadora-intro">
+    <div class="btg-container operadora-intro__inner">
+      <h2 class="operadora-intro__title">A curadoria PRIMETOUR, disponível para o seu cliente</h2>
+      <div class="operadora-intro__body">
+        <p>
+          Roteiros, hotéis, cruzeiros e experiências selecionados por especialistas, com benefícios exclusivos e suporte dedicado.
+        </p>
+        <p>
+          Nossa equipe seleciona hotéis, destinos, cruzeiros e experiências reconhecidos pela excelência em hospitalidade, serviço e autenticidade.
+        </p>
+        <p>
+          Um portfólio constantemente atualizado para que sua agência tenha acesso às melhores oportunidades do mercado global.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════ CURATED ════════ -->
+  <section class="operadora-curated">
+    <div class="btg-container">
+      <h2 class="operadora-curated__title">Ofertas em destaque</h2>
+      <div id="curated-grid" class="ofertas-grid"></div>
+    </div>
+  </section>
+
+  <!-- ════════ CATEGORY BANNERS ════════ -->
+  <section id="categorias" class="operadora-categorias">
+    <div class="btg-container">
+      <div class="operadora-categorias__grid">
+        <!-- Viagens e Experiências -->
+        <div class="operadora-cat-col">
+          <div class="operadora-cat-banner">
+            <div class="operadora-cat-banner__media">
+              <img src="/btg/assets/operadora/experience.jpg"
+                alt="Viagens e Experiências"
+                class="operadora-cat-banner__img" loading="lazy" />
+            </div>
+            <div class="operadora-cat-banner__body">
+              <p class="operadora-cat-banner__eyebrow">Viagens e Experiências</p>
+              <p class="operadora-cat-banner__title">Viagens que os seus clientes vão querer contar para sempre.</p>
+            </div>
+          </div>
+          <div class="operadora-cat-links">
+            <a href="/btg/operadora/viagens/feriados/" class="operadora-cat-link">
+              <span>Feriados e Datas Especiais</span><span aria-hidden="true">→</span>
+            </a>
+            <a href="/btg/operadora/viagens/destinos/" class="operadora-cat-link">
+              <span>Destinos</span><span aria-hidden="true">→</span>
+            </a>
+            <a href="/btg/operadora/viagens/hospedagem/" class="operadora-cat-link">
+              <span>Hospedagem</span><span aria-hidden="true">→</span>
+            </a>
+          </div>
+        </div>
+
+        <!-- Do embarque ao destino -->
+        <div class="operadora-cat-col">
+          <div class="operadora-cat-banner">
+            <div class="operadora-cat-banner__media">
+              <img src="/btg/assets/operadora/program.jpg"
+                alt="Do embarque ao destino"
+                class="operadora-cat-banner__img" loading="lazy" />
+            </div>
+            <div class="operadora-cat-banner__body">
+              <p class="operadora-cat-banner__eyebrow">Do embarque ao destino</p>
+              <p class="operadora-cat-banner__title">Passagens aéreas, embarcações, traslados e mais.</p>
+            </div>
+          </div>
+          <div class="operadora-cat-links">
+            <a href="/btg/operadora/viagens/aereo-transfers/" class="operadora-cat-link">
+              <span>Aéreo &amp; Transfers</span><span aria-hidden="true">→</span>
+            </a>
+            <a href="/btg/operadora/cruzeiros/" class="operadora-cat-link">
+              <span>Cruzeiros</span><span aria-hidden="true">→</span>
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════ CLOSING ════════ -->
+  <div id="closing-cta"></div>
+
+  <div id="footer"></div>
+
+  <script type="module">
+    import { renderBtgHeader } from '/btg/shared/btg-header.js';
+    import { renderBtgFooter } from '/btg/shared/btg-footer.js';
+    import { createOfertaCard, createClosingCta } from '/btg/shared/btg-components.js';
+    import { listOfertas, normalizeForCard } from '/btg/shared/btg-ofertas-service.js';
+
+    renderBtgHeader(document.getElementById('header'), 'operadora');
+    renderBtgFooter(document.getElementById('footer'), 'operadora');
+
+    const MOCK = [
+      {
+        id: '1', slug: 'reveillon-pedras-do-patacho',
+        imagem: '/btg/assets/parceiros/four-seasons-george-v.jpg',
+        destino: 'Alagoas', titulo: 'Réveillon Pedras do Patacho',
+        descricao: 'Resort à beira-mar com experiências privativas para a família.',
+        preco: '4460', moeda: 'R$', parcelamento: '6',
+        contextoPreco: 'Por pessoa em apto duplo',
+        ofertaEspecial: 'ALL-INCLUSIVE',
+      },
+      {
+        id: '2', slug: 'patagonia-luxury',
+        imagem: '/btg/assets/parceiros/amanyangyun-shanghai.jpg',
+        destino: 'Patagônia', titulo: 'Patagônia — expedição privativa',
+        descricao: 'Sete dias entre glaciares, lodges remotos e trilhas exclusivas.',
+        preco: '42500', moeda: 'R$', parcelamento: '10',
+        contextoPreco: 'Por pessoa',
+      },
+    ];
+
+    (async () => {
+      const fromFs = await listOfertas({ tipo_cartao: 'Operadora', destaque: true, limit: 4 });
+      const ofertas = fromFs.length ? fromFs.map(normalizeForCard) : MOCK;
+      document.getElementById('curated-grid').innerHTML =
+        ofertas.map((o) => createOfertaCard(o, 'operadora')).join('');
+    })();
+
+    document.getElementById('closing-cta').innerHTML = createClosingCta({
+      title: 'A próxima oportunidade para surpreender seu cliente começa aqui',
+      description: 'Conte com nossos especialistas para construir a melhor solução para cada viagem.',
+      ctaUrl: 'https://wa.me/551148621680?text=' + encodeURIComponent('Operadora Primetour: Quero falar sobre as ofertas'),
+      ctaLabel: 'Falar com nosso especialista',
+      brand: 'operadora',
+    });
+  </script>
+</body>
+</html>

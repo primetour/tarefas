@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Ofertas — BTG / Primetour</title>
+  <link rel="stylesheet" href="/btg/shared/btg-base.css" />
+  <style>
+    body {
+      background: #f5f6f8;
+      min-height: 100vh;
+      font-family: -apple-system, system-ui, "Segoe UI", Roboto, sans-serif;
+      color: #1f2937;
+    }
+    .wrap {
+      max-width: 1200px;
+      margin: 32px auto;
+      padding: 0 24px;
+    }
+    .head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+      gap: 16px;
+    }
+    .head h1 {
+      font-size: 22px;
+      margin: 0;
+      color: var(--btg-navy, #05132a);
+    }
+    .head__sub {
+      font-size: 13px;
+      color: #6b7280;
+      margin-top: 4px;
+    }
+    .actions { display: flex; gap: 12px; flex-wrap: wrap; }
+    .btn {
+      background: var(--btg-navy, #05132a);
+      color: #fff;
+      border: 0;
+      padding: 10px 18px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .btn--ghost {
+      background: #fff;
+      color: #1f2937;
+      border: 1px solid #d1d5db;
+    }
+    .btn--danger { background: #b91c1c; }
+    .btn--small { padding: 6px 12px; font-size: 12px; }
+
+    .filters {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      background: #fff;
+      padding: 16px;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      margin-bottom: 16px;
+    }
+    .filters select, .filters input {
+      padding: 8px 12px;
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      font-size: 13px;
+      background: #fff;
+      color: #1f2937;
+    }
+    .filters input { flex: 1; min-width: 200px; }
+
+    .table {
+      width: 100%;
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      border-collapse: collapse;
+      overflow: hidden;
+    }
+    .table th, .table td {
+      padding: 12px 16px;
+      text-align: left;
+      font-size: 13px;
+      border-bottom: 1px solid #f3f4f6;
+    }
+    .table th {
+      background: #f9fafb;
+      font-weight: 600;
+      color: #4b5563;
+      text-transform: uppercase;
+      font-size: 11px;
+      letter-spacing: 0.04em;
+    }
+    .table tr:last-child td { border-bottom: 0; }
+    .table tr:hover td { background: #f9fafb; }
+    .table img.thumb {
+      width: 56px;
+      height: 40px;
+      border-radius: 4px;
+      object-fit: cover;
+      background: #f3f4f6;
+      vertical-align: middle;
+      margin-right: 8px;
+    }
+    .nome-cell { display: flex; align-items: center; }
+    .nome-cell strong { display: block; font-size: 13px; color: #111827; }
+    .nome-cell .meta { font-size: 11px; color: #9ca3af; margin-top: 2px; }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .badge--published { background: #d1fae5; color: #065f46; }
+    .badge--archived  { background: #f3f4f6; color: #6b7280; }
+    .badge--partners  { background: #05132a; color: #fff; }
+    .badge--ultrablue { background: #10408d; color: #fff; }
+    .badge--operadora { background: #1a2b4a; color: #fff; }
+    .badge--neutral   { background: #e5e7eb; color: #374151; }
+
+    .empty {
+      text-align: center;
+      padding: 64px 24px;
+      color: #6b7280;
+      font-size: 14px;
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+    }
+    .loading {
+      text-align: center;
+      padding: 48px 24px;
+      color: #6b7280;
+      font-size: 13px;
+    }
+    .status-bar {
+      margin-bottom: 12px;
+      font-size: 13px;
+      color: #6b7280;
+    }
+    .status-bar strong { color: #1f2937; }
+
+    /* Seleção de ofertas + barra de solicitação de conteúdo */
+    .col-select { width: 40px; text-align: center; }
+    .row-select { width: 16px; height: 16px; cursor: pointer; accent-color: #05132a; }
+    .req-bar {
+      position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%);
+      display: none; align-items: center; gap: 16px;
+      background: #05132a; color: #fff;
+      padding: 12px 16px 12px 20px; border-radius: 10px;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28); z-index: 50;
+    }
+    .req-bar.is-visible { display: flex; }
+    .req-bar__count { font-size: 13px; }
+    .req-bar__count strong { font-weight: 700; }
+    .req-bar__btn {
+      background: #2E73D4; color: #fff; border: 0;
+      padding: 9px 16px; border-radius: 6px;
+      font-size: 13px; font-weight: 600; cursor: pointer;
+    }
+    .req-bar__btn:hover { background: #3A80E4; }
+    .req-bar__clear {
+      background: transparent; border: 0; color: rgba(255, 255, 255, 0.6);
+      font-size: 12px; cursor: pointer; text-decoration: underline;
+    }
+    .req-overlay {
+      position: fixed; inset: 0; background: rgba(5, 19, 42, 0.5);
+      display: none; align-items: center; justify-content: center;
+      z-index: 60; padding: 24px;
+    }
+    .req-overlay.is-open { display: flex; }
+    .req-modal {
+      background: #fff; border-radius: 12px; max-width: 480px; width: 100%;
+      padding: 24px; box-shadow: 0 24px 64px rgba(0, 0, 0, 0.3);
+    }
+    .req-modal h2 { font-size: 17px; margin: 0 0 4px; color: #05132a; }
+    .req-modal__sub { font-size: 13px; color: #6b7280; margin-bottom: 16px; }
+    .req-modal__list {
+      list-style: none; padding: 0; margin: 0 0 16px;
+      border: 1px solid #e5e7eb; border-radius: 8px;
+      max-height: 180px; overflow-y: auto;
+    }
+    .req-modal__list li {
+      padding: 8px 12px; font-size: 13px; color: #374151;
+      border-bottom: 1px solid #f3f4f6;
+    }
+    .req-modal__list li:last-child { border-bottom: 0; }
+    .req-modal label { display: block; font-size: 12px; font-weight: 600; color: #4b5563; margin-bottom: 6px; }
+    .req-modal input[type=text] {
+      width: 100%; padding: 9px 12px; border: 1px solid #d1d5db;
+      border-radius: 6px; font-size: 13px; margin-bottom: 8px;
+    }
+    .req-modal__msg { font-size: 13px; margin: 8px 0; min-height: 18px; }
+    .req-modal__msg.ok { color: #065f46; }
+    .req-modal__msg.err { color: #b91c1c; }
+    .req-modal__actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="head">
+      <div>
+        <h1>Ofertas BTG</h1>
+        <div class="head__sub">Lista, filtros e ações sobre as ofertas cadastradas.</div>
+      </div>
+      <div class="actions">
+        <a href="/btg/dashboard/import/" class="btn btn--ghost">⬆️ Importar</a>
+        <a href="/btg/dashboard/nova-oferta/" class="btn">+ Nova oferta</a>
+      </div>
+    </div>
+
+    <div class="filters">
+      <input type="search" id="search" placeholder="Buscar por nome, destino..." />
+      <select id="filter-brand">
+        <option value="">Todas as marcas</option>
+        <option value="Partners">Partners</option>
+        <option value="Ultrablue">Ultrablue</option>
+        <option value="Operadora">Operadora</option>
+      </select>
+      <select id="filter-tipo">
+        <option value="">Todos os tipos</option>
+        <option value="Feriado">Feriado</option>
+        <option value="Destino">Destino</option>
+        <option value="Cruzeiro">Cruzeiro</option>
+        <option value="Hospedagem">Hospedagem</option>
+        <option value="Aéreo &amp; Transfers">Aéreo &amp; Transfers</option>
+        <option value="Concierge">Concierge</option>
+      </select>
+      <select id="filter-status">
+        <option value="published">Apenas publicadas</option>
+        <option value="archived">Apenas arquivadas</option>
+        <option value="all">Todas</option>
+      </select>
+    </div>
+
+    <div class="status-bar" id="status"></div>
+
+    <div id="table-host">
+      <div class="loading">Carregando ofertas...</div>
+    </div>
+  </div>
+
+  <!-- Barra de solicitação (aparece com 1+ ofertas selecionadas) -->
+  <div class="req-bar" id="req-bar">
+    <span class="req-bar__count" id="req-bar-count"></span>
+    <button type="button" class="req-bar__btn" id="req-bar-btn">Solicitar conteúdo e newsletter</button>
+    <button type="button" class="req-bar__clear" id="req-bar-clear">limpar</button>
+  </div>
+
+  <!-- Modal de confirmação da solicitação -->
+  <div class="req-overlay" id="req-overlay">
+    <div class="req-modal">
+      <h2>Solicitar conteúdo e newsletter</h2>
+      <p class="req-modal__sub">Uma solicitação será aberta para o setor de Marketing com as ofertas selecionadas.</p>
+      <ul class="req-modal__list" id="req-modal-list"></ul>
+      <label for="req-modal-name">Seu nome (consultor)</label>
+      <input type="text" id="req-modal-name" placeholder="Ex: Maria Silva" />
+      <div class="req-modal__msg" id="req-modal-msg"></div>
+      <div class="req-modal__actions">
+        <button type="button" class="btn btn--ghost" id="req-modal-cancel">Cancelar</button>
+        <button type="button" class="btn" id="req-modal-send">Enviar solicitação</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { listOfertas, archiveOferta, restoreOferta } from '/btg/shared/btg-ofertas-service.js';
+    import { createContentRequest } from '/btg/shared/btg-requests-service.js';
+
+    const searchEl = document.getElementById('search');
+    const brandEl  = document.getElementById('filter-brand');
+    const tipoEl   = document.getElementById('filter-tipo');
+    const statusEl = document.getElementById('filter-status');
+    const host     = document.getElementById('table-host');
+    const statusBar = document.getElementById('status');
+
+    let allOfertas = [];   // cache da última fetch
+    let lastFilters = null;
+    const selected = new Map();   // id -> oferta selecionada
+    const MAX_SELECT = 5;
+
+    function esc(s) {
+      return String(s ?? '').replace(/[&<>"']/g, (c) =>
+        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    function brandBadge(brands) {
+      if (!Array.isArray(brands) || brands.length === 0) return '<span class="badge badge--neutral">—</span>';
+      return brands.map((b) => `<span class="badge badge--${b.toLowerCase()}">${esc(b)}</span>`).join(' ');
+    }
+
+    function statusBadge(status) {
+      const cls = status === 'archived' ? 'archived' : 'published';
+      const label = status === 'archived' ? 'Arquivada' : 'Publicada';
+      return `<span class="badge badge--${cls}">${label}</span>`;
+    }
+
+    function formatDate(iso) {
+      if (!iso) return '—';
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return iso;
+      return d.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    }
+
+    function render(ofertas) {
+      if (ofertas.length === 0) {
+        host.innerHTML = `<div class="empty">Nenhuma oferta encontrada com esses filtros.</div>`;
+        return;
+      }
+      host.innerHTML = `
+        <table class="table">
+          <thead>
+            <tr>
+              <th class="col-select"></th>
+              <th>Oferta</th>
+              <th>Marcas</th>
+              <th>Tipo</th>
+              <th>Destino</th>
+              <th>Status</th>
+              <th>Criada</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${ofertas.map((o) => `
+              <tr data-id="${esc(o.id)}">
+                <td class="col-select">
+                  <input type="checkbox" class="row-select" data-id="${esc(o.id)}"${selected.has(o.id) ? ' checked' : ''} />
+                </td>
+                <td>
+                  <div class="nome-cell">
+                    ${o.imagem_url ? `<img class="thumb" src="${esc(o.imagem_url)}" alt="" />` : '<div class="thumb"></div>'}
+                    <div>
+                      <strong>${esc(o.nome_da_oferta || '(sem nome)')}</strong>
+                      <div class="meta">slug: ${esc(o.slug || '—')}</div>
+                    </div>
+                  </div>
+                </td>
+                <td>${brandBadge(o.tipo_cartao)}</td>
+                <td>${esc(o.tipo_oferta || '—')}</td>
+                <td>${esc(o.destino_rota || '—')}</td>
+                <td>${statusBadge(o.status)}</td>
+                <td>${formatDate(o.createdAt)}</td>
+                <td>
+                  <a href="/btg/dashboard/ofertas/editar/?id=${esc(o.id)}" class="btn btn--ghost btn--small">Editar</a>
+                  ${o.status === 'archived'
+                    ? `<button class="btn btn--ghost btn--small" data-action="restore" data-id="${esc(o.id)}">Restaurar</button>`
+                    : `<button class="btn btn--danger btn--small" data-action="archive" data-id="${esc(o.id)}">Arquivar</button>`}
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      `;
+    }
+
+    async function load() {
+      const filters = {
+        tipo_cartao: brandEl.value || undefined,
+        tipo_oferta: tipoEl.value || undefined,
+        status: statusEl.value,
+      };
+      lastFilters = filters;
+      selected.clear();
+      updateReqBar();
+      host.innerHTML = `<div class="loading">Carregando ofertas...</div>`;
+      try {
+        allOfertas = await listOfertas(filters);
+        statusBar.innerHTML = `<strong>${allOfertas.length}</strong> oferta${allOfertas.length === 1 ? '' : 's'} encontrada${allOfertas.length === 1 ? '' : 's'}.`;
+        applySearch();
+      } catch (err) {
+        host.innerHTML = `<div class="empty" style="color:#b91c1c">Erro: ${esc(err.message)}</div>`;
+      }
+    }
+
+    function applySearch() {
+      const q = (searchEl.value || '').trim().toLowerCase();
+      if (!q) return render(allOfertas);
+      const filtered = allOfertas.filter((o) => {
+        const hay = [o.nome_da_oferta, o.destino_rota, o.slug, o.descricao, (o.tipo_cartao || []).join(' ')].join(' ').toLowerCase();
+        return hay.includes(q);
+      });
+      render(filtered);
+    }
+
+    // Eventos
+    brandEl.addEventListener('change', load);
+    tipoEl.addEventListener('change', load);
+    statusEl.addEventListener('change', load);
+    searchEl.addEventListener('input', applySearch);
+
+    host.addEventListener('click', async (e) => {
+      const btn = e.target.closest('[data-action]');
+      if (!btn) return;
+      const action = btn.dataset.action;
+      const id = btn.dataset.id;
+      if (action === 'archive') {
+        if (!confirm('Arquivar essa oferta? Ela deixa de aparecer nas homes (recuperável depois).')) return;
+        btn.disabled = true;
+        try {
+          await archiveOferta(id);
+          await load();
+        } catch (err) {
+          alert(`Erro: ${err.message}`);
+          btn.disabled = false;
+        }
+      } else if (action === 'restore') {
+        btn.disabled = true;
+        try {
+          await restoreOferta(id);
+          await load();
+        } catch (err) {
+          alert(`Erro: ${err.message}`);
+          btn.disabled = false;
+        }
+      }
+    });
+
+    // ─── Seleção de ofertas + solicitação de conteúdo ───────
+    function updateReqBar() {
+      const n = selected.size;
+      document.getElementById('req-bar').classList.toggle('is-visible', n > 0);
+      document.getElementById('req-bar-count').innerHTML =
+        `<strong>${n}</strong> oferta${n === 1 ? '' : 's'} selecionada${n === 1 ? '' : 's'}`;
+    }
+
+    host.addEventListener('change', (e) => {
+      const cb = e.target.closest('.row-select');
+      if (!cb) return;
+      const id = cb.dataset.id;
+      if (cb.checked) {
+        if (selected.size >= MAX_SELECT) {
+          cb.checked = false;
+          alert(`Selecione no máximo ${MAX_SELECT} ofertas por solicitação.`);
+          return;
+        }
+        const oferta = allOfertas.find((o) => o.id === id);
+        if (oferta) selected.set(id, oferta);
+      } else {
+        selected.delete(id);
+      }
+      updateReqBar();
+    });
+
+    const reqOverlay = document.getElementById('req-overlay');
+
+    document.getElementById('req-bar-clear').addEventListener('click', () => {
+      selected.clear();
+      updateReqBar();
+      applySearch();
+    });
+
+    document.getElementById('req-bar-btn').addEventListener('click', () => {
+      document.getElementById('req-modal-list').innerHTML = [...selected.values()]
+        .map((o) => `<li>${esc(o.nome_da_oferta || '(sem nome)')}</li>`)
+        .join('');
+      const msg = document.getElementById('req-modal-msg');
+      msg.textContent = '';
+      msg.className = 'req-modal__msg';
+      document.getElementById('req-modal-send').disabled = false;
+      reqOverlay.classList.add('is-open');
+    });
+
+    document.getElementById('req-modal-cancel').addEventListener('click', () => {
+      reqOverlay.classList.remove('is-open');
+    });
+    reqOverlay.addEventListener('click', (e) => {
+      if (e.target === reqOverlay) reqOverlay.classList.remove('is-open');
+    });
+
+    document.getElementById('req-modal-send').addEventListener('click', async () => {
+      const sendBtn = document.getElementById('req-modal-send');
+      const msg = document.getElementById('req-modal-msg');
+      const name = document.getElementById('req-modal-name').value.trim();
+      sendBtn.disabled = true;
+      msg.className = 'req-modal__msg';
+      msg.textContent = 'Enviando solicitação...';
+      try {
+        const res = await createContentRequest({
+          ofertas: [...selected.values()],
+          requesterName: name,
+        });
+        msg.className = 'req-modal__msg ok';
+        msg.textContent = `Solicitação criada (${res.source === 'firestore' ? 'Firestore' : 'modo local'}) — o Marketing recebe na fila de solicitações.`;
+        selected.clear();
+        updateReqBar();
+        setTimeout(() => {
+          reqOverlay.classList.remove('is-open');
+          applySearch();
+        }, 1800);
+      } catch (err) {
+        msg.className = 'req-modal__msg err';
+        msg.textContent = `Erro: ${err.message}`;
+        sendBtn.disabled = false;
+      }
+    });
+
+    // Inicial
+    load();
+  </script>
+</body>
+</html>

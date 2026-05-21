@@ -205,6 +205,8 @@ function renderList() {
                   background:rgba(56,189,248,0.12);color:#38BDF8;">📅 Fora do calendário</span>`:''}
                 ${req.batchId?`<span style="font-size:0.6875rem;padding:1px 6px;border-radius:var(--radius-full);
                   background:rgba(167,139,250,0.12);color:#A78BFA;" title="Solicitação enviada em conjunto com outras">📦 ${(req.batchIndex||0)+1} de ${req.batchTotal||'?'}</span>`:''}
+                ${(req._btg||req.origem==='btg-dashboard-ofertas')?`<span style="font-size:0.6875rem;padding:1px 6px;border-radius:var(--radius-full);
+                  background:rgba(46,115,212,0.14);color:#2E73D4;" title="Gerada pela lista de ofertas do dashboard BTG">★ BTG Pactual</span>`:''}
               </div>
               <div style="display:flex;gap:12px;flex-wrap:wrap;font-size:0.8125rem;color:var(--text-secondary);margin-bottom:6px;">
                 ${req.typeName?`<span>📋 ${esc(req.typeName)}</span>`:''}
@@ -442,7 +444,7 @@ async function openRequestDetail(req) {
         onClick: async (_, { close }) => {
           if (!confirm(`Deseja excluir permanentemente esta solicitação de ${req.requesterName}?\n\nEssa ação não pode ser desfeita.`)) return;
           try {
-            await deleteRequest(req.id);
+            await deleteRequest(req.id, req._btg ? 'btg' : undefined);
             toast.success('Solicitação excluída.');
             close();
           } catch(e) { toast.error('Erro ao excluir: ' + e.message); }
@@ -462,7 +464,7 @@ async function openRequestDetail(req) {
             await updateRequestStatus(req.id, 'rejected', {
               internalNote:    note,
               rejectionReason: reason,
-            });
+            }, req._btg ? 'btg' : undefined);
             // Send email to requester
             await notifyRequesterRejected({
               requesterName:   req.requesterName,
@@ -501,7 +503,7 @@ async function openRequestDetail(req) {
                   taskId,
                   workspaceId:  wsId,
                   internalNote: note + (suggestion?.reasoning ? `\n[IA] ${suggestion.reasoning}` : ''),
-                }).catch(() => {});
+                }, req._btg ? 'btg' : undefined).catch(() => {});
                 toast.success('Solicitação convertida em tarefa com sugestões da IA!');
               },
               taskData: {
@@ -571,7 +573,7 @@ async function openRequestDetail(req) {
                 taskId,
                 workspaceId:  wsId,
                 internalNote: note,
-              }).catch(() => {});
+              }, req._btg ? 'btg' : undefined).catch(() => {});
               // Flag is persisted on the task by openTaskModal via taskData below;
               // nothing else to do here.
               toast.success('Solicitação convertida em tarefa!');

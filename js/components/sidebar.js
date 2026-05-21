@@ -72,6 +72,7 @@ const NAV_GROUPS = [
       { route: 'portal-images',    icon: 'portal-images',    label: 'Banco de Imagens',       perm: 'portal_images_manage', altPerm: 'portal_manage' },
       { route: 'landing-pages',    icon: 'landing-pages',    label: 'Landing Pages',          perm: 'portal_manage'  },
       { route: 'cms',              icon: 'cms',              label: 'CMS / Site',             perm: 'portal_manage'  },
+      { route: 'sites-btg',        icon: 'cms',              label: 'Sites',                  perm: 'portal_manage', href: '/btg/dashboard/sites/' },
       { route: 'arts-editor',      icon: 'arts-editor',      label: 'Editor de Artes',        perm: 'portal_manage'  },
       // 4.49.12+ Luxury Travel: gated por luxury_travel_manage (antes sempre visível)
       { route: 'luxury-travel',    icon: 'luxury-travel',    label: 'Revista Luxury Travel',  perm: 'luxury_travel_manage' },
@@ -212,8 +213,8 @@ export class Sidebar {
       // no grupo Principal quando o usuário tiver squads.
       const renderNavItem = (item) => `
         <div
-          class="nav-item ${router.isActive(item.route) ? 'active' : ''}"
-          data-route="${item.route}"
+          class="nav-item ${!item.href && router.isActive(item.route) ? 'active' : ''}"
+          ${item.href ? `data-href="${item.href}"` : `data-route="${item.route}"`}
           data-tooltip="${item.label}"
         >
           <span class="nav-icon">${renderIcon(item.icon)}</span>
@@ -388,6 +389,13 @@ export class Sidebar {
         router.navigate(route);
         this.setActive(route);
         this.closeMobile();
+      });
+    });
+
+    // Nav items (com data-href) — link pra área estática (módulo BTG/Sites)
+    this.el.querySelectorAll('.nav-item[data-href]').forEach(item => {
+      item.addEventListener('click', () => {
+        window.location.href = item.dataset.href;
       });
     });
 

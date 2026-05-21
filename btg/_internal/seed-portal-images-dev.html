@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <title>Seed — portal_images_dev (staging)</title>
+  <style>
+    body { font-family: -apple-system, system-ui, sans-serif; max-width: 720px; margin: 40px auto; padding: 24px; color: #111; }
+    h1 { font-size: 22px; margin-bottom: 8px; }
+    .sub { color: #666; font-size: 13px; margin-bottom: 24px; line-height: 1.5; }
+    .target { background: #f5f5f5; padding: 12px 16px; border-radius: 6px; font-family: ui-monospace, monospace; font-size: 13px; margin-bottom: 24px; }
+    button { background: #1f2937; color: #fff; border: 0; padding: 12px 24px; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    button:hover:not(:disabled) { background: #111827; }
+    #log { margin-top: 24px; font-family: ui-monospace, monospace; font-size: 12px; background: #1f2937; color: #e5e7eb; padding: 16px; border-radius: 6px; max-height: 480px; overflow: auto; white-space: pre-wrap; }
+    .ok { color: #34d399; }
+    .skip { color: #fbbf24; }
+    .err { color: #f87171; }
+  </style>
+</head>
+<body>
+  <h1>Seed — portal_images_dev (staging)</h1>
+  <p class="sub">
+    Popula a coleção <code>portal_images_dev</code> no Firebase staging com 12 hotéis curados
+    de <code>btg/assets/parceiros/</code>. Idempotente — roda quantas vezes quiser sem duplicar
+    (dedup por URL).
+  </p>
+  <div class="target">
+    <strong>Projeto:</strong> gestor-btg-lp-builder-staging<br>
+    <strong>Coleção:</strong> portal_images_dev<br>
+    <strong>Base URL das imagens:</strong> https://gestor-btg-lp-builder-staging.web.app/btg/assets/parceiros/
+  </div>
+  <button id="run">Rodar seed</button>
+  <div id="log"></div>
+
+  <script type="module">
+    import { initializeApp, getApps } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+    import {
+      getFirestore, collection, getDocs, query, where, addDoc, serverTimestamp
+    } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+    import { btgFirebaseConfig, isBtgConfigReady } from '../shared/btg-config.js';
+
+    const logEl = document.getElementById('log');
+    const btn = document.getElementById('run');
+
+    function log(msg, cls = '') {
+      const span = document.createElement('span');
+      if (cls) span.className = cls;
+      span.textContent = msg + '\n';
+      logEl.appendChild(span);
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    // Base URL fica derivada de onde o HTML está rodando — local ou staging.
+    const BASE_URL = `${location.origin}/btg/assets/parceiros`;
+
+    const IMAGES = [
+      { file: 'amangiri-utah.jpg',            name: 'Amangiri',                placeName: 'Amangiri Resort',           city: 'Utah',         country: 'Estados Unidos',     continent: 'america-do-norte', tags: ['hotel', 'resort', 'deserto', 'aman'] },
+      { file: 'amanyangyun-shanghai.jpg',     name: 'Amanyangyun',             placeName: 'Amanyangyun Shanghai',      city: 'Xangai',       country: 'China',              continent: 'asia',             tags: ['hotel', 'resort', 'urbano', 'aman'] },
+      { file: 'four-seasons-bora-bora.jpg',   name: 'Four Seasons Bora Bora',  placeName: 'Four Seasons Bora Bora',    city: 'Bora Bora',    country: 'Polinésia Francesa', continent: 'oceania',          tags: ['hotel', 'resort', 'praia', 'lua-de-mel', 'four-seasons'] },
+      { file: 'four-seasons-george-v.jpg',    name: 'Four Seasons George V',   placeName: 'Four Seasons George V',     city: 'Paris',        country: 'França',             continent: 'europa',           tags: ['hotel', 'urbano', 'historico', 'four-seasons'] },
+      { file: 'mandarin-oriental-bangkok.jpg',name: 'Mandarin Oriental Bangkok',placeName: 'Mandarin Oriental Bangkok',city: 'Bangkok',      country: 'Tailândia',          continent: 'asia',             tags: ['hotel', 'urbano', 'mandarin-oriental'] },
+      { file: 'mandarin-oriental-tokyo.jpg',  name: 'Mandarin Oriental Tokyo', placeName: 'Mandarin Oriental Tokyo',   city: 'Tóquio',       country: 'Japão',              continent: 'asia',             tags: ['hotel', 'urbano', 'mandarin-oriental'] },
+      { file: 'rosewood-mansion.jpg',         name: 'Rosewood Mansion',        placeName: 'Rosewood Mansion on Turtle Creek', city: 'Dallas', country: 'Estados Unidos',     continent: 'america-do-norte', tags: ['hotel', 'urbano', 'rosewood'] },
+      { file: 'rosewood-sand-hill.jpg',       name: 'Rosewood Sand Hill',      placeName: 'Rosewood Sand Hill',        city: 'Menlo Park',   country: 'Estados Unidos',     continent: 'america-do-norte', tags: ['hotel', 'resort', 'rosewood'] },
+      { file: 'six-senses-bhutan.jpg',        name: 'Six Senses Bhutan',       placeName: 'Six Senses Bhutan',         city: 'Thimphu',      country: 'Butão',              continent: 'asia',             tags: ['hotel', 'resort', 'wellness', 'six-senses'] },
+      { file: 'six-senses-ibiza.jpg',         name: 'Six Senses Ibiza',        placeName: 'Six Senses Ibiza',          city: 'Ibiza',        country: 'Espanha',            continent: 'europa',           tags: ['hotel', 'resort', 'praia', 'wellness', 'six-senses'] },
+      { file: 'st-regis-maldives.jpg',        name: 'St. Regis Maldives',      placeName: 'The St. Regis Maldives Vommuli Resort', city: 'Vommuli', country: 'Maldivas',   continent: 'asia',             tags: ['hotel', 'resort', 'praia', 'lua-de-mel', 'st-regis'] },
+      { file: 'st-regis-venice.jpg',          name: 'St. Regis Venice',        placeName: 'The St. Regis Venice',      city: 'Veneza',       country: 'Itália',             continent: 'europa',           tags: ['hotel', 'urbano', 'historico', 'st-regis'] },
+    ];
+
+    async function run() {
+      btn.disabled = true;
+      logEl.textContent = '';
+
+      if (!isBtgConfigReady()) {
+        log('✗ btg-config.js ainda tem placeholders. Preencher e tentar de novo.', 'err');
+        btn.disabled = false;
+        return;
+      }
+
+      log(`→ Iniciando seed contra ${btgFirebaseConfig.projectId}`);
+      log(`→ Base URL das imagens: ${BASE_URL}`);
+      log('');
+
+      const existing = getApps().find((a) => a.name === 'btg-seed-app');
+      const app = existing || initializeApp(btgFirebaseConfig, 'btg-seed-app');
+      const db = getFirestore(app);
+      const col = collection(db, 'portal_images_dev');
+
+      let created = 0;
+      let skipped = 0;
+      let errored = 0;
+
+      for (const img of IMAGES) {
+        const url = `${BASE_URL}/${img.file}`;
+        try {
+          const dup = await getDocs(query(col, where('url', '==', url)));
+          if (!dup.empty) {
+            log(`⊘ skip (já existe): ${img.name}`, 'skip');
+            skipped++;
+            continue;
+          }
+          const meta = {
+            assetCategory: 'hotel',
+            continent:     img.continent,
+            country:       img.country,
+            city:          img.city,
+            name:          img.name,
+            placeName:     img.placeName,
+            tags:          img.tags,
+            type:          'galeria',
+            copyright:     '',
+            url:           url,
+            path:          `hoteis/btg-seed/${img.file}`,
+            originalName:  img.file,
+            sizeMB:        0,
+            width:         0,
+            height:        0,
+            uploadedAt:    serverTimestamp(),
+            uploadedBy:    'seed-script-btg',
+          };
+          await addDoc(col, meta);
+          log(`✓ criado: ${img.name} (${img.city}, ${img.country})`, 'ok');
+          created++;
+        } catch (err) {
+          log(`✗ erro em ${img.name}: ${err.message}`, 'err');
+          errored++;
+        }
+      }
+
+      log('');
+      log(`━━━ resumo ━━━`);
+      log(`criados: ${created}`, 'ok');
+      log(`pulados: ${skipped}`, 'skip');
+      log(`errados: ${errored}`, errored ? 'err' : '');
+      log('');
+      log('Pode fechar essa aba. Próximo passo: abrir o picker no formulário nova-oferta.');
+      btn.disabled = false;
+    }
+
+    btn.addEventListener('click', run);
+  </script>
+</body>
+</html>

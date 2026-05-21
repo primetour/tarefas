@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Feriados — Cartão Partners BTG Pactual</title>
+  <link rel="stylesheet" href="/btg/shared/btg-base.css" />
+  <link rel="stylesheet" href="/btg/shared/btg-header.css" />
+  <link rel="stylesheet" href="/btg/shared/btg-footer.css" />
+  <link rel="stylesheet" href="/btg/shared/btg-components.css" />
+  <link rel="stylesheet" href="/btg/shared/btg-category-page.css" />
+</head>
+<body>
+  <div id="app"></div>
+  <script type="module">
+    import { renderCategoryPage } from '/btg/shared/btg-category-page.js';
+
+    renderCategoryPage({
+      brand: 'partners', tipoOferta: 'Feriado',
+      title: 'Pausas que levam a novos destinos',
+      description: 'Seleções especiais de hospedagens e experiências para aproveitar cada oportunidade de viajar ao longo do ano.',
+      backHref: '/btg/partners/',
+      heroImage: '/btg/assets/parceiros/four-seasons-george-v.jpg',
+      heroImageMobile: '/btg/assets/parceiros/four-seasons-george-v.jpg',
+      closingTitle: 'Um mundo de possibilidades, à sua disposição',
+      closingDescription: 'Fale com o Concierge Partners para reservar.',
+      closingCtaUrl: 'https://wa.me/551148621680?text=' + encodeURIComponent('Olá! Tenho interesse em ofertas de feriado Partners.'),
+      ofertas: [
+        {
+          id: '1', slug: 'reveillon-pedras-do-patacho',
+          imagem: '/btg/assets/parceiros/four-seasons-george-v.jpg',
+          destino: 'ALAGOAS', titulo: 'Réveillon Pedras do Patacho',
+          descricao: 'Resort à beira-mar com experiências privativas.',
+          preco: '4460', moeda: 'R$', parcelamento: '6',
+          contextoPreco: 'Por pessoa', ofertaEspecial: 'ALL-INCLUSIVE',
+        },
+      ],
+    });
+  </script>
+</body>
+</html>

@@ -1049,5 +1049,46 @@ service cloud.firestore {
       allow read:  if true;
       allow write: if isMaster();
     }
+
+    // ── BTG Ofertas (DEV/STAGING) ────────────────────────────
+    // Migração do projeto BTG Pactual pro Gestor — Fase 1+.
+    // Coleção alvo: gestor-btg-lp-builder-staging > btg_ofertas_dev.
+    // No projeto de produção (gestor-de-tarefas-primetour) essa coleção
+    // não existe — regras ficam inertes lá. Antes do cutover pra prod,
+    // criar bloco equivalente pra `btg_ofertas` exigindo SSO Microsoft
+    // + permissão `btg_offer_manage`.
+    //
+    // Postura STAGING: read+write liberados. Justificativa:
+    //   - ambiente isolado (projeto Firebase dedicado)
+    //   - sem auth setup ainda (POC roda sem login)
+    //   - dados de teste, sem PII real
+    //   - URL `*.web.app` não divulgada externamente
+    match /btg_ofertas_dev/{docId} {
+      allow read, write: if true;
+    }
+
+    // ── BTG Portal Images (DEV/STAGING) ──────────────────────
+    // Banco de imagens de teste pra o picker do BTG (Fase 2.1).
+    // Reusa o schema da coleção real `portal_images` (Portal de
+    // Dicas) — assim quando migrar pra produção, é só apontar
+    // pra `portal_images` em vez de `portal_images_dev`.
+    // Sample populado via btg/_internal/seed-portal-images-dev.html
+    // com 12 imagens curadas de hoteis premium.
+    // Mesma postura permissiva do btg_ofertas_dev (justificativas
+    // identicas — staging isolado, sem PII).
+    match /portal_images_dev/{docId} {
+      allow read, write: if true;
+    }
+
+    // ── BTG Solicitações de conteúdo (DEV/STAGING) ───────────
+    // Solicitações "Conteúdo e newsletter" geradas pela lista de
+    // ofertas BTG (btg/dashboard/ofertas). Mesmo shape da coleção
+    // `requests` real do Gestor — no cutover pra prod, o service
+    // aponta pra `requests` e a solicitação cai no módulo de
+    // Tarefas & Solicitações (setor Marketing).
+    // Mesma postura permissiva/justificativa do btg_ofertas_dev.
+    match /btg_requests_dev/{docId} {
+      allow read, write: if true;
+    }
   }
 }

@@ -1,0 +1,412 @@
+/* ════════════════════════════════════════════════════════════
+ *  HOME ULTRABLUE — replica fiel do projeto Next.js
+ *  Cores: navy primário #0b2859, secundário #10408d (acentos)
+ * ════════════════════════════════════════════════════════════ */
+
+/* ─── HERO MOBILE ─── */
+
+.ultrablue-hero--mobile {
+  display: block;
+  position: relative;
+  overflow: hidden;
+  padding-top: var(--header-offset);
+}
+
+@media (min-width: 768px) {
+  .ultrablue-hero--mobile { display: none; }
+}
+
+.ultrablue-hero__mobile-wrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1080 / 1600;
+  overflow: hidden;
+}
+
+.ultrablue-hero__mobile-wrap .ultrablue-hero__img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ultrablue-hero__mobile-content {
+  position: absolute;
+  top: var(--header-offset);
+  left: 0;
+  right: 0;
+  z-index: 1;
+  padding: 24px 20px 0;
+}
+
+/* ─── HERO DESKTOP ─── */
+
+.ultrablue-hero--desktop {
+  display: none;
+  position: relative;
+  min-height: 520px;
+  overflow: hidden;
+  padding-top: 96px;
+}
+
+@media (min-width: 768px) {
+  .ultrablue-hero--desktop { display: block; }
+}
+
+@media (min-width: 1024px) {
+  .ultrablue-hero--desktop { min-height: 560px; }
+}
+
+.ultrablue-hero--desktop .ultrablue-hero__img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: 0;
+}
+
+.ultrablue-hero__inner {
+  position: relative;
+  z-index: 1;
+  padding-top: 56px;
+  padding-bottom: 56px;
+}
+
+@media (min-width: 1024px) {
+  .ultrablue-hero__inner { padding-top: 64px; }
+}
+
+/* Comum */
+
+.ultrablue-hero__eyebrow {
+  font-size: 14px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(5, 19, 42, 0.7);
+}
+
+.ultrablue-hero__title {
+  margin-top: 12px;
+  max-width: 600px;
+  font-size: 36px;
+  font-weight: 300;
+  line-height: 1.05;
+  letter-spacing: -0.01em;
+  color: var(--ultrablue-text);
+}
+
+.ultrablue-hero--mobile .ultrablue-hero__title {
+  color: var(--ultrablue-text);
+}
+
+.ultrablue-hero__desc {
+  margin-top: 16px;
+  max-width: 600px;
+  font-size: 16px;
+  line-height: 1.3;
+  color: rgba(5, 19, 42, 0.75);
+}
+
+@media (min-width: 768px) {
+  .ultrablue-hero__desc { font-size: 20px; }
+}
+
+/* ─── INTRO ─── */
+
+.ultrablue-intro {
+  padding: 80px 20px;
+  background: #fff;
+}
+
+@media (min-width: 1024px) {
+  .ultrablue-intro { padding-left: 32px; padding-right: 32px; }
+}
+
+/* Intro 2-col: título esq / parágrafos dir, topos alinhados. */
+.ultrablue-intro__inner {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 24px;
+  max-width: 1280px;
+}
+
+@media (min-width: 768px) {
+  .ultrablue-intro__inner {
+    grid-template-columns: 1fr 1fr;
+    column-gap: 80px;
+  }
+}
+
+.ultrablue-intro__title {
+  font-size: 36px;
+  font-weight: 300;
+  line-height: 1.15;
+  color: var(--ultrablue-navy);
+}
+
+.ultrablue-intro__body {
+  font-size: 16px;
+  line-height: 1.6;
+  color: rgba(5, 19, 42, 0.75);
+}
+
+@media (min-width: 768px) {
+  .ultrablue-intro__body { padding-top: 8px; }
+}
+
+/* ─── CURATED ─── */
+
+.ultrablue-curated {
+  padding: 48px 20px 80px;
+  background: #fff;
+}
+
+@media (min-width: 1024px) {
+  .ultrablue-curated { padding-left: 32px; padding-right: 32px; }
+}
+
+.ultrablue-curated__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-bottom: 40px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid rgba(11, 40, 89, 0.1);
+}
+
+.ultrablue-curated__title {
+  font-size: 24px;
+  font-weight: 400;
+  color: var(--ultrablue-navy);
+}
+
+.ultrablue-curated__see-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--ultrablue-navy);
+}
+
+.ultrablue-curated__see-all:hover {
+  color: var(--ultrablue-accent);
+}
+
+/* ─── SERVICOS ─── */
+
+.ultrablue-servicos {
+  padding: 64px 20px;
+  background: #f4f7fb;
+}
+
+@media (min-width: 1024px) {
+  .ultrablue-servicos { padding-left: 32px; padding-right: 32px; }
+}
+
+.ultrablue-servicos__title {
+  font-size: 24px;
+  font-weight: 400;
+  margin-bottom: 32px;
+  color: var(--ultrablue-navy);
+}
+
+.ultrablue-servicos__grid {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 16px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+}
+
+.ultrablue-servicos__grid::-webkit-scrollbar { display: none; }
+
+.ultrablue-servico-card {
+  flex: 0 0 85%;
+  scroll-snap-align: start;
+  padding: 24px;
+  background: #fff;
+  border: 1px solid rgba(11, 40, 89, 0.1);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+@media (min-width: 640px) {
+  .ultrablue-servicos__grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    overflow-x: visible;
+  }
+  .ultrablue-servico-card { flex: 1; }
+}
+
+@media (min-width: 1024px) {
+  .ultrablue-servicos__grid { grid-template-columns: repeat(3, 1fr); }
+}
+
+.ultrablue-servico-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ultrablue-accent);
+}
+
+.ultrablue-servico-card h3 {
+  font-size: 20px;
+  font-weight: 400;
+  line-height: 1.2;
+  color: var(--ultrablue-navy);
+}
+
+.ultrablue-servico-card p {
+  font-size: 15px;
+  line-height: 1.55;
+  color: rgba(5, 19, 42, 0.75);
+}
+
+.ultrablue-servicos__arrows {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 24px;
+}
+
+@media (min-width: 640px) {
+  .ultrablue-servicos__arrows { display: none; }
+}
+
+.ultrablue-servicos__arrows button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid rgba(11, 40, 89, 0.15);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ultrablue-accent);
+  transition: transform var(--t-fast);
+}
+
+.ultrablue-servicos__arrows button:active { transform: scale(0.95); }
+
+/* ─── WHY ─── */
+
+.ultrablue-why {
+  padding: 80px 20px;
+  background: #fff;
+  border-top: 1px solid rgba(11, 40, 89, 0.08);
+}
+
+@media (min-width: 1024px) {
+  .ultrablue-why { padding-left: 32px; padding-right: 32px; }
+}
+
+.ultrablue-why__title {
+  margin-top: 16px;
+  max-width: 680px;
+  font-size: 36px;
+  font-weight: 300;
+  line-height: 1.15;
+  color: var(--ultrablue-navy);
+}
+
+/* Layout: imagem à esquerda + grid de 6 features à direita. */
+.ultrablue-why__layout {
+  margin-top: 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+@media (min-width: 1024px) {
+  .ultrablue-why__layout { flex-direction: row; gap: 56px; }
+}
+
+.ultrablue-why__media {
+  width: 100%;
+  height: 320px;
+  overflow: hidden;
+}
+
+@media (min-width: 640px) {
+  .ultrablue-why__media { height: 420px; }
+}
+
+@media (min-width: 1024px) {
+  .ultrablue-why__media { width: 480px; flex-shrink: 0; height: auto; }
+}
+
+.ultrablue-why__media img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.ultrablue-why__features {
+  flex: 1;
+  list-style: none;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 32px;
+}
+
+@media (min-width: 640px) {
+  .ultrablue-why__features { grid-template-columns: 1fr 1fr; gap: 40px 32px; }
+}
+
+.ultrablue-why__feature {
+  display: flex;
+  gap: 16px;
+}
+
+.ultrablue-why__feature-icon {
+  flex-shrink: 0;
+  color: var(--ultrablue-navy);
+}
+
+.ultrablue-why__feature h3 {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ultrablue-navy);
+}
+
+.ultrablue-why__feature p {
+  margin-top: 8px;
+  font-size: 16px;
+  line-height: 1.5;
+  color: rgba(5, 19, 42, 0.75);
+}
+
+/* Intro: corpo agora é div com múltiplos <p>, h3 "Experiências selecionadas" */
+.ultrablue-intro__body p { margin: 0; }
+.ultrablue-intro__body p + p { margin-top: 16px; }
+
+.ultrablue-intro__experiencias {
+  grid-column: 1 / -1;
+  margin-top: 24px;
+  font-size: 24px;
+  font-weight: 400;
+  color: var(--ultrablue-navy);
+}
+
+/* Why: novo subtitle abaixo do título */
+.ultrablue-why__subtitle {
+  margin-top: 16px;
+  max-width: 520px;
+  font-size: 16px;
+  line-height: 1.6;
+  color: rgba(5, 19, 42, 0.75);
+}

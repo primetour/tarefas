@@ -1,0 +1,212 @@
+/*
+ * Tabs Section — replica do TabsSection.tsx
+ * Fundo navy, tabs com scroll horizontal no mobile, imagem alinhada
+ * à altura da coluna esquerda no desktop.
+ */
+
+.btg-tabs-section {
+  padding: 48px 20px;
+  position: relative;
+}
+
+@media (min-width: 1024px) {
+  .btg-tabs-section {
+    padding: 80px 32px;
+  }
+}
+
+.btg-tabs-section__inner {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 32px;
+}
+
+@media (min-width: 1024px) {
+  .btg-tabs-section__inner {
+    grid-template-columns: 1fr minmax(0, 560px);
+    gap: 64px;
+  }
+}
+
+.btg-tabs-section__left {
+  display: flex;
+  flex-direction: column;
+}
+
+.btg-tabs-section__eyebrow {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.btg-tabs-section__title {
+  margin-top: 8px;
+  font-size: 28px;
+  font-weight: 300;
+  line-height: 1.1;
+}
+
+@media (min-width: 768px) {
+  .btg-tabs-section__title { font-size: 34px; }
+}
+
+.btg-tabs-section__desc {
+  margin-top: 16px;
+  max-width: 560px;
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+/* Tabs (scroll horizontal no mobile) */
+
+.btg-tabs-section__tablist-wrap {
+  margin-top: 32px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.btg-tabs-section__tablist-wrap::-webkit-scrollbar { display: none; }
+
+.btg-tabs-section__tablist {
+  display: flex;
+  gap: 32px;
+  width: max-content;
+  min-width: 100%;
+}
+
+.btg-tab-btn {
+  position: relative;
+  padding: 12px 0;
+  font-size: 15px;
+  font-weight: 500;
+  white-space: nowrap;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  transition: color var(--t-fast);
+}
+
+.btg-tab-btn__underline {
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  transform: scaleX(0);
+  transform-origin: center;
+  transition: transform var(--t-base);
+}
+
+.btg-tab-btn.is-active .btg-tab-btn__underline {
+  transform: scaleX(1);
+}
+
+/* Conteúdo da tab (panes) */
+
+.btg-tabs-section__content {
+  margin-top: 32px;
+}
+
+.btg-tab-pane {
+  display: none;
+}
+
+.btg-tab-pane.is-active {
+  display: block;
+}
+
+/* Reveal suave e escalonado: o heading e cada tópico entram em
+ * sequência (paridade com a animação mais smooth da referência). */
+.btg-tab-pane.is-active .btg-tab-pane__heading,
+.btg-tab-pane.is-active .btg-tab-pane__bullets li {
+  animation: btgTabItemIn 460ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.btg-tab-pane.is-active .btg-tab-pane__bullets li:nth-child(1) { animation-delay: 80ms; }
+.btg-tab-pane.is-active .btg-tab-pane__bullets li:nth-child(2) { animation-delay: 140ms; }
+.btg-tab-pane.is-active .btg-tab-pane__bullets li:nth-child(3) { animation-delay: 200ms; }
+.btg-tab-pane.is-active .btg-tab-pane__bullets li:nth-child(4) { animation-delay: 260ms; }
+.btg-tab-pane.is-active .btg-tab-pane__bullets li:nth-child(5) { animation-delay: 320ms; }
+.btg-tab-pane.is-active .btg-tab-pane__bullets li:nth-child(6) { animation-delay: 380ms; }
+
+@keyframes btgTabItemIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.btg-tab-pane__heading {
+  font-size: 22px;
+  font-weight: 400;
+  line-height: 1.15;
+}
+
+@media (min-width: 768px) {
+  .btg-tab-pane__heading { font-size: 26px; }
+}
+
+.btg-tab-pane__bullets {
+  margin-top: 24px;
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.btg-tab-pane__bullets li {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.btg-tab-pane__bullets svg {
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.btg-tab-pane__bullets span:last-child {
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+/* Coluna da imagem (right) */
+
+.btg-tabs-section__right {
+  position: relative;
+  aspect-ratio: 16 / 10;
+}
+
+@media (min-width: 640px) {
+  .btg-tabs-section__right { aspect-ratio: 5 / 4; }
+}
+
+@media (min-width: 1024px) {
+  .btg-tabs-section__right { aspect-ratio: auto; height: auto; min-height: 100%; }
+}
+
+.btg-tabs-section__img-wrap {
+  position: absolute;
+  inset: 0;
+  border-radius: 16px;
+  overflow: hidden;
+  opacity: 0;
+  transform: scale(1.03);
+  transition: opacity 480ms cubic-bezier(0.22, 1, 0.36, 1),
+              transform 480ms cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
+}
+
+.btg-tabs-section__img-wrap.is-active {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.btg-tabs-section__img-wrap img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}

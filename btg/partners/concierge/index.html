@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Concierge Partners — Cartão Partners BTG Pactual</title>
+
+  <link rel="stylesheet" href="/btg/shared/btg-base.css" />
+  <link rel="stylesheet" href="/btg/shared/btg-header.css" />
+  <link rel="stylesheet" href="/btg/shared/btg-footer.css" />
+  <link rel="stylesheet" href="/btg/shared/btg-components.css" />
+  <link rel="stylesheet" href="/btg/shared/btg-tabs-section.css" />
+  <link rel="stylesheet" href="./concierge.css" />
+</head>
+<body>
+  <div id="header"></div>
+
+  <!-- ════════ HERO ════════ -->
+  <section class="concierge-hero">
+    <img src="/btg/assets/partners/partners_concierge_hero.jpg" alt="Concierge Partners" class="concierge-hero__img concierge-hero__img--desktop" />
+    <img src="/btg/assets/partners/partners_concierge_hero_mobile.jpg" alt="Concierge Partners" class="concierge-hero__img concierge-hero__img--mobile" />
+    <div class="concierge-hero__overlay"></div>
+    <div class="btg-container concierge-hero__inner">
+      <a href="/btg/partners/" class="concierge-hero__back">← voltar</a>
+      <p class="concierge-hero__eyebrow">Concierge Partners</p>
+      <h1 class="concierge-hero__title">Facilitando o extraordinário</h1>
+      <p class="concierge-hero__desc">
+        Do acesso às reservas mais disputadas ao planejamento de viagens e celebrações, conte com especialistas prontos para apoiar suas solicitações.
+      </p>
+    </div>
+  </section>
+
+  <!-- ════════ INTRO ════════ -->
+  <section class="concierge-intro">
+    <div class="btg-container">
+      <p class="btg-eyebrow">Curadoria personalizada para o seu estilo</p>
+      <div class="concierge-intro__body">
+        <p>
+          Das reservas mais disputadas aos eventos de acesso restrito, das viagens sob medida às celebrações que merecem cada detalhe cuidado, conte com uma equipe que age com discrição e critério para viabilizar o que sua agenda exige.
+        </p>
+        <p>
+          Diretamente pelo WhatsApp, acione especialistas dedicados para organizar celebrações, garantir ingressos, intermediar compras exclusivas e muito mais — de segunda a segunda, das 8h às 20h.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════ TABS SECTION ════════ -->
+  <div id="tabs"></div>
+
+  <!-- ════════ OFERTAS ════════ -->
+  <section class="concierge-ofertas">
+    <div class="btg-container">
+      <h2 class="concierge-ofertas__title">Todas as ofertas Concierge</h2>
+      <div id="ofertas-grid" class="ofertas-grid"></div>
+    </div>
+  </section>
+
+  <!-- ════════ CLOSING ════════ -->
+  <div id="closing-cta"></div>
+  <div id="footer"></div>
+
+  <script type="module">
+    import { renderBtgHeader } from '/btg/shared/btg-header.js';
+    import { renderBtgFooter } from '/btg/shared/btg-footer.js';
+    import { createOfertaCard, createClosingCta } from '/btg/shared/btg-components.js';
+    import { renderTabsSection } from '/btg/shared/btg-tabs-section.js';
+    import { getConciergeTabs } from '/btg/shared/btg-concierge-tabs-data.js';
+
+    renderBtgHeader(document.getElementById('header'), 'partners');
+    renderBtgFooter(document.getElementById('footer'), 'partners');
+
+    renderTabsSection(document.getElementById('tabs'), {
+      eyebrow: 'Concierge Partners',
+      title: 'Conte com especialistas dedicados, diretamente no WhatsApp',
+      description: 'Especialistas para planejar suas viagens, celebrações, eventos, gastronomia e muito mais — com a discrição que cada situação exige.',
+      tabs: getConciergeTabs('partners'),
+      theme: {
+        sectionBg: '#05132a',
+        titleColor: '#ffffff',
+        textMuted: 'rgba(255,255,255,0.65)',
+        activeUnderline: '#D2E5FF',
+        inactiveTab: 'rgba(255,255,255,0.55)',
+        iconColor: '#D2E5FF',
+      },
+    });
+
+    // Ofertas mock
+    const ofertas = [
+      {
+        id: '1', slug: 'jantar-michelin-paris',
+        imagem: '/btg/assets/parceiros/four-seasons-george-v.jpg',
+        destino: 'PARIS', titulo: 'Jantar privativo — restaurante 3 estrelas Michelin',
+        descricao: 'Mesa reservada com 30 dias de antecedência, menu degustação assinado.',
+        sobConsulta: true,
+      },
+    ];
+    document.getElementById('ofertas-grid').innerHTML = ofertas.map((o) => createOfertaCard(o, 'partners')).join('');
+
+    document.getElementById('closing-cta').innerHTML = createClosingCta({
+      title: 'Um mundo de possibilidades, à sua disposição',
+      description: 'Entre em contato com o seu Concierge Partners. De segunda a segunda, das 8h às 20h.',
+      ctaUrl: 'https://wa.me/551148621680?text=' + encodeURIComponent('Olá! Tenho interesse no Concierge Partners.'),
+      brand: 'partners',
+    });
+  </script>
+</body>
+</html>
