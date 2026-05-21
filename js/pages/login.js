@@ -7,44 +7,6 @@ import { signIn, signInWithMicrosoft, linkMicrosoftToExistingAccount, resetPassw
 import { toast } from '../components/toast.js';
 import { auditLog } from '../auth/audit.js';
 import { ALLOWED_SSO_DOMAINS } from '../config.js';
-import { store } from '../store.js';
-
-/* ─── Modo demonstração (acesso de 1 clique, SEM login) ──────────────
- * ⚠️ SEGURANÇA: isto NUNCA pode funcionar em produção. O staging
- * (gestor-btg-lp-builder-staging) não tem o SSO Microsoft / usuários
- * do Gestor — então pra demo entramos sem login com um usuário fake.
- * O gate é uma WHITELIST de hostname: só staging + localhost. Qualquer
- * outro domínio (inclusive o de produção) não vê o botão e enterDemoMode
- * revalida o host e aborta. Antes de qualquer merge pra main, revisar. */
-function isDemoHost() {
-  const h = window.location.hostname;
-  return h === 'gestor-btg-lp-builder-staging.web.app'
-    || h === 'localhost'
-    || h === '127.0.0.1';
-}
-
-function enterDemoMode() {
-  if (!isDemoHost()) return;   // defesa extra — só staging/local
-  const demoProfile = {
-    id: 'demo-user',
-    name: 'Demonstração BTG',
-    email: 'demo@primetour.com.br',
-    roleId: 'master',
-    isMaster: true,
-    active: true,
-    firstLogin: false,
-    sector: '',
-    visibleSectors: [],
-    photoURL: '',
-  };
-  store.set('currentUser', { uid: 'demo-user', email: demoProfile.email, displayName: demoProfile.name });
-  store.set('userProfile', demoProfile);
-  store.set('userRole', { id: 'master', permissions: {} });
-  store.set('userSector', null);
-  store.set('visibleSectors', []);
-  store.set('authLoading', false);
-  store.set('isAuthenticated', true);   // dispara renderApp → shell do Gestor
-}
 
 export function renderLogin(container) {
   container.innerHTML = `
@@ -146,9 +108,6 @@ export function renderLogin(container) {
             <span>Entrar com Microsoft</span>
           </button>
 
-          <!-- Slot do botão de modo demonstração (preenchido só no staging) -->
-          <div id="demo-mode-slot"></div>
-
           <!-- Lista dos domínios SSO autorizados -->
           <p style="text-align:center;margin-top:10px;font-size:0.75rem;color:var(--text-muted);line-height:1.5;">
             E-mails aceitos:<br>
@@ -211,24 +170,6 @@ export function renderLogin(container) {
     passwordInput.type = isText ? 'password' : 'text';
     togglePwBtn.textContent = isText ? '👁' : '🙈';
   });
-
-  // ─── Modo demonstração — acesso de 1 clique (staging only) ──────
-  if (isDemoHost()) {
-    const slot = document.getElementById('demo-mode-slot');
-    if (slot) {
-      slot.innerHTML = `
-        <button type="button" id="btn-demo-mode" style="width:100%;margin-top:12px;
-          padding:12px 16px;font-size:0.9rem;font-weight:600;cursor:pointer;
-          border:1px dashed var(--border-default);border-radius:var(--radius-md);
-          background:transparent;color:var(--text-muted);transition:all 0.2s;">
-          → Entrar em modo demonstração
-        </button>
-        <p style="text-align:center;margin-top:8px;font-size:0.7rem;color:var(--text-muted);">
-          Acesso sem login — ambiente de staging para demonstração.
-        </p>`;
-      document.getElementById('btn-demo-mode').addEventListener('click', enterDemoMode);
-    }
-  }
 
   // ─── SSO Microsoft ──────────────────────────────────────
   microsoftBtn.addEventListener('click', async () => {
