@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 57,
-  build: '20260521-nl-composicao-vertical-link-original',
+  patch: 58,
+  build: '20260521-fix-haspermission-permissionoverrides-undefined',
 };
 
 /** "1.2.0" */

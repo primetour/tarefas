@@ -52,16 +52,22 @@ service cloud.firestore {
     // v4.49.50+ Helper genérico de permission granular (espelha store.can()):
     // master → sempre true; override per-user (userDoc.permissionOverrides[perm])
     // tem prioridade; senão lê role base (roles/{roleId}.permissions[perm]).
-    // Use pra permissions específicas que admin pode delegar a coord/analista
-    // sem precisar de role custom (ex: content_calendar_meta_manage,
-    // portal_destinations_manage, etc.).
+    //
+    // v4.49.58+ FIX: usa .get(key, default) em vez de [key] direto. Acesso
+    // direto em map ausente lançava runtime error em rules, derrubando
+    // toda a expressão (rule retornava false mesmo quando role tinha perm).
+    // Esse era o bug do analista que "não conseguia criar plataforma/tipo
+    // /categoria" mesmo com a permission ligada no role — sem o
+    // permissionOverrides setado, o branch de role base nunca executava.
     function hasPermission(perm) {
       return isMaster() || (isAuth() && (
-        // Override per-user (true OU explicit false). Se undefined → ignora.
-        userDoc().permissionOverrides[perm] == true ||
+        // Override per-user. .get aceita map ausente → retorna 'undef'.
+        // Só `== true` se tiver explicit true; undef ou false → cai no role.
+        userDoc().get('permissionOverrides', {}).get(perm, false) == true ||
         // Role base. exists() defende contra roleId inválido.
         (exists(/databases/$(database)/documents/roles/$(userDoc().roleId)) &&
-         get(/databases/$(database)/documents/roles/$(userDoc().roleId)).data.permissions[perm] == true)
+         get(/databases/$(database)/documents/roles/$(userDoc().roleId)).data
+           .get('permissions', {}).get(perm, false) == true)
       ));
     }
 

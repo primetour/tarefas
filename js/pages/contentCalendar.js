@@ -180,7 +180,30 @@ async function _quickCreateMeta(kind) {
                             : await meta.createContent(data);
               close();
               resolve(created);
-            } catch (e) { toast.error(e.message); }
+            } catch (e) {
+              // v4.49.58+ Mensagem clara pra diagnóstico do user.
+              // 3 cenários possíveis:
+              //   1. Firestore rules não deployadas (admin precisa rodar
+              //      `firebase deploy --only firestore:rules`)
+              //   2. Role do user não tem content_calendar_meta_manage
+              //      (admin precisa habilitar em Configurações → Roles)
+              //   3. permissionOverrides setado pra false explícito
+              const msg = String(e?.message || e || '');
+              const code = String(e?.code || '');
+              if (code === 'permission-denied' || /permission/i.test(msg) || /insufficient/i.test(msg)) {
+                toast.error(
+                  'Sem permissão pra criar ' + what + '. ' +
+                  'Peça ao admin pra habilitar "Criar plataformas, tipos e categorias" ' +
+                  'no seu role (Configurações → Roles → Analista) e garantir que ' +
+                  'as regras Firestore foram deployadas.',
+                  { duration: 9000 },
+                );
+                console.error('[quickCreateMeta] permission-denied detalhe:', e);
+              } else {
+                toast.error('Erro ao criar ' + what + ': ' + msg);
+                console.error('[quickCreateMeta] erro inesperado:', e);
+              }
+            }
           },
         },
       ],
