@@ -300,3 +300,35 @@
 @media (min-width: 768px) {
   .btg-text-hero__desc { font-size: 24px; }
 }
+
+/* Variante cor sólida — Partners/Ultrablue: hero navy com texto branco
+ * (paridade com a referência; Operadora mantém o variante claro). */
+.btg-text-hero[data-brand="partners"] {
+  background: #05132a;
+}
+.btg-text-hero[data-brand="ultrablue"] {
+  background: #0b2859;
+}
+.btg-text-hero[data-brand="partners"] .btg-text-hero__inner,
+.btg-text-hero[data-brand="ultrablue"] .btg-text-hero__inner {
+  border-bottom-color: rgba(255, 255, 255, 0.15);
+  padding-bottom: 56px;
+}
+.btg-text-hero[data-brand="partners"] .btg-text-hero__title,
+.btg-text-hero[data-brand="ultrablue"] .btg-text-hero__title,
+.btg-text-hero[data-brand="partners"] .btg-text-hero__desc,
+.btg-text-hero[data-brand="ultrablue"] .btg-text-hero__desc {
+  color: #fff;
+}
+.btg-text-hero[data-brand="partners"] .btg-text-hero__desc,
+.btg-text-hero[data-brand="ultrablue"] .btg-text-hero__desc {
+  color: rgba(255, 255, 255, 0.85);
+}
+.btg-text-hero[data-brand="partners"] .btg-text-hero__back,
+.btg-text-hero[data-brand="ultrablue"] .btg-text-hero__back {
+  color: rgba(255, 255, 255, 0.7);
+}
+.btg-text-hero[data-brand="partners"] .btg-text-hero__back:hover,
+.btg-text-hero[data-brand="ultrablue"] .btg-text-hero__back:hover {
+  color: #fff;
+}

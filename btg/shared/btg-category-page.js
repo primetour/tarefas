@@ -39,16 +39,19 @@ export async function renderCategoryPage(cfg) {
   const root = document.getElementById('app');
   if (!root) return;
 
-  const heroHtml = cfg.heroVariant === 'text-only'
-    ? createTextCategoryHero({
+  // Default: hero text-only/cor-sólida (paridade com a referência —
+  // subpages Operadora/Partners/Ultrablue não usam imagem no hero).
+  // heroVariant: 'image' continua disponível se precisar.
+  const heroHtml = cfg.heroVariant === 'image'
+    ? createCategoryHero({
+        imageSrc: cfg.heroImage,
+        imageMobileSrc: cfg.heroImageMobile,
         title: cfg.title,
         description: cfg.description,
         backHref: cfg.backHref,
         brand: cfg.brand,
       })
-    : createCategoryHero({
-        imageSrc: cfg.heroImage,
-        imageMobileSrc: cfg.heroImageMobile,
+    : createTextCategoryHero({
         title: cfg.title,
         description: cfg.description,
         backHref: cfg.backHref,

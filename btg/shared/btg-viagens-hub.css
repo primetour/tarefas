@@ -58,21 +58,34 @@
   margin: 0 auto;
 }
 
+/* Cabeçalho: eyebrow + título + descrição empilhados à esquerda;
+ * "Ver todos" à direita, alinhado embaixo. */
 .viagens-hub-section__head {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: 1fr;
   gap: 8px;
   margin-bottom: 32px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid rgba(5, 19, 42, 0.1);
+}
+
+.viagens-hub-section__head > div {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.viagens-hub-section__desc {
+  grid-column: 1;
 }
 
 @media (min-width: 768px) {
   .viagens-hub-section__head {
-    display: grid;
-    grid-template-columns: minmax(0, 560px) 1fr auto;
-    align-items: end;
-    gap: 24px;
+    grid-template-columns: 1fr auto;
+    column-gap: 24px;
     margin-bottom: 40px;
   }
+  .viagens-hub-section__desc { grid-row: 2; }
+  .viagens-hub-section__see-all { grid-column: 2; grid-row: 1 / 3; align-self: end; }
 }
 
 .viagens-hub-section__eyebrow {
