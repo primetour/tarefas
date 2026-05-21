@@ -6,6 +6,35 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.68+20260521-portal-import-parser-contact-prefixes] — 2026-05-21
+
+Release **PATCH** — Portal de Dicas/Importação: parser reconhece
+prefixes completos de contato ("Telefone:", "Endereço:", "Site:").
+
+**Bug encontrado validando v4.49.67**: `extractContactFields` só
+reconhecia "Tel:" e "Link:". Linhas como "Telefone: +212..." ou
+"Endereço: Boulevard..." eram tratadas como descrição livre,
+poluindo o campo `descricao` dos items.
+
+**Mudança em `js/services/portalPdfParser.js`**:
+
+- **`CONTACT_PREFIXES`** — tabela de regex por campo:
+  - `telefone`: `tel | telefone | fone | phone | telephone | whatsapp | wpp`
+  - `site`: `site | website | url | link | web`
+  - `endereco`: `endereço | endereco | address | end. | location | local`
+  - `email`: `email | e-mail | correio` (concatena em telefone se vazio)
+  - Aceita separadores `:`, `.`, `-`, `–` opcionais.
+
+- **`extractContactFields`** reescrito: varre na ordem (start→end)
+  em vez de backwards, classifica cada linha pelo prefix, faz
+  fallback de endereço pra última linha com dígito ou keyword
+  de rua (Boulevard, Avenida, Rue, etc).
+
+**Validação no Chrome**: rodar com DOCX sintético deve agora
+preencher corretamente endereco/telefone/site dos items.
+
+---
+
 ## [4.49.67+20260521-portal-import-parser-title-case-items] — 2026-05-21
 
 Release **PATCH** — Portal de Dicas/Importação: parser aceita

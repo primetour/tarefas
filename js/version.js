@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 67,
-  build: '20260521-portal-import-parser-title-case-items',
+  patch: 68,
+  build: '20260521-portal-import-parser-contact-prefixes',
 };
 
 /** "1.2.0" */

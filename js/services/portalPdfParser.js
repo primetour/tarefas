@@ -407,40 +407,55 @@ function parseClima(lines) {
 
 /* ─── Description / location parsing for items ──────────── */
 // Para place_list (ATRAÇÕES/RESTAURANTES/...), detecta endereço/telefone/link
+/** v4.49.68+ Regexes de prefix expandidas. Antes só pegava "Tel:" e
+ *  "Link:". Agora reconhece Telefone/Phone/Fone/WhatsApp/Site/Website/
+ *  URL/Endereço/End./Address/Email — incluindo variações com acento
+ *  e Title Case. */
+const CONTACT_PREFIXES = {
+  telefone: /^(?:tel(?:efone|\.|\b)|fone|phone|telephone|whatsapp|wpp)\s*[:.\-–]?\s*/i,
+  site:     /^(?:site|website|url|link|web)\s*[:.\-–]?\s*/i,
+  endereco: /^(?:endere[cç]o|address|end\.|location|local)\s*[:.\-–]?\s*/i,
+  email:    /^(?:e-?mail|email|correio)\s*[:.\-–]?\s*/i,
+};
+
+function _stripPrefix(line, regex) {
+  return line.replace(regex, '').trim();
+}
+
 function extractContactFields(block) {
   // block = array of lines (primeira linha já é o título, ignoramos aqui)
   const body = block.slice(1);
   let telefone = '', site = '', endereco = '';
-  const descLines = [];
-
-  // Varre de trás para frente catando Tel./Link e endereço
   const tail = [];
-  for (let i = body.length - 1; i >= 0; i--) {
-    const l = body[i];
-    if (/^tel\.?\s*[:]?/i.test(l)) {
-      telefone = l.replace(/^tel\.?\s*[:]?\s*/i, '').trim();
-    } else if (/^link\s*[:]/i.test(l)) {
-      site = l.replace(/^link\s*[:]\s*/i, '').trim();
-    } else if (!telefone && !site && !endereco && l && !descLines.length && tail.length === 0) {
-      // linha imediatamente acima dos contatos (se ainda não pegou nada) é o endereço
-      tail.unshift(l);
+
+  // v4.49.68+ Varre na ORDEM (start → end) pra preservar a sequência natural
+  // do texto. Antes varria backwards pra agarrar tel/link no fim, mas com os
+  // prefixes explícitos não precisa.
+  for (const l of body) {
+    if (!l || !l.trim()) continue;
+
+    if (CONTACT_PREFIXES.telefone.test(l)) {
+      telefone = _stripPrefix(l, CONTACT_PREFIXES.telefone);
+    } else if (CONTACT_PREFIXES.site.test(l)) {
+      site = _stripPrefix(l, CONTACT_PREFIXES.site);
+    } else if (CONTACT_PREFIXES.endereco.test(l)) {
+      endereco = _stripPrefix(l, CONTACT_PREFIXES.endereco);
+    } else if (CONTACT_PREFIXES.email.test(l)) {
+      // sem campo dedicado pra email — concatena no telefone se vazio,
+      // senão deixa no descricao
+      if (!telefone) telefone = _stripPrefix(l, CONTACT_PREFIXES.email);
+      else tail.push(l);
     } else {
-      tail.unshift(l);
+      tail.push(l);
     }
   }
 
-  // Se não achou tel/link, mas a última linha parece endereço, usa como endereço
-  if (!telefone && !site && tail.length > 1) {
+  // Fallback: se não encontrou endereco via prefix, e a última linha de
+  // tail tem dígitos OU palavras-chave de rua, usa como endereço.
+  if (!endereco && tail.length > 1) {
     const last = tail[tail.length - 1];
-    if (/\d/.test(last) || /street|avenue|road|rue|strasse|rua|avenida/i.test(last)) {
+    if (/\d/.test(last) || /street|avenue|road|rue|strasse|rua|avenida|boulevard|av\./i.test(last)) {
       endereco = last;
-      tail.pop();
-    }
-  } else if (tail.length) {
-    // A "última linha útil" de tail é o endereço (linha acima de tel/link)
-    // Se ainda não definiu, usa-a.
-    if (!endereco) {
-      endereco = tail[tail.length - 1];
       tail.pop();
     }
   }
