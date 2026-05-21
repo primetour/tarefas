@@ -231,6 +231,21 @@
   background: #0a1f3e;
 }
 
+/* Operadora: nav centralizado entre logo e CTA (display:contents promove
+ * logo + nav a filhos diretos do __inner, que é justify-content:space-between).
+ * CTA em teal em vez do azul padrão. */
+@media (min-width: 1024px) {
+  .btg-header-operadora .btg-header__left { display: contents; }
+}
+
+.btg-header-operadora .btg-header__cta {
+  background: var(--operadora-cta);
+}
+
+.btg-header-operadora .btg-header__cta:hover {
+  background: var(--operadora-cta-hover);
+}
+
 .btg-mobile-menu--open .btg-mobile-menu__panel {
   transform: translateY(0);
   opacity: 1;

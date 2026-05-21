@@ -33,14 +33,13 @@ const FOOTERS = {
 export function renderBtgFooter(container, brand) {
   const cfg = FOOTERS[brand];
   if (!cfg) return;
+  // Rodapé fino centralizado — paridade com o btg-pactual (OperadoraFooter
+  // / PartnersFooter): só a linha de copyright, sem logo nem colunas.
   container.innerHTML = `
-    <footer class="btg-footer" style="background:${cfg.bg};color:${cfg.text};">
-      <div class="btg-container btg-footer__inner">
-        <img src="${cfg.logo}" alt="${cfg.title}" class="btg-footer__logo" style="filter:${cfg.invert ? 'brightness(0) invert(1) opacity(.85)' : 'none'};" />
-        <p class="btg-footer__copy">
-          © ${new Date().getFullYear()} ${cfg.title} · Operado por Primetour Viagens e Experiências.
-        </p>
-      </div>
+    <footer class="btg-footer" style="background:${cfg.bg};padding:32px 20px;text-align:center;">
+      <p style="font-size:14px;line-height:1.5;color:rgba(255,255,255,0.6);">
+        Copyright © ${new Date().getFullYear()}. Todos os direitos reservados.
+      </p>
     </footer>
   `;
 }

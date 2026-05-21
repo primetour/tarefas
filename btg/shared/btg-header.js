@@ -40,7 +40,7 @@ const NAV_PARTNERS_ULTRABLUE = [
 ];
 
 const NAV_OPERADORA = [
-  { label: 'Feriados', href: '/btg/operadora/viagens/feriados/' },
+  { label: 'Feriados e Datas Especiais', href: '/btg/operadora/viagens/feriados/' },
   { label: 'Destinos', href: '/btg/operadora/viagens/destinos/' },
   { label: 'Hospedagem', href: '/btg/operadora/viagens/hospedagem/' },
   { label: 'Aéreo & Transfers', href: '/btg/operadora/viagens/aereo-transfers/' },
@@ -88,9 +88,11 @@ const BRAND_CONFIG = {
     logoAlt: 'Primetour Viagens & Experiências',
     logoClass: 'btg-logo btg-logo--operadora',
     nav: NAV_OPERADORA,
+    // Operadora usa e-mail (não WhatsApp) no CTA do cabeçalho.
     conciergeUrl:
-      'https://wa.me/551148621680?text=' +
+      'mailto:operadora@primetouroperator.com.br?subject=' +
       encodeURIComponent('Operadora Primetour: Quero falar sobre as ofertas'),
+    ctaLabel: 'Solicite um atendimento',
     cssClass: 'btg-header-operadora',
   },
 };
@@ -138,7 +140,7 @@ export function renderBtgHeader(container, brand) {
           ${icon('menu', 'icon-lg')}
         </button>
         <a href="${cfg.conciergeUrl}" target="_blank" rel="noopener" class="btg-header__cta">
-          Quero falar com meu concierge ${icon('arrow-up-right', 'icon-sm')}
+          ${cfg.ctaLabel || 'Quero falar com meu concierge'} ${icon('arrow-up-right', 'icon-sm')}
         </a>
       </div>
 
@@ -155,7 +157,7 @@ export function renderBtgHeader(container, brand) {
             ${nav.map((item) => renderMobileNavItem(item)).join('')}
           </nav>
           <a href="${cfg.conciergeUrl}" target="_blank" rel="noopener" class="btg-cta-wp btg-mobile-menu__cta">
-            Quero falar com meu concierge ${icon('arrow-up-right', 'icon-sm')}
+            ${cfg.ctaLabel || 'Quero falar com meu concierge'} ${icon('arrow-up-right', 'icon-sm')}
           </a>
         </div>
       </div>

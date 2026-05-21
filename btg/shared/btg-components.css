@@ -10,26 +10,22 @@
   padding: 56px 0;
 }
 
+/* Centralizado/empilhado — paridade com o btg-pactual (título + descrição
+ * + botão, todos centrados). Antes era flex-row title-left/button-right. */
 .btg-closing-cta__inner {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
+  text-align: center;
   gap: 24px;
-}
-
-@media (min-width: 768px) {
-  .btg-closing-cta__inner {
-    flex-direction: row;
-    align-items: center;
-    justify-content: space-between;
-  }
 }
 
 .btg-closing-cta__title {
   font-size: 32px;
   font-weight: 300;
   line-height: 1.15;
-  max-width: 580px;
+  max-width: 720px;
+  margin: 0 auto;
 }
 
 @media (min-width: 768px) {
@@ -37,7 +33,7 @@
 }
 
 .btg-closing-cta__desc {
-  margin-top: 12px;
+  margin: 12px auto 0;
   font-size: 16px;
   line-height: 1.4;
   opacity: 0.85;
