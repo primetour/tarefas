@@ -5,6 +5,7 @@
  */
 
 import { fetchTasks, updateTask, PRIORITY_MAP }  from '../services/tasks.js';
+import { fetchProjects }              from '../services/projects.js';
 import { openTaskModal }             from '../components/taskModal.js';
 import { store, routeGuard }         from '../store.js';
 import {
@@ -28,14 +29,36 @@ let currentDate    = new Date();
 let activeView     = 'standard';  // 'standard' | 'pipeline'
 let activeGran     = 'month';     // 'month' | 'week' | 'day'
 let pipelineTypeId = '';
-let calFilterState = { sector: null, type: null, project: null, area: null, assignee: null, observer: null };
+// v4.49.51+ 'area' removido do filtro (legado, redundante com 'sector').
+// 'squad' e 'status' adicionados conforme pedido.
+let calFilterState = { sector: null, type: null, project: null, squad: null, status: null, assignee: null, observer: null };
 
+// 4.48.4+ Persistência de filtros do Calendário em localStorage
+const CAL_FILTER_KEY = 'calendar.filterState.v1';
+function _saveCalFilters() {
+  try { localStorage.setItem(CAL_FILTER_KEY, JSON.stringify(calFilterState)); } catch {}
+}
+function _loadCalFilters() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(CAL_FILTER_KEY) || '{}');
+    // v4.49.51+ Aceita squad/status; descarta 'area' se vier de save legado.
+    ['sector','type','project','squad','status','assignee','observer'].forEach(k => {
+      if (saved[k] !== undefined) calFilterState[k] = saved[k];
+    });
+  } catch {}
+}
 function initCalFilterState() {
+  _loadCalFilters();
   if (!calFilterState.sector) {
     const sectors = store.getVisibleSectors();
     if (sectors && sectors.length === 1) calFilterState.sector = sectors[0];
   }
 }
+
+// 4.49.3+ Cache local de projetos pra esta página (não depende mais de
+// store.get('projects') que vinha vazio quando user navegava direto pra
+// #calendar sem passar antes em #projects). Filtro/listing usa esta lista.
+let _calProjects = [];
 
 /* ─── Main render ────────────────────────────────────────── */
 export async function renderCalendar(container) {
@@ -47,11 +70,21 @@ export async function renderCalendar(container) {
       await loadTaskTypes();
     } catch {}
   }
+  // 4.49.3+ Carrega projetos via fetchProjects({ allWorkspaces:true }) pra
+  // garantir que o filtro mostre TODOS os projetos do sistema, não só os do
+  // squad ativo (calendário é visão cross-squad). Idem pra contentCalendar.js.
+  try {
+    _calProjects = await fetchProjects({ allWorkspaces: true });
+  } catch (e) {
+    console.warn('[Calendar] fetchProjects falhou:', e?.message);
+    _calProjects = store.get('projects') || [];
+  }
   const taskTypes    = store.get('taskTypes') || [];
-  const userSectors  = store.getVisibleSectors();
+  // 4.49.3+ pipeTypes sem filtro de sector. Master sempre via tudo (visible=null);
+  // pra outros roles, mostra todos os tipos com steps/slots — user filtra na UI
+  // se quiser. Antes escondia tipos de outro setor mesmo do dropdown.
   const pipeTypes    = taskTypes.filter(t =>
-    ((t.fields?.length||0)+(t.steps?.length||0)+(t.scheduleSlots?.length||0) > 0) &&
-    (!t.sector || userSectors === null || userSectors.includes(t.sector))
+    ((t.fields?.length||0)+(t.steps?.length||0)+(t.scheduleSlots?.length||0) > 0)
   );
   if (!pipelineTypeId && pipeTypes.length) pipelineTypeId = pipeTypes[0].id;
 
@@ -160,15 +193,18 @@ async function load() {
 function renderFilters() {
   const wrap = document.getElementById('cal-filter-bar');
   if (!wrap) return;
-  const projects  = store.get('projects') || [];
+  // 4.49.3+ Usa _calProjects (carregado em renderCalendar via fetchProjects
+  // allWorkspaces) em vez de store.get('projects') que costumava estar vazio.
+  const projects  = _calProjects;
   const taskTypes = store.get('taskTypes') || [];
   wrap.innerHTML = renderFilterBar({
-    show: ['sector','type','project','area','assignee','observer','meta'],
+    // v4.49.51+ 'area' removido (legado), 'squad' e 'status' adicionados.
+    show: ['sector','type','project','squad','status','assignee','observer','meta'],
     state: calFilterState,
     taskTypes, projects,
     users: store.get('users') || [],
   });
-  bindFilterBar(wrap, calFilterState, () => render(), { taskTypes, projects, users: store.get('users') || [] });
+  bindFilterBar(wrap, calFilterState, () => { _saveCalFilters(); render(); }, { taskTypes, projects, users: store.get('users') || [] });
 }
 
 function render() {
@@ -185,17 +221,34 @@ function renderAgendaView() {
 }
 
 /* ─── Slot helpers ───────────────────────────────────────── */
-function getSlotsForDate(date, typeId = null) {
+// 4.49.4+ getSlotsForDate agora aceita FILTROS da toolbar.
+//
+// Bug que isso resolve: usuário selecionava um tipo de tarefa no filtro do
+// calendário, mas os slots virtuais (cards tracejados que vêm de
+// taskType.scheduleSlots[]) continuavam aparecendo de TODOS os tipos.
+// Resultado: filtro só limitava as tarefas REAIS, slots ignoravam.
+//
+// Agora aceita opts = { typeId, sector } (back-compat: 2º arg como string vira typeId).
+// - Se `typeId` definido → mostra só slots desse tipo
+// - Se `sector` definido (sem typeId) → mostra só slots de tipos daquele setor
+// - Sem nenhum dos dois → comportamento antigo (visibleSectors do user)
+function getSlotsForDate(date, opts = null) {
+  // Compat: chamadores antigos passavam (date, typeId:string)
+  const filters = (typeof opts === 'string') ? { typeId: opts } : (opts || {});
+  const { typeId = null, sector = null } = filters;
+
   const taskTypes = store.get('taskTypes') || [];
   const all = [];
   const y = date.getFullYear(), m = date.getMonth(), d = date.getDate();
   const dow = date.getDay();
   const iso = `${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
 
-  // Filter by typeId if specified, otherwise by user's visible sectors
+  // Filtros explícitos (toolbar) têm precedência sobre visibleSectors do user
   let typesToCheck;
   if (typeId) {
     typesToCheck = taskTypes.filter(t => t.id === typeId);
+  } else if (sector) {
+    typesToCheck = taskTypes.filter(t => t.sector === sector);
   } else {
     const visibleSectors = store.getVisibleSectors();
     typesToCheck = visibleSectors === null
@@ -427,7 +480,11 @@ function renderMonth() {
       color:var(--text-muted);background:var(--bg-deepest);">${d}</div>`).join('')}
     ${cells.map(cell=>{
       const tasks = cell.cur?(taskMap[cell.day]||[]):[];
-      const slots = cell.cur?getSlotsForDate(new Date(y,m,cell.day), activeView==='pipeline'?pipelineTypeId:null):[];
+      const slots = cell.cur ? getSlotsForDate(new Date(y,m,cell.day),
+        activeView === 'pipeline'
+          ? { typeId: pipelineTypeId }
+          : { typeId: calFilterState.type, sector: calFilterState.sector }
+      ) : [];
       const isToday=cell.cur&&today.getDate()===cell.day&&today.getMonth()===m&&today.getFullYear()===y;
       const dateStr=cell.cur?`${y}-${String(m+1).padStart(2,'0')}-${String(cell.day).padStart(2,'0')}`:'' ;
       // Match slots to tasks (unify visual)
@@ -514,7 +571,11 @@ function renderWeek() {
     <div style="background:var(--bg-deepest);padding:8px 4px;"></div>
     ${days.map((d,i)=>{
       const isToday = d.getTime()===today.getTime();
-      const slots   = getSlotsForDate(d, activeView==='pipeline'?pipelineTypeId:null);
+      const slots   = getSlotsForDate(d,
+        activeView === 'pipeline'
+          ? { typeId: pipelineTypeId }
+          : { typeId: calFilterState.type, sector: calFilterState.sector }
+      );
       const dayTasks = tasksByDay[i] || [];
       const matchedIds = new Set();
       const slotRenders = slots.map(s => {
@@ -583,15 +644,25 @@ function renderDay() {
   const activeType = activeView==='pipeline'
     ? (store.get('taskTypes')||[]).find(t=>t.id===pipelineTypeId) : null;
 
+  // 4.49.4+ renderDay agora respeita TODOS os filtros do toolbar (type,
+  // sector, project, area, assignee, observer, meta) via buildFilterFn —
+  // antes só filtrava por pipelineTypeId. Bug visível: em modo standard,
+  // selecionar tipo na toolbar não escondia tarefas que não casavam.
+  const dayFilterFn = buildFilterFn(activeView === 'standard' ? calFilterState : {});
   const dayTasks = allTasks.filter(t=>{
     if (activeType && t.typeId!==pipelineTypeId) return false;
+    if (!dayFilterFn(t)) return false;
     const df=t.dueDate||t.startDate;
     if(!df) return false;
     const td=df?.toDate?df.toDate():new Date(df); td.setHours(0,0,0,0);
     return td.getTime()===dMid.getTime();
   });
 
-  const daySlots = getSlotsForDate(dMid, activeView==='pipeline'?pipelineTypeId:null);
+  const daySlots = getSlotsForDate(dMid,
+    activeView === 'pipeline'
+      ? { typeId: pipelineTypeId }
+      : { typeId: calFilterState.type, sector: calFilterState.sector }
+  );
   const dateLabel = `${PT_DAYS_L[d.getDay()]}, ${d.getDate()} de ${PT_MONTHS[d.getMonth()]} ${d.getFullYear()}`;
 
   el.innerHTML = navBar(dateLabel,
@@ -696,7 +767,12 @@ function renderMiniMonth() {
     const iso=`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
     const isCur=d===currentDate.getDate();
     const isToday=d===today.getDate()&&m===today.getMonth()&&y===today.getFullYear();
-    const slots=getSlotsForDate(new Date(y,m,d));
+    // 4.49.4+ mini-month dot respeita filtros do toolbar pra ser consistente
+    const slots=getSlotsForDate(new Date(y,m,d),
+      activeView === 'pipeline'
+        ? { typeId: pipelineTypeId }
+        : { typeId: calFilterState.type, sector: calFilterState.sector }
+    );
     html+=`<div class="mini-month-day" data-iso="${iso}" style="
       aspect-ratio:1;border-radius:50%;display:flex;align-items:center;justify-content:center;
       font-size:0.6875rem;cursor:pointer;position:relative;
@@ -763,8 +839,10 @@ function renderAgendaMonth() {
   while(cells.length%7!==0) cells.push({day:new Date(y,m+1,cells.length-firstDay-daysInM+1),cur:false});
 
   // Count total slots this month
+  // 4.49.4+ Filtra pelo pipelineTypeId selecionado pra contagem consistente
+  // com o que é renderizado (linha abaixo). Antes contava todos os tipos.
   let totalSlots=0;
-  for(let d=1;d<=daysInM;d++) totalSlots+=getSlotsForDate(new Date(y,m,d)).length;
+  for(let d=1;d<=daysInM;d++) totalSlots+=getSlotsForDate(new Date(y,m,d), pipelineTypeId).length;
 
   el.innerHTML = agendaHeader() + navBar(`${PT_MONTHS[m]} ${y}`, `${totalSlots} slot${totalSlots!==1?'s':''} este mês`) + `
   <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:var(--border-subtle);

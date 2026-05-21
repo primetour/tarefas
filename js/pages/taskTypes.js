@@ -223,7 +223,7 @@ function openTypeModal(type = null) {
       <!-- Area + color -->
       <div style="display:grid;grid-template-columns:1fr 110px;gap:8px;align-items:center;">
         <input type="text" class="form-input tt-slot-area" value="${esc(s.requestingArea||'')}"
-          placeholder="Área solicitante (opcional)" style="font-size:0.875rem;" />
+          placeholder="Setor solicitante (opcional)" style="font-size:0.875rem;" />
         <div style="display:flex;align-items:center;gap:6px;">
           <input type="color" class="tt-slot-color" value="${s.color||'#D4A843'}"
             style="height:34px;width:40px;padding:2px;border:1px solid var(--border-subtle);

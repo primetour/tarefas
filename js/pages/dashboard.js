@@ -15,6 +15,17 @@ import { fetchUserAbsences, fetchAllAbsences, ABSENCE_TYPES } from '../services/
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 export async function renderDashboard(container) {
+  // 4.49.11+ Guard granular: dashboard_home_view (antes era sem guard).
+  // Roles sem essa perm caem em "Acesso restrito" com sugestão de outro módulo.
+  if (!store.canViewHomeDashboard()) {
+    container.innerHTML = `<div class="empty-state" style="min-height:50vh;">
+      <div class="empty-state-icon">🔒</div>
+      <div class="empty-state-title">Sem acesso ao painel inicial</div>
+      <p class="text-sm text-muted mt-2">Seu role não tem permissão pra ver este dashboard.
+        Tente <a href="#tasks">Tarefas</a> ou <a href="#portal-tips">Portal de Dicas</a>.</p>
+    </div>`;
+    return;
+  }
   const profile = store.get('userProfile');
   const hour    = new Date().getHours();
   const greeting = hour < 12 ? 'Bom dia' : hour < 18 ? 'Boa tarde' : 'Boa noite';
@@ -221,11 +232,53 @@ export async function renderDashboard(container) {
       statCard('Concluídas hoje',    teamDoneToday.length, '✓',  'var(--color-success-bg)','var(--text-secondary)',             '#tasks?completedToday=1'),
     ].join('') : '';
 
+    // 4.49.12+ Cards de "Acesso rápido aos dashboards" — renderiza
+    // chips clicáveis apenas pros dashboards executivos que o user pode ver.
+    // Analista (só home) não vê esta seção; coord+ vê todos os disponíveis.
+    const dashboardShortcuts = [];
+    if (store.canViewProductivityDashboard()) {
+      dashboardShortcuts.push({ icon: '📊', label: 'Produtividade',   route: '#dashboards',        bg: 'rgba(212,168,67,0.10)',  color: 'var(--brand-gold)' });
+    }
+    if (store.canViewPortalDashboard()) {
+      dashboardShortcuts.push({ icon: '🌍', label: 'Portal de Dicas', route: '#portal-dashboard',  bg: 'rgba(56,189,248,0.10)',  color: 'var(--role-manager)' });
+    }
+    if (store.canViewRoteirosDashboard()) {
+      dashboardShortcuts.push({ icon: '✈',  label: 'Roteiros',        route: '#roteiro-dashboard', bg: 'rgba(167,139,250,0.10)', color: '#A78BFA' });
+    }
+    if (store.canViewCsatDashboard()) {
+      dashboardShortcuts.push({ icon: '💬', label: 'CSAT',            route: '#csat',              bg: 'rgba(34,197,94,0.10)',   color: 'var(--color-success)' });
+    }
+    if (store.isMaster() || store.can('ai_dashboard_view')) {
+      dashboardShortcuts.push({ icon: '◈',  label: 'IA Hub',          route: '#ai-hub',            bg: 'rgba(236,72,153,0.10)',  color: '#EC4899' });
+    }
+    if (store.isMaster() || store.can('site_audit_view')) {
+      dashboardShortcuts.push({ icon: '⚡', label: 'Site Audit',      route: '#ga-performance',    bg: 'rgba(245,158,11,0.10)',  color: '#F59E0B' });
+    }
+    const dashboardShortcutsHTML = dashboardShortcuts.length ? `
+      ${sectionLabel('🚀 Acesso rápido aos dashboards')}
+      <div class="dash-stats-row">
+        ${dashboardShortcuts.map(s => `
+          <a href="${s.route}" class="stat-card"
+             style="background:${s.bg};text-decoration:none;display:flex;align-items:center;gap:10px;padding:14px 16px;
+                    border:1px solid ${s.color}22;border-radius:var(--radius-md);cursor:pointer;transition:transform 0.1s;"
+             onmouseover="this.style.transform='translateY(-2px)'"
+             onmouseout="this.style.transform=''">
+            <span style="font-size:1.6rem;">${s.icon}</span>
+            <div style="display:flex;flex-direction:column;gap:1px;">
+              <span style="font-size:0.6875rem;font-weight:600;letter-spacing:0.05em;text-transform:uppercase;color:var(--text-muted);">DASHBOARD</span>
+              <span style="font-size:0.95rem;font-weight:600;color:${s.color};">${s.label}</span>
+            </div>
+          </a>
+        `).join('')}
+      </div>
+    ` : '';
+
     $stats.innerHTML = `
       ${sectionLabel('🎯 Meu desempenho')}
       ${cardsRow(myCards)}
       ${teamCards ? sectionLabel(sectorSel ? `🏢 Setor ${sectorSel}` : '🏢 Equipe / Setor') : ''}
       ${teamCards ? cardsRow(teamCards) : ''}
+      ${dashboardShortcutsHTML}
     `;
 
     // overdue mantido por compat — myOverdue já calculado acima
@@ -235,6 +288,52 @@ export async function renderDashboard(container) {
     const $main = document.getElementById('dash-main');
     if (!$main) return; // user navigated away
     $main.innerHTML = `
+      <!-- LEFT COLUMN: Meu Calendário (em cima) + Minhas Tarefas (4.49.17+) -->
+      <div style="display:flex;flex-direction:column;gap:16px;">
+
+      <!-- 4.49.17+ Meu Calendário NO TOPO (era embaixo de Minhas Tarefas).
+           Agenda visível + mini-mês sempre aberto. Tooltip nas células
+           mostra os títulos das tarefas. -->
+      <div class="card" id="dash-mini-cal-card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">📅 Meu Calendário</div>
+            <div class="card-subtitle" id="dash-mini-cal-summary"
+              style="font-size:0.75rem;color:var(--text-muted);"></div>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;">
+            <button class="btn btn-ghost btn-sm" onclick="location.hash='#calendar'"
+              style="padding:4px 10px;font-size:0.75rem;">Agenda completa →</button>
+          </div>
+        </div>
+        <div class="card-body" style="padding:0;">
+
+          <!-- AGENDA: próximos 14 dias agrupados por data, com título da tarefa -->
+          <div id="dash-mini-cal-upcoming" style="padding:8px 16px 4px;"></div>
+
+          <!-- MINI-MÊS: sempre aberto (4.49.17+ removido toggle) -->
+          <div style="border-top:1px solid var(--border-subtle);padding:10px 16px 14px;
+            background:var(--bg-surface);">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+              <span style="font-size:0.6875rem;font-weight:700;text-transform:uppercase;
+                letter-spacing:0.08em;color:var(--text-muted);">
+                Visão do mês — <span id="dash-mini-cal-subtitle" style="text-transform:none;letter-spacing:0;color:var(--text-secondary);">…</span>
+              </span>
+              <div id="dash-cal-nav" style="display:flex;gap:4px;align-items:center;">
+                <button class="btn btn-ghost btn-sm" id="dash-cal-prev" title="Mês anterior"
+                  style="padding:2px 8px;font-size:0.75rem;">◀</button>
+                <button class="btn btn-ghost btn-sm" id="dash-cal-today"
+                  style="padding:2px 8px;font-size:0.6875rem;">Hoje</button>
+                <button class="btn btn-ghost btn-sm" id="dash-cal-next" title="Próximo mês"
+                  style="padding:2px 8px;font-size:0.75rem;">▶</button>
+              </div>
+            </div>
+            <div id="dash-mini-cal-grid"></div>
+            <div id="dash-mini-cal-detail" style="margin-top:8px;"></div>
+          </div>
+        </div>
+      </div>
+
       <!-- My tasks card -->
       <div class="card">
         <div class="card-header">
@@ -329,6 +428,9 @@ export async function renderDashboard(container) {
           })()}
         </div>
       </div>
+
+      </div>
+      <!-- /LEFT COLUMN -->
 
       <!-- Right column -->
       <div style="display:flex;flex-direction:column;gap:16px;">
@@ -564,6 +666,10 @@ export async function renderDashboard(container) {
     // 4.24+ Mount Lembretes & Anotações (lazy import + render assíncrono)
     mountUserPanels(container);
 
+    // 4.49.15+ Mount Meu Calendário (mini-mês com tarefas do user)
+    mountMiniCalendar(myTasks, (task) =>
+      openTaskModal({ taskData: task, onSave: () => renderDashboard(container) }));
+
     // Bind task rows
     container.querySelectorAll('.dash-task-row[data-tid]').forEach(row => {
       row.addEventListener('click', () => {
@@ -596,6 +702,400 @@ export async function renderDashboard(container) {
     console.error('Dashboard error:', e);
     toast.error('Erro ao carregar dashboard: ' + e.message);
   }
+}
+
+/* ─── 4.49.15+ Mini-Calendário (Meu Painel) ───────────────────
+   Mini-grid mensal 6×7 das tarefas do user (assignees.includes uid)
+   ancoradas em dueDate. Cada dia mostra dots (1-3) com cor por status,
+   ou número de tarefas se > 3. Click no dia abre lista inline com as
+   tarefas daquele dia + link pra abrir a tarefa no modal padrão.
+
+   Performance: tudo client-side em cima de myTasks (já fetchado pelo
+   render principal). Render do mês é O(n) tarefas × O(42) células.
+*/
+function mountMiniCalendar(myTasks, onTaskClick) {
+  const grid       = document.getElementById('dash-mini-cal-grid');
+  const subtitle   = document.getElementById('dash-mini-cal-subtitle');
+  const summary    = document.getElementById('dash-mini-cal-summary');
+  const upcomingEl = document.getElementById('dash-mini-cal-upcoming');
+  const detailEl   = document.getElementById('dash-mini-cal-detail');
+  if (!grid) return;
+
+  // Cursor inicial: mês corrente. Mantemos referência ao "primeiro dia do mês"
+  // pra fugir de bugs de DST/timezone com dias 28-31.
+  const today = new Date(); today.setHours(0,0,0,0);
+  let cursor  = new Date(today.getFullYear(), today.getMonth(), 1);
+  let selectedDayKey = null; // YYYY-MM-DD
+
+  const MONTHS = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
+                  'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const DOW    = ['D','S','T','Q','Q','S','S']; // dom-sáb (estilo pt-BR compacto)
+  const WEEKDAYS = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
+
+  const dayKey = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  const fmtTime = (d) => `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+
+  // Indexa tarefas por dayKey do dueDate — só ativas (não cancelled).
+  // done conta também: user pode querer rever o que entregou no dia.
+  const tasksByDay = (() => {
+    const m = new Map();
+    for (const t of myTasks) {
+      if (!t.dueDate || t.status === 'cancelled') continue;
+      const d = t.dueDate?.toDate ? t.dueDate.toDate() : new Date(t.dueDate);
+      if (isNaN(d.getTime())) continue;
+      const key = dayKey(d);
+      if (!m.has(key)) m.set(key, []);
+      m.get(key).push({ task: t, dueObj: d });
+    }
+    // ordena cada dia por horário
+    for (const arr of m.values()) {
+      arr.sort((a,b) => a.dueObj - b.dueObj);
+    }
+    return m;
+  })();
+
+  // Cor do dot por status — alinhada ao resto do painel
+  const STATUS_COLOR = {
+    not_started: '#38BDF8',
+    in_progress: '#F59E0B',
+    review:      '#A78BFA',
+    rework:      '#F97316',
+    done:        '#22C55E',
+  };
+
+  function renderMonth() {
+    const year  = cursor.getFullYear();
+    const month = cursor.getMonth();
+    if (subtitle) subtitle.textContent = `${MONTHS[month]} ${year}`;
+
+    // Determina o range a renderizar: do domingo da semana do dia 1
+    // até completar 42 células (6 semanas) — padrão clássico de calendar.
+    const firstOfMonth = new Date(year, month, 1);
+    const startDay     = new Date(firstOfMonth);
+    startDay.setDate(startDay.getDate() - firstOfMonth.getDay()); // back to Sun
+
+    // Header com dias da semana
+    let html = `<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:6px;">`;
+    for (const d of DOW) {
+      html += `<div style="font-size:0.625rem;font-weight:700;text-transform:uppercase;
+        letter-spacing:0.05em;color:var(--text-muted);text-align:center;padding:2px 0;">${d}</div>`;
+    }
+    html += `</div>`;
+
+    // Cells
+    html += `<div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;">`;
+    for (let i = 0; i < 42; i++) {
+      const d = new Date(startDay);
+      d.setDate(startDay.getDate() + i);
+      const isOtherMonth = d.getMonth() !== month;
+      const isToday      = d.getTime() === today.getTime();
+      const isPast       = d < today;
+      const key          = dayKey(d);
+      const dayTasks     = tasksByDay.get(key) || [];
+      const isSelected   = key === selectedDayKey;
+
+      // Visual:
+      //   - bg sutil hoje (gold), fade pra outros meses
+      //   - borda dourada se selecionado
+      //   - dots empilhados pra cada tarefa (até 3); se >3 mostra "+N"
+      const cellBg =
+        isSelected ? 'rgba(212,168,67,0.18)' :
+        isToday    ? 'rgba(212,168,67,0.10)' :
+                     'transparent';
+      const cellBorder = isSelected ? '1px solid var(--brand-gold)' : '1px solid transparent';
+      const numColor =
+        isOtherMonth ? 'var(--text-muted)' :
+        isToday      ? 'var(--brand-gold)' :
+        isPast       ? 'var(--text-secondary)' :
+                       'var(--text-primary)';
+      const numWeight = isToday ? '700' : '500';
+
+      // Renderiza até 3 dots; se houver mais, dot final vira "+N"
+      let dotsHTML = '';
+      if (dayTasks.length) {
+        const limit = Math.min(3, dayTasks.length);
+        for (let j = 0; j < limit; j++) {
+          const t = dayTasks[j].task;
+          const c = STATUS_COLOR[t.status] || 'var(--text-muted)';
+          dotsHTML += `<span style="width:4px;height:4px;border-radius:50%;background:${c};"></span>`;
+        }
+        if (dayTasks.length > 3) {
+          dotsHTML += `<span style="font-size:0.5625rem;color:var(--text-muted);font-weight:600;line-height:1;margin-left:2px;">+${dayTasks.length-3}</span>`;
+        }
+      }
+
+      // 4.49.17+ Tooltip nativo (title) com os títulos das tarefas do dia.
+      // Mostra até 5 títulos, com horário se houver; se passar de 5, "+N".
+      let tooltipTitle = '';
+      if (dayTasks.length) {
+        const previews = dayTasks.slice(0, 5).map(({task: t, dueObj}) => {
+          const hh = (dueObj.getHours() || dueObj.getMinutes())
+            ? `${String(dueObj.getHours()).padStart(2,'0')}:${String(dueObj.getMinutes()).padStart(2,'0')} `
+            : '';
+          return `• ${hh}${(t.title || '').replace(/"/g,'')}`;
+        });
+        const header = `${dayTasks.length} tarefa${dayTasks.length!==1?'s':''} — ${d.getDate()}/${String(d.getMonth()+1).padStart(2,'0')}`;
+        const extra  = dayTasks.length > 5 ? `\n+${dayTasks.length-5} mais` : '';
+        tooltipTitle = `${header}\n${previews.join('\n')}${extra}`;
+      }
+
+      const cursorStyle = dayTasks.length ? 'cursor:pointer;' : 'cursor:default;';
+      html += `<div class="dash-cal-cell" data-day-key="${key}"
+        style="aspect-ratio:1;min-height:32px;border-radius:6px;
+          background:${cellBg};border:${cellBorder};
+          display:flex;flex-direction:column;align-items:center;justify-content:space-between;
+          padding:3px 2px;${cursorStyle}transition:background 0.12s;position:relative;"
+        ${tooltipTitle ? `title="${esc(tooltipTitle)}"` : ''}
+        onmouseover="if(${dayTasks.length}) this.style.background='rgba(212,168,67,0.10)'"
+        onmouseout="this.style.background='${cellBg}'">
+        <span style="font-size:0.6875rem;font-weight:${numWeight};color:${numColor};line-height:1.1;">
+          ${d.getDate()}
+        </span>
+        <div style="display:flex;align-items:center;gap:2px;min-height:6px;">${dotsHTML}</div>
+      </div>`;
+    }
+    html += `</div>`;
+
+    // Legenda — discreta
+    html += `<div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:8px;font-size:0.625rem;color:var(--text-muted);">
+      ${Object.entries({not_started:'A fazer',in_progress:'Em andamento',review:'Revisão',rework:'Retrabalho',done:'Concluída'})
+        .map(([k,l]) => `<span style="display:inline-flex;align-items:center;gap:4px;">
+          <span style="width:6px;height:6px;border-radius:50%;background:${STATUS_COLOR[k]};"></span>${l}
+        </span>`).join('')}
+    </div>`;
+
+    grid.innerHTML = html;
+
+    // Wire clicks: toggle detail
+    grid.querySelectorAll('.dash-cal-cell').forEach(cell => {
+      const key = cell.dataset.dayKey;
+      const list = tasksByDay.get(key) || [];
+      if (!list.length) return;
+      cell.addEventListener('click', () => {
+        selectedDayKey = (selectedDayKey === key) ? null : key;
+        renderMonth();
+        renderDetail();
+      });
+    });
+  }
+
+  function renderDetail() {
+    if (!detailEl) return;
+    if (!selectedDayKey) { detailEl.innerHTML = ''; return; }
+    const list = tasksByDay.get(selectedDayKey) || [];
+    if (!list.length) { detailEl.innerHTML = ''; return; }
+
+    // Header do detalhe: data legível + contador
+    const [y,m,d] = selectedDayKey.split('-').map(Number);
+    const dateObj = new Date(y, m-1, d);
+    const dateLabel = dateObj.toLocaleDateString('pt-BR', {
+      weekday:'long', day:'2-digit', month:'long'
+    });
+
+    detailEl.innerHTML = `
+      <div style="border-top:1px solid var(--border-subtle);padding-top:10px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+          <div style="font-size:0.75rem;font-weight:600;color:var(--text-secondary);text-transform:capitalize;">
+            ${esc(dateLabel)} · ${list.length} tarefa${list.length!==1?'s':''}
+          </div>
+          <button id="dash-cal-clear" style="background:none;border:none;cursor:pointer;
+            color:var(--text-muted);font-size:0.6875rem;padding:2px 6px;">Fechar</button>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          ${list.map(({task: t, dueObj}) => {
+            const c = STATUS_COLOR[t.status] || 'var(--text-muted)';
+            const stLabel = STATUS_MAP[t.status]?.label || t.status;
+            const hasTime = dueObj.getHours() || dueObj.getMinutes();
+            return `<div class="dash-cal-task-row" data-tid="${esc(t.id)}"
+              style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;
+                background:var(--bg-card);cursor:pointer;font-size:0.8125rem;
+                transition:background 0.12s;"
+              onmouseover="this.style.background='var(--bg-hover, rgba(212,168,67,0.06))'"
+              onmouseout="this.style.background='var(--bg-card)'">
+              <span style="width:6px;height:6px;border-radius:50%;background:${c};flex-shrink:0;"></span>
+              ${hasTime ? `<span style="font-size:0.6875rem;color:var(--text-muted);font-variant-numeric:tabular-nums;flex-shrink:0;">${fmtTime(dueObj)}</span>` : ''}
+              <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-primary);">
+                ${esc(t.title)}
+              </span>
+              <span style="font-size:0.625rem;color:var(--text-muted);white-space:nowrap;">
+                ${esc(stLabel)}
+              </span>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>`;
+
+    detailEl.querySelector('#dash-cal-clear')?.addEventListener('click', () => {
+      selectedDayKey = null;
+      renderMonth();
+      renderDetail();
+    });
+    detailEl.querySelectorAll('.dash-cal-task-row[data-tid]').forEach(row => {
+      row.addEventListener('click', () => {
+        const t = myTasks.find(x => x.id === row.dataset.tid);
+        if (t) onTaskClick?.(t);
+      });
+    });
+  }
+
+  /* ─── Agenda dos próximos dias ───────────────────────────────
+     v4.49.16+ — Mostra próximos 14 dias com TÍTULO de cada tarefa
+     pra user saber na hora o que tem (não só dot). Agrupa por dia,
+     prioriza HOJE/AMANHÃ com header destacado. */
+  function renderUpcoming() {
+    if (!upcomingEl) return;
+    const HORIZON_DAYS = 14;
+    const horizonEnd = new Date(today);
+    horizonEnd.setDate(today.getDate() + HORIZON_DAYS);
+
+    // Pega tarefas atrasadas (não-done) + próximas 14 dias
+    const overdueList = [];
+    const upcomingByDay = []; // [{date, key, items}]
+    for (let i = 0; i < HORIZON_DAYS; i++) {
+      const d = new Date(today);
+      d.setDate(today.getDate() + i);
+      const k = dayKey(d);
+      const items = (tasksByDay.get(k) || []).filter(({task}) => task.status !== 'done');
+      if (items.length) upcomingByDay.push({ date: d, key: k, items });
+    }
+    // Atrasadas: anteriores a hoje, status != done
+    for (const [k, arr] of tasksByDay.entries()) {
+      const [y,m,d] = k.split('-').map(Number);
+      const dt = new Date(y, m-1, d);
+      if (dt < today) {
+        for (const entry of arr) {
+          if (entry.task.status !== 'done') overdueList.push(entry);
+        }
+      }
+    }
+    overdueList.sort((a,b) => a.dueObj - b.dueObj);
+
+    // Resumo no header
+    const totalUpcoming = upcomingByDay.reduce((sum, d) => sum + d.items.length, 0);
+    const todayCount    = upcomingByDay.find(d => d.key === dayKey(today))?.items.length || 0;
+    if (summary) {
+      const parts = [];
+      if (todayCount)         parts.push(`<strong style="color:var(--brand-gold);">${todayCount} hoje</strong>`);
+      if (overdueList.length) parts.push(`<strong style="color:var(--color-danger);">${overdueList.length} em atraso</strong>`);
+      if (totalUpcoming - todayCount > 0)
+        parts.push(`${totalUpcoming - todayCount} próximos`);
+      summary.innerHTML = parts.length ? parts.join(' · ') : 'Sem compromissos nos próximos 14 dias';
+    }
+
+    // Render
+    if (!overdueList.length && !upcomingByDay.length) {
+      upcomingEl.innerHTML = `
+        <div style="padding:24px 8px;text-align:center;color:var(--text-muted);font-size:0.8125rem;">
+          🎉 Sem tarefas com data marcada nos próximos 14 dias.
+          <div style="font-size:0.6875rem;margin-top:6px;">
+            Tarefas com <em>data de vencimento</em> aparecem aqui.
+          </div>
+        </div>`;
+      return;
+    }
+
+    const taskRow = ({task: t, dueObj}, opts={}) => {
+      const c = STATUS_COLOR[t.status] || 'var(--text-muted)';
+      const stLabel = STATUS_MAP[t.status]?.label || t.status;
+      const hasTime = dueObj.getHours() || dueObj.getMinutes();
+      const overdue = opts.overdue;
+      const accent  = overdue ? '#EF4444' : c;
+      return `<div class="dash-up-task" data-tid="${esc(t.id)}"
+        style="display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:6px;
+          background:var(--bg-surface);cursor:pointer;font-size:0.8125rem;
+          border-left:3px solid ${accent};transition:background 0.12s;"
+        onmouseover="this.style.background='rgba(212,168,67,0.08)'"
+        onmouseout="this.style.background='var(--bg-surface)'">
+        ${hasTime ? `<span style="font-size:0.6875rem;color:var(--text-muted);font-weight:600;
+          font-variant-numeric:tabular-nums;flex-shrink:0;min-width:36px;">${fmtTime(dueObj)}</span>` : ''}
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-primary);">
+          ${esc(t.title)}
+        </span>
+        <span style="font-size:0.625rem;color:var(--text-muted);white-space:nowrap;
+          padding:1px 6px;border-radius:var(--radius-full);background:var(--bg-card);">
+          ${esc(stLabel)}
+        </span>
+      </div>`;
+    };
+
+    const dayHeader = (date, key, count) => {
+      const diff = Math.round((date - today) / 86400000);
+      let label;
+      if (diff === 0)      label = `<strong style="color:var(--brand-gold);">Hoje</strong>`;
+      else if (diff === 1) label = `<strong>Amanhã</strong>`;
+      else if (diff < 7)   label = `<strong>${WEEKDAYS[date.getDay()]}</strong>`;
+      else                 label = `<strong>${WEEKDAYS[date.getDay()].slice(0,3)}, ${date.getDate()}/${String(date.getMonth()+1).padStart(2,'0')}</strong>`;
+
+      const dateSuffix = (diff > 0 && diff < 7)
+        ? ` <span style="color:var(--text-muted);font-weight:400;">${date.getDate()}/${String(date.getMonth()+1).padStart(2,'0')}</span>`
+        : '';
+
+      return `<div style="display:flex;align-items:center;justify-content:space-between;
+        margin:10px 0 4px;font-size:0.75rem;color:var(--text-secondary);">
+        <span>${label}${dateSuffix}</span>
+        <span style="font-size:0.6875rem;color:var(--text-muted);">${count} tarefa${count!==1?'s':''}</span>
+      </div>`;
+    };
+
+    let html = '';
+
+    // Atrasadas — sempre no topo se houver
+    if (overdueList.length) {
+      html += `<div style="display:flex;align-items:center;justify-content:space-between;
+        margin:6px 0 4px;font-size:0.75rem;">
+        <span style="color:var(--color-danger);font-weight:600;">⚠ Em atraso</span>
+        <span style="font-size:0.6875rem;color:var(--text-muted);">${overdueList.length} tarefa${overdueList.length!==1?'s':''}</span>
+      </div>`;
+      html += `<div style="display:flex;flex-direction:column;gap:4px;">`;
+      html += overdueList.slice(0, 5).map(e => taskRow(e, {overdue:true})).join('');
+      if (overdueList.length > 5) {
+        html += `<a href="#tasks?assignee=me&status=overdue" style="font-size:0.6875rem;
+          color:var(--brand-gold);text-decoration:none;padding:4px 0;text-align:center;">
+          + ${overdueList.length-5} atrasadas →
+        </a>`;
+      }
+      html += `</div>`;
+    }
+
+    // Próximos dias com tarefas
+    for (const day of upcomingByDay) {
+      html += dayHeader(day.date, day.key, day.items.length);
+      html += `<div style="display:flex;flex-direction:column;gap:4px;">`;
+      html += day.items.map(e => taskRow(e)).join('');
+      html += `</div>`;
+    }
+
+    upcomingEl.innerHTML = html;
+
+    upcomingEl.querySelectorAll('.dash-up-task[data-tid]').forEach(row => {
+      row.addEventListener('click', () => {
+        const t = myTasks.find(x => x.id === row.dataset.tid);
+        if (t) onTaskClick?.(t);
+      });
+    });
+  }
+
+  // Wire nav buttons (uma vez — botões são reescritos pelo card mas só uma
+  // instância do mount roda por render do dashboard).
+  document.getElementById('dash-cal-prev')?.addEventListener('click', () => {
+    cursor = new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1);
+    selectedDayKey = null;
+    renderMonth(); renderDetail();
+  });
+  document.getElementById('dash-cal-next')?.addEventListener('click', () => {
+    cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+    selectedDayKey = null;
+    renderMonth(); renderDetail();
+  });
+  document.getElementById('dash-cal-today')?.addEventListener('click', () => {
+    cursor = new Date(today.getFullYear(), today.getMonth(), 1);
+    selectedDayKey = dayKey(today);
+    renderMonth(); renderDetail();
+  });
+
+  // 4.49.17+ Inicial: agenda + mini-mês ambos visíveis (toggle removido)
+  renderUpcoming();
+  renderMonth();
 }
 
 /* ─── Helpers ─────────────────────────────────────────────── */

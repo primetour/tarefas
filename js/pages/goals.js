@@ -270,6 +270,23 @@ export async function renderGoals(container) {
     if (activeTab === 'metas') renderGoalsList(container);
     else renderAvaliacoes(container);
   }
+
+  // 4.49+ Deep-link de notificação: ?id=GOAL_ID abre o form da meta
+  try {
+    const rawHash = window.location.hash || '';
+    const qIdx = rawHash.indexOf('?');
+    if (qIdx >= 0) {
+      const qs = new URLSearchParams(rawHash.slice(qIdx + 1));
+      const gid = qs.get('id');
+      if (gid) {
+        qs.delete('id');
+        const cleaned = qs.toString();
+        const newHash = rawHash.slice(0, qIdx) + (cleaned ? '?' + cleaned : '');
+        history.replaceState(null, '', window.location.pathname + window.location.search + newHash);
+        openGoalForm(container, gid);
+      }
+    }
+  } catch { /* deep-link best-effort */ }
 }
 
 /* ─── Goals list ─────────────────────────────────────────── */

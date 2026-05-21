@@ -219,6 +219,73 @@ Cada nova function deve:
 
 Padrão de exemplo em `functions/index.js callLLM`.
 
+## Scripts CI (`scripts/` + `.github/workflows/`)
+
+Cada novo script de sync/automação batch deve seguir o padrão consolidado em
+v4.49.41+ (referência: `scripts/classify-content-ai.js`):
+
+1. **Auth Admin SDK dual**: detectar env vars CI (`FIREBASE_PROJECT_ID` +
+   `FIREBASE_CLIENT_EMAIL`) → usa cert; senão usa ADC (`gcloud auth
+   application-default login`) pra dev local
+2. **Gate `IS_CLI`**: `const IS_CLI = require.main === module;` — quando
+   o módulo é require'd por testes, NÃO inicializa Firebase nem roda
+   `main`. Só exporta helpers puros
+3. **Flags CLI consistentes**: `--dry`, `--force`, `--limit=N`, `--verbose`
+4. **Kill switch via Firestore**: se o script depende de um agente IA,
+   ler `ai_agents.<seedId>` e respeitar `agent.active === false` →
+   `process.exit(0)` (pausa sem mexer no workflow)
+5. **Cost cap diário**: se chama LLM externo, ler audit collection do dia,
+   somar custo estimado, comparar com `agent.limits.maxCostPerDayUsd`,
+   `exit 2` se estourou (operacional, não falha)
+6. **Idempotência**: usar hash determinístico (model + prompt) como
+   "versão"; skip docs já processados pela mesma versão
+7. **Audit per-item em `ai_usage_logs`**: formato compatível com Cloud
+   Function `callLLM` (mesmo dashboard de custos agrega ambos)
+8. **Resumo da run em collection própria**: ex: `nl_ai_classifier_runs`,
+   com stats + samples de divergência + custo total
+9. **Exit codes semânticos**: 0=OK, 1=erro fatal, 2=budget estourado,
+   3=erros parciais >20% (workflow distingue operacional de bug)
+10. **Test harness mínimo** `<script>.test.js`: cobre funções puras
+    (parsing, validação, filtros) — workflow CI roda **ANTES** da chamada
+    externa real (falha rápido sem queimar tokens)
+
+### Workflow GitHub Actions correspondente
+
+Cada workflow novo deve ter:
+
+1. **`permissions: contents: read`** explícito (least-privilege —
+   GITHUB_TOKEN default herda write permissions perigosamente)
+2. **`concurrency:` lock** (`group: <unique-id>`, `cancel-in-progress: false`)
+   — previne 2 runs simultâneos
+3. **Inputs como env vars, NÃO interpolação bash direta**:
+   ```yaml
+   env:
+     INPUT_SINCE: ${{ github.event.inputs.since }}
+   run: |
+     set -euo pipefail
+     # Allowlist validation antes de passar ao node:
+     if [[ ! "$INPUT_SINCE" =~ ^[0-9]{4}-... ]]; then exit 1; fi
+     node script.js --since="$INPUT_SINCE"
+   ```
+   ⚠ Interpolação `${{ github.event.inputs.X }}` direto em bash =
+   **shell injection vulnerability** (exfiltração de secrets). Sempre
+   passar via env + validar allowlist.
+4. **Workflows destrutivos manuais** (promote/rollback/purge): exigir
+   confirmação literal via input:
+   ```yaml
+   inputs:
+     confirmar:
+       description: 'Digite "PROMOVER" pra confirmar'
+       required: true
+       type: string
+   ```
+   E checar no primeiro step antes de qualquer ação.
+5. **Smoke tests ANTES da chamada externa cara**: rodar `node *.test.js`
+   antes de invocar Anthropic/OpenAI/etc. Falha rápido sem custo.
+
+Workflow de referência: `.github/workflows/classify-content-ai.yml` +
+`promote-ai-to-prod.yml` + `rollback-ai-classification.yml`.
+
 ## Padrões a evitar
 
 | ❌ Anti-padrão | ✅ Em vez disso |

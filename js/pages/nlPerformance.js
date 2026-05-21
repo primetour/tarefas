@@ -89,7 +89,9 @@ let hiddenRows    = new Set(); // jobIds ocultos na pré-edição
 
 /* ─── Render page ─────────────────────────────────────────── */
 export async function renderNlPerformance(container) {
+  // v4.49.60+ Aceita perm granular dashboard_nl_view + fallback analytics_view
   if (!store.can('system_manage_users') && !store.isMaster() &&
+      !store.can('dashboard_nl_view') &&
       !store.can('analytics_view')) {
     container.innerHTML = `<div class="empty-state" style="min-height:60vh;">
       <div class="empty-state-icon">🔒</div>
@@ -282,7 +284,11 @@ export async function renderNlPerformance(container) {
         </div>
         <div class="page-header-actions" style="gap:8px;flex-wrap:wrap;">
           <button class="btn btn-secondary btn-sm" id="nl-content-refresh">↻ Atualizar</button>
+          <!-- 4.49.28+ Exports honram TODOS os filtros aplicados (BU, período,
+               país/cidade/tema/tipo, comercial/turismo, busca livre). -->
+          <button class="btn btn-secondary btn-sm" id="nl-content-xls">⬇ Excel</button>
           <button class="btn btn-secondary btn-sm" id="nl-content-pdf">⬇ PDF</button>
+          <button class="btn btn-secondary btn-sm" id="nl-content-ppt">⬇ PPT</button>
         </div>
       </div>
 
@@ -514,8 +520,24 @@ function mergeWaves(rows) {
     // Wave label list for tooltip: "1776_1 / 1776_2 / 1776_3 / 1776_4"
     const waveNames = group.map(r => r.name).join(' / ');
 
+    // 4.49.36+ Bug fix CRÍTICO: imageUrls do base alfabético podia estar
+    // vazio enquanto outras waves do mesmo grupo tinham as imagens. Caso
+    // real: "U0196" (base sem imgs) + "U0196_1..._4" (todas com 5 imgs).
+    // Merge usava ...base → ícone aparecia 🔍/⚠ e modal mostrava "sem arte".
+    // Fix: pegar imageUrls/id da PRIMEIRA wave que TIVER. Mesmo critério
+    // pra noArtReason (se alguma wave tem imgs, descarta noArtReason).
+    const waveWithImgs = group.find(d => Array.isArray(d.imageUrls) && d.imageUrls.length > 0);
+    const mergedImageUrls = waveWithImgs?.imageUrls || base.imageUrls || [];
+    // Doc id: prefere o da wave com imgs (pra modal abrir o doc certo)
+    const mergedDocId = waveWithImgs?.id || base.id;
+    // noArtReason: só mantém se NENHUMA wave tem imgs
+    const mergedNoArtReason = waveWithImgs ? null : (base.noArtReason || null);
+
     merged.push({
       ...base,
+      id:           mergedDocId,         // 4.49.36+ doc com imgs
+      imageUrls:    mergedImageUrls,     // 4.49.36+ herda de qualquer wave
+      noArtReason:  mergedNoArtReason,   // 4.49.36+ limpa se alguma wave tem
       name:         baseCode(base.name),  // show clean base name
       waveCount:    waves,
       waveNames,
@@ -720,6 +742,142 @@ function renderTable(editMode = false) {
       renderTable(editMode);
     });
   });
+
+  // 4.49.29+ Bind click "Ver arte" — abre modal com as top imagens
+  // do email (mesma extração que vai pra Vision IA).
+  wrap.querySelectorAll('.nl-art-link').forEach(link => {
+    link.addEventListener('click', async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      openArtworkModal(link.dataset.docId, link.dataset.rowName);
+    });
+  });
+}
+
+/* 4.49.29+ Modal "Ver arte" — mostra as top imagens do email.
+ *
+ * Estado:
+ *   1. Doc tem imageUrls[] preenchido → grid de imagens + métricas
+ *   2. Doc sem imageUrls (legado pré-v4.49.29) → empty state explicando
+ *      que aparece no próximo sync (ou via --reextract).
+ *
+ * URLs vêm do SFMC CDN (públicas, estáveis). Click numa imagem abre em
+ * nova aba (fullsize). Hospedagem na nossa CDN é evolução futura. */
+async function openArtworkModal(docId, rowName) {
+  const { modal } = await import('../components/modal.js');
+  const { doc, getDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+
+  let content;
+  try {
+    const snap = await getDoc(doc(db, 'mc_performance', docId));
+    if (!snap.exists()) {
+      content = `<div style="padding:24px;text-align:center;color:var(--text-muted);">Documento não encontrado.</div>`;
+    } else {
+      const d = snap.data();
+      const imgs = Array.isArray(d.imageUrls) ? d.imageUrls : [];
+      const sent = d.sentDate?.toDate?.() || (d.sentDate ? new Date(d.sentDate) : null);
+      const meta = [
+        d.subject ? `<strong>${esc(d.subject)}</strong>` : '',
+        sent ? sent.toLocaleString('pt-BR', { dateStyle:'medium', timeStyle:'short' }) : '',
+        d.buName || d.buId,
+        d.totalSent ? `${d.totalSent.toLocaleString('pt-BR')} enviados` : '',
+        d.openRate ? `${d.openRate.toFixed(1)}% abertura` : '',
+      ].filter(Boolean).join(' · ');
+
+      if (imgs.length === 0) {
+        // 4.49.32+ Contexto honesto: noArtReason indica POR QUE não tem arte.
+        const reason = d.noArtReason;
+        const reasonInfo = {
+          csat:    { icon: '📋', title: 'Email de pesquisa de satisfação (CSAT)', text: 'Este disparo é um questionário de feedback enviado após uma viagem ou interação. Por design, não tem arte visual — é texto + escala de avaliação.' },
+          warmup:  { icon: '🔥', title: 'Email de warmup (aquecimento de IP)', text: 'Este disparo é parte do processo de aquecimento de IP/domínio pra evitar marcação de spam. Conteúdo intencionalmente neutro, sem arte visual.' },
+          test:    { icon: '🧪', title: 'Email de teste / configuração', text: 'Este disparo foi enviado pra validar setup (remetente, template básico, dados de teste). Não é uma newsletter de marketing real.' },
+          pending: { icon: '⚠',  title: 'Asset não recuperável', text: 'O HTML original deste email não está mais disponível no SFMC (provavelmente deletado ou renomeado). Backfill automático falhou. Se necessário, pode editar manualmente via "✎ Editar".' },
+        };
+        const info = reasonInfo[reason] || {
+          icon: '🖼',
+          title: 'Arte ainda não capturada',
+          text: 'O sync automático ainda não rodou pra este doc. Aparecerá no próximo cron diário (~3h Brasília) ou trigger manual.',
+        };
+        content = `
+          <div style="font-size:0.8125rem;color:var(--text-secondary);margin-bottom:16px;line-height:1.5;">
+            ${meta}
+          </div>
+          <div style="padding:24px;border:1px dashed var(--border-subtle);border-radius:8px;text-align:left;
+            background:var(--bg-elevated);">
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;">
+              <div style="font-size:2rem;line-height:1;">${info.icon}</div>
+              <div style="font-size:0.9375rem;font-weight:600;color:var(--text-primary);">${esc(info.title)}</div>
+            </div>
+            <div style="font-size:0.8125rem;color:var(--text-secondary);line-height:1.6;">
+              ${esc(info.text)}
+            </div>
+          </div>`;
+      } else {
+        // v4.49.57+ Composição VERTICAL replicando a newsletter real:
+        //   - Coluna única max-width 600px (largura padrão do email)
+        //   - Sem aspect-ratio fixo (cada imagem mantém proporção natural)
+        //   - Ordem do HTML preservada (header → hero → blocos → CTA → footer)
+        //   - Click abre LINK ORIGINAL do <a> (URL de destino real da campanha)
+        //     OU a imagem em si se não houver link
+        // Back-compat: docs antigos com imageUrls = array de strings continuam
+        // funcionando (sem link, sem ordem narrativa — substituídos no próximo
+        // backfill).
+        const hasNewSchema = imgs.some(i => typeof i === 'object' && i !== null);
+        const compositionHint = hasNewSchema
+          ? 'composição vertical · click abre o link original da campanha'
+          : 'doc legado (sem link original) · click abre a imagem · próximo backfill captura a composição completa';
+        content = `
+          <div style="font-size:0.8125rem;color:var(--text-secondary);margin-bottom:16px;line-height:1.5;">
+            ${meta}
+          </div>
+          <div style="font-size:0.6875rem;color:var(--text-muted);margin-bottom:12px;text-transform:uppercase;letter-spacing:0.05em;font-weight:600;">
+            ${imgs.length} ${imgs.length === 1 ? 'imagem' : 'imagens'} · ${compositionHint}
+          </div>
+          <div style="max-width:600px;margin:0 auto;background:#f5f5f5;border:1px solid var(--border-subtle);
+            border-radius:8px;overflow:hidden;">
+            ${imgs.map((img, i) => {
+              // Back-compat: string (legado) OU objeto { url, alt, link, ... }
+              const url  = typeof img === 'string' ? img : img?.url;
+              const alt  = (typeof img === 'object' && img?.alt)  || '';
+              const link = (typeof img === 'object' && img?.link) || null;
+              if (!url) return '';
+              const href = link || url;          // click vai pra link original; fallback = imagem
+              const isLinkOriginal = !!link;
+              return `<a href="${esc(href)}" target="_blank" rel="noopener"
+                style="display:block;text-decoration:none;position:relative;"
+                title="${isLinkOriginal ? 'Abrir destino original: ' + esc(href) : 'Abrir imagem em nova aba'}">
+                <img src="${esc(url)}" alt="${esc(alt)}"
+                  style="display:block;width:100%;height:auto;"
+                  loading="lazy" referrerpolicy="no-referrer"
+                  onerror="this.outerHTML='<div style=\\'padding:24px;text-align:center;color:#999;background:#fff;border-top:1px solid #eee;\\'>⚠ imagem indisponível</div>';">
+                ${isLinkOriginal ? `
+                  <div style="position:absolute;top:6px;right:6px;background:rgba(0,0,0,0.65);color:#fff;
+                    font-size:0.625rem;padding:2px 6px;border-radius:4px;opacity:0;transition:opacity 0.15s;"
+                    onmouseover="this.style.opacity='1';" onmouseout="this.style.opacity='0';">
+                    🔗 ${esc(new URL(href).hostname)}
+                  </div>` : ''}
+              </a>`;
+            }).join('')}
+          </div>
+          ${hasNewSchema ? `
+            <div style="margin-top:12px;font-size:0.6875rem;color:var(--text-muted);text-align:center;">
+              Réplica da composição vertical do SFMC. Cada bloco preserva o link de destino
+              original da campanha (passe o mouse pra ver o domínio).
+            </div>
+          ` : ''}`;
+      }
+    }
+  } catch (e) {
+    content = `<div style="padding:24px;color:var(--color-danger);">Erro: ${esc(e.message)}</div>`;
+  }
+
+  modal.open({
+    title: `🖼 Arte do email — ${esc(rowName || '').slice(0,60)}`,
+    size: 'xl',
+    content,
+    dedupeKey: `nl-art-${docId}`,
+    footer: [{ label: 'Fechar', class: 'btn-secondary', closeOnClick: true }],
+  });
 }
 
 /** Render de uma célula da tabela Disparos baseado no tipo de coluna. */
@@ -745,12 +903,33 @@ function _renderDisparosCell(col, r, hidden) {
     }
     case 'date':
       return `<td style="${truncTd}color:var(--text-muted);font-size:0.75rem;vertical-align:middle;">${fmt(r.sentDate)}</td>`;
-    case 'name':
+    case 'name': {
+      // 4.49.29+ Click no nome → modal "Ver arte". 4.49.32+ ícone reflete
+      // a categoria honesta do doc:
+      //   🖼 = tem arte capturada
+      //   📋 = CSAT (pesquisa, sem arte por design)
+      //   🔥 = warmup (aquecimento de IP)
+      //   🧪 = teste/configuração
+      //   ⚠  = asset sumiu no SFMC (não recuperável)
+      //   🔍 = pendente (próximo sync vai popular)
+      const hasArt = Array.isArray(r.imageUrls) && r.imageUrls.length > 0;
+      const iconMap = { csat:'📋', warmup:'🔥', test:'🧪', pending:'⚠' };
+      const icon   = hasArt ? '🖼' : (iconMap[r.noArtReason] || '🔍');
+      const docId  = r.id || r.docId || r._docIds?.[0] || '';
       return `<td title="${esc(r.name || '')}" style="${wrapTd}">
-        ${esc(r.name || '—')}
+        <a href="#" class="nl-art-link" data-doc-id="${esc(docId)}" data-row-name="${esc(r.name||'')}"
+          style="text-decoration:none;color:var(--text-primary);display:inline-block;
+          padding:1px 4px;border-radius:4px;transition:background 0.12s;"
+          title="Ver arte do email${hasArt?'':' (pendente do próximo sync)'}"
+          onmouseover="this.style.background='rgba(212,168,67,0.08)'"
+          onmouseout="this.style.background=''">
+          <span style="font-size:0.75rem;opacity:0.7;margin-right:3px;">${icon}</span>
+          ${esc(r.name || '—')}
+        </a>
         ${r.waveCount > 1 ? `<br><span title="${esc(r.waveNames)}"
           style="font-size:0.6875rem;color:var(--text-muted);font-weight:400;cursor:help;">⊞ ${r.waveCount} ondas</span>` : ''}
       </td>`;
+    }
     case 'subject':
       return `<td title="${esc(r.subject || '')}" style="${wrapTd}color:var(--text-muted);font-size:0.75rem;line-height:1.4;">
         ${esc(r.subject || '—')}
@@ -1856,7 +2035,10 @@ async function setupNlCalendarInsights() {
    ═══════════════════════════════════════════════════════════════════════════ */
 
 let _contentDataCache = null;       // array de docs com extracted
-let _contentFiltersState = { bu: '', period: '180', country: '', city: '', theme: '', newsletterType: '', search: '' };
+// 4.49.27+ Filtros adicionais pra eixos duplos (commercial/tourism)
+let _contentFiltersState = { bu: '', period: '180', country: '', city: '', theme: '', newsletterType: '', search: '', commercial: '', tourism: '' };
+// 4.49.24+ Cache do snapshot filtrado pro drill modal — populado em renderContentTab
+let _lastContentDocs = [];
 
 async function loadContentTab() {
   const root = document.getElementById('nlc-content');
@@ -1911,9 +2093,10 @@ async function loadContentTab() {
       _contentDataCache = null;
       await loadContentTab();
     });
-    document.getElementById('nl-content-pdf')?.addEventListener('click', () => {
-      alert('Export PDF da aba Conteúdo será entregue na 4.7.0 (Fase 3).');
-    });
+    // 4.49.28+ Exports da aba Conteúdo & Temas — TODOS honram filtros atuais
+    document.getElementById('nl-content-xls')?.addEventListener('click', exportContentXlsx);
+    document.getElementById('nl-content-pdf')?.addEventListener('click', exportContentPdf);
+    document.getElementById('nl-content-ppt')?.addEventListener('click', exportContentPptx);
   }
 
   renderContentTab();
@@ -1945,6 +2128,10 @@ function renderContentTab() {
     return;
   }
 
+  // 4.49.24+ Mantém docs filtrados acessíveis ao drill-down modal
+  // (openDrillModal lê _lastContentDocs pra resolver os IDs em docs)
+  _lastContentDocs = enrichedDocs;
+
   // Calcula agregações
   const agg = aggregateContent(enrichedDocs);
 
@@ -1969,32 +2156,42 @@ function renderContentTab() {
     <!-- 2-col grid de blocos -->
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(420px,1fr));gap:16px;">
 
-      <div id="nl-content-types-block" class="card" style="padding:18px;">
-        ${blockHeader('📂 Tipo de newsletter', INFO_TIPS.newsletterType, 'nl-content-types-block')}
-        ${renderNewsletterTypesBars(agg.newsletterTypes, enrichedDocs)}
+      <!-- 4.49.27+ Eixos duplos (spec do user): Comercial + Turismo -->
+      <!-- 4.49.32+ Tooltips agora abrem modal estruturado via key. -->
+      <div id="nl-content-commercial-block" class="card" style="padding:18px;">
+        ${blockHeader('💼 Classificação Comercial', 'commercial', 'nl-content-commercial-block')}
+        ${renderClassificationBars(agg.commercial, 'commercial')}
       </div>
+      <div id="nl-content-tourism-block" class="card" style="padding:18px;">
+        ${blockHeader('✈️ Classificação Turismo', 'tourism', 'nl-content-tourism-block')}
+        ${renderClassificationBars(agg.tourism, 'tourism')}
+      </div>
+
+      <!-- 4.49.32+ Bloco "Tipo de newsletter (legado)" REMOVIDO.
+           Após v4.49.27 todos os docs foram reclassificados nos eixos
+           Comercial + Turismo. Manter o legado era redundante e confuso. -->
       <div id="nl-content-countries-block" class="card" style="padding:18px;">
-        ${blockHeader('🌍 Top países · performance', INFO_TIPS.topCountries, 'nl-content-countries-block')}
+        ${blockHeader('🌍 Top países · performance', 'topCountries', 'nl-content-countries-block')}
         ${renderTopDestinosTable(agg.byCountry, enrichedDocs)}
       </div>
       <div id="nl-content-cities-block" class="card" style="padding:18px;">
-        ${blockHeader('🏙 Top cidades / regiões', INFO_TIPS.topCities, 'nl-content-cities-block')}
+        ${blockHeader('🏙 Top cidades / regiões', 'topCities', 'nl-content-cities-block')}
         ${renderTopDestinosTable(agg.cities, enrichedDocs, 'cidade')}
       </div>
       <div id="nl-content-hotels-block" class="card" style="padding:18px;">
-        ${blockHeader('🏨 Hotéis mais mencionados', INFO_TIPS.topHotels, 'nl-content-hotels-block')}
+        ${blockHeader('🏨 Hotéis mais mencionados', 'topHotels', 'nl-content-hotels-block')}
         ${renderTopHoteisBars(agg.hotels, enrichedDocs)}
       </div>
       <div id="nl-content-cruises-block" class="card" style="padding:18px;">
-        ${blockHeader('🚢 Cruzeiros / operadoras marítimas', INFO_TIPS.topCruises, 'nl-content-cruises-block')}
+        ${blockHeader('🚢 Cruzeiros / operadoras marítimas', 'topCruises', 'nl-content-cruises-block')}
         ${renderTopHoteisBars(agg.cruises, enrichedDocs)}
       </div>
       <div id="nl-content-themes-block" class="card" style="padding:18px;">
-        ${blockHeader('🎯 Temas / posicionamento', INFO_TIPS.themes, 'nl-content-themes-block')}
+        ${blockHeader('🎯 Temas / posicionamento', 'themes', 'nl-content-themes-block')}
         ${renderThemesBars(agg.themes, enrichedDocs)}
       </div>
       <div id="nl-content-brands-block" class="card" style="padding:18px;">
-        ${blockHeader('🏷 Marcas hoteleiras citadas', INFO_TIPS.brandsBlock, 'nl-content-brands-block')}
+        ${blockHeader('🏷 Marcas hoteleiras citadas', 'brandsBlock', 'nl-content-brands-block')}
         ${renderBrandsPills(agg.brands, enrichedDocs)}
       </div>
 
@@ -2004,6 +2201,15 @@ function renderContentTab() {
     <div id="nl-content-bybu-block" class="card" style="padding:18px;margin-top:16px;">
       ${blockHeader('🏢 Conteúdo por unidade (BU)', INFO_TIPS.byBu, 'nl-content-bybu-block')}
       ${renderContentByBu(enrichedDocs)}
+    </div>
+
+    <!-- v4.49.41+ Shadow mode IA — só renderiza se houver docs classificados pela IA.
+         v4.49.45+ Blindado: try/catch local evita que bug aqui derrube o
+         tab inteiro (mesma técnica usada em outros blocos defensivos do dashboard). -->
+    <div id="nl-content-shadow-block" class="card" style="padding:18px;margin-top:16px;">
+      ${(() => { try { return renderShadowModeBlock(enrichedDocs); }
+                 catch (e) { console.warn('[shadow-mode] render err:', e);
+                             return '<p style="color:var(--text-muted);font-size:0.75rem;">Bloco shadow-mode indisponível (erro interno; demais features OK).</p>'; } })()}
     </div>
 
     <!-- Lista de envios filtrados -->
@@ -2017,9 +2223,423 @@ function renderContentTab() {
   `;
 
   wireDrillDowns();
+  // v4.49.45+ Blindado: wireShadowModeDrill é async e pode rejeitar (ex:
+  // firestore.rules ainda não deployada). Catch defensivo pra não vazar
+  // unhandled rejection nem bloquear o resto do setup.
+  wireShadowModeDrill().catch(e => console.warn('[shadow-mode] wire err:', e));
 
   // Setup insights da aba Conteúdo (idempotente — remontado a cada renderContentTab)
   setTimeout(() => setupNlContentInsights(enrichedDocs, agg), 50);
+}
+
+/* ─── Shadow mode IA ────────────────────────────────────────────
+ * Bloco que aparece quando há docs com extracted.aiCommercial gravado
+ * pelo script classify-content-ai.js (workflow .github/.../classify-content-ai.yml).
+ *
+ * Mostra:
+ *   - Coverage (% classificado)
+ *   - Concordância com regex por eixo (com semáforo)
+ *   - Distribuição de confiança
+ *   - Sparkline da evolução temporal (últimas N corridas)
+ *   - Tabelas de divergências top (com botão "marcar IA correta" / "regex correto")
+ *   - Painel admin com link pros workflows promote/rollback
+ *
+ * Decisões humanas são gravadas em nl_classifier_decisions pra alimentar
+ * análise futura (qual prompt change melhoraria mais? quais subjects são
+ * sistematicamente ambíguos?).
+ */
+let _shadowRunsCache = null;   // cache de nl_ai_classifier_runs (última hora)
+let _shadowRunsCacheAt = 0;
+async function loadShadowRuns() {
+  // Cache de 5min pra evitar refetch a cada render
+  if (_shadowRunsCache && (Date.now() - _shadowRunsCacheAt) < 5 * 60 * 1000) {
+    return _shadowRunsCache;
+  }
+  try {
+    const { collection, getDocs, query, orderBy, limit } = await import(
+      'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js'
+    );
+    const { db } = await import('../firebase.js');
+    const snap = await getDocs(query(
+      collection(db, 'nl_ai_classifier_runs'),
+      orderBy('runAt', 'desc'),
+      limit(30),
+    ));
+    _shadowRunsCache = snap.docs.map(d => ({ id: d.id, ...d.data() })).reverse(); // crescente
+    _shadowRunsCacheAt = Date.now();
+  } catch (e) {
+    console.warn('[shadow-mode] runs load err:', e?.message);
+    _shadowRunsCache = [];
+  }
+  return _shadowRunsCache;
+}
+
+function renderShadowSparkline(runs) {
+  if (!runs.length) return '';
+  const w = 320, h = 50, pad = 4;
+  const innerW = w - pad * 2, innerH = h - pad * 2;
+  const lineFor = (key, color) => {
+    const points = runs.map((r, i) => {
+      const x = pad + (i / Math.max(1, runs.length - 1)) * innerW;
+      const v = r[key];
+      const y = v == null ? pad + innerH : pad + innerH - (v / 100) * innerH;
+      return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(' ');
+    return `<polyline points="${points}" fill="none" stroke="${color}" stroke-width="1.6"/>`;
+  };
+  // Linha de referência 90%
+  const ref90Y = pad + innerH - 0.9 * innerH;
+  return `
+    <svg viewBox="0 0 ${w} ${h}" width="100%" height="${h}" style="max-width:${w}px;">
+      <line x1="${pad}" x2="${w-pad}" y1="${ref90Y}" y2="${ref90Y}" stroke="#94A3B8" stroke-width="0.5" stroke-dasharray="3,3"/>
+      <text x="${w-pad-2}" y="${ref90Y-2}" text-anchor="end" font-size="8" fill="#64748B">meta 90%</text>
+      ${lineFor('concordanceCommercialPct', '#2563EB')}
+      ${lineFor('concordanceTourismPct',    '#16A34A')}
+      ${lineFor('concordanceBothPct',       '#D4A843')}
+    </svg>
+    <div style="font-size:0.6875rem;color:var(--text-muted);margin-top:2px;">
+      <span style="color:#2563EB;">━</span> Comercial &nbsp;
+      <span style="color:#16A34A;">━</span> Turismo &nbsp;
+      <span style="color:#D4A843;">━</span> Ambos &nbsp;
+      · ${runs.length} corridas (mais recente à direita)
+    </div>
+  `;
+}
+
+function renderShadowModeBlock(docs) {
+  const aiDocs = docs.filter(d => d.extracted?.aiCommercial);
+  if (!aiDocs.length) {
+    return `
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+        <h3 style="margin:0;font-size:0.8125rem;font-weight:600;color:var(--text-secondary);
+          text-transform:uppercase;letter-spacing:0.06em;">🤖 Classificador IA — Shadow mode</h3>
+      </div>
+      <p style="margin:0;font-size:0.8125rem;color:var(--text-muted);line-height:1.5;">
+        Nenhum disparo classificado pela IA ainda. Pra ativar o shadow mode:<br>
+        <strong>1.</strong> IA Hub → ativar agente <em>Classificador de Newsletters</em> (active=true)<br>
+        <strong>2.</strong> Aguardar o cron diário das 06:45 UTC (workflow <code>classify-content-ai.yml</code>) OU
+        rodar manualmente em GitHub Actions → workflow_dispatch.<br>
+        <strong>3.</strong> Os campos <code>extracted.aiCommercial</code> e <code>aiTourism</code> são gravados em paralelo
+        sem tocar nos campos de produção (<code>commercial</code>/<code>tourism</code>).
+      </p>
+    `;
+  }
+
+  // Concordância por eixo (só docs que têm AMBOS regex e AI)
+  const withProd = aiDocs.filter(d => d.extracted?.commercial && d.extracted?.tourism);
+  const agreesC = withProd.filter(d => d.extracted.aiCommercial === d.extracted.commercial).length;
+  const agreesT = withProd.filter(d => d.extracted.aiTourism    === d.extracted.tourism).length;
+  const agreesBoth = withProd.filter(d =>
+    d.extracted.aiCommercial === d.extracted.commercial &&
+    d.extracted.aiTourism    === d.extracted.tourism
+  ).length;
+  const pctC = withProd.length ? (agreesC / withProd.length * 100) : null;
+  const pctT = withProd.length ? (agreesT / withProd.length * 100) : null;
+  const pctB = withProd.length ? (agreesBoth / withProd.length * 100) : null;
+
+  // Distribuição de confiança
+  const confDist = { high: 0, medium: 0, low: 0 };
+  aiDocs.forEach(d => {
+    const c = d.extracted.aiConfidence || 'medium';
+    confDist[c] = (confDist[c] || 0) + 1;
+  });
+
+  // Divergências (top 10 de cada eixo, ordenadas por confiança IA decrescente)
+  const disagreeC = withProd
+    .filter(d => d.extracted.aiCommercial !== d.extracted.commercial)
+    .sort((a, b) => {
+      const order = { high: 3, medium: 2, low: 1 };
+      return (order[b.extracted.aiConfidence] || 0) - (order[a.extracted.aiConfidence] || 0);
+    })
+    .slice(0, 10);
+  const disagreeT = withProd
+    .filter(d => d.extracted.aiTourism !== d.extracted.tourism)
+    .sort((a, b) => {
+      const order = { high: 3, medium: 2, low: 1 };
+      return (order[b.extracted.aiConfidence] || 0) - (order[a.extracted.aiConfidence] || 0);
+    })
+    .slice(0, 10);
+
+  const lastAt = aiDocs
+    .map(d => d.extracted.aiClassifiedAt)
+    .filter(Boolean)
+    .sort()
+    .slice(-1)[0];
+  const lastDate = lastAt ? new Date(lastAt).toLocaleString('pt-BR') : '—';
+  const sampleModel = aiDocs[0]?.extracted?.aiModel || '—';
+
+  const pctColor = p => p == null ? '#94A3B8' : p >= 90 ? '#16A34A' : p >= 75 ? '#D97706' : '#DC2626';
+  const fmt1 = p => p == null ? '—' : `${p.toFixed(1)}%`;
+
+  // v4.49.44+ security audit FIX HIGH #2: gate dos botões de decisão por
+  // permissão. Apenas master ou quem tem system_manage_settings pode marcar
+  // veredictos (a Firestore rule isMaster() na mc_performance bloquearia
+  // de qualquer forma, mas o UX fica melhor — não-admin não vê botão que
+  // não conseguiria usar).
+  const canVoteOnDecisions = store.isMaster() || store.can('system_manage_settings');
+  const divRow = (d, eixo) => {
+    const ai = eixo === 'comercial' ? d.extracted.aiCommercial : d.extracted.aiTourism;
+    const rx = eixo === 'comercial' ? d.extracted.commercial   : d.extracted.tourism;
+    const conf = d.extracted.aiConfidence || 'medium';
+    const confChip = conf === 'high'
+      ? '<span style="background:#DCFCE7;color:#16A34A;padding:1px 6px;border-radius:8px;font-size:0.6875rem;font-weight:600;">alta</span>'
+      : conf === 'medium'
+      ? '<span style="background:#FEF3C7;color:#D97706;padding:1px 6px;border-radius:8px;font-size:0.6875rem;font-weight:600;">média</span>'
+      : '<span style="background:#FEE2E2;color:#DC2626;padding:1px 6px;border-radius:8px;font-size:0.6875rem;font-weight:600;">baixa</span>';
+    // Decisão prévia gravada em decisions[d.id]?[eixo]
+    const decision = d.extracted?.[`humanDecision${eixo === 'comercial' ? 'Commercial' : 'Tourism'}`];
+    const decisionBadge = decision === 'ai-correct'
+      ? '<span style="color:#16A34A;font-size:0.6875rem;font-weight:600;">✓ IA certa</span>'
+      : decision === 'regex-correct'
+      ? '<span style="color:#2563EB;font-size:0.6875rem;font-weight:600;">✓ regex certo</span>'
+      : !canVoteOnDecisions
+      ? '<span style="color:var(--text-muted);font-size:0.6875rem;">— sem veredicto —</span>'
+      : `
+        <div style="display:flex;gap:4px;">
+          <button class="nl-shadow-decision" data-doc-id="${esc(d.id)}" data-eixo="${eixo}" data-verdict="ai-correct"
+            style="background:#DCFCE7;color:#16A34A;border:none;padding:2px 8px;border-radius:4px;font-size:0.6875rem;font-weight:600;cursor:pointer;"
+            title="Marcar veredicto: a IA está certa neste caso">
+            IA certa
+          </button>
+          <button class="nl-shadow-decision" data-doc-id="${esc(d.id)}" data-eixo="${eixo}" data-verdict="regex-correct"
+            style="background:#DBEAFE;color:#2563EB;border:none;padding:2px 8px;border-radius:4px;font-size:0.6875rem;font-weight:600;cursor:pointer;"
+            title="Marcar veredicto: o regex está certo neste caso">
+            regex certo
+          </button>
+        </div>
+      `;
+    return `
+      <tr style="border-top:1px solid var(--border);">
+        <td style="padding:6px 8px;font-size:0.75rem;color:var(--text-muted);font-family:monospace;">
+          ${esc(d.name || '').slice(0, 8)}
+        </td>
+        <td style="padding:6px 8px;font-size:0.75rem;color:var(--text-primary);">
+          ${esc((d.subject || '').slice(0, 60))}
+        </td>
+        <td style="padding:6px 8px;font-size:0.6875rem;color:#DC2626;font-weight:600;">${esc(rx)}</td>
+        <td style="padding:6px 8px;font-size:0.6875rem;color:#16A34A;font-weight:600;">${esc(ai)}</td>
+        <td style="padding:6px 8px;">${confChip}</td>
+        <td style="padding:6px 8px;font-size:0.6875rem;color:var(--text-muted);font-style:italic;">
+          ${esc((d.extracted.aiReasoning || '').slice(0, 120))}
+        </td>
+        <td style="padding:6px 8px;text-align:right;">${decisionBadge}</td>
+      </tr>
+    `;
+  };
+
+  // Painel admin (só master/admin enxergam) — links pros workflows
+  const isAdmin = store.isMaster() || store.can('system_manage_settings');
+  const allBothAgreed = pctB != null && pctB >= 90;
+  const adminPanel = !isAdmin ? '' : `
+    <div style="margin-top:14px;padding:12px;background:var(--bg-secondary);border-radius:8px;border:1px solid var(--border);">
+      <h4 style="margin:0 0 8px;font-size:0.75rem;font-weight:700;color:var(--text-secondary);text-transform:uppercase;letter-spacing:0.06em;">
+        🔧 Admin · ações de cutover
+      </h4>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+        <a href="https://github.com/primetour/tarefas/actions/workflows/classify-content-ai.yml" target="_blank" rel="noopener"
+          class="btn btn-secondary btn-sm" style="font-size:0.75rem;">
+          ▶ Disparar classificação IA agora
+        </a>
+        <a href="https://github.com/primetour/tarefas/actions/workflows/promote-ai-to-prod.yml" target="_blank" rel="noopener"
+          class="btn ${allBothAgreed ? 'btn-primary' : 'btn-secondary'} btn-sm"
+          style="font-size:0.75rem;${allBothAgreed ? '' : 'opacity:0.7;'}"
+          title="${allBothAgreed ? 'Concordância >=90%, pode promover' : 'Concordância < 90% — risco de regressão'}">
+          ⬆ Promover IA → Produção (cutover)
+        </a>
+        <a href="https://github.com/primetour/tarefas/actions/workflows/rollback-ai-classification.yml" target="_blank" rel="noopener"
+          class="btn btn-ghost btn-sm" style="font-size:0.75rem;color:#DC2626;">
+          ⏪ Reverter cutover
+        </a>
+        <span style="font-size:0.6875rem;color:var(--text-muted);margin-left:auto;">
+          ${allBothAgreed
+            ? '✅ Cutover liberado pela métrica (verificar divergências antes)'
+            : pctB == null
+              ? '⏳ Aguardando primeira corrida com dados de comparação'
+              : `⚠ Concordância ${pctB.toFixed(1)}% < meta 90% — recomendado aguardar`}
+        </span>
+      </div>
+    </div>
+  `;
+
+  return `
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+      <h3 style="margin:0;font-size:0.8125rem;font-weight:600;color:var(--text-secondary);
+        text-transform:uppercase;letter-spacing:0.06em;">🤖 Classificador IA — Shadow mode</h3>
+      <span style="font-size:0.6875rem;color:var(--text-muted);">
+        ${aiDocs.length}/${docs.length} disparos classificados ·
+        modelo <code>${esc(sampleModel)}</code> ·
+        última corrida ${esc(lastDate)}
+      </span>
+    </div>
+
+    <!-- KPIs de concordância -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:14px;">
+      <div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;background:var(--bg-secondary);">
+        <div style="font-size:0.6875rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px;">Concordância eixo COMERCIAL</div>
+        <div style="font-size:1.5rem;font-weight:700;color:${pctColor(pctC)};line-height:1.1;">${fmt1(pctC)}</div>
+        <div style="font-size:0.6875rem;color:var(--text-muted);">${agreesC} de ${withProd.length} (vs regex)</div>
+      </div>
+      <div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;background:var(--bg-secondary);">
+        <div style="font-size:0.6875rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px;">Concordância eixo TURISMO</div>
+        <div style="font-size:1.5rem;font-weight:700;color:${pctColor(pctT)};line-height:1.1;">${fmt1(pctT)}</div>
+        <div style="font-size:0.6875rem;color:var(--text-muted);">${agreesT} de ${withProd.length} (vs regex)</div>
+      </div>
+      <div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;background:var(--bg-secondary);">
+        <div style="font-size:0.6875rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px;">AMBOS eixos batem</div>
+        <div style="font-size:1.5rem;font-weight:700;color:${pctColor(pctB)};line-height:1.1;">${fmt1(pctB)}</div>
+        <div style="font-size:0.6875rem;color:var(--text-muted);">${agreesBoth} de ${withProd.length} — meta de cutover: ≥ 90%</div>
+      </div>
+      <div style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;background:var(--bg-secondary);">
+        <div style="font-size:0.6875rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px;">Confiança IA</div>
+        <div style="display:flex;gap:6px;align-items:baseline;font-size:0.875rem;font-weight:600;line-height:1.1;">
+          <span style="color:#16A34A;">${confDist.high}</span>
+          <span style="color:var(--text-muted);font-size:0.6875rem;">alta</span>
+          <span style="color:#D97706;">${confDist.medium}</span>
+          <span style="color:var(--text-muted);font-size:0.6875rem;">média</span>
+          <span style="color:#DC2626;">${confDist.low}</span>
+          <span style="color:var(--text-muted);font-size:0.6875rem;">baixa</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Sparkline da evolução temporal — placeholder, preenchido async em wireShadowModeDrill -->
+    <div id="nl-shadow-sparkline" style="margin-bottom:12px;padding:8px 12px;border:1px solid var(--border);border-radius:8px;background:var(--bg-secondary);">
+      <div style="font-size:0.6875rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.06em;margin-bottom:4px;">
+        Evolução da concordância (últimas corridas)
+      </div>
+      <div id="nl-shadow-sparkline-svg" style="min-height:60px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:0.75rem;">
+        Carregando histórico…
+      </div>
+    </div>
+
+    ${adminPanel}
+
+    <!-- Divergências (collapsible) -->
+    <details style="margin-top:12px;">
+      <summary style="cursor:pointer;font-size:0.8125rem;font-weight:600;color:var(--text-primary);padding:6px 0;">
+        Divergências top — eixo Comercial (${disagreeC.length})
+      </summary>
+      ${disagreeC.length ? `
+        <table style="width:100%;border-collapse:collapse;margin-top:8px;font-size:0.8125rem;">
+          <thead>
+            <tr style="background:var(--bg-secondary);">
+              <th style="padding:6px 8px;text-align:left;font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);">Cód.</th>
+              <th style="padding:6px 8px;text-align:left;font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);">Subject</th>
+              <th style="padding:6px 8px;text-align:left;font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);">Regex</th>
+              <th style="padding:6px 8px;text-align:left;font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);">IA</th>
+              <th style="padding:6px 8px;text-align:left;font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);">Conf.</th>
+              <th style="padding:6px 8px;text-align:left;font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);">Reasoning IA</th>
+              <th style="padding:6px 8px;text-align:right;font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);">Decisão</th>
+            </tr>
+          </thead>
+          <tbody>${disagreeC.map(d => divRow(d, 'comercial')).join('')}</tbody>
+        </table>
+      ` : '<p style="margin:8px 0 0;font-size:0.8125rem;color:var(--text-muted);">Nenhuma divergência no eixo Comercial. 100% concordância.</p>'}
+    </details>
+
+    <details style="margin-top:8px;">
+      <summary style="cursor:pointer;font-size:0.8125rem;font-weight:600;color:var(--text-primary);padding:6px 0;">
+        Divergências top — eixo Turismo (${disagreeT.length})
+      </summary>
+      ${disagreeT.length ? `
+        <table style="width:100%;border-collapse:collapse;margin-top:8px;font-size:0.8125rem;">
+          <thead>
+            <tr style="background:var(--bg-secondary);">
+              <th style="padding:6px 8px;text-align:left;font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);">Cód.</th>
+              <th style="padding:6px 8px;text-align:left;font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);">Subject</th>
+              <th style="padding:6px 8px;text-align:left;font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);">Regex</th>
+              <th style="padding:6px 8px;text-align:left;font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);">IA</th>
+              <th style="padding:6px 8px;text-align:left;font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);">Conf.</th>
+              <th style="padding:6px 8px;text-align:left;font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);">Reasoning IA</th>
+              <th style="padding:6px 8px;text-align:right;font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);">Decisão</th>
+            </tr>
+          </thead>
+          <tbody>${disagreeT.map(d => divRow(d, 'turismo')).join('')}</tbody>
+        </table>
+      ` : '<p style="margin:8px 0 0;font-size:0.8125rem;color:var(--text-muted);">Nenhuma divergência no eixo Turismo. 100% concordância.</p>'}
+    </details>
+
+    <p style="margin:12px 0 0;font-size:0.6875rem;color:var(--text-muted);line-height:1.5;">
+      <strong>Playbook de cutover:</strong> aguardar concordância ≥ 90% em AMBOS eixos por pelo menos 2 corridas consecutivas.
+      Promover via script <code>scripts/promote-ai-to-prod.js</code> (a criar) — copia <code>aiCommercial/aiTourism</code>
+      para <code>commercial/tourism</code> apenas quando <code>aiConfidence ≠ low</code>. Desativar <code>classify-content.js</code>
+      no workflow <code>enrich-content.yml</code> só após o cutover validado.
+    </p>
+  `;
+}
+
+/* ─── Wireup do bloco Shadow Mode ────────────────────────────────
+ * Setup async pós-render: carrega histórico de corridas e desenha sparkline,
+ * + wire dos botões "IA certa / regex certo" que gravam decisões humanas
+ * em campos extracted.humanDecision* (alimenta análise de divergências).
+ */
+async function wireShadowModeDrill() {
+  // 1. Sparkline async
+  const slot = document.getElementById('nl-shadow-sparkline-svg');
+  if (slot) {
+    const runs = await loadShadowRuns();
+    if (!runs.length) {
+      slot.textContent = 'Sem corridas ainda — aguardando primeira execução do cron classify-content-ai.';
+    } else {
+      slot.innerHTML = renderShadowSparkline(runs);
+    }
+  }
+
+  // 2. Decision buttons (event delegation no card pai pra sobreviver re-renders)
+  const card = document.getElementById('nl-content-shadow-block');
+  if (card && !card.dataset.decisionsWired) {
+    card.dataset.decisionsWired = '1';
+    card.addEventListener('click', async (e) => {
+      const btn = e.target.closest('.nl-shadow-decision');
+      if (!btn) return;
+      e.preventDefault();
+      e.stopPropagation();
+      // v4.49.44+ security audit: re-checa permissão no handler (defesa em
+      // profundidade — não confia no DOM como única barreira).
+      if (!store.isMaster() && !store.can('system_manage_settings')) {
+        toast.error('Sem permissão para registrar veredictos.');
+        return;
+      }
+      const docId  = btn.dataset.docId;
+      const eixo   = btn.dataset.eixo;     // 'comercial' | 'turismo'
+      const verdict = btn.dataset.verdict;  // 'ai-correct' | 'regex-correct'
+      // Validação de allowlist (defesa contra DOM tampering)
+      if (!['comercial', 'turismo'].includes(eixo) || !['ai-correct', 'regex-correct'].includes(verdict)) {
+        toast.error('Veredicto inválido.');
+        return;
+      }
+      if (!docId || typeof docId !== 'string' || docId.length > 128) {
+        toast.error('Doc ID inválido.');
+        return;
+      }
+      const fieldKey = `extracted.humanDecision${eixo === 'comercial' ? 'Commercial' : 'Tourism'}`;
+      const decAtKey = `extracted.humanDecision${eixo === 'comercial' ? 'Commercial' : 'Tourism'}At`;
+      const decByKey = `extracted.humanDecision${eixo === 'comercial' ? 'Commercial' : 'Tourism'}By`;
+      try {
+        const { doc, updateDoc } = await import(
+          'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js'
+        );
+        const { db } = await import('../firebase.js');
+        const cu = store.get('currentUser') || {};
+        await updateDoc(doc(db, 'mc_performance', docId), {
+          [fieldKey]:  verdict,
+          [decAtKey]:  new Date().toISOString(),
+          [decByKey]:  cu.uid || cu.email || 'anonymous',
+        });
+        // Atualiza cache local pra refletir sem refetch
+        const cached = (_contentDataCache || []).find(d => d.id === docId);
+        if (cached) {
+          if (!cached.extracted) cached.extracted = {};
+          cached.extracted[`humanDecision${eixo === 'comercial' ? 'Commercial' : 'Tourism'}`] = verdict;
+        }
+        toast.success(`Veredicto registrado: ${verdict === 'ai-correct' ? 'IA correta' : 'regex correto'}.`);
+        renderContentTab();
+      } catch (err) {
+        console.error('[shadow-mode] decision err:', err);
+        toast.error(`Falha ao gravar veredicto: ${err.message}`);
+      }
+    });
+  }
 }
 
 /* ─── Filtros ──────────────────────────────────────────────── */
@@ -2062,16 +2682,26 @@ function dedupContentByCampaign(docs) {
     // Pega o doc com extracted preenchido se houver; senão o primeiro
     const withExtracted = group.find(d => d.extracted);
     const canonical = withExtracted || group[0];
+    // 4.49.36+ Igual ao fix em mergeWaves — herda imageUrls de qualquer
+    // wave que tenha, não só do canonical. Caso real: U0196 base sem imgs
+    // + waves _1..._4 com imgs cada.
+    const waveWithImgs = group.find(d => Array.isArray(d.imageUrls) && d.imageUrls.length > 0);
+    const mergedImageUrls = waveWithImgs?.imageUrls || canonical.imageUrls || [];
+    const mergedDocId = waveWithImgs?.id || canonical.id;
+    const mergedNoArtReason = waveWithImgs ? null : (canonical.noArtReason || null);
+
     if (group.length === 1) {
-      merged.push({ ...canonical, _waveCount: 1, _waveDocs: group });
+      merged.push({ ...canonical, imageUrls: mergedImageUrls, noArtReason: mergedNoArtReason, id: mergedDocId, _waveCount: 1, _waveDocs: group });
     } else {
-      // Soma métricas, mantém extracted do canônico
       const totalSent  = group.reduce((s, d) => s + (+d.totalSent || 0), 0);
       const delivered  = group.reduce((s, d) => s + (+d.delivered || 0), 0);
       const openUnique = group.reduce((s, d) => s + (+d.openUnique || 0), 0);
       const clickUnique = group.reduce((s, d) => s + (+d.clickUnique || 0), 0);
       merged.push({
         ...canonical,
+        id:           mergedDocId,
+        imageUrls:    mergedImageUrls,
+        noArtReason:  mergedNoArtReason,
         name: baseCode(canonical.name),
         totalSent,
         delivered,
@@ -2106,6 +2736,13 @@ function applyAllContentFilters(docs) {
     }
     if (f.newsletterType) {
       if ((d.extracted?.newsletterType || '').toLowerCase() !== f.newsletterType.toLowerCase()) return false;
+    }
+    // 4.49.27+ Filtros dos eixos duplos
+    if (f.commercial) {
+      if ((d.extracted?.commercial || '').toLowerCase() !== f.commercial.toLowerCase()) return false;
+    }
+    if (f.tourism) {
+      if ((d.extracted?.tourism || '').toLowerCase() !== f.tourism.toLowerCase()) return false;
     }
     if (f.search) {
       const hay = JSON.stringify(d.extracted || {}).toLowerCase()
@@ -2151,6 +2788,472 @@ function populateContentDropdowns(allDocs) {
 
 /* ─── Agregações ───────────────────────────────────────────── */
 
+/* 4.49.28+ EXPORTS da aba Conteúdo & Temas — honram TODOS os filtros
+ * aplicados. Snapshot single-source-of-truth: pegamos o resultado de
+ * applyAllContentFilters → aggregateContent (mesma cadeia da UI).
+ *
+ * Filtros honrados: BU, período (180d default), país, cidade, tema,
+ * tipo (legado), comercial (novo), turismo (novo), busca livre.
+ */
+
+function _contentExportSnapshot() {
+  const docs = applyAllContentFilters(_contentDataCache || []);
+  const enriched = docs.filter(d => d.extracted && Object.keys(d.extracted).length > 0);
+  const agg = aggregateContent(enriched);
+  return { docs, enriched, agg, filters: { ..._contentFiltersState } };
+}
+
+function _filterSummary(filters) {
+  const labels = [];
+  if (filters.bu)             labels.push(`BU: ${filters.bu}`);
+  if (filters.period)         labels.push(`Período: últimos ${filters.period}d`);
+  if (filters.country)        labels.push(`País: ${filters.country}`);
+  if (filters.city)           labels.push(`Cidade: ${filters.city}`);
+  if (filters.theme)          labels.push(`Tema: ${filters.theme}`);
+  if (filters.newsletterType) labels.push(`Tipo: ${filters.newsletterType}`);
+  if (filters.commercial)     labels.push(`Comercial: ${filters.commercial}`);
+  if (filters.tourism)        labels.push(`Turismo: ${filters.tourism}`);
+  if (filters.search)         labels.push(`Busca: "${filters.search}"`);
+  return labels.length ? labels.join(' · ') : 'Sem filtros adicionais (todos os dados)';
+}
+
+function _exportFilename(ext, slug = 'newsletter-conteudo') {
+  const date = new Date().toISOString().slice(0,10);
+  return `primetour_${slug}_${date}.${ext}`;
+}
+
+/* ─── XLSX export ─────────────────────────────────────────── */
+async function exportContentXlsx() {
+  try {
+    if (!window.XLSX) {
+      await new Promise((res, rej) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+        s.onload = res; s.onerror = rej;
+        document.head.appendChild(s);
+      });
+    }
+    const { enriched, agg, filters } = _contentExportSnapshot();
+    if (!enriched.length) { alert('Sem dados pra exportar com os filtros atuais.'); return; }
+
+    const wb = window.XLSX.utils.book_new();
+
+    // Sheet "Resumo"
+    const resumo = [
+      ['Newsletter — Conteúdo & Temas'],
+      ['Gerado em', new Date().toLocaleString('pt-BR')],
+      ['Filtros',   _filterSummary(filters)],
+      [],
+      ['Campanhas no recorte',  enriched.length],
+      ['Países únicos',         agg.countries.size],
+      ['Cidades únicas',        agg.cities.size],
+      ['Hotéis citados',        agg.hotels.size],
+      ['Cruzeiros citados',     agg.cruises.size],
+      ['Marcas',                agg.brands.size],
+      ['Temas',                 agg.themes.size],
+      ['Open rate médio (%)',   agg.avgOpenRate?.toFixed(2) || '—'],
+    ];
+    const wsResumo = window.XLSX.utils.aoa_to_sheet(resumo);
+    wsResumo['!cols'] = [{wch:30}, {wch:50}];
+    window.XLSX.utils.book_append_sheet(wb, wsResumo, 'Resumo');
+
+    // Helper: monta sheet a partir de map { name → {count, totalSent, totalOpen, totalClick, totalOptOut} }
+    const sheetFromMap = (map, primaryLabel) => {
+      const headers = [primaryLabel, 'Disparos', 'Enviados', 'Abertura (%)', 'Cliques (%)', 'Opt-out (%)'];
+      const rows = [...map.entries()].map(([name, d]) => [
+        name, d.count, d.totalSent,
+        d.totalSent > 0 ? +(d.totalOpen  / d.totalSent * 100).toFixed(2) : 0,
+        d.totalSent > 0 ? +(d.totalClick / d.totalSent * 100).toFixed(2) : 0,
+        d.totalSent > 0 ? +(d.totalOptOut/ d.totalSent * 100).toFixed(3) : 0,
+      ]).sort((a, b) => b[1] - a[1]);
+      const ws = window.XLSX.utils.aoa_to_sheet([headers, ...rows]);
+      ws['!cols'] = [{wch:28}, {wch:10}, {wch:12}, {wch:12}, {wch:12}, {wch:12}];
+      return ws;
+    };
+
+    window.XLSX.utils.book_append_sheet(wb, sheetFromMap(agg.commercial,     'Classif. Comercial'), 'Comercial');
+    window.XLSX.utils.book_append_sheet(wb, sheetFromMap(agg.tourism,        'Classif. Turismo'),   'Turismo');
+    window.XLSX.utils.book_append_sheet(wb, sheetFromMap(agg.countries,      'País'),               'Países');
+    window.XLSX.utils.book_append_sheet(wb, sheetFromMap(agg.cities,         'Cidade / Região'),    'Cidades');
+    window.XLSX.utils.book_append_sheet(wb, sheetFromMap(agg.hotels,         'Hotel'),              'Hotéis');
+    window.XLSX.utils.book_append_sheet(wb, sheetFromMap(agg.cruises,        'Cruzeiro'),           'Cruzeiros');
+    window.XLSX.utils.book_append_sheet(wb, sheetFromMap(agg.themes,         'Tema'),               'Temas');
+    window.XLSX.utils.book_append_sheet(wb, sheetFromMap(agg.brands,         'Marca'),              'Marcas');
+    // 4.49.32+ sheet "Tipo Legado" removida — eixos novos cobrem 100%.
+
+    // Sheet "Disparos" — uma linha por campanha enriquecida
+    const dispHeaders = ['Subject','BU','Data','Enviados','Abertura','Cliques','Opt-out','Comercial','Turismo','País(es)','Cidade(s)','Hotéis','Marcas'];
+    const dispRows = enriched.map(d => {
+      const ex = d.extracted || {};
+      const ts = d.sentDate?.toDate?.() || (d.sentDate ? new Date(d.sentDate) : null);
+      return [
+        d.subject || '',
+        d.buName || d.buId || '',
+        ts ? ts.toLocaleDateString('pt-BR') : '',
+        +(d.totalSent || 0),
+        +(d.openRate  || 0),
+        +(d.clickRate || 0),
+        d.totalSent > 0 ? +((d.optOut/d.totalSent)*100).toFixed(2) : 0,
+        ex.commercial || '',
+        ex.tourism    || '',
+        (ex.countries || []).join(', '),
+        (ex.cities    || []).join(', '),
+        (ex.hotels    || []).map(h => typeof h==='string'?h:(h?.name||'')).filter(Boolean).join(', '),
+        (ex.brands    || []).join(', '),
+      ];
+    });
+    const wsDisp = window.XLSX.utils.aoa_to_sheet([dispHeaders, ...dispRows]);
+    wsDisp['!cols'] = [{wch:50},{wch:14},{wch:10},{wch:10},{wch:10},{wch:10},{wch:10},{wch:14},{wch:14},{wch:30},{wch:30},{wch:40},{wch:30}];
+    window.XLSX.utils.book_append_sheet(wb, wsDisp, 'Disparos');
+
+    window.XLSX.writeFile(wb, _exportFilename('xlsx'));
+  } catch (e) {
+    console.error('[contentXlsx]', e);
+    alert('Erro ao gerar Excel: ' + e.message);
+  }
+}
+
+/* ─── PDF export ──────────────────────────────────────────────
+ * v4.49.38+ Rewrite alinhada ao padrão visual da Produtividade:
+ *   - Capa branded (drawCover) + footer com paginação (drawFooter)
+ *   - KPI strip colorido (6 blocos)
+ *   - Gráficos nativos: barras horizontais por Comercial/Turismo/Top hotéis/Cruzeiros/Temas
+ *   - Tabelas com autoTable estilizadas (não mais tabelão emoji+raw)
+ *   - Sanitização total: txt() + stripEmoji() em CADA campo que vira PDF
+ *     (jsPDF Helvetica é WinAnsi → emojis e setas viram caixinhas)
+ *   - Landscape: melhor pra grids de 2 colunas e tabela final
+ */
+const exportContentPdf = withExportGuard(async function exportContentPdf() {
+  try {
+    await loadJsPdf();
+    if (!window.jspdf?.jsPDF?.API?.autoTable) {
+      await new Promise((res, rej) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js';
+        s.onload = res; s.onerror = rej; document.head.appendChild(s);
+      });
+    }
+    const { enriched, agg, filters } = _contentExportSnapshot();
+    if (!enriched.length) { toast.warning('Sem dados pra exportar com os filtros atuais.'); return; }
+
+    // ── Sanitizadores: emojis + setas + chars fora do CP1252 viram lixo no PDF.
+    // txt() já trata setas/aspas curvas; stripEmoji remove faixas Unicode pesadas.
+    const stripEmoji = s => String(s ?? '')
+      .replace(/[\u{1F300}-\u{1FAFF}]/gu, '')   // emoticons + symbols + pictographs
+      .replace(/[\u{2600}-\u{27BF}]/gu, '')     // misc symbols + dingbats
+      .replace(/[\u{1F000}-\u{1F9FF}]/gu, '')   // mahjong + dominoes + extra
+      .replace(/[\u{2000}-\u{206F}]/gu, ' ')    // general punctuation (incl. zwj/zwnj)
+      .replace(/\s+/g, ' ')
+      .trim();
+    const safe = s => txt(stripEmoji(s));
+    const titleCase = s => safe(s).toUpperCase();
+
+    // ── Doc + paleta ──────────────────────────────────────────
+    const kit = createDoc({ orientation: 'landscape', margin: 14 });
+    const { doc, W, M, CW, setFill, setText } = kit;
+
+    // ── Cores das categorias (alinhadas ao dashboard) ─────────
+    // Comercial: sazonal/promocao/parceiro/inspiracional
+    // Turismo: evento/aereo/roteiro/servico/hotelaria/cruzeiro/produto/destino/outros
+    const CAT_COL = {
+      sazonal: COL.orange, promocao: COL.red, parceiro: COL.blue, inspiracional: COL.brand2,
+      evento: COL.gold, aereo: COL.blue, roteiro: COL.brand2, servico: COL.muted,
+      hotelaria: COL.green, cruzeiro: COL.blue, produto: COL.orange, destino: COL.brand,
+      outros: COL.soft,
+    };
+    const catColor = (key) => CAT_COL[String(key || '').toLowerCase()] || COL.brand2;
+
+    // ── Período coberto pelos disparos enriquecidos ──────────
+    const dates = enriched.map(d => d.sentDate?.toDate?.() || (d.sentDate ? new Date(d.sentDate) : null))
+                          .filter(Boolean).sort((a, b) => a - b);
+    const periodTxt = dates.length
+      ? `${dates[0].toLocaleDateString('pt-BR')}  a  ${dates[dates.length - 1].toLocaleDateString('pt-BR')}`
+      : 'Periodo nao definido';
+
+    // ── Capa ──────────────────────────────────────────────────
+    kit.drawCover({
+      title: 'Newsletter  ·  Conteudo & Temas',
+      subtitle: 'PRIMETOUR  ·  Analise editorial dos disparos',
+      meta: `${enriched.length} campanhas  ·  ${periodTxt}`,
+      compact: true,
+    });
+
+    // ── Linha de filtros aplicados ────────────────────────────
+    setText(COL.muted); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5);
+    const fSum = safe(_filterSummary(filters));
+    const fLines = doc.splitTextToSize(`Filtros aplicados: ${fSum}`, CW);
+    doc.text(fLines, M, kit.y);
+    kit.y += Math.max(4, fLines.length * 3.6) + 3;
+
+    // ── KPI Strip (6 blocos) ──────────────────────────────────
+    const totalSent = enriched.reduce((s, d) => s + (+d.totalSent || 0), 0);
+    const kpis = [
+      { label: 'Campanhas',  value: String(enriched.length),                     col: COL.brand },
+      { label: 'Enviados',   value: totalSent.toLocaleString('pt-BR'),           col: COL.brand2 },
+      { label: 'Paises',     value: String(agg.countries.size),                  col: COL.blue },
+      { label: 'Cidades',    value: String(agg.cities.size),                     col: COL.gold },
+      { label: 'Hoteis',     value: String(agg.hotels.size),                     col: COL.green },
+      { label: 'Open rate',  value: `${(agg.avgOpenRate || 0).toFixed(1)}%`,
+        col: agg.avgOpenRate >= 20 ? COL.green : agg.avgOpenRate >= 10 ? COL.orange : COL.red },
+    ];
+    const gap = 3;
+    const kpiW = (CW - gap * (kpis.length - 1)) / kpis.length;
+    const kpiH = 20;
+    let yK = kit.y;
+    kpis.forEach((k, i) => {
+      const x = M + i * (kpiW + gap);
+      setFill(COL.white); doc.roundedRect(x, yK, kpiW, kpiH, 1.5, 1.5, 'F');
+      setFill(k.col);     doc.rect(x, yK, kpiW, 1.5, 'F');
+      setText(COL.text);  doc.setFont('helvetica', 'bold'); doc.setFontSize(15);
+      doc.text(safe(k.value), x + kpiW / 2, yK + 11, { align: 'center' });
+      setText(COL.muted); doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5);
+      doc.text(titleCase(k.label), x + kpiW / 2, yK + 16.5, { align: 'center' });
+    });
+    kit.y = yK + kpiH + 6;
+
+    // ── Helper: barras horizontais a partir de um Map ─────────
+    // Compatível em forma com a UI: nome esquerda, barra meio, contagem direita.
+    const drawBarBlock = (title, map, colorOrFn, opts = {}) => {
+      const list = [...map.entries()]
+        .map(([name, d]) => ({ name: stripEmoji(name), count: d.count, openPct: d.totalSent ? (d.totalOpen / d.totalSent * 100) : null }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, opts.max || 8);
+      const x = opts.x ?? M;
+      const w = opts.w ?? CW;
+      const headerH = 5;
+      const rowH = 6;
+      const totalH = headerH + Math.max(1, list.length) * rowH + 3;
+      kit.ensureSpace(totalH + 4);
+
+      setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(9);
+      doc.text(titleCase(title), x, kit.y);
+      kit.y += headerH;
+
+      if (!list.length) {
+        setText(COL.muted); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5);
+        doc.text(safe('(sem dados nesse recorte)'), x, kit.y + 3);
+        kit.y += rowH;
+        return;
+      }
+
+      const maxC = Math.max(...list.map(l => l.count), 1);
+      const labW = Math.min(50, w * 0.42);
+      const valW = 18;
+      const barW = w - labW - valW - 4;
+      list.forEach(l => {
+        const yy = kit.y;
+        // label
+        setText(COL.text); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5);
+        const lbl = safe(l.name).slice(0, 36);
+        doc.text(lbl, x, yy + 3.4);
+        // bar
+        const col = typeof colorOrFn === 'function' ? colorOrFn(l.name) : colorOrFn;
+        kit.drawBar(x + labW, yy + 1.4, barW, (l.count / maxC) * 100, col, 2.6);
+        // value
+        setText(col); doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5);
+        doc.text(String(l.count), x + labW + barW + 2, yy + 3.4);
+        // open rate sufixo (cinza)
+        if (l.openPct != null) {
+          setText(COL.muted); doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5);
+          doc.text(safe(`${l.openPct.toFixed(1)}%`), x + labW + barW + 2 + valW - 1, yy + 3.4, { align: 'right' });
+        }
+        kit.y += rowH;
+      });
+      kit.y += 3;
+    };
+
+    // ── Linha A: Classificação Comercial × Turismo (2 col) ────
+    const colW = (CW - gap) / 2;
+    const yA = kit.y;
+    drawBarBlock('Classificacao Comercial', agg.commercial, catColor, { x: M, w: colW, max: 6 });
+    const yAa = kit.y;
+    kit.y = yA;
+    drawBarBlock('Classificacao Turismo', agg.tourism, catColor, { x: M + colW + gap, w: colW, max: 10 });
+    kit.y = Math.max(yAa, kit.y) + 1;
+
+    // ── Linha B: Top Países × Top Cidades (2 col) ─────────────
+    const yB = kit.y;
+    drawBarBlock('Top Paises  (campanhas / open rate)', agg.countries, COL.brand, { x: M, w: colW, max: 8 });
+    const yBb = kit.y;
+    kit.y = yB;
+    drawBarBlock('Top Cidades / Regioes', agg.cities, COL.brand2, { x: M + colW + gap, w: colW, max: 8 });
+    kit.y = Math.max(yBb, kit.y) + 1;
+
+    // ── Linha C: Top Hotéis × Top Marcas (2 col) ──────────────
+    const yC = kit.y;
+    drawBarBlock('Hoteis mais citados', agg.hotels, COL.green, { x: M, w: colW, max: 8 });
+    const yCc = kit.y;
+    kit.y = yC;
+    drawBarBlock('Marcas hoteleiras', agg.brands, COL.gold, { x: M + colW + gap, w: colW, max: 8 });
+    kit.y = Math.max(yCc, kit.y) + 1;
+
+    // ── Linha D: Cruzeiros × Temas (2 col) ────────────────────
+    const yD = kit.y;
+    drawBarBlock('Operadoras de cruzeiro', agg.cruises, COL.blue, { x: M, w: colW, max: 8 });
+    const yDd = kit.y;
+    kit.y = yD;
+    drawBarBlock('Temas / posicionamento', agg.themes, COL.brand2, { x: M + colW + gap, w: colW, max: 8 });
+    kit.y = Math.max(yDd, kit.y) + 4;
+
+    // ── Tabela final: campanhas enriquecidas ──────────────────
+    doc.addPage();
+    kit.y = 17;
+    setText(COL.muted); doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5);
+    doc.text(safe('PRIMETOUR  ·  Conteudo & Temas'), M, 9);
+    kit.setDraw(COL.border); doc.setLineWidth(0.15);
+    doc.line(M, 11, W - M, 11);
+
+    setText(COL.brand); doc.setFont('helvetica', 'bold'); doc.setFontSize(11);
+    doc.text(titleCase('Campanhas no recorte'), M, kit.y);
+    setText(COL.gold); doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5);
+    doc.text(safe(`— ${enriched.length} disparos enriquecidos`), M + 60, kit.y);
+    kit.y += 4;
+
+    const sortedRows = [...enriched].sort((a, b) => {
+      const ta = a.sentDate?.toDate?.()?.getTime?.() || +new Date(a.sentDate || 0);
+      const tb = b.sentDate?.toDate?.()?.getTime?.() || +new Date(b.sentDate || 0);
+      return tb - ta;
+    });
+
+    doc.autoTable({
+      startY: kit.y, margin: { left: M, right: M, bottom: 14 },
+      head: [['Data', 'BU', 'Subject', 'Comercial', 'Turismo', 'Paises', 'Cidades', 'Enviados', 'Ab.%', 'Cl.%']],
+      body: sortedRows.map(d => {
+        const ex = d.extracted || {};
+        const ts = d.sentDate?.toDate?.() || (d.sentDate ? new Date(d.sentDate) : null);
+        return [
+          ts ? ts.toLocaleDateString('pt-BR') : '-',
+          safe(d.buName || d.buId || '-'),
+          safe((d.subject || '').slice(0, 70)),
+          safe(ex.commercial || '-'),
+          safe(ex.tourism || '-'),
+          safe((ex.countries || []).slice(0, 4).join(', ') || '-'),
+          safe((ex.cities || []).slice(0, 4).join(', ') || '-'),
+          (+d.totalSent || 0).toLocaleString('pt-BR'),
+          d.openRate != null ? `${(+d.openRate).toFixed(1)}%` : '-',
+          d.clickRate != null ? `${(+d.clickRate).toFixed(1)}%` : '-',
+        ];
+      }),
+      styles: { fontSize: 7, cellPadding: 1.8, overflow: 'linebreak', textColor: COL.text },
+      headStyles: { fillColor: COL.brand, textColor: 255, fontStyle: 'bold', fontSize: 6.8 },
+      alternateRowStyles: { fillColor: COL.subBg },
+      columnStyles: {
+        0: { cellWidth: 16 },
+        1: { cellWidth: 22 },
+        2: { cellWidth: 68 },
+        3: { cellWidth: 22 },
+        4: { cellWidth: 22 },
+        5: { cellWidth: 36 },
+        6: { cellWidth: 36 },
+        7: { cellWidth: 18, halign: 'right' },
+        8: { cellWidth: 14, halign: 'right' },
+        9: { cellWidth: 14, halign: 'right' },
+      },
+      didParseCell: (data) => {
+        if (data.section !== 'body') return;
+        const ci = data.column.index;
+        if (ci === 8) {
+          const v = parseFloat(String(data.cell.raw).replace('%', '').replace(',', '.'));
+          if (!isNaN(v)) {
+            data.cell.styles.textColor = v >= 20 ? COL.green : v >= 10 ? COL.orange : COL.red;
+            data.cell.styles.fontStyle = 'bold';
+          }
+        }
+        if (ci === 3 || ci === 4) {
+          data.cell.styles.fontStyle = 'bold';
+          const col = catColor(String(data.cell.raw));
+          if (col) data.cell.styles.textColor = col;
+        }
+      },
+    });
+
+    kit.drawFooter('PRIMETOUR  ·  Conteudo & Temas');
+    doc.save(_exportFilename('pdf'));
+    toast.success(`PDF gerado com ${enriched.length} campanhas.`);
+  } catch (e) {
+    console.error('[contentPdf]', e);
+    toast.error('Erro ao gerar PDF: ' + e.message);
+  }
+});
+
+/* ─── PPT export ──────────────────────────────────────────── */
+async function exportContentPptx() {
+  try {
+    if (!window.PptxGenJS) {
+      await new Promise((res, rej) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js';
+        s.onload = res; s.onerror = rej; document.head.appendChild(s);
+      });
+    }
+    const { enriched, agg, filters } = _contentExportSnapshot();
+    if (!enriched.length) { alert('Sem dados pra exportar com os filtros atuais.'); return; }
+
+    const pptx = new window.PptxGenJS();
+    pptx.layout = 'LAYOUT_WIDE'; // 13.333 × 7.5 inches
+    pptx.author = 'PRIMETOUR';
+    pptx.title  = 'Newsletter — Conteúdo & Temas';
+
+    const GOLD = 'D4A843';
+    const NAVY = '0F1B2D';
+
+    // ── Slide 1: Capa ──
+    const s1 = pptx.addSlide();
+    s1.background = { color: 'FFFFFF' };
+    s1.addText('Newsletter', { x:0.5, y:1.0, w:12, h:0.6, fontSize:18, color: GOLD, fontFace:'Poppins' });
+    s1.addText('Conteúdo & Temas', { x:0.5, y:1.7, w:12, h:1.0, fontSize:44, bold:true, color: NAVY, fontFace:'Poppins' });
+    s1.addText(_filterSummary(filters), { x:0.5, y:3.3, w:12, h:0.8, fontSize:14, color:'474650', fontFace:'Poppins', italic:true });
+    s1.addText(`${enriched.length} campanhas · ${agg.countries.size} países · ${agg.cities.size} cidades · open rate médio ${(agg.avgOpenRate||0).toFixed(1)}%`,
+      { x:0.5, y:4.5, w:12, h:0.6, fontSize:14, color:NAVY, fontFace:'Poppins' });
+    s1.addText(`Gerado em ${new Date().toLocaleString('pt-BR')}`,
+      { x:0.5, y:6.8, w:12, h:0.4, fontSize:9, color:'888', fontFace:'Poppins' });
+
+    // ── Helper: slide com tabela a partir de map ──
+    const addMapSlide = (title, icon, map, primaryLabel) => {
+      if (!map || map.size === 0) return;
+      const s = pptx.addSlide();
+      s.background = { color:'FFFFFF' };
+      s.addText(`${icon}  ${title}`, { x:0.5, y:0.35, w:12, h:0.6, fontSize:24, bold:true, color: NAVY, fontFace:'Poppins' });
+      s.addText(`${enriched.length} campanhas · ${_filterSummary(filters)}`,
+        { x:0.5, y:0.95, w:12, h:0.4, fontSize:10, color:'888', fontFace:'Poppins', italic:true });
+
+      const rows = [...map.entries()].map(([name, d]) => [
+        String(name),
+        String(d.count),
+        d.totalSent.toLocaleString('pt-BR'),
+        d.totalSent > 0 ? (d.totalOpen / d.totalSent * 100).toFixed(1) + '%' : '—',
+        d.totalSent > 0 ? (d.totalClick/ d.totalSent * 100).toFixed(1) + '%' : '—',
+        d.totalSent > 0 ? (d.totalOptOut/d.totalSent*100).toFixed(2) + '%' : '—',
+      ]).sort((a, b) => +b[1] - +a[1]).slice(0, 15);
+
+      const header = [primaryLabel, 'Disparos', 'Enviados', 'Abertura', 'Cliques', 'Opt-out']
+        .map(t => ({ text: t, options: { bold: true, color: 'FFFFFF', fill: { color: GOLD } } }));
+      const body = rows.map(r => r.map(c => ({ text: String(c), options: { color: NAVY }})));
+
+      s.addTable([header, ...body], {
+        x: 0.5, y: 1.45, w: 12.3,
+        fontSize: 11, fontFace: 'Poppins',
+        border: { type: 'solid', color: 'E5E5E5', pt: 0.5 },
+        rowH: 0.35,
+      });
+    };
+
+    addMapSlide('Classificação Comercial', '💼', agg.commercial,     'Categoria');
+    addMapSlide('Classificação Turismo',   '✈️', agg.tourism,        'Categoria');
+    addMapSlide('Top Países',              '🌍', agg.countries,      'País');
+    addMapSlide('Top Cidades',             '🏙', agg.cities,         'Cidade');
+    addMapSlide('Hotéis citados',          '🏨', agg.hotels,         'Hotel');
+    addMapSlide('Cruzeiros',               '🚢', agg.cruises,        'Operadora');
+    addMapSlide('Temas / Posicionamento',  '🎯', agg.themes,         'Tema');
+    // 4.49.32+ slide "Tipo (legado)" removido — Comercial + Turismo cobrem.
+
+    await pptx.writeFile({ fileName: _exportFilename('pptx') });
+  } catch (e) {
+    console.error('[contentPptx]', e);
+    alert('Erro ao gerar PPT: ' + e.message);
+  }
+}
+
 function aggregateContent(docs) {
   const countries = new Map();
   const cities    = new Map();
@@ -2160,14 +3263,19 @@ function aggregateContent(docs) {
   const themes    = new Map();
   const audiences = new Map();
   const newsletterTypes = new Map(); // 4.9.0+ promocao/aereo/roteiro/hotelaria/cruzeiro/csat/inspiracional/institucional
+  // 4.49.27+ Eixos duplos: Comercial + Turismo (spec do user)
+  const commercial = new Map(); // promocao|sazonal|parceiro|inspiracional
+  const tourism    = new Map(); // evento|aereo|roteiro|servico|hotelaria|cruzeiro|produto|destino|outros
   let confidenceHigh = 0;
   let totalOpenRate = 0;
   let openRateCount = 0;
 
   for (const d of docs) {
     const ex = d.extracted || {};
-    const sent = +(d.totalSent || 0);
-    const opens = +(d.openUnique || 0);
+    const sent  = +(d.totalSent   || 0);
+    const opens = +(d.openUnique  || 0);
+    const clk   = +(d.clickUnique || 0);   // 4.49.24+ track cliques
+    const opt   = +(d.optOut      || 0);   // 4.49.24+ track opt-out
     if (sent > 0) { totalOpenRate += +(d.openRate || 0); openRateCount++; }
     if (ex.confidence === 'high') confidenceHigh++;
 
@@ -2175,10 +3283,18 @@ function aggregateContent(docs) {
       if (!name) return;
       const k = String(name).trim();
       if (!k) return;
-      const cur = map.get(k) || { count: 0, totalSent: 0, totalOpen: 0, sends: [] };
+      // 4.49.24+ Adicionei totalClick e totalOptOut pra suportar sort por
+      // qualquer coluna (req do user: "ordenar disparos/abertura/cliques/opt-out")
+      const cur = map.get(k) || {
+        count: 0, totalSent: 0, totalOpen: 0,
+        totalClick: 0, totalOptOut: 0,
+        sends: [],
+      };
       cur.count++;
-      cur.totalSent += sent;
-      cur.totalOpen += opens;
+      cur.totalSent  += sent;
+      cur.totalOpen  += opens;
+      cur.totalClick += clk;
+      cur.totalOptOut+= opt;
       cur.sends.push(d.id);
       map.set(k, cur);
     };
@@ -2198,10 +3314,14 @@ function aggregateContent(docs) {
     dedup(ex.hotels).forEach(h => tally(hotels, h));
     dedup(ex.cruises).forEach(c => tally(cruises, c));
     dedup(ex.newsletterType ? [ex.newsletterType] : []).forEach(t => tally(newsletterTypes, t));
+    // 4.49.27+ Eixos duplos da spec do user
+    if (ex.commercial) tally(commercial, ex.commercial);
+    if (ex.tourism)    tally(tourism, ex.tourism);
   }
 
   return {
     countries, cities, hotels, cruises, brands, themes, audiences, newsletterTypes,
+    commercial, tourism,   // 4.49.27+
     confidenceHigh,
     avgOpenRate: openRateCount > 0 ? totalOpenRate / openRateCount : 0,
     byCountry: countries,
@@ -2223,6 +3343,9 @@ const INFO_TIPS = {
   brands:         'Subset de hotels.brand + cruises.brand. Cada marca aparece 1× por campanha (não infla por waves).',
   openRate:       'Média ponderada da taxa de abertura das newsletters enriquecidas (sample.openRate × N campanhas / total).',
   newsletterType: 'Classificação por padrões no subject: csat (pesquisa), aereo (voo/classe executiva), cruzeiro (yacht/Silversea/Aqua), show/evento (BTS, Bocelli, GP), retreat/wellness (Rituaali, spa), promocao (Dia das Mães, %OFF), roteiro (multi-destino), hotelaria (default).',
+  // 4.49.27+ Eixos duplos da spec do user
+  commercial:     'Eixo COMERCIAL (tema macro da comunicação): Sazonal (estação/feriado/data específica), Promoção (oferta/desconto/condição comercial), Parceiro (empresa parceira em destaque), Inspiracional (editorial sem valor). Prioridade: Sazonal > Promoção > Parceiro > Inspiracional.',
+  tourism:        'Eixo TURISMO (tipo de conteúdo turístico): Evento (shows/esportes/festivais), Aéreo (voos/passagens/milhas), Roteiro (multi-dia/multi-destino), Serviço (transfer/concierge), Hotelaria (hotel específico), Cruzeiro (yacht/river-cruise), Produto (presentes/revista), Destino (foco no lugar), Outros (trens, experiências raras). Prioridade: Evento > Aéreo > Roteiro > Serviço > Hotelaria > Cruzeiro > Produto > Destino > Outros.',
   topCountries:   'Top 12 países por # de campanhas. Open rate médio agregado dos disparos relacionados. Click pra drill-down.',
   topCities:      'Top 12 cidades/regiões por # de campanhas. Granularidade abaixo de país (ex: Atenas dentro de Grécia). Click pra drill-down.',
   topHotels:      'Top 10 hotéis mais mencionados nas newsletters do período. Cada hotel conta 1× por campanha (dedup intra-doc + inter-wave).',
@@ -2233,12 +3356,26 @@ const INFO_TIPS = {
   envios:         'Lista das campanhas enriquecidas (deduplicadas por baseCode — P0209_1/_2/_3 = 1 linha). Click no ✎ pra editar manualmente quando IA errar.',
 };
 
-function blockHeader(title, tooltip, widgetId) {
-  const tipBadge = tooltip ? `<span title="${esc(tooltip)}"
-      style="cursor:help;display:inline-flex;align-items:center;justify-content:center;
-      width:18px;height:18px;border-radius:50%;background:var(--bg-elevated);
-      color:var(--text-muted);font-size:0.7rem;font-weight:600;font-style:italic;
-      font-family:Georgia,serif;border:1px solid var(--border-subtle);">i</span>` : '';
+function blockHeader(title, tooltipOrKey, widgetId) {
+  // 4.49.32+ Ícone "i" não usa mais o title= nativo (texto pequeno e
+  // ilegível). Vira botão que abre modal estruturado com definição
+  // formatada (vê INFO_MODAL_DEFINITIONS + openInfoModal).
+  // tooltipOrKey: string (com texto) OU key do INFO_MODAL_DEFINITIONS.
+  const isKey = typeof tooltipOrKey === 'string' && INFO_MODAL_DEFINITIONS[tooltipOrKey];
+  const infoKey = isKey ? tooltipOrKey : '';
+  const fallbackText = isKey ? '' : (tooltipOrKey || '');
+  const tipBtn = tooltipOrKey ? `<button type="button" class="nlc-info-btn"
+      data-info-key="${esc(infoKey)}"
+      data-info-title="${esc(title)}"
+      data-info-fallback="${esc(fallbackText)}"
+      title="Sobre este indicador"
+      style="cursor:pointer;display:inline-flex;align-items:center;justify-content:center;
+      width:22px;height:22px;border-radius:50%;background:var(--bg-elevated);
+      color:var(--text-muted);font-size:0.8125rem;font-weight:700;font-style:italic;
+      font-family:Georgia,serif;border:1px solid var(--border-subtle);
+      transition:all 0.15s;padding:0;line-height:1;"
+      onmouseover="this.style.background='var(--brand-gold)';this.style.color='white';this.style.borderColor='var(--brand-gold)';"
+      onmouseout="this.style.background='var(--bg-elevated)';this.style.color='var(--text-muted)';this.style.borderColor='var(--border-subtle)';">i</button>` : '';
   const insightSlot = widgetId
     ? `<span class="widget-insights-slot" data-widget-id="${esc(widgetId)}"></span>`
     : '';
@@ -2247,9 +3384,137 @@ function blockHeader(title, tooltip, widgetId) {
       letter-spacing:0.06em;color:var(--text-muted);">${title}</h3>
     <div style="display:flex;align-items:center;gap:6px;">
       ${insightSlot}
-      ${tipBadge}
+      ${tipBtn}
     </div>
   </div>`;
+}
+
+// 4.49.32+ Definições estruturadas legíveis em modal.
+// Cada entry tem { definition, categories[]?, priority?, examples[]?, source? }
+// Substitui texto longo do INFO_TIPS antigo por estrutura HTML formatada.
+const INFO_MODAL_DEFINITIONS = {
+  commercial: {
+    title: '💼 Classificação Comercial',
+    definition: 'Eixo macro da comunicação — qual a INTENÇÃO comercial do disparo. Cada doc recebe exatamente UMA categoria.',
+    categories: [
+      { label: '🗓 Sazonal',       desc: 'Período específico mencionado: estação (verão/inverno), feriado (Natal, Páscoa, Mães), data comemorativa, mês+ano explícito.' },
+      { label: '🏷 Promoção',      desc: 'Valor, desconto, condição comercial: %OFF, "noite FREE", cashback, "crédito US$", "tarifa especial", benefício exclusivo.' },
+      { label: '🤝 Parceiro',      desc: 'Empresa parceira em destaque: Cartão Partners, Centurion Card, Latam Pass, celebridade (Bocelli), marca não-PRIMETOUR (Rolex, Tag Heuer).' },
+      { label: '✨ Inspiracional', desc: 'Editorial sem valor, sazonalidade ou parceiro destacado. Foco em desejo/conteúdo curado.' },
+    ],
+    priority: ['Sazonal', 'Promoção', 'Parceiro', 'Inspiracional'],
+    source: 'Classificação automática via regex sobre subject + name + body do email.',
+  },
+  tourism: {
+    title: '✈️ Classificação Turismo',
+    definition: 'Tipo de conteúdo turístico apresentado. Cada doc recebe exatamente UMA categoria.',
+    categories: [
+      { label: '🎤 Evento',    desc: 'Shows, esportes, festivais com data/local específicos (Bocelli, GP, Wimbledon, Olimpíadas).' },
+      { label: '✈ Aéreo',      desc: 'Voos, passagens, classe executiva, milhas (Latam Pass, jato privado, Emirates).' },
+      { label: '📍 Roteiro',   desc: 'Multi-destino, X noites, day-by-day, pacote fechado com preço por pessoa.' },
+      { label: '🛎 Serviço',   desc: 'Transfer, concierge, Lifestyle Manager, alfaiate, personal shopper.' },
+      { label: '🏨 Hotelaria', desc: 'Bloco/destaque de hotel específico — hospedagem como protagonista.' },
+      { label: '🚢 Cruzeiro',  desc: 'Yacht, navio, river-cruise — Silversea, Aqua Mekong, Ritz-Carlton Yacht.' },
+      { label: '🎁 Produto',   desc: 'Item físico — flores, presentes, entrega de revista.' },
+      { label: '🌍 Destino',   desc: 'Editorial sobre o lugar em si — sem hotel/aéreo/roteiro específico.' },
+      { label: '◇ Outros',     desc: 'Trens de luxo (Orient Express, Andean Explorer) ou casos não-classificáveis.' },
+    ],
+    priority: ['Evento', 'Aéreo', 'Roteiro', 'Serviço', 'Hotelaria', 'Cruzeiro', 'Produto', 'Destino', 'Outros'],
+    source: 'Classificação automática via regex sobre subject + name + body do email.',
+  },
+  topCountries: {
+    title: '🌍 Top Países',
+    definition: 'Contagem de campanhas que mencionam cada país (no subject, name ou body). Cada campanha conta 1× por país independente de waves.',
+    examples: ['Itália (10 disparos · 28% open rate médio)', 'Maldivas (4 disparos · 41% open rate)'],
+    source: 'Extração automática via dicionário curado de 51 países (PT + EN) sobre subject + name + body com regra anti-boilerplate (header/footer cortados).',
+  },
+  topCities: {
+    title: '🏙 Top Cidades / Regiões',
+    definition: 'Granularidade abaixo de país: cidades, regiões turísticas (Toscana), atrações-âncora (Mekong, Acrópole).',
+    examples: ['Atenas (Grécia)', 'Mar Egeu (região)', 'Bora Bora (Polinésia Francesa)'],
+    source: 'Dicionário curado de 148 cidades com país-mãe. Aliases (NY → Nova York, Tokyo → Tóquio).',
+  },
+  topHotels: {
+    title: '🏨 Hotéis citados',
+    definition: 'Hotéis identificados por marca curada (luxury travel). Cada hotel conta 1× por campanha (dedup intra-doc + inter-wave).',
+    examples: ['Aman Tokyo, Belmond, Faena, Patina Maldives, Waldorf Astoria'],
+    source: 'Dicionário de 50+ marcas premium (Aman, Belmond, Faena, Six Senses, Cheval Blanc, Four Seasons, Ritz-Carlton, Capella, Rosewood…).',
+  },
+  topCruises: {
+    title: '🚢 Cruzeiros / Operadoras Marítimas',
+    definition: 'Operadoras de cruzeiro/yacht separadas dos hotéis (são produtos com economia distinta).',
+    examples: ['Silversea, Aqua Expeditions, Ritz-Carlton Yacht, Crystal Cruises'],
+  },
+  themes: {
+    title: '🎯 Temas / Posicionamento',
+    definition: 'Tags livres que indicam o ângulo emocional/de posicionamento da campanha. Múltiplos temas por campanha.',
+    examples: ['luxo, romance, família, aventura, gastronomia, wellness, cultura, praia, cidade, natureza, mar, slow-travel'],
+  },
+  brandsBlock: {
+    title: '🏷 Marcas Hoteleiras Citadas',
+    definition: 'Subset de hotels.brand + cruises.brand. Cada marca aparece 1× por campanha (não infla por waves).',
+  },
+  openRate: {
+    title: '📊 Open Rate Médio',
+    definition: 'Média ponderada da taxa de abertura das newsletters enriquecidas (campanhas com extração válida).',
+    source: 'Fórmula: Σ(openRate × totalSent) / Σ(totalSent) — pondera por volume de envio.',
+  },
+};
+
+async function openInfoModal(key, fallbackTitle) {
+  const { modal } = await import('../components/modal.js');
+  const def = INFO_MODAL_DEFINITIONS[key];
+  let content;
+  if (!def) {
+    content = `<div style="padding:16px;color:var(--text-muted);">${esc(fallbackTitle || 'Sem definição disponível.')}</div>`;
+  } else {
+    const catsHTML = def.categories?.length
+      ? `<div style="margin-top:16px;">
+          <div style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted);margin-bottom:8px;">Categorias</div>
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            ${def.categories.map(c => `
+              <div style="padding:10px 12px;background:var(--bg-elevated);border-radius:6px;border-left:3px solid var(--brand-gold);">
+                <div style="font-size:0.875rem;font-weight:600;color:var(--text-primary);margin-bottom:3px;">${esc(c.label)}</div>
+                <div style="font-size:0.8125rem;color:var(--text-secondary);line-height:1.5;">${esc(c.desc)}</div>
+              </div>`).join('')}
+          </div>
+        </div>` : '';
+    const priHTML = def.priority?.length
+      ? `<div style="margin-top:16px;padding:10px 14px;background:rgba(212,168,67,0.08);border-radius:6px;border:1px solid rgba(212,168,67,0.25);">
+          <div style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--brand-gold);margin-bottom:6px;">⚡ Prioridade em caso de convergência</div>
+          <div style="font-size:0.8125rem;color:var(--text-primary);line-height:1.6;">
+            ${def.priority.map((p, i) => `<span style="display:inline-block;margin-right:6px;">${i+1}. <strong>${esc(p)}</strong></span>`).join(' › ')}
+          </div>
+        </div>` : '';
+    const exHTML = def.examples?.length
+      ? `<div style="margin-top:16px;">
+          <div style="font-size:0.75rem;font-weight:600;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted);margin-bottom:6px;">Exemplos</div>
+          <div style="font-size:0.8125rem;color:var(--text-secondary);line-height:1.6;">
+            ${def.examples.map(e => `<div>• ${esc(e)}</div>`).join('')}
+          </div>
+        </div>` : '';
+    const srcHTML = def.source
+      ? `<div style="margin-top:16px;padding-top:12px;border-top:1px dashed var(--border-subtle);
+          font-size:0.6875rem;color:var(--text-muted);line-height:1.6;font-style:italic;">
+          ${esc(def.source)}
+        </div>` : '';
+    content = `
+      <div style="font-size:0.9375rem;color:var(--text-primary);line-height:1.6;">
+        ${esc(def.definition)}
+      </div>
+      ${catsHTML}
+      ${priHTML}
+      ${exHTML}
+      ${srcHTML}`;
+  }
+
+  modal.open({
+    title: def?.title || (fallbackTitle || 'Sobre este indicador'),
+    size: 'md',
+    content,
+    dedupeKey: `nlc-info-${key}`,
+    footer: [{ label: 'Fechar', class: 'btn-secondary', closeOnClick: true }],
+  });
 }
 
 function contentKpi(title, value, sub, tooltip) {
@@ -2266,29 +3531,166 @@ function contentKpi(title, value, sub, tooltip) {
   </div>`;
 }
 
+// 4.49.24+ State global de sort/expand por bloco. Persistido in-memory
+// pra sobreviver re-renders do tab; reset quando user navega fora.
+const _contentTableState = {}; // { 'countries': { sortBy:'count', dir:'desc', expanded:false } }
+
+function _getTblState(key) {
+  if (!_contentTableState[key]) {
+    _contentTableState[key] = { sortBy: 'count', dir: 'desc', expanded: false };
+  }
+  return _contentTableState[key];
+}
+
+function _sortAndCap(rows, state, cap = 12) {
+  const dir = state.dir === 'asc' ? 1 : -1;
+  const sorted = [...rows].sort((a, b) => {
+    const va = a[state.sortBy] ?? 0;
+    const vb = b[state.sortBy] ?? 0;
+    if (typeof va === 'string' || typeof vb === 'string') {
+      return dir * String(va).localeCompare(String(vb), 'pt-BR');
+    }
+    return dir * (vb - va) * -1; // dir invertido pra manter intuição: desc primeiro
+  });
+  return state.expanded ? sorted : sorted.slice(0, cap);
+}
+
+function _sortIcon(state, col) {
+  if (state.sortBy !== col) return '<span style="opacity:0.3;">⇅</span>';
+  return state.dir === 'desc' ? '▼' : '▲';
+}
+
 function renderTopDestinosTable(map, allEnriched, label = 'País') {
   if (!map || map.size === 0) return `<p style="color:var(--text-muted);font-size:0.8125rem;">Nenhum ${String(label).toLowerCase()} identificado ainda.</p>`;
-  const top = [...map.entries()]
-    .map(([name, d]) => ({ name, count: d.count, openRate: d.totalSent > 0 ? (d.totalOpen / d.totalSent * 100) : 0 }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 12);
+  const stateKey = label === 'cidade' ? 'cities' : 'countries';
+  const state = _getTblState(stateKey);
+
+  // 4.49.24+ enriquecido: adiciona clickRate, optOutRate e os totais
+  // pra suportar sort em qualquer eixo.
+  const all = [...map.entries()].map(([name, d]) => ({
+    name,
+    count: d.count,
+    totalSent: d.totalSent,
+    openRate:   d.totalSent > 0 ? (d.totalOpen   / d.totalSent * 100) : 0,
+    clickRate:  d.totalSent > 0 ? (d.totalClick  / d.totalSent * 100) : 0,
+    optOutRate: d.totalSent > 0 ? (d.totalOptOut / d.totalSent * 100) : 0,
+    sends: d.sends,
+  }));
+  const totalCount = all.length;
+  const rows = _sortAndCap(all, state, 12);
+
   const headerLabel = label === 'cidade' ? 'Cidade / Região' : 'País';
   const drillClass = label === 'cidade' ? 'nlc-city-drill' : 'nlc-country-drill';
   const drillAttr  = label === 'cidade' ? 'data-city'      : 'data-country';
 
+  const sortable = (col, lbl) =>
+    `<th class="nlc-sort-th" data-tbl="${stateKey}" data-col="${col}"
+      style="text-align:right;padding:8px 6px;cursor:pointer;user-select:none;">
+      ${esc(lbl)} ${_sortIcon(state, col)}</th>`;
+
+  // Header de "ver todos" abaixo da tabela
+  const expandHint = !state.expanded && totalCount > 12
+    ? `<div style="text-align:center;padding:8px 0;">
+        <button class="nlc-expand-btn" data-tbl="${stateKey}"
+          style="background:none;border:1px solid var(--border-subtle);border-radius:6px;
+          padding:5px 12px;cursor:pointer;font-size:0.75rem;color:var(--text-secondary);">
+          + Ver todos os ${totalCount}
+        </button>
+       </div>`
+    : state.expanded && totalCount > 12
+      ? `<div style="text-align:center;padding:8px 0;">
+          <button class="nlc-expand-btn" data-tbl="${stateKey}"
+            style="background:none;border:1px solid var(--border-subtle);border-radius:6px;
+            padding:5px 12px;cursor:pointer;font-size:0.75rem;color:var(--text-secondary);">
+            − Colapsar (top 12)
+          </button>
+         </div>`
+      : '';
+
   return `<table style="width:100%;font-size:0.8125rem;border-collapse:collapse;">
     <thead><tr style="border-bottom:1px solid var(--border-subtle);color:var(--text-muted);font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.05em;">
-      <th style="text-align:left;padding:8px 6px;">${esc(headerLabel)}</th>
-      <th style="text-align:right;padding:8px 6px;">Disparos</th>
-      <th style="text-align:right;padding:8px 6px;">Open rate</th>
+      <th class="nlc-sort-th" data-tbl="${stateKey}" data-col="name"
+        style="text-align:left;padding:8px 6px;cursor:pointer;user-select:none;">
+        ${esc(headerLabel)} ${_sortIcon(state, 'name')}</th>
+      ${sortable('count', 'Disparos')}
+      ${sortable('openRate', 'Abertura')}
+      ${sortable('clickRate', 'Cliques')}
+      ${sortable('optOutRate', 'Opt-out')}
     </tr></thead>
-    <tbody>${top.map(r => `<tr style="border-bottom:1px solid var(--border-subtle);cursor:pointer;"
-      class="${drillClass}" ${drillAttr}="${esc(r.name)}">
+    <tbody>${rows.map(r => `<tr style="border-bottom:1px solid var(--border-subtle);cursor:pointer;"
+      class="${drillClass} nlc-drill-row" ${drillAttr}="${esc(r.name)}"
+      data-sends="${esc(JSON.stringify(r.sends))}" data-name="${esc(r.name)}"
+      data-entity="${stateKey === 'cities' ? 'city' : 'country'}"
+      title="Click pra ver os ${r.count} disparos de ${esc(r.name)}">
       <td style="padding:7px 6px;font-weight:500;">${esc(r.name)}</td>
       <td style="padding:7px 6px;text-align:right;color:var(--text-secondary);">${r.count}</td>
       <td style="padding:7px 6px;text-align:right;font-weight:600;color:${rateColor2(r.openRate)};">${r.openRate.toFixed(1)}%</td>
+      <td style="padding:7px 6px;text-align:right;color:var(--text-secondary);">${r.clickRate.toFixed(1)}%</td>
+      <td style="padding:7px 6px;text-align:right;color:var(--text-secondary);">${r.optOutRate.toFixed(2)}%</td>
     </tr>`).join('')}</tbody>
-  </table>`;
+  </table>
+  ${expandHint}`;
+}
+
+// 4.49.27+ Renderer dos eixos duplos (Comercial + Turismo).
+// Mesma estética dos newsletterTypes mas com labels/cores próprios e
+// drill-down clicável (data-entity=commercial/tourism).
+const COMMERCIAL_LABELS = {
+  promocao:       '🏷 Promoção',
+  sazonal:        '🗓 Sazonal',
+  parceiro:       '🤝 Parceiro',
+  inspiracional:  '✨ Inspiracional',
+};
+const COMMERCIAL_COLORS = {
+  promocao: '#F59E0B', sazonal: '#10B981',
+  parceiro: '#8B5CF6', inspiracional: '#3B82F6',
+};
+const TOURISM_LABELS = {
+  evento:    '🎤 Evento',
+  aereo:     '✈ Aéreo',
+  roteiro:   '📍 Roteiro',
+  servico:   '🛎 Serviço',
+  hotelaria: '🏨 Hotelaria',
+  cruzeiro:  '🚢 Cruzeiro',
+  produto:   '🎁 Produto',
+  destino:   '🌍 Destino',
+  outros:    '◇ Outros',
+};
+const TOURISM_COLORS = {
+  evento: '#F97316', aereo: '#3B82F6', roteiro: '#10B981',
+  servico: '#06B6D4', hotelaria: '#8B5CF6', cruzeiro: '#0EA5E9',
+  produto: '#EC4899', destino: '#D4A843', outros: '#6B7280',
+};
+
+function renderClassificationBars(map, axis) {
+  if (!map || map.size === 0) return '<p style="color:var(--text-muted);font-size:0.8125rem;">Sem dados classificados ainda. Rode o classifier.</p>';
+  const labels = axis === 'commercial' ? COMMERCIAL_LABELS : TOURISM_LABELS;
+  const colors = axis === 'commercial' ? COMMERCIAL_COLORS : TOURISM_COLORS;
+  const all = [...map.entries()].map(([name, d]) => ({
+    name, count: d.count, sends: d.sends, totalSent: d.totalSent,
+    openRate:   d.totalSent > 0 ? (d.totalOpen   / d.totalSent * 100) : 0,
+    clickRate:  d.totalSent > 0 ? (d.totalClick  / d.totalSent * 100) : 0,
+    optOutRate: d.totalSent > 0 ? (d.totalOptOut / d.totalSent * 100) : 0,
+  }));
+  all.sort((a, b) => b.count - a.count);
+  const max = all[0]?.count || 1;
+
+  return all.map(r => `<div class="nlc-drill-row" data-entity="${axis}" data-name="${esc(r.name)}"
+    data-sends="${esc(JSON.stringify(r.sends))}"
+    style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:0.8125rem;
+    cursor:pointer;padding:2px 4px;border-radius:4px;"
+    title="Click pra ver os ${r.count} disparos classificados como ${esc(labels[r.name]||r.name)}"
+    onmouseover="this.style.background='rgba(212,168,67,0.06)'"
+    onmouseout="this.style.background=''">
+    <div style="flex:0 0 130px;">${esc(labels[r.name] || r.name)}</div>
+    <div style="flex:1;min-width:60px;height:8px;background:var(--bg-elevated);border-radius:4px;overflow:hidden;">
+      <div style="height:100%;width:${(r.count/max*100).toFixed(1)}%;background:${colors[r.name] || '#94A3B8'};"></div>
+    </div>
+    <div style="flex:0 0 40px;text-align:right;font-weight:600;color:var(--text-secondary);">${r.count}</div>
+    <div style="flex:0 0 60px;text-align:right;font-size:0.75rem;color:${rateColor2(r.openRate)};" title="Abertura">${r.openRate.toFixed(1)}%</div>
+    <div style="flex:0 0 50px;text-align:right;font-size:0.75rem;color:var(--text-muted);" title="Cliques">${r.clickRate.toFixed(1)}%</div>
+    <div style="flex:0 0 50px;text-align:right;font-size:0.75rem;color:var(--text-muted);" title="Opt-out">${r.optOutRate.toFixed(2)}%</div>
+  </div>`).join('');
 }
 
 function renderNewsletterTypesBars(typesMap, allEnriched) {
@@ -2311,50 +3713,95 @@ function renderNewsletterTypesBars(typesMap, allEnriched) {
     inspiracional: '#EC4899', institucional: '#64748B',
     'show/evento': '#F97316', 'retreat/wellness': '#14B8A6',
   };
+  // 4.49.24+ Enriquecido com cliques + opt-out, drill clicável.
   const top = [...typesMap.entries()]
-    .map(([name, d]) => ({ name, count: d.count, openRate: d.totalSent > 0 ? (d.totalOpen / d.totalSent * 100) : 0 }))
+    .map(([name, d]) => ({
+      name, count: d.count, sends: d.sends, totalSent: d.totalSent,
+      openRate:   d.totalSent > 0 ? (d.totalOpen   / d.totalSent * 100) : 0,
+      clickRate:  d.totalSent > 0 ? (d.totalClick  / d.totalSent * 100) : 0,
+      optOutRate: d.totalSent > 0 ? (d.totalOptOut / d.totalSent * 100) : 0,
+    }))
     .sort((a, b) => b.count - a.count);
   const max = top[0]?.count || 1;
-  return top.map(r => `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:0.8125rem;">
+  return top.map(r => `<div class="nlc-drill-row" data-entity="newsletterType" data-name="${esc(r.name)}"
+    data-sends="${esc(JSON.stringify(r.sends))}"
+    style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:0.8125rem;
+    cursor:pointer;padding:2px 4px;border-radius:4px;"
+    title="Click pra ver os ${r.count} disparos do tipo ${esc(labels[r.name]||r.name)}"
+    onmouseover="this.style.background='rgba(212,168,67,0.06)'"
+    onmouseout="this.style.background=''">
     <div style="flex:0 0 140px;">${esc(labels[r.name] || r.name)}</div>
     <div style="flex:1;min-width:60px;height:8px;background:var(--bg-elevated);border-radius:4px;overflow:hidden;">
       <div style="height:100%;width:${(r.count/max*100).toFixed(1)}%;background:${colors[r.name] || '#94A3B8'};"></div>
     </div>
     <div style="flex:0 0 40px;text-align:right;font-weight:600;color:var(--text-secondary);">${r.count}</div>
-    <div style="flex:0 0 60px;text-align:right;font-size:0.75rem;color:${rateColor2(r.openRate)};">${r.openRate.toFixed(1)}%</div>
+    <div style="flex:0 0 60px;text-align:right;font-size:0.75rem;color:${rateColor2(r.openRate)};" title="Abertura">${r.openRate.toFixed(1)}%</div>
+    <div style="flex:0 0 50px;text-align:right;font-size:0.75rem;color:var(--text-muted);" title="Cliques">${r.clickRate.toFixed(1)}%</div>
+    <div style="flex:0 0 50px;text-align:right;font-size:0.75rem;color:var(--text-muted);" title="Opt-out">${r.optOutRate.toFixed(2)}%</div>
   </div>`).join('');
+}
+
+// 4.49.24+ Versão genérica de bars com drill + expand. Usa _contentTableState.
+function _renderBarsList(map, opts) {
+  const { emptyMsg, stateKey, entity, color = 'var(--brand-gold)', capDefault = 10, labels = {} } = opts;
+  if (!map || map.size === 0) return `<p style="color:var(--text-muted);font-size:0.8125rem;">${emptyMsg}</p>`;
+  const state = _getTblState(stateKey);
+  const all = [...map.entries()].map(([name, d]) => ({
+    name, count: d.count, sends: d.sends, totalSent: d.totalSent,
+    openRate:   d.totalSent > 0 ? (d.totalOpen   / d.totalSent * 100) : 0,
+    clickRate:  d.totalSent > 0 ? (d.totalClick  / d.totalSent * 100) : 0,
+    optOutRate: d.totalSent > 0 ? (d.totalOptOut / d.totalSent * 100) : 0,
+  }));
+  // Bars sempre ordenam por count desc (visual); expand muda só o cap
+  all.sort((a, b) => b.count - a.count);
+  const total = all.length;
+  const rows = state.expanded ? all : all.slice(0, capDefault);
+  const max = all[0]?.count || 1;
+
+  const bars = rows.map(r => `<div class="nlc-drill-row" data-entity="${entity}" data-name="${esc(r.name)}"
+    data-sends="${esc(JSON.stringify(r.sends))}"
+    style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:0.8125rem;
+    cursor:pointer;padding:2px 4px;border-radius:4px;"
+    title="Click pra ver os ${r.count} disparos de ${esc(labels[r.name] || r.name)}"
+    onmouseover="this.style.background='rgba(212,168,67,0.06)'"
+    onmouseout="this.style.background=''">
+    <div style="flex:0 0 ${opts.labelWidth || 120}px;${opts.capitalize ? 'text-transform:capitalize;' : ''}
+      overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(labels[r.name] || r.name)}</div>
+    <div style="flex:1;min-width:60px;height:8px;background:var(--bg-elevated);border-radius:4px;overflow:hidden;">
+      <div style="height:100%;width:${(r.count/max*100).toFixed(1)}%;background:${color};"></div>
+    </div>
+    <div style="flex:0 0 40px;text-align:right;font-weight:600;color:var(--text-secondary);">${r.count}</div>
+    <div style="flex:0 0 60px;text-align:right;font-size:0.75rem;color:${rateColor2(r.openRate)};" title="Abertura">${r.openRate.toFixed(1)}%</div>
+    <div style="flex:0 0 50px;text-align:right;font-size:0.75rem;color:var(--text-muted);" title="Cliques">${r.clickRate.toFixed(1)}%</div>
+    <div style="flex:0 0 50px;text-align:right;font-size:0.75rem;color:var(--text-muted);" title="Opt-out">${r.optOutRate.toFixed(2)}%</div>
+  </div>`).join('');
+
+  const expandHint = total > capDefault
+    ? `<div style="text-align:center;padding:6px 0;">
+        <button class="nlc-expand-btn" data-tbl="${stateKey}"
+          style="background:none;border:1px solid var(--border-subtle);border-radius:6px;
+          padding:4px 12px;cursor:pointer;font-size:0.75rem;color:var(--text-secondary);">
+          ${state.expanded ? `− Colapsar (top ${capDefault})` : `+ Ver todos os ${total}`}
+        </button>
+       </div>`
+    : '';
+  return bars + expandHint;
 }
 
 function renderTopHoteisBars(hotelsMap, allEnriched) {
-  if (hotelsMap.size === 0) return '<p style="color:var(--text-muted);font-size:0.8125rem;">Nenhum hotel identificado ainda.</p>';
-  const top = [...hotelsMap.entries()]
-    .map(([name, d]) => ({ name, count: d.count }))
-    .sort((a, b) => b.count - a.count)
-    .slice(0, 10);
-  const max = top[0]?.count || 1;
-  return top.map(r => `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:0.8125rem;">
-    <div style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(r.name)}</div>
-    <div style="flex:0 0 120px;height:8px;background:var(--bg-elevated);border-radius:4px;overflow:hidden;">
-      <div style="height:100%;width:${(r.count/max*100).toFixed(1)}%;background:var(--brand-gold);"></div>
-    </div>
-    <div style="flex:0 0 30px;text-align:right;font-weight:600;color:var(--text-secondary);">${r.count}</div>
-  </div>`).join('');
+  return _renderBarsList(hotelsMap, {
+    emptyMsg: 'Nenhum hotel identificado ainda.',
+    stateKey: 'hotels', entity: 'hotel',
+    color: 'var(--brand-gold)', capDefault: 10, labelWidth: 180,
+  });
 }
 
 function renderThemesBars(themesMap, allEnriched) {
-  if (themesMap.size === 0) return '<p style="color:var(--text-muted);font-size:0.8125rem;">Nenhum tema identificado ainda.</p>';
-  const top = [...themesMap.entries()]
-    .map(([name, d]) => ({ name, count: d.count, openRate: d.totalSent > 0 ? (d.totalOpen / d.totalSent * 100) : 0 }))
-    .sort((a, b) => b.count - a.count);
-  const max = top[0]?.count || 1;
-  return top.map(r => `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:0.8125rem;">
-    <div style="flex:0 0 120px;text-transform:capitalize;">${esc(r.name)}</div>
-    <div style="flex:1;min-width:60px;height:8px;background:var(--bg-elevated);border-radius:4px;overflow:hidden;">
-      <div style="height:100%;width:${(r.count/max*100).toFixed(1)}%;background:#8B5CF6;"></div>
-    </div>
-    <div style="flex:0 0 50px;text-align:right;font-weight:600;color:var(--text-secondary);">${r.count}</div>
-    <div style="flex:0 0 60px;text-align:right;font-size:0.75rem;color:${rateColor2(r.openRate)};">${r.openRate.toFixed(1)}%</div>
-  </div>`).join('');
+  return _renderBarsList(themesMap, {
+    emptyMsg: 'Nenhum tema identificado ainda.',
+    stateKey: 'themes', entity: 'theme',
+    color: '#8B5CF6', capDefault: 12, labelWidth: 120, capitalize: true,
+  });
 }
 
 function renderBrandsPills(brandsMap, allEnriched) {
@@ -2523,26 +3970,50 @@ function renderContentEmptyState(totalDocs) {
 }
 
 function wireDrillDowns() {
-  // Click em país → seta filtro de país e re-renderiza
-  document.querySelectorAll('.nlc-country-drill').forEach(row => {
-    row.addEventListener('click', () => {
-      const country = row.dataset.country;
-      _contentFiltersState.country = country;
-      const sel = document.getElementById('nlc-country-filter');
-      if (sel) sel.value = country;
+  // 4.49.24+ Click em qualquer linha drill (.nlc-drill-row) → abre MODAL
+  // com a lista de disparos daquela entidade. Antes só setava filtro;
+  // user pediu "ao clicar em Marrocos, abrir tela com todas as artes
+  // classificadas como Marrocos, respeitando filtros já aplicados".
+  document.querySelectorAll('.nlc-drill-row').forEach(row => {
+    row.addEventListener('click', (e) => {
+      // Não dispara se clicou no header de sort/expand
+      if (e.target.closest('.nlc-sort-th, .nlc-expand-btn')) return;
+      const entity = row.dataset.entity;
+      const name   = row.dataset.name;
+      let sends;
+      try { sends = JSON.parse(row.dataset.sends || '[]'); }
+      catch (_) { sends = []; }
+      openDrillModal(entity, name, sends);
+    });
+  });
+
+  // 4.49.24+ Sort por click em column header
+  document.querySelectorAll('.nlc-sort-th').forEach(th => {
+    th.addEventListener('click', () => {
+      const tbl = th.dataset.tbl;
+      const col = th.dataset.col;
+      const state = _getTblState(tbl);
+      if (state.sortBy === col) {
+        state.dir = state.dir === 'desc' ? 'asc' : 'desc';
+      } else {
+        state.sortBy = col;
+        state.dir    = (col === 'name') ? 'asc' : 'desc';
+      }
       renderContentTab();
     });
   });
-  // Click em cidade → seta filtro de cidade e re-renderiza
-  document.querySelectorAll('.nlc-city-drill').forEach(row => {
-    row.addEventListener('click', () => {
-      const city = row.dataset.city;
-      _contentFiltersState.city = city;
-      const sel = document.getElementById('nlc-city-filter');
-      if (sel) sel.value = city;
+
+  // 4.49.24+ Botão "+ Ver todos" / "− Colapsar"
+  document.querySelectorAll('.nlc-expand-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const tbl = btn.dataset.tbl;
+      const state = _getTblState(tbl);
+      state.expanded = !state.expanded;
       renderContentTab();
     });
   });
+
   // Botão "✎" em cada envio → abre modal de edição manual do extracted
   document.querySelectorAll('.nlc-edit-doc').forEach(btn => {
     btn.addEventListener('click', (e) => {
@@ -2550,8 +4021,125 @@ function wireDrillDowns() {
       openExtractedEditor(btn.dataset.docId);
     });
   });
+  // 4.49.32+ Botão "i" em cada blockHeader → abre modal de definição.
+  document.querySelectorAll('.nlc-info-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const key = btn.dataset.infoKey || '';
+      const title = btn.dataset.infoTitle || '';
+      const fallback = btn.dataset.infoFallback || '';
+      openInfoModal(key, title || fallback);
+    });
+  });
   // Resize de colunas da tabela de envios (idempotente)
   wireEnviosColResize();
+}
+
+/* 4.49.24+ Drill-down modal: abre lista dos disparos que compõem
+ * o item clicado, respeitando os filtros já aplicados na aba (BU,
+ * período, etc. — porque sends[] já vem do agregador filtrado).
+ *
+ * Cada linha = uma campanha (mc_performance doc). Mostra: subject,
+ * BU, sent date, totalSent, openRate, clickRate, optOut. Action:
+ * "✎ Editar" reusa o openExtractedEditor (mesmo modal de override).
+ */
+async function openDrillModal(entity, name, sendIds) {
+  const { modal } = await import('../components/modal.js');
+  const allDocs = _lastContentDocs || [];
+  const docs = allDocs.filter(d => sendIds.includes(d.id))
+    .sort((a, b) => {
+      const ta = a.sentDate?.toDate?.()?.getTime?.() || 0;
+      const tb = b.sentDate?.toDate?.()?.getTime?.() || 0;
+      return tb - ta;
+    });
+
+  const entityLabels = {
+    country: 'país', city: 'cidade', hotel: 'hotel',
+    theme: 'tema', newsletterType: 'tipo de newsletter',
+    // 4.49.27+ Eixos duplos
+    commercial: 'classificação comercial', tourism: 'classificação turismo',
+  };
+  const entityLabel = entityLabels[entity] || entity;
+
+  const fmtDate = (ts) => {
+    if (!ts) return '—';
+    const d = ts.toDate ? ts.toDate() : new Date(ts);
+    return d.toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit', year:'2-digit' });
+  };
+  const pct = (n) => (n == null || n === '') ? '—' : `${Number(n).toFixed(1)}%`;
+  const num = (n) => (n == null) ? '—' : Number(n).toLocaleString('pt-BR');
+
+  const rows = docs.map(d => {
+    const sent  = +(d.totalSent || 0);
+    const opens = +(d.openUnique || 0);
+    const clk   = +(d.clickUnique || 0);
+    const opt   = +(d.optOut || 0);
+    const openR  = sent > 0 ? (opens / sent * 100) : 0;
+    const clickR = sent > 0 ? (clk   / sent * 100) : 0;
+    const optR   = sent > 0 ? (opt   / sent * 100) : 0;
+    return `<tr style="border-bottom:1px solid var(--border-subtle);font-size:0.8125rem;">
+      <td style="padding:8px 6px;font-weight:500;color:var(--text-primary);max-width:340px;">
+        <div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(d.subject || '(sem subject)')}</div>
+        <div style="font-size:0.6875rem;color:var(--text-muted);margin-top:2px;">${esc(d.baseCode || d.id || '')}</div>
+      </td>
+      <td style="padding:8px 6px;text-align:center;color:var(--text-secondary);">${esc(d.bu || '—')}</td>
+      <td style="padding:8px 6px;text-align:right;color:var(--text-secondary);">${fmtDate(d.sentDate)}</td>
+      <td style="padding:8px 6px;text-align:right;color:var(--text-secondary);">${num(sent)}</td>
+      <td style="padding:8px 6px;text-align:right;color:${rateColor2(openR)};font-weight:600;">${pct(openR)}</td>
+      <td style="padding:8px 6px;text-align:right;color:var(--text-secondary);">${pct(clickR)}</td>
+      <td style="padding:8px 6px;text-align:right;color:var(--text-muted);">${pct(optR)}</td>
+      <td style="padding:8px 6px;text-align:center;">
+        <button class="nlc-drill-edit" data-doc-id="${esc(d.id)}"
+          style="background:none;border:1px solid var(--border-subtle);border-radius:4px;
+          padding:3px 8px;cursor:pointer;font-size:0.6875rem;color:var(--text-secondary);"
+          title="Editar classificação manual">✎</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  const content = `
+    <div style="margin-bottom:12px;font-size:0.8125rem;color:var(--text-muted);">
+      ${docs.length} disparo${docs.length!==1?'s':''} classificado${docs.length!==1?'s':''} como
+      <strong style="color:var(--text-primary);">${esc(name)}</strong> (${entityLabel}),
+      respeitando filtros aplicados no dashboard.
+    </div>
+    <div style="max-height:60vh;overflow:auto;border:1px solid var(--border-subtle);border-radius:6px;">
+      <table style="width:100%;border-collapse:collapse;">
+        <thead style="position:sticky;top:0;background:var(--bg-elevated);z-index:1;">
+          <tr style="font-size:0.6875rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted);">
+            <th style="text-align:left;padding:8px 6px;">Subject / Código</th>
+            <th style="text-align:center;padding:8px 6px;">BU</th>
+            <th style="text-align:right;padding:8px 6px;">Envio</th>
+            <th style="text-align:right;padding:8px 6px;">Enviados</th>
+            <th style="text-align:right;padding:8px 6px;">Abertura</th>
+            <th style="text-align:right;padding:8px 6px;">Cliques</th>
+            <th style="text-align:right;padding:8px 6px;">Opt-out</th>
+            <th style="text-align:center;padding:8px 6px;">Ações</th>
+          </tr>
+        </thead>
+        <tbody>${rows || '<tr><td colspan="8" style="padding:24px;text-align:center;color:var(--text-muted);">Nenhum disparo encontrado para este recorte.</td></tr>'}</tbody>
+      </table>
+    </div>`;
+
+  const m = modal.open({
+    title: `🔍 Disparos · ${entityLabel}: ${name}`,
+    size: 'xl',
+    content,
+    dedupeKey: `nlc-drill-${entity}-${name}`,
+    footer: [
+      { label: 'Fechar', class: 'btn-secondary', closeOnClick: true },
+    ],
+  });
+
+  // Wire ✎ buttons no modal
+  setTimeout(() => {
+    const root = m?.getElement?.() || document;
+    root.querySelectorAll('.nlc-drill-edit').forEach(btn => {
+      btn.addEventListener('click', () => {
+        openExtractedEditor(btn.dataset.docId);
+      });
+    });
+  }, 50);
 }
 
 function rateColor2(pct) {

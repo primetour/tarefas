@@ -14,6 +14,36 @@
 
 ## 📦 Operação
 
+### Modelo conceitual: Setor (v4.49.54+)
+
+**Setor** é a única abstração de divisão da empresa. Há 2 campos derivados,
+diferenciados apenas pelo CONTEXTO em que o setor aparece:
+
+| Campo técnico | Significado | Contexto |
+|---|---|---|
+| `task.sector` | Setor proprietário | Quem **executa** a tarefa |
+| `task.requestingArea` | Setor solicitante | Quem **pediu** a demanda (entre setores) |
+
+⚠ **Convenção**: `requestingArea` mantém o nome técnico antigo por
+back-compat (tarefas históricas com esse campo populado). Na UI o label
+é **"Setor solicitante"** (renomeado de "Área solicitante" em v4.49.54).
+
+**Fonte de verdade**: a collection `sectors` (módulo Setores). Tanto o
+filtro "Setor" quanto o filtro "Setor solicitante" puxam dela via
+`getUserSectorOptions()` em `js/components/filterBar.js`.
+
+`REQUESTING_AREAS` (lista hardcoded em `js/services/tasks.js`) é apenas
+**fallback técnico** pra auto-provisioning de tarefas legadas e
+back-compat com docs que referenciam nomes não-existentes mais no
+módulo (ex: "Concierge Bradesco" foi descontinuado).
+
+### Nomenclatura: Squad (v4.49.54+)
+
+A subdivisão dentro de um setor foi renomeada de **"Núcleo"** para
+**"Squad"** em toda a UI. O campo técnico permanece `nucleos[]` no doc
+da task e a collection segue chamada `nucleos` (back-compat). Apenas
+labels visíveis foram atualizadas.
+
 ### `tasks`
 - `id` (PK)
 - `typeId` (FK → task_types)
@@ -293,6 +323,96 @@
 - `path`
 - `html`
 - `seo`
+
+---
+
+## 📨 Newsletters (Salesforce Marketing Cloud sync)
+
+### `mc_performance`
+Performance + conteúdo dos disparos sincronizados das 5 BUs do SFMC
+(Primetour, BTG Partners, BTG Ultrablue, Centurion, PTS).
+
+- `id` = `<buId>__<jobId>` (PK composite)
+- `jobId` — ID original do SFMC
+- `buId` — `primetour` | `btg-partners` | `btg-ultrablue` | `centurion` | `pts`
+- `buName` — label da BU
+- `name` — código interno (ex: `P0224`, `U0225`)
+- `subject` — assunto do email
+- `sentDate` — timestamp do disparo
+- `totalSent`, `openUnique`, `clickUnique`, `optOut` — métricas crus
+- `openRate`, `clickRate`, `deliveryRate` — taxas derivadas (%)
+- `hardBounce`, `softBounce`, `blockBounce` — bounces
+- `htmlText` — texto extraído do HTML (até 30k chars; truncado nos uses)
+- `imageUrls[]` — top 5 imagens extraídas via regex no HTML
+- `noArtReason` — `csat` | `warmup` | `test` | `pending` (categorização dos sem-arte)
+- `extracted{}` — enriquecimento (ver subschema abaixo)
+
+#### `extracted` subschema (populado por `enrich-content.js` + classifiers)
+
+**Enriquecimento determinístico** (`enrich-content.js`):
+- `cities[]`, `countries[]`, `hotels[]`, `brands[]`, `cruises[]`, `themes[]`
+- `targetAudience[]`, `newsletterType`
+- `confidence` — `high` | `medium` | `low`
+
+**Classificação dupla** (`classify-content.js`, regex determinístico):
+- `commercial` — `sazonal` | `promocao` | `parceiro` | `inspiracional`
+- `tourism` — `evento` | `aereo` | `roteiro` | `servico` | `hotelaria`
+  | `cruzeiro` | `produto` | `destino` | `outros`
+
+**Shadow mode IA** (v4.49.41+, `classify-content-ai.js` — campos paralelos
+NÃO sobrescrevem os de produção):
+- `aiCommercial`, `aiTourism` — mesma taxonomia, output do LLM
+- `aiConfidence` — `high` | `medium` | `low`
+- `aiReasoning` — string ≤400 chars com gatilho que decidiu
+- `aiModel` — ex: `claude-haiku-4-5`
+- `aiAgentVersion` — hash sha1(model+systemPrompt), 12 chars
+- `aiClassifiedAt` — ISO timestamp
+- `aiAgreesCommercial`, `aiAgreesTourism` — bool (vs regex de prod)
+- `aiCostUsd` — custo estimado da chamada
+
+**Decisão humana** (v4.49.42+, click em "IA certa / regex certo" no dashboard):
+- `humanDecisionCommercial`, `humanDecisionTourism` — `ai-correct` | `regex-correct`
+- `humanDecisionCommercialAt`, `humanDecisionTourismAt` — ISO timestamp
+- `humanDecisionCommercialBy`, `humanDecisionTourismBy` — uid ou email
+
+**Cutover backup** (v4.49.42+, populado por `promote-ai-to-prod.js`):
+- `commercialPrev`, `tourismPrev` — valor antigo do regex (pra rollback)
+- `commercialPromotedAt` — ISO timestamp
+- `promotedFromConfidence` — confiança usada no cutover
+- `commercialSource` — ex: `ai-<aiAgentVersion>`
+
+### `nl_ai_classifier_runs` (v4.49.41+) — append-only via Admin SDK
+Resumo de cada execução do `scripts/classify-content-ai.js`.
+
+- `runAt` — serverTimestamp
+- `agentId`, `agentVersion`, `model`
+- `classified`, `errors`, `elapsedMs`
+- `inputTokens`, `cacheReadTokens`, `outputTokens`, `costUsd`
+- `agreesCommercial`, `agreesTourism`, `agreesBoth` — counts
+- `concordanceCommercialPct`, `concordanceTourismPct`, `concordanceBothPct`
+- `commercialDist{}`, `tourismDist{}`, `confDist{}` — histogramas
+- `disagreementsCommercialSample[]`, `disagreementsTourismSample[]` — top 10
+- `triggeredBy` — `github-actions:<runId>` | `local`
+
+### `nl_classifier_promotions` (v4.49.42+) — append-only via Admin SDK
+Audit de cada cutover (`scripts/promote-ai-to-prod.js`).
+
+- `promotedAt` — serverTimestamp
+- `total`, `changedCommercial`, `changedTourism`, `bothSame`
+- `minConfidence`, `eixo`
+- `triggeredBy`, `samples[]` (até 15 mudanças exemplo)
+
+### `nl_classifier_rollbacks` (v4.49.42+) — append-only via Admin SDK
+Audit de cada reversão (`scripts/rollback-ai-classification.js`).
+
+- `rolledBackAt` — serverTimestamp
+- `total`, `errors`, `missingBackup`
+- `sinceFilter` (ISO opcional)
+- `triggeredBy`, `samples[]`
+
+### Outras collections SFMC
+
+- `mc_image_extractions` — cache de extração de imagens via Vision API
 
 ---
 

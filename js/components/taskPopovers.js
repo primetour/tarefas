@@ -162,9 +162,23 @@ export function openDueDatePopover(anchor, { onPick, currentValue = null } = {})
 }
 
 export function openStatusPopover(anchor, { onPick, currentValue = null } = {}) {
+  // 4.49.10+ SECURITY: filtra opção 'done' se user não tem task_complete.
+  // Antes: popover oferecia TODAS as 6 opções (incluindo 'done') pra qualquer
+  // user. Backend bloqueava via updateTask mas o user via a opção + recebia
+  // toast de erro depois — UX confusa + caminho de bypass (bulkActionBar
+  // usava o mesmo popover, mas chamava bulkUpdateTasks que não tinha guard).
+  // Agora filtra na origem.
+  const canComplete = store.isMaster?.() || store.can?.('task_complete') || false;
+  const allowedStatuses = STATUSES.filter(s => {
+    // Sempre permite o status atual (pra não esconder "done" se a task já está done)
+    if (s.value === currentValue) return true;
+    if (s.value === 'done' && !canComplete) return false;
+    return true;
+  });
+
   const pop = mountPopover(anchor, `
     <div class="tp-pop-header">Alterar status</div>
-    ${STATUSES.map(s => `
+    ${allowedStatuses.map(s => `
       <div class="tp-pop-item" data-val="${esc(s.value)}"
         ${currentValue === s.value ? 'style="background:var(--bg-elevated);"' : ''}>
         <span style="width:10px;height:10px;border-radius:50%;background:${s.color};"></span>
@@ -172,6 +186,10 @@ export function openStatusPopover(anchor, { onPick, currentValue = null } = {}) 
         ${currentValue === s.value ? `<span style="margin-left:auto;color:var(--brand-gold);">✓</span>` : ''}
       </div>
     `).join('')}
+    ${!canComplete ? `<div style="padding:6px 12px;font-size:0.6875rem;color:var(--text-muted);
+      border-top:1px solid var(--border-subtle);">
+      🔒 Apenas coordenadores+ marcam como concluída
+    </div>` : ''}
   `);
   pop.querySelectorAll('.tp-pop-item').forEach(item => {
     item.addEventListener('click', () => {
@@ -187,9 +205,9 @@ export function openStatusPopover(anchor, { onPick, currentValue = null } = {}) 
 
 export function openAreaPopover(anchor, { onPick, currentValue = null } = {}) {
   const pop = mountPopover(anchor, `
-    <div class="tp-pop-header">Alterar área solicitante</div>
+    <div class="tp-pop-header">Alterar setor solicitante</div>
     <div style="padding:0 10px 8px;">
-      <input type="text" class="tp-pop-input" id="tp-area-search" placeholder="Buscar área…" autofocus>
+      <input type="text" class="tp-pop-input" id="tp-area-search" placeholder="Buscar setor…" autofocus>
     </div>
     <div id="tp-area-list" style="max-height:280px;overflow-y:auto;padding:0 4px;">
       ${REQUESTING_AREAS.map(a => `
@@ -385,7 +403,7 @@ export function openProjectPopover(anchor, { onPick, currentValue = null, allPro
 export function openNucleoPopover(anchor, { onPick, currentValue = [] } = {}) {
   const cur = Array.isArray(currentValue) ? currentValue : [];
   const pop = mountPopover(anchor, `
-    <div class="tp-pop-header">Alterar núcleo (substitui)</div>
+    <div class="tp-pop-header">Alterar squad (substitui)</div>
     ${NUCLEOS.map(n => `
       <div class="tp-pop-item" data-val="${esc(n.value)}"
         ${cur.includes(n.value) ? 'style="background:var(--bg-elevated);"' : ''}>
@@ -396,7 +414,7 @@ export function openNucleoPopover(anchor, { onPick, currentValue = [] } = {}) {
     `).join('')}
     <div style="padding:8px 10px;border-top:1px solid var(--border-subtle);margin-top:4px;">
       <button class="tp-pop-btn" id="tp-nuc-clear" style="width:100%;background:transparent;">
-        Remover núcleo
+        Remover squad
       </button>
     </div>
   `);
@@ -405,12 +423,12 @@ export function openNucleoPopover(anchor, { onPick, currentValue = [] } = {}) {
       const v = item.dataset.val;
       const label = NUCLEOS.find(n => n.value === v)?.label || v;
       closeTaskPopover();
-      onPick?.({ nucleos: [v] }, `núcleo: ${label}`);
+      onPick?.({ nucleos: [v] }, `squad: ${label}`);
     });
   });
   pop.querySelector('#tp-nuc-clear').addEventListener('click', () => {
     closeTaskPopover();
-    onPick?.({ nucleos: [] }, 'sem núcleo');
+    onPick?.({ nucleos: [] }, 'sem squad');
   });
 }
 

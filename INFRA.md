@@ -346,6 +346,7 @@ Não estão no código nem em `.env` local. Usados apenas pelos 7 workflows da �
 | `META_APP_ID` | meta-sync | Meta for Developers → App settings |
 | `META_APP_SECRET` | meta-sync | Mesmo local |
 | `META_ACCESS_TOKEN` | meta-sync | Graph API Explorer — long-lived token (60d) |
+| `ANTHROPIC_API_KEY` *(4.49.41+)* | classify-content-ai | Console Anthropic → API Keys (`sk-ant-...`). Usado APENAS pelo workflow shadow mode do classificador de newsletters. **Distinto** do secret de mesmo nome no Secret Manager (que serve a `callLLM` Cloud Function). |
 
 ### 4.2 Firebase Secret Manager (Cloud Functions)
 

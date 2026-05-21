@@ -7,7 +7,7 @@ import { store }  from '../store.js';
 import { router } from '../router.js';
 import {
   markAsRead, markAllAsRead, dismissNotification,
-  NOTIF_ICONS, timeAgo,
+  NOTIF_ICONS, timeAgo, deriveRouteForEntity,
 } from '../services/notifications.js';
 import { renderIcon } from './icons.js';
 
@@ -344,16 +344,23 @@ function wireListEvents() {
 
     item.addEventListener('click', async (e) => {
       if (e.target.closest('.notif-dismiss')) return;
-      const id    = item.dataset.id;
-      const route = item.dataset.route;
+      const id         = item.dataset.id;
+      const route      = item.dataset.route;
+      const entityType = item.dataset.entityType;
+      const entityId   = item.dataset.entityId;
 
       // Mark as read
       await markAsRead(id).catch(() => {});
 
-      // Navigate
-      if (route) {
+      // 4.49+ Deep-link: se a notificação tem entityType+entityId, deriva
+      // rota específica (ex: tasks?taskId=ABC → abre modal direto).
+      // Caso contrário, usa o route legado (tipicamente só "tasks" puro).
+      // Fallback final: nada (notificação sem deeplink — só marca como lida).
+      const finalRoute = deriveRouteForEntity(entityType, entityId, route) || route;
+
+      if (finalRoute) {
         closeNotificationPanel();
-        router.navigate(route);
+        router.navigate(finalRoute);
       }
     });
   });

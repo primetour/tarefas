@@ -1,6 +1,20 @@
 # Sistema de Horas de Desenvolvimento
 
-> **Última atualização:** v4.40.23 (15/05/2026) · 101 dias de calendário · ~692h · ~R$ 103.811 · 6,85h/dia médio · 170+ releases + 17 phases
+> **Última atualização:** v4.49.47 (20/05/2026, madrugada) · 107 dias de calendário · ~790h 13min approved · ~R$ 118.531,50 · 7h 23min/dia médio · 182 releases + 17 phases (199 entradas aprovadas)
+>
+> _Auto-meta 20/05/2026_: 2 releases de documentação — **v4.49.46** (backfill CHANGELOG + dev_hours do sprint, +1,38h / R$ 207) e **v4.49.47** (double-check do CHANGELOG com 6 verificações + 1 fix de precisão, +0,65h / R$ 97,50).
+>
+> _Backfill 20/05/2026 (madrugada)_: **23 releases novas (4.49.23 → 4.49.45)** — sprint maratona Newsletter centrado no pipeline shadow mode do Classificador IA. **+35,62h ajustado / +R$ 5.343,00** vs snapshot anterior (v4.49.22). Subdividido em 2 blocos:
+>
+> - **Manhã/tarde (4.49.23-31)** — 13,09h / R$ 1.963,50. Quick wins na aba Conteúdo & Temas (sort, drill, expand), backfill claude-curado do `mc_performance.extracted` (cobertura 4 → 95+ cidades), enrich estendido pra ler `htmlText`, eixos duplos Comercial × Turismo (script `classify-content.js` novo), exports XLS+PDF+PPTX, modal "Ver arte" preview, backfill `imageUrls` legado (692/756 docs = 92%), CSP `img-src` libera SFMC CDNs iniciais.
+>
+> - **Noite/madrugada (4.49.32-45)** — 22,53h / R$ 3.379,50. Sprint principal: arrumação do legado (categorize-no-art, fix merge waves, CSP completo das 5 BUs SFMC, IA desacoplada do mc-sync), **rewrite do PDF Conteúdo & Temas seguindo padrão Produtividade** (8 gráficos nativos, sanitização total), agente-seed `nl-content-classifier` no IA Hub (Claude Haiku 4.5, DESATIVADO), **pipeline shadow mode completo** (script + workflow + dashboard com sparkline + cutover/rollback workflows + test harness 61 testes + security audit bank-grade 2 CRITICAL + 2 HIGH corrigidos + regression review pra não quebrar login).
+>
+> _Backfill 19/05/2026 (final do dia)_: 10 releases (4.49.13 → 4.49.22) — sprint denso de melhorias operacionais centradas no painel pessoal + harmonização de filtros + bug crítico do metaLinks. +24,86h / +R$ 3.729,00.
+>
+> _Backfill 18/05/2026_: 12 releases (4.48.1 → 4.49.8) — sprint denso de bugfixes + features pequenas (auth dedup, filtros, deep-links, RBAC granular, bulk import destinos). +18,45h / +R$ 2.767,50.
+>
+> Totais consideram apenas entradas com `status='approved'` — 11 entries em draft ficam de fora dos somatórios públicos.
 
 Documento técnico do módulo `dev_hours`: arquitetura, conceitos, calibragem do fator IA, processo de log, dashboards e exportações.
 
@@ -253,6 +267,7 @@ Estouro do alvo dispara revisão de calibragem (multiplier IA) ou auditoria de p
 | v4.40.8-18 | Filtros & hierarquia dia (15/05/2026): goal-link squad sync, sweep de stale filters em 4 modais, filtro observer em todas as views de tarefas (tasks/steps/calendar/timeline), notif duplication fix (cross-user write storm), popup stacking fix, hierarquia analista em /goals e /feedbacks (squad/núcleo/área membership), CC virtuals respect type filter, Portal de Dicas: + Nova categoria inline + segmentos custom (admin cria além dos 11 builtin, compatível com todos os 4 exports) · 11,16h totais · R$ 1.674 |
 | v4.40.19-21 | Docs + audit dia (15/05/2026 noite): rbac info text, FAQs do help cobrindo 4.40.8-18, **AUDITORIA DE SEGURANÇA PRÉ-BANCÁRIA** completa (17 findings: C2+C3+A1-A6+M1-M6+B1-B2 resolvidos; C1+M1 deferidos com mitigação). Hardening Firestore rules (/projects/tasks/feedbacks/absences); CSP img-src whitelist + connect-src endpoints específicos; inline scripts externos; rel=noopener em 13 arquivos; audit_logs PII anonimization (SHA-256 + UA truncate Chrome/macOS); CSV formula injection helper aplicado em 3 pages; rate-limit logging em notifs; R2 token hardening; SharePoint permission ai_use; MS token defense-in-depth (beforeunload + 30min hidden clear). Validado E2E via Chrome MCP. · 7,84h totais · R$ 1.176 |
 | v4.40.22-23 | Audit finalização (15/05 madrugada): B1 (GCP API key restrictions aplicado via gcloud — HTTP referrers https://primetour.github.io/*, *.primetour.com.br/*, localhost:8765/*; comprovado E2E com 3 curls: empty=403, evil.example.com=403, primetour.github.io=400 (chegou ao endpoint)). C3 refinement: removido fallback do user MS token em agents.js — SharePoint agora EXCLUSIVAMENTE via app-only credentials server-side (elimina vetor de XSS pra org data). 4.40.22 = docs+seed pra audit sprint. · 1,1h totais · R$ 164 |
+| v4.49.13-22 | Sprint operacional 19/05/2026: Portal de Dicas (5 fixes/features + DOCX import); Meu Calendário no Meu Painel (3 iterações: dots → agenda → topo+tooltip); filtro tipo harmonizado nas 4 views tasks/steps/calendar/timeline + sentinel "Sem tipo"; coerência Dashboard ↔ #tasks (predicate sem-tipo, filtro pending users, drill-down clicável, novo preset `activityInPeriod`); **bug crítico do `metaLinks` seguindo responsável em vez de criador** (3 camadas de defesa: auto-assign role-aware + sync on remove + prune no save; 14 unit tests + 2 E2E no Firestore); exports modulares ocultando blocos vazios em Portal (`segHasContent` no `buildContent`) e Roteiros (Pricing/Optionals/ImportantInfo defensivos). · 24,86h totais · R$ 3.729,00 |
 
 ---
 

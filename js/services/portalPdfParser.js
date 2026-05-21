@@ -510,15 +510,38 @@ function splitIntoSections(lines) {
 }
 
 /* ─── Main entry point ───────────────────────────────────── */
-export async function parsePortalPdf(file) {
+export async function parsePortalPdf(file, overrideMeta = null) {
   if (!file || !/\.pdf$/i.test(file.name || '')) {
     throw new Error('Arquivo PDF inválido.');
   }
 
-  const meta  = parseFileName(file.name);
+  // 4.49.13+ Permite override do destino quando o nome do arquivo não casa
+  // com o formato esperado "Continente - País - Cidade.pdf".
+  // Resolve relato: "não reconhecia o nome do destino, apesar de estar tudo certinho".
+  const meta = overrideMeta || parseFileName(file.name);
+
+  // Valida: se NÃO veio override E parseFileName não conseguiu inferir país/cidade,
+  // lança erro com instrução clara em vez de processar com dados vazios.
+  if (!overrideMeta && (!meta.pais || !meta.cidade)) {
+    throw new Error(
+      `Não foi possível identificar país/cidade pelo nome do arquivo "${file.name}". ` +
+      `Renomeie pra "Continente - País - Cidade.pdf" ` +
+      `(ex.: "Europa - França - Paris.pdf") OU use o seletor de destino na UI antes de subir.`
+    );
+  }
+
   const lines = await extractText(file);
   if (!lines.length) throw new Error('PDF vazio ou ilegível.');
+  return linesToRows(lines, meta);
+}
 
+/* ─── 4.49.13+ Pipeline interno: lines + meta → rows ────────
+ * Extraído pra reuso entre parsePortalPdf e parsePortalDocx.
+ * Aceita um array de strings (linhas do documento) + meta com
+ * continente/pais/cidade, e retorna o array de rows pronto pro
+ * fluxo do portalImport.
+ */
+function linesToRows(lines, meta) {
   const sections = splitIntoSections(lines);
 
   // ─── Montagem do resultado ───
@@ -632,4 +655,57 @@ export async function parsePortalPdf(file) {
     pais:       r.pais       || meta.pais,
     cidade:     r.cidade     || meta.cidade,
   }));
+}
+
+/* ─── 4.49.13+ Parser DOCX ────────────────────────────────────
+ * Aceita .docx pelo mesmo fluxo do PDF. Usa mammoth (CDN) pra
+ * extrair raw text, divide em linhas, aplica o pipeline interno.
+ *
+ * Convenção de nome do arquivo igual ao PDF:
+ *   "Continente - País - Cidade.docx"
+ *   (ex: "Europa - França - Paris.docx")
+ *
+ * Estrutura de conteúdo igual ao PDF (seções: INFORMAÇÕES GERAIS,
+ * GASTRONOMIA, etc) — usa os mesmos splitters/parsers do PDF.
+ */
+let _mammothLoading = null;
+function loadMammoth() {
+  if (window.mammoth) return Promise.resolve(window.mammoth);
+  if (_mammothLoading) return _mammothLoading;
+  _mammothLoading = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/mammoth@1.6.0/mammoth.browser.min.js';
+    s.onload = () => resolve(window.mammoth);
+    s.onerror = () => reject(new Error('Falha ao carregar mammoth (parser DOCX).'));
+    document.head.appendChild(s);
+  });
+  return _mammothLoading;
+}
+
+async function extractDocxLines(file) {
+  const mammoth = await loadMammoth();
+  const arrayBuffer = await file.arrayBuffer();
+  const result = await mammoth.extractRawText({ arrayBuffer });
+  const raw = result?.value || '';
+  // Split em linhas + remove linhas só de espaço, preservando blanks (que
+  // mammoth gera entre parágrafos — usado pelo splitIntoSections pra detectar
+  // quebras de bloco).
+  return raw.split(/\r?\n/).map(l => l.trimEnd());
+}
+
+export async function parsePortalDocx(file, overrideMeta = null) {
+  if (!file || !/\.docx$/i.test(file.name || '')) {
+    throw new Error('Arquivo DOCX inválido.');
+  }
+  const meta = overrideMeta || parseFileName(file.name);
+  if (!overrideMeta && (!meta.pais || !meta.cidade)) {
+    throw new Error(
+      `Não foi possível identificar país/cidade pelo nome do arquivo "${file.name}". ` +
+      `Renomeie pra "Continente - País - Cidade.docx" ` +
+      `(ex.: "Europa - França - Paris.docx").`
+    );
+  }
+  const lines = await extractDocxLines(file);
+  if (!lines.length) throw new Error('DOCX vazio ou ilegível.');
+  return linesToRows(lines, meta);
 }

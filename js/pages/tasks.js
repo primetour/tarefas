@@ -12,6 +12,9 @@ import { openTaskModal, openTaskDoneOverlay } from '../components/taskModal.js';
 import { APP_CONFIG }    from '../config.js';
 import { openCardPrefsModal }  from '../components/cardPrefsModal.js';
 import { createDoc, loadJsPdf, COL, STATUS_STYLE, txt, withExportGuard } from '../components/pdfKit.js';
+// v4.49.53+ Reusa lógica de setor (UNIÃO dyn + REQUESTING_AREAS + dedup)
+// que já está battle-tested em kanban/calendar/timeline via filterBar.
+import { getUserSectorOptions, squadOptsGrouped } from '../components/filterBar.js';
 import { wireUiKitMenus } from '../components/uiKit.js';
 import { userAvatarInner } from '../components/userAvatar.js';
 import {
@@ -44,6 +47,9 @@ let searchTerm   = '';
 let filterStatus = '';
 let filterPriority = '';
 let filterProject  = '';
+// 4.49.17+ Filtro por tipo de tarefa (taskTypes). Suporta sentinel
+// TYPE_NONE_SENTINEL = '__NONE__' pra "tarefas sem tipo".
+let filterType     = '';
 // 4.21+ — multi-select. Pode ser '' (legacy/none), string (single via deep-link
 // `?assignee=uid`), ou string[] (multi via UI). applyFilters normaliza.
 let filterAssignee = '';
@@ -52,6 +58,10 @@ let filterDatePreset = 'last30Days'; // default: mantém lista leve mesmo com mi
 let filterDateFrom = '';         // ISO YYYY-MM-DD (para custom)
 let filterDateTo   = '';
 let filterArea     = '';
+// v4.49.51+ Filtro Setor — pedido do user (filtra por task.sector que é o
+// setor proprietário da tarefa, diferente do legado requestingArea que era
+// "área solicitante" do portal de pedidos).
+let filterSector   = '';
 let filterTag      = '';
 let filterSquad    = '';   // workspaceId | '' (todos)
 let filterMeta     = '';   // '' | 'with' | 'without' — vínculo com meta (metaLinks[] ou goalId legado)
@@ -87,6 +97,8 @@ const DEFAULT_FILTER_VISIBILITY = {
   observer: true, // 4.40.11+ filtro por observadores (multi-select)
   datePreset: true, squad: true, area: false, tag: false,
   meta: true,
+  type: true, // 4.49.17+ tipo de tarefa (visível por padrão; harmonização c/ Steps/Calendar/Timeline)
+  sector: true, // v4.49.51+ filtro por setor proprietário da tarefa
 };
 let filterVisibility = { ...DEFAULT_FILTER_VISIBILITY };
 function loadFilterVisibility() {
@@ -99,10 +111,64 @@ function saveFilterVisibility() {
   try { localStorage.setItem(FILTER_VISIBILITY_KEY, JSON.stringify(filterVisibility)); } catch (_) {}
 }
 
+// 4.48.4+ Persistência de VALORES dos filtros (não só visibilidade).
+//
+// Problema reportado: usuário tinha que re-aplicar filtros toda vez que
+// abria/fechava o modal de criar tarefa, ou trocava de página e voltava.
+// Causa: filterStatus/filterProject/etc eram `let` em memória, reset
+// a cada `renderTasks()`. Single source of truth da sessão eram URL hash
+// params, mas estes some quando user navega entre páginas.
+//
+// Solução: snapshot dos filtros no localStorage. Restaurado em renderTasks()
+// ANTES de URL params (URL wins quando presente, ex: deep-link de Meu Painel).
+// Atualizado a cada change handler — debounced via _saveFilterValues.
+const FILTER_VALUES_KEY = 'tasks.filterValues.v1';
+function loadFilterValues() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(FILTER_VALUES_KEY) || '{}');
+    if (typeof saved.filterStatus     === 'string') filterStatus     = saved.filterStatus;
+    if (typeof saved.filterPriority   === 'string') filterPriority   = saved.filterPriority;
+    if (typeof saved.filterProject    === 'string') filterProject    = saved.filterProject;
+    if (typeof saved.filterType       === 'string') filterType       = saved.filterType;
+    if (typeof saved.filterDatePreset === 'string') filterDatePreset = saved.filterDatePreset;
+    if (typeof saved.filterDateFrom   === 'string') filterDateFrom   = saved.filterDateFrom;
+    if (typeof saved.filterDateTo     === 'string') filterDateTo     = saved.filterDateTo;
+    if (typeof saved.filterArea       === 'string') filterArea       = saved.filterArea;
+    if (typeof saved.filterSector     === 'string') filterSector     = saved.filterSector;
+    if (typeof saved.filterTag        === 'string') filterTag        = saved.filterTag;
+    if (typeof saved.filterSquad      === 'string') filterSquad      = saved.filterSquad;
+    if (typeof saved.filterMeta       === 'string') filterMeta       = saved.filterMeta;
+    // Multi-select: aceita string vazia, string single, ou array
+    if (saved.filterAssignee !== undefined) filterAssignee = saved.filterAssignee || '';
+    if (saved.filterObserver !== undefined) filterObserver = saved.filterObserver || '';
+    if (typeof saved.filterShowArchived === 'boolean') filterShowArchived = saved.filterShowArchived;
+    if (typeof saved.groupBy === 'string') groupBy = saved.groupBy;
+  } catch (_) { /* corrompido — segue com defaults */ }
+}
+let _saveFilterTimer = null;
+function saveFilterValues() {
+  // Debounce 300ms — evita gravar a cada keystroke em rangepickers
+  clearTimeout(_saveFilterTimer);
+  _saveFilterTimer = setTimeout(() => {
+    try {
+      localStorage.setItem(FILTER_VALUES_KEY, JSON.stringify({
+        filterStatus, filterPriority, filterProject, filterType, filterSector,
+        filterAssignee, filterObserver,
+        filterDatePreset, filterDateFrom, filterDateTo,
+        filterArea, filterTag, filterSquad, filterMeta, filterShowArchived,
+        groupBy,
+      }));
+    } catch (_) { /* localStorage cheio — segue silencioso */ }
+  }, 300);
+}
+
 /* \u2500\u2500\u2500 Render principal \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
 export async function renderTasks(container) {
   if (!routeGuard(container, ['task_create', 'task_view_all'])) return;
   loadFilterVisibility();
+  // 4.48.4+ Restaura valores dos filtros (status/project/assignee/etc) salvos
+  // na última sessão. URL params abaixo TOMA PRECEDÊNCIA (deep-link wins).
+  loadFilterValues();
 
   // Lazy load: taskTypes saiu do boot (otimização free tier).
   // Garante carregamento aqui (idempotente — só carrega 1x na sessão).
@@ -120,6 +186,8 @@ export async function renderTasks(container) {
   let urlAssignee    = '';
   let urlObserver    = '';
   let urlStatus      = '';
+  let urlType        = '';   // 4.49.18+ deep-link de "Sem tipo" ou tipo específico
+  let urlDatePreset  = '';   // 4.49.18+ permite alinhar período c/ dashboard (ex: 30d)
   let urlOpen        = false;       // status != done && status != cancelled
   let urlCompletedToday = false;    // status==='done' && completedAt é hoje
   let urlPartnership = false;
@@ -135,6 +203,10 @@ export async function renderTasks(container) {
       const qs = new URLSearchParams(rawHash.slice(qIdx + 1));
       urlProjectId   = qs.get('projectId')   || '';
       urlWorkspaceId = qs.get('workspaceId') || '';
+      // 4.49+ Deep-link de notificação: ?taskId=X auto-abre o modal da
+      // tarefa após o subscribe popular allTasks. Limpa o param da URL
+      // pra evitar reabrir em F5 (UX clássica de "navegou e abriu uma vez").
+      window.__pendingOpenTaskId = qs.get('taskId') || null;
       // "me" = currentUser; senão tratamos como UID
       const myUid = store.get('currentUser')?.uid || '';
       const a = qs.get('assignee') || '';
@@ -142,6 +214,14 @@ export async function renderTasks(container) {
       urlAssignee = a === 'me' ? myUid : a;
       urlObserver = o === 'me' ? myUid : o;
       urlStatus   = qs.get('status') || '';
+      urlType     = qs.get('type')   || '';   // 4.49.18+ aceita typeId ou '__NONE__'
+      urlDatePreset = qs.get('datePreset') || '';
+      // 4.49.18+ from/to em formato YYYY-MM-DD (usado com datePreset=activityInPeriod
+      // ou =custom). Permite drill-down idêntico ao período do Dashboard.
+      const fromQ = qs.get('from') || '';
+      const toQ   = qs.get('to')   || '';
+      if (fromQ) filterDateFrom = fromQ;
+      if (toQ)   filterDateTo   = toQ;
       urlOpen     = qs.get('open') === '1';
       urlCompletedToday = qs.get('completedToday') === '1';
       urlPartnership = qs.get('partnership') === '1';
@@ -165,6 +245,10 @@ export async function renderTasks(container) {
   filterSquad    = urlWorkspaceId;
   filterAssignee = urlAssignee || '';
   filterStatus   = urlStatus   || '';
+  // 4.49.18+ URL params type/datePreset (deep-link de dashboards p/ alinhar
+  // contagens — ex: dash "Sem tipo no período" → #tasks?type=__NONE__&datePreset=last30Days)
+  if (urlType)       filterType       = urlType;
+  if (urlDatePreset) filterDatePreset = urlDatePreset;
   filterObserver       = urlObserver;
   filterOpen           = urlOpen;
   filterCompletedToday = urlCompletedToday;
@@ -249,6 +333,19 @@ export async function renderTasks(container) {
         <input type="text" class="toolbar-search-input" id="tasks-search"
           placeholder="Buscar tarefas..." />
       </div>
+      <!-- v4.49.51+ Filtro Setor (proprietário da tarefa = task.sector).
+           Não confundir com "Área solicitante" (legado, requestingArea).
+           v4.49.53+ HOTFIX: usa getUserSectorOptions do filterBar (UNIÃO
+           dinâmicos + REQUESTING_AREAS + dedup case-insensitive). Antes:
+           só store.get('sectors') cru → mostrava "Concierge 2x" e sem
+           os setores legados. -->
+      <div class="toolbar-filter-wrap" style="${filterVisibility.sector?'':'display:none;'}min-width:170px;">
+        <select id="filter-sector" style="display:none;">
+          <option value="" ${filterSector===''?'selected':''}>Todos os setores</option>
+          ${getUserSectorOptions().map(name => `<option value="${esc(name)}" ${filterSector===name?'selected':''}>${esc(name)}</option>`).join('')}
+        </select>
+        ${renderPickerButton({ btnId: 'filter-sector-btn', selected: null, emptyLabel: 'Todos os setores' })}
+      </div>
       <div class="toolbar-filter-wrap" style="${filterVisibility.status?'':'display:none;'}min-width:170px;">
         <select id="filter-status" style="display:none;">
           <option value="" ${filterStatus===''?'selected':''}>Todos os status</option>
@@ -280,9 +377,20 @@ export async function renderTasks(container) {
             emptyLabel: 'Todas as prioridades' });
         })()}
       </div>
-      <select class="filter-select" id="filter-project" style="${filterVisibility.project?'':'display:none;'}">
-        <option value="">Todos os projetos</option>
-      </select>
+      <div class="toolbar-filter-wrap" style="${filterVisibility.project?'':'display:none;'}min-width:180px;">
+        <select id="filter-project" style="display:none;">
+          <option value="">Todos os projetos</option>
+        </select>
+        ${renderPickerButton({ btnId: 'filter-project-btn', selected: null, emptyLabel: 'Todos os projetos' })}
+      </div>
+      <!-- 4.49.17+ Filtro por TIPO de tarefa (estava ausente em #tasks).
+           Suporta opção "Sem tipo" pra ver órfãs. -->
+      <div class="toolbar-filter-wrap" style="${filterVisibility.type?'':'display:none;'}min-width:180px;">
+        <select id="filter-type" style="display:none;">
+          <option value="">Todos os tipos</option>
+        </select>
+        ${renderPickerButton({ btnId: 'filter-type-btn', selected: null, emptyLabel: 'Todos os tipos' })}
+      </div>
       <div class="toolbar-filter-wrap" style="${filterVisibility.squad?'':'display:none;'}min-width:180px;">
         <select id="filter-squad" style="display:none;">
           <option value="">Todos os squads</option>
@@ -339,25 +447,44 @@ export async function renderTasks(container) {
           });
         })()}
       </div>
+      <!-- 4.49.20+ Preset reagrupado em 3 famílias semânticas:
+            1. PRAZO (dueDate): hoje, amanhã, semana, mês, atrasadas, sem prazo
+            2. EM JOGO (workflow): abertas + concluídas recentes (default histórico)
+            3. ATIVIDADE (KPI / dashboard): criada OU concluída no range — bate com #dashboards
+
+           User antes via 'Últimos 30 dias' e achava que era atividade,
+           mas era 'Em jogo' — labels ficaram explícitos. -->
       <select class="filter-select" id="filter-date-preset" style="${filterVisibility.datePreset?'':'display:none;'}">
         <option value=""            ${filterDatePreset===''?'selected':''}>Qualquer prazo</option>
-        <option value="last30Days"  ${filterDatePreset==='last30Days'?'selected':''}>Últimos 30 dias (padrão)</option>
-        <option value="last90Days"  ${filterDatePreset==='last90Days'?'selected':''}>Últimos 90 dias</option>
-        <option value="overdue"     ${filterDatePreset==='overdue'?'selected':''}>⚠ Atrasadas</option>
-        <option value="today"       ${filterDatePreset==='today'?'selected':''}>Hoje</option>
-        <option value="tomorrow"    ${filterDatePreset==='tomorrow'?'selected':''}>Amanhã</option>
-        <option value="thisWeek"    ${filterDatePreset==='thisWeek'?'selected':''}>Esta semana</option>
-        <option value="nextWeek"    ${filterDatePreset==='nextWeek'?'selected':''}>Próxima semana</option>
-        <option value="thisMonth"   ${filterDatePreset==='thisMonth'?'selected':''}>Este mês</option>
-        <option value="noDue"       ${filterDatePreset==='noDue'?'selected':''}>Sem prazo</option>
+        <optgroup label="— Por prazo (dueDate) —">
+          <option value="overdue"   ${filterDatePreset==='overdue'?'selected':''}>⚠ Atrasadas</option>
+          <option value="today"     ${filterDatePreset==='today'?'selected':''}>Hoje</option>
+          <option value="tomorrow"  ${filterDatePreset==='tomorrow'?'selected':''}>Amanhã</option>
+          <option value="thisWeek"  ${filterDatePreset==='thisWeek'?'selected':''}>Esta semana</option>
+          <option value="nextWeek"  ${filterDatePreset==='nextWeek'?'selected':''}>Próxima semana</option>
+          <option value="thisMonth" ${filterDatePreset==='thisMonth'?'selected':''}>Este mês</option>
+          <option value="noDue"     ${filterDatePreset==='noDue'?'selected':''}>Sem prazo</option>
+        </optgroup>
+        <optgroup label="— Em jogo (abertas + concluídas recentes) —">
+          <option value="last30Days"  ${filterDatePreset==='last30Days'?'selected':''}>Em jogo · 30d (padrão)</option>
+          <option value="last90Days"  ${filterDatePreset==='last90Days'?'selected':''}>Em jogo · 90d</option>
+        </optgroup>
+        <optgroup label="— Atividade no período (criada OU concluída) —">
+          <option value="activityIn7d"  ${filterDatePreset==='activityIn7d'?'selected':''}>📊 Atividade · 7d</option>
+          <option value="activityIn30d" ${filterDatePreset==='activityIn30d'?'selected':''}>📊 Atividade · 30d (bate c/ dash)</option>
+          <option value="activityIn90d" ${filterDatePreset==='activityIn90d'?'selected':''}>📊 Atividade · 90d</option>
+        </optgroup>
         <option value="custom"      ${filterDatePreset==='custom'?'selected':''}>Período customizado…</option>
       </select>
+      <!-- v4.49.54+ "Área solicitante" agora puxa do mesmo módulo Setores
+           que o filtro Setor (área = setor pedindo demanda a outro setor).
+           Field técnico continua task.requestingArea por back-compat. -->
       <div class="toolbar-filter-wrap" style="${filterVisibility.area?'':'display:none;'}min-width:160px;">
         <select id="filter-area" style="display:none;">
-          <option value="">Todas as áreas</option>
-          ${REQUESTING_AREAS.map(a=>`<option value="${esc(a)}">${esc(a)}</option>`).join('')}
+          <option value="">Todos os setores solicitantes</option>
+          ${getUserSectorOptions().map(a=>`<option value="${esc(a)}">${esc(a)}</option>`).join('')}
         </select>
-        ${renderPickerButton({ btnId: 'filter-area-btn', selected: null, emptyLabel: 'Todas as áreas' })}
+        ${renderPickerButton({ btnId: 'filter-area-btn', selected: null, emptyLabel: 'Todos os setores solicitantes' })}
       </div>
       <select class="filter-select" id="filter-tag" style="${filterVisibility.tag?'':'display:none;'}">
         <option value="">Todas as tags</option>
@@ -444,7 +571,10 @@ export async function renderTasks(container) {
 
   // Load projects for filter
   try {
-    allProjects = await fetchProjects();
+    // 4.49.3+ allWorkspaces:true — filtro de Projetos mostra TODOS os projetos
+    // do sistema (não só do squad ativo). Consistente com kanban/timeline/calendar.
+    // Listing de tarefas continua sendo filtrado por permissão hierárquica.
+    allProjects = await fetchProjects({ allWorkspaces: true });
     const projFilter = document.getElementById('filter-project');
     if (projFilter) {
       allProjects.forEach(p => {
@@ -461,6 +591,30 @@ export async function renderTasks(container) {
       }
     }
   } catch (e) { console.warn('Projects fetch:', e); }
+
+  // 4.49.17+ Popula options do filter-type (taskTypes do store) + sentinel "Sem tipo".
+  // Necessário pro bindOptionPicker conseguir achar a label do tipo selecionado.
+  try {
+    const typeFilter = document.getElementById('filter-type');
+    if (typeFilter) {
+      // Sentinel "Sem tipo" sempre no topo
+      const noneOpt = document.createElement('option');
+      noneOpt.value = '__NONE__';
+      noneOpt.textContent = '∅ Sem tipo';
+      typeFilter.appendChild(noneOpt);
+      // Tipos cadastrados
+      (store.get('taskTypes') || []).forEach(t => {
+        const opt = document.createElement('option');
+        opt.value = t.id;
+        opt.textContent = `${t.icon || '▶'} ${t.name}`;
+        typeFilter.appendChild(opt);
+      });
+      // Restaura valor persistido
+      if (filterType) {
+        typeFilter.value = filterType;
+      }
+    }
+  } catch (e) { console.warn('TaskTypes filter populate:', e); }
 
   // Pré-seleciona squad se chegou via ?workspaceId=xxx
   if (filterSquad) {
@@ -502,6 +656,37 @@ function _subscribeToTasks() {
     _populateTagFilter();
     applyFilters();
     renderPlannerOrphansBanner();
+    // 4.49+ Deep-link de notificação: abre o modal da tarefa solicitada
+    // assim que ela aparece em allTasks. Idempotente — só abre 1×.
+    if (window.__pendingOpenTaskId) {
+      const target = allTasks.find(t => t.id === window.__pendingOpenTaskId);
+      if (target) {
+        const id = window.__pendingOpenTaskId;
+        window.__pendingOpenTaskId = null;
+        // Limpa o param da URL (history.replaceState) pra evitar reabrir em F5
+        try {
+          const h = window.location.hash || '';
+          const qIdx = h.indexOf('?');
+          if (qIdx >= 0) {
+            const qs = new URLSearchParams(h.slice(qIdx + 1));
+            qs.delete('taskId');
+            const cleaned = qs.toString();
+            const newHash = h.slice(0, qIdx) + (cleaned ? '?' + cleaned : '');
+            history.replaceState(null, '', window.location.pathname + window.location.search + newHash);
+          }
+        } catch {}
+        openTaskModal({
+          taskData: target,
+          onSave: () => { /* subscription re-renderiza */ },
+        });
+      } else {
+        // Task não está no escopo do user (sem permissão / arquivada / etc.)
+        // Limpa o pending pra não tentar de novo em próximas updates.
+        console.warn('[Tasks] Deep-link taskId=' + window.__pendingOpenTaskId + ' não encontrada em allTasks.');
+        window.__pendingOpenTaskId = null;
+        toast?.warning?.('Tarefa não encontrada ou sem permissão de acesso.');
+      }
+    }
   });
 }
 
@@ -924,6 +1109,15 @@ function applyFilters() {
   }
   if (filterPriority) result = result.filter(t => t.priority === filterPriority);
   if (filterProject)  result = result.filter(t => t.projectId === filterProject);
+  // 4.49.17+ Filtro por tipo de tarefa:
+  //   __NONE__         → sem typeId E sem .type (legacy string)
+  //   <typeId>         → match exato em t.typeId
+  // Mantém compat com tarefas legadas que tinham t.type='newsletter' (string).
+  if (filterType === '__NONE__') {
+    result = result.filter(t => !t.typeId && !t.type);
+  } else if (filterType) {
+    result = result.filter(t => t.typeId === filterType);
+  }
 
   // 4.40.25+ COMBINAÇÃO assignee + observer:
   // - Só assignee selecionado → task passa se assignees match (AND com demais)
@@ -953,6 +1147,8 @@ function applyFilters() {
     });
   }
   if (filterArea)     result = result.filter(t => t.requestingArea === filterArea);
+  // v4.49.51+ Setor proprietário da tarefa (task.sector)
+  if (filterSector)   result = result.filter(t => t.sector === filterSector);
   if (filterTag)      result = result.filter(t => (t.tags || []).includes(filterTag));
   if (filterMeta) {
     // "Tem meta" se metaLinks[] preenchido OU goalId legado (back-compat).
@@ -1021,6 +1217,35 @@ function applyFilters() {
         if (from && d < from) return false;
         if (to   && d > to)   return false;
         return true;
+      });
+    } else if (filterDatePreset === 'activityInPeriod' && (filterDateFrom || filterDateTo)) {
+      // 4.49.18+ Preset alinhado ao Dashboard de Produtividade.
+      // Tarefa "no período" = criada OU concluída dentro do range.
+      // Mesmo critério do `inPeriod()` em pages/dashboards.js — garante que
+      // drill-down do ranking abra com EXATAMENTE a mesma contagem do card.
+      const from = filterDateFrom ? new Date(filterDateFrom + 'T00:00:00') : null;
+      const to   = filterDateTo   ? new Date(filterDateTo   + 'T23:59:59') : null;
+      result = result.filter(t => {
+        const c = t.createdAt?.toDate   ? t.createdAt.toDate()   : (t.createdAt ? new Date(t.createdAt) : null);
+        const d = t.completedAt?.toDate ? t.completedAt.toDate() : (t.completedAt ? new Date(t.completedAt) : null);
+        const inRange = (dt) => dt && (!from || dt >= from) && (!to || dt <= to);
+        return inRange(c) || inRange(d);
+      });
+    } else if (/^activityIn(\d+)d$/.test(filterDatePreset)) {
+      // 4.49.20+ Presets nomeados de atividade (mesmo critério do
+      // dashboard: createdAt OR completedAt nos últimos N dias).
+      // Auto-computa o range sem precisar de from/to.
+      const days = parseInt(filterDatePreset.match(/(\d+)/)[1], 10);
+      const start = new Date(today);
+      start.setDate(today.getDate() - (days - 1));
+      start.setHours(0, 0, 0, 0);
+      const end = new Date(today);
+      end.setHours(23, 59, 59, 999);
+      result = result.filter(t => {
+        const c = t.createdAt?.toDate   ? t.createdAt.toDate()   : (t.createdAt ? new Date(t.createdAt) : null);
+        const d = t.completedAt?.toDate ? t.completedAt.toDate() : (t.completedAt ? new Date(t.completedAt) : null);
+        const inRange = (dt) => dt && dt >= start && dt <= end;
+        return inRange(c) || inRange(d);
       });
     }
   }
@@ -1194,7 +1419,19 @@ function renderTaskRow(task) {
   const nlStatus = task.type === 'newsletter' && task.newsletterStatus
     ? NEWSLETTER_STATUSES?.find(s=>s.value===task.newsletterStatus)?.label || task.newsletterStatus
     : null;
-  const typeLabel = TASK_TYPES?.find(t=>t.value===task.type)?.label || '';
+  // 4.48.4+ Bug fix: typeLabel ficava vazio porque TASK_TYPES é o array
+  // legado (hardcoded com 'newsletter', etc.) e tarefas novas têm
+  // task.typeId apontando pra task_types collection. Lookup combinado:
+  //   1. Match em pageTaskTypes por typeId (caminho novo)
+  //   2. Match em pageTaskTypes por name.lower (legacy task.type string)
+  //   3. Fallback pra TASK_TYPES legado pra compat com tasks bem antigas
+  const _ttMatch = pageTaskTypes.find(t =>
+    (task.typeId && t.id === task.typeId) ||
+    (task.type   && t.name?.toLowerCase() === task.type)
+  );
+  const typeLabel = _ttMatch
+    ? `${_ttMatch.icon ? _ttMatch.icon + ' ' : ''}${_ttMatch.name}`
+    : (TASK_TYPES?.find(t => t.value === task.type)?.label || '');
 
   const canComplete = store.can('task_complete');
   const subs = Array.isArray(task.subtasks) ? task.subtasks : [];
@@ -1582,11 +1819,12 @@ function _attachPageEvents() {
     timer = setTimeout(() => { searchTerm = e.target.value; applyFilters(); }, 250);
   });
 
-  // Filters
-  document.getElementById('filter-status')?.addEventListener('change', e => { filterStatus = e.target.value; applyFilters(); });
-  document.getElementById('filter-priority')?.addEventListener('change', e => { filterPriority = e.target.value; applyFilters(); });
-  document.getElementById('filter-project')?.addEventListener('change', e => { filterProject = e.target.value; applyFilters(); });
-  document.getElementById('filter-squad')?.addEventListener('change', e => { filterSquad = e.target.value; applyFilters(); });
+  // Filters (4.48.4+ saveFilterValues persiste em localStorage)
+  document.getElementById('filter-status')?.addEventListener('change', e => { filterStatus = e.target.value; saveFilterValues(); applyFilters(); });
+  document.getElementById('filter-priority')?.addEventListener('change', e => { filterPriority = e.target.value; saveFilterValues(); applyFilters(); });
+  document.getElementById('filter-project')?.addEventListener('change', e => { filterProject = e.target.value; saveFilterValues(); applyFilters(); });
+  document.getElementById('filter-type')?.addEventListener('change', e => { filterType = e.target.value; saveFilterValues(); applyFilters(); });
+  document.getElementById('filter-squad')?.addEventListener('change', e => { filterSquad = e.target.value; saveFilterValues(); applyFilters(); });
 
   // Visual pickers (status / priority / squad) — selects nativos preservados pra change events
   // status: cor da bolinha já identifica, sem icon redundante.
@@ -1621,48 +1859,128 @@ function _attachPageEvents() {
     findSelected: findPriority,
     emptyLabel: 'Todas as prioridades',
   });
-  const squadOpts = () => {
-    const ws = store.get('userWorkspaces') || [];
+  // 4.48.4+ Picker de Projetos com busca (substitui native <select> que ficava
+  // ingerenciável quando workspace tinha 30+ projetos). Source = allProjects
+  // (populado em fetchProjects). Funde com o hidden <select> via bindOptionPicker
+  // pra preservar contrato do change handler abaixo.
+  const projectOpts = () => allProjects.map(p => ({
+    id: p.id,
+    label: p.name,
+    icon: p.icon || '◈',
+    color: p.color || '#6366F1',
+  }));
+  const findProject = (id) => projectOpts().find(o => o.id === id) || null;
+  bindOptionPicker({
+    btnId: 'filter-project-btn',
+    selectId: 'filter-project',
+    buildConfig: () => ({
+      options: projectOpts(),
+      empty: { id: '', label: 'Todos os projetos' },
+      searchPlaceholder: 'Buscar projeto…',
+    }),
+    findSelected: findProject,
+    emptyLabel: 'Todos os projetos',
+  });
+
+  // 4.49.17+ Picker de TIPO de tarefa — mesma estética dos outros filtros.
+  // Inclui sentinel "Sem tipo" (TYPE_NONE_SENTINEL) no topo.
+  const typeOpts = () => {
+    const types = store.get('taskTypes') || [];
     return [
-      { id: '__none__', label: '— Sem squad', icon: '○', color: '#6B7280' },
-      ...ws.map(w => ({
-        id: w.id,
-        label: w.name + (w.multiSector ? ' (multissetor)' : ''),
-        icon: w.icon || '◈',
-        color: w.color || '#6366F1',
-      })),
+      { id: '__NONE__', label: 'Sem tipo', icon: '∅', color: 'var(--text-muted)' },
+      ...types.map(t => {
+        // Mesma lógica de extração de emoji do filterBar.js
+        const name = String(t.name || '').trim();
+        const fc = name[0];
+        const isEmoji = fc && fc.codePointAt(0) > 127;
+        const parts = isEmoji ? name.split(/\s+/) : null;
+        return {
+          id:    t.id,
+          label: parts ? parts.slice(1).join(' ').trim() || name : name,
+          icon:  t.icon || (parts ? parts[0] : '▶'),
+          color: '#0EA5E9',
+        };
+      }),
     ];
   };
-  const findSquad = (id) => squadOpts().find(o => o.id === id) || null;
+  const findType = (id) => typeOpts().find(o => o.id === id) || null;
+  bindOptionPicker({
+    btnId: 'filter-type-btn',
+    selectId: 'filter-type',
+    buildConfig: () => ({
+      options: typeOpts(),
+      empty: { id: '', label: 'Todos os tipos' },
+      searchPlaceholder: 'Buscar tipo…',
+    }),
+    findSelected: findType,
+    emptyLabel: 'Todos os tipos',
+  });
+  // v4.49.55+ Filtro Squad agrupado por SETOR (pedido do user).
+  // Flatten apenas pra findSelected (lookup) — picker visual usa groups.
+  const flattenSquadGroups = () => {
+    const flat = [];
+    for (const g of squadOptsGrouped()) {
+      for (const item of g.items) flat.push(item);
+    }
+    return flat;
+  };
+  const findSquad = (id) => flattenSquadGroups().find(o => o.id === id) || null;
   bindOptionPicker({
     btnId: 'filter-squad-btn',
     selectId: 'filter-squad',
     buildConfig: () => ({
-      options: squadOpts(),
+      groups: squadOptsGrouped(),
       empty: { id: '', label: 'Todos os squads' },
       searchPlaceholder: 'Buscar squad…',
     }),
     findSelected: findSquad,
     emptyLabel: 'Todos os squads',
   });
+
   // Hash determinístico → cor estável por área
   const HASH_PALETTE = ['#6366F1','#8B5CF6','#EC4899','#F59E0B','#22C55E','#0EA5E9','#D4A843','#64748B','#10B981'];
   const hashColor = (s) => {
     let h = 0; for (let i = 0; i < s.length; i++) h = ((h<<5)-h+s.charCodeAt(i))|0;
     return HASH_PALETTE[Math.abs(h) % HASH_PALETTE.length];
   };
-  const areaOpts = () => REQUESTING_AREAS.map(a => ({ id: a, label: a, icon: '', color: hashColor(a) }));
+
+  // v4.49.51+ Picker do filtro Setor.
+  // v4.49.52 fix TDZ (ordem hashColor).
+  // v4.49.53 hotfix: usa getUserSectorOptions (UNIÃO+dedup) em vez de
+  // store.get('sectors') cru. Causa do "Concierge 2x" foi falta de dedup.
+  const sectorOpts = () => getUserSectorOptions().map(name => ({
+    id: name, label: name, icon: '◈', color: hashColor(name),
+  }));
+  const findSector = (id) => sectorOpts().find(o => o.id === id) || null;
+  bindOptionPicker({
+    btnId: 'filter-sector-btn',
+    selectId: 'filter-sector',
+    buildConfig: () => ({
+      options: sectorOpts(),
+      empty: { id: '', label: 'Todos os setores' },
+      searchPlaceholder: 'Buscar setor…',
+    }),
+    findSelected: findSector,
+    emptyLabel: 'Todos os setores',
+  });
+  // v4.49.54+ Área solicitante = mesma fonte do filtro Setor (módulo Setores).
+  // Diferença é só de contexto: requestingArea é o setor que PEDIU a demanda;
+  // sector é o setor que EXECUTA. REQUESTING_AREAS hardcoded permanece em
+  // services/tasks.js como fallback técnico pra auto-provisioning legacy.
+  const areaOpts = () => getUserSectorOptions().map(a => ({
+    id: a, label: a, icon: '◈', color: hashColor(a),
+  }));
   const findArea = (id) => areaOpts().find(o => o.id === id) || null;
   bindOptionPicker({
     btnId: 'filter-area-btn',
     selectId: 'filter-area',
     buildConfig: () => ({
       options: areaOpts(),
-      empty: { id: '', label: 'Todas as áreas' },
-      searchPlaceholder: 'Buscar área…',
+      empty: { id: '', label: 'Todos os setores solicitantes' },
+      searchPlaceholder: 'Buscar setor…',
     }),
     findSelected: findArea,
-    emptyLabel: 'Todas as áreas',
+    emptyLabel: 'Todos os setores solicitantes',
   });
   // 4.40.25+ Padroniza avatar com perfil do user: avatarColor (cor escolhida
   // pelo user em Perfil → Aparência) substitui hashColor. Antes, picker
@@ -1685,6 +2003,7 @@ function _attachPageEvents() {
       : (filterAssignee ? [filterAssignee] : []),
     setValues: (ids) => {
       filterAssignee = ids.length === 0 ? '' : ids;
+      saveFilterValues();
       applyFilters();
     },
     emptyLabel: 'Todos os responsáveis',
@@ -1736,18 +2055,22 @@ function _attachPageEvents() {
       : (filterObserver ? [filterObserver] : []),
     setValues: (ids) => {
       filterObserver = ids.length === 0 ? '' : ids;
+      saveFilterValues();
       applyFilters();
     },
     emptyLabel: '👁 Todos os observadores',
   });
-  document.getElementById('filter-area')?.addEventListener('change', e => { filterArea = e.target.value; applyFilters(); });
-  document.getElementById('filter-tag')?.addEventListener('change', e => { filterTag = e.target.value; applyFilters(); });
-  document.getElementById('filter-meta')?.addEventListener('change', e => { filterMeta = e.target.value; applyFilters(); });
+  document.getElementById('filter-area')?.addEventListener('change', e => { filterArea = e.target.value; saveFilterValues(); applyFilters(); });
+  // v4.49.51+ Setor (proprietário) — change listener
+  document.getElementById('filter-sector')?.addEventListener('change', e => { filterSector = e.target.value; saveFilterValues(); applyFilters(); });
+  document.getElementById('filter-tag')?.addEventListener('change', e => { filterTag = e.target.value; saveFilterValues(); applyFilters(); });
+  document.getElementById('filter-meta')?.addEventListener('change', e => { filterMeta = e.target.value; saveFilterValues(); applyFilters(); });
   document.getElementById('filter-archived')?.addEventListener('change', e => {
     filterShowArchived = e.target.checked;
     // Atualiza o destaque visual do label (fundo dourado quando ON)
     const wrap = document.getElementById('filter-archived-wrap');
     if (wrap) wrap.style.background = filterShowArchived ? 'var(--brand-gold-bg,rgba(212,168,67,.12))' : 'transparent';
+    saveFilterValues();
     applyFilters();
   });
   document.getElementById('filter-date-preset')?.addEventListener('change', e => {
@@ -1755,21 +2078,23 @@ function _attachPageEvents() {
     const customBar = document.getElementById('filter-date-custom');
     if (customBar) customBar.style.display = (filterDatePreset === 'custom') ? 'flex' : 'none';
     if (filterDatePreset !== 'custom') { filterDateFrom = ''; filterDateTo = ''; }
+    saveFilterValues();
     applyFilters();
   });
-  document.getElementById('filter-date-from')?.addEventListener('change', e => { filterDateFrom = e.target.value; applyFilters(); });
-  document.getElementById('filter-date-to')?.addEventListener('change', e => { filterDateTo = e.target.value; applyFilters(); });
+  document.getElementById('filter-date-from')?.addEventListener('change', e => { filterDateFrom = e.target.value; saveFilterValues(); applyFilters(); });
+  document.getElementById('filter-date-to')?.addEventListener('change', e => { filterDateTo = e.target.value; saveFilterValues(); applyFilters(); });
   document.getElementById('filter-date-clear')?.addEventListener('click', () => {
     filterDatePreset = ''; filterDateFrom = ''; filterDateTo = '';
     const sel = document.getElementById('filter-date-preset'); if (sel) sel.value = '';
     const fromI = document.getElementById('filter-date-from'); if (fromI) fromI.value = '';
     const toI   = document.getElementById('filter-date-to');   if (toI)   toI.value = '';
     const customBar = document.getElementById('filter-date-custom'); if (customBar) customBar.style.display = 'none';
+    saveFilterValues();
     applyFilters();
   });
   document.getElementById('filter-config-btn')?.addEventListener('click', openFilterConfigModal);
   document.getElementById('tasks-card-prefs-btn')?.addEventListener('click', () => openCardPrefsModal(() => renderTaskList()));
-  document.getElementById('group-by')?.addEventListener('change', e => { groupBy = e.target.value; renderTaskList(); });
+  document.getElementById('group-by')?.addEventListener('change', e => { groupBy = e.target.value; saveFilterValues(); renderTaskList(); });
   // 4.34.7+ Sort dropdown
   const sortSel = document.getElementById('sort-by');
   if (sortSel) {
@@ -1797,11 +2122,12 @@ function openFilterConfigModal() {
     { key: 'status',     label: 'Status' },
     { key: 'priority',   label: 'Prioridade' },
     { key: 'project',    label: 'Projeto' },
+    { key: 'type',       label: 'Tipo de tarefa (inclui "sem tipo")' }, // 4.49.17+
     { key: 'squad',      label: 'Squad' },
     { key: 'assignee',   label: 'Responsável' },
     { key: 'observer',   label: '👁 Observador' },
     { key: 'datePreset', label: 'Prazo (hoje, semana, mês…)' },
-    { key: 'area',       label: 'Área solicitante' },
+    { key: 'area',       label: 'Setor solicitante' },
     { key: 'tag',        label: 'Tag' },
     { key: 'meta',       label: 'Meta vinculada (com / sem)' },
   ];

@@ -11,6 +11,8 @@ import { toast }            from './components/toast.js';
 import { Sidebar }          from './components/sidebar.js';
 import { Header }           from './components/header.js';
 import { installGlobalEscHandler } from './components/uiKit.js';
+// v4.49.61+ Indicador de conexão (chip canto sup direito quando reconnecting/offline)
+import { mountConnectionIndicator } from './components/connectionIndicator.js';
 import { subscribeNotifications, cleanupExpired } from './services/notifications.js';
 import { syncBrandingToCache }                    from './services/branding.js';
 import { injectSandboxBanner }                    from './services/sandbox.js';
@@ -92,6 +94,10 @@ async function init() {
   // Sincroniza branding (logos) do Firestore pra cache local — faz isso
   // em paralelo, sem bloquear o auth (cache antigo serve até completar)
   syncBrandingToCache().catch(e => console.warn('[App] branding sync:', e?.message));
+
+  // v4.49.61+ Indicador discreto de status de conexão (online/reconectando/offline).
+  // Aparece só quando algo está errado — silencioso quando tudo OK.
+  try { mountConnectionIndicator(); } catch (e) { console.warn('[App] conn indicator:', e?.message); }
 
   // Injeta banner de Modo Teste (sandbox) — invisível por padrão,
   // visível só quando localStorage.primetour_sandbox === '1'

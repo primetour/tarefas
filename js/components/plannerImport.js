@@ -881,7 +881,7 @@ function renderStep4() {
       <!-- Resumo de matches -->
       <div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
         <div class="pi-stat-card" style="background:#F0FDF4;border-color:#BBF7D0;color:#16A34A;">
-          <strong>${bucketsMatched}/${wiz.plannerBuckets.length}</strong> buckets → área solicitante
+          <strong>${bucketsMatched}/${wiz.plannerBuckets.length}</strong> buckets → setor solicitante
         </div>
         <div class="pi-stat-card" style="background:${tagsMatched ? '#F0FDF4' : '#FEF3C7'};
           border-color:${tagsMatched ? '#BBF7D0' : '#FDE68A'};color:${tagsMatched ? '#16A34A' : '#D97706'};">
@@ -1178,7 +1178,7 @@ function renderStep5() {
               <th style="min-width:95px;">Status</th>
               <th style="min-width:85px;">Prioridade</th>
               <th style="min-width:130px;">Responsável</th>
-              <th style="min-width:90px;" title="Quem solicitou (bucket → área solicitante)">Solicitante</th>
+              <th style="min-width:90px;" title="Quem solicitou (bucket → setor solicitante)">Solicitante</th>
               <th style="min-width:100px;">Prazo</th>
             </tr>
           </thead>

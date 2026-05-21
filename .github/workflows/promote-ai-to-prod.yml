@@ -1,0 +1,86 @@
+name: Promote AI Classification to Production
+
+# Cutover do shadow mode: copia extracted.aiCommercial/aiTourism para
+# extracted.commercial/tourism, preservando o valor antigo do regex
+# em commercialPrev/tourismPrev (pra rollback rápido).
+#
+# Manual only (workflow_dispatch) — NUNCA roda automaticamente.
+
+# v4.49.44+ Least-privilege
+permissions:
+  contents: read
+
+concurrency:
+  group: nl-classifier-cutover
+  cancel-in-progress: false
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry:
+        description: 'Dry-run (mostra o que faria sem gravar)'
+        required: false
+        type: boolean
+        default: true
+      confidence:
+        description: 'Confiança mínima da IA pra promover'
+        required: false
+        type: choice
+        options: [low, medium, high]
+        default: medium
+      eixo:
+        description: 'Quais eixos promover'
+        required: false
+        type: choice
+        options: [both, commercial, tourism]
+        default: both
+      confirmar:
+        description: 'Digite "PROMOVER" pra confirmar (defesa contra clique acidental)'
+        required: true
+        type: string
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Sanity check da confirmação
+        # v4.49.44+ security audit: input via env var pra evitar shell injection.
+        env:
+          INPUT_CONFIRMAR: ${{ github.event.inputs.confirmar }}
+        run: |
+          set -euo pipefail
+          if [ "${INPUT_CONFIRMAR:-}" != "PROMOVER" ]; then
+            echo "❌ Confirmação inválida. Digite exatamente 'PROMOVER' no input."
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install firebase-admin
+        working-directory: scripts
+      - name: Promote AI → Production
+        env:
+          FIREBASE_PROJECT_ID:   ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_CLIENT_EMAIL: ${{ secrets.FIREBASE_CLIENT_EMAIL }}
+          FIREBASE_PRIVATE_KEY:  ${{ secrets.FIREBASE_PRIVATE_KEY }}
+          INPUT_DRY:        ${{ github.event.inputs.dry }}
+          INPUT_CONFIDENCE: ${{ github.event.inputs.confidence }}
+          INPUT_EIXO:       ${{ github.event.inputs.eixo }}
+        run: |
+          set -euo pipefail
+          # Validação: confidence e eixo são `type: choice` no input — só vêm
+          # com valores do allowlist. Mesmo assim validamos por defesa-em-profundidade.
+          case "${INPUT_CONFIDENCE:-medium}" in
+            low|medium|high) ;;
+            *) echo "❌ confidence inválido: ${INPUT_CONFIDENCE}"; exit 1 ;;
+          esac
+          case "${INPUT_EIXO:-both}" in
+            both|commercial|tourism) ;;
+            *) echo "❌ eixo inválido: ${INPUT_EIXO}"; exit 1 ;;
+          esac
+          args=(--confidence="$INPUT_CONFIDENCE" --only-eixo="$INPUT_EIXO")
+          if [ "${INPUT_DRY:-}" = "true" ]; then args+=(--dry); fi
+          node promote-ai-to-prod.js "${args[@]}"
+        working-directory: scripts

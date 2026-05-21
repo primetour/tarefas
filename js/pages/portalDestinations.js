@@ -8,6 +8,7 @@ import {
   fetchDestinations, saveDestination, deleteDestination,
   CONTINENTS,
 } from '../services/portal.js';
+import { openDestinationsImport } from '../components/destinationsImport.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g, c =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -17,7 +18,10 @@ let filterCont = '';
 let filterCoun = '';
 
 export async function renderPortalDestinations(container) {
-  if (!store.canManagePortal()) {
+  // 4.49.2+ Usa canManageDestinations() (perm granular nova) em vez de
+  // canManagePortal(). Libera pro analista criar destinos sem dar acesso
+  // ao resto do Portal (banco de imagens, áreas, templates).
+  if (!store.canManageDestinations()) {
     container.innerHTML = `<div class="empty-state" style="min-height:60vh;">
       <div class="empty-state-icon">🔒</div>
       <div class="empty-state-title">Acesso restrito</div>
@@ -31,7 +35,9 @@ export async function renderPortalDestinations(container) {
         <h1 class="page-title">Destinos</h1>
         <p class="page-subtitle">Hierarquia de destinos: Continente → País → Cidade/Região</p>
       </div>
-      <div class="page-header-actions">
+      <div class="page-header-actions" style="display:flex;gap:8px;">
+        <button class="btn btn-secondary btn-sm" id="dest-import-btn"
+          title="Importar vários destinos via planilha Excel">📤 Importar Excel</button>
         <button class="btn btn-primary btn-sm" id="dest-new-btn">+ Novo Destino</button>
       </div>
     </div>
@@ -78,6 +84,16 @@ export async function renderPortalDestinations(container) {
   `;
 
   document.getElementById('dest-new-btn')?.addEventListener('click', () => showDestModal(null));
+  // 4.49.7+ Bulk import via Excel — abre wizard que parseia XLSX/CSV e
+  // chama saveDestination pra cada linha selecionada. onComplete refaz fetch.
+  document.getElementById('dest-import-btn')?.addEventListener('click', () => {
+    openDestinationsImport({
+      onComplete: async () => {
+        allDests = await fetchDestinations();
+        renderTable();
+      },
+    });
+  });
   document.getElementById('dest-filter-cont')?.addEventListener('change', e => {
     filterCont = e.target.value;
     filterCoun = '';

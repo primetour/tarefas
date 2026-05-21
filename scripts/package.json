@@ -3,8 +3,12 @@
   "version": "1.0.0",
   "description": "Scripts de sincronização PRIMETOUR",
   "private": true,
+  "scripts": {
+    "test": "node classify-content-ai.test.js",
+    "test:classifier": "node classify-content-ai.test.js"
+  },
   "dependencies": {
-    "firebase-admin": "^11.0.0",
+    "firebase-admin": "^11.11.1",
     "node-fetch": "^2.7.0"
   }
 }

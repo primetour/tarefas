@@ -112,7 +112,15 @@ let CONTENT_TYPE_OPTIONS = [
 // 4.35.13+ Quick create inline: nova plataforma ou tipo direto do modal de slot.
 // Abre um modal pequeno só com nome+icon+cor, salva no Firestore, recarrega
 // listas e re-seleciona o item novo no dropdown.
+// v4.49.50+ Defesa em profundidade: re-checa permission no handler (defesa
+// contra DOM tampering — botão pode ser injetado via console, mas o save é
+// sempre permission-gated). Firestore rules em content_meta também valem.
 async function _quickCreateMeta(kind) {
+  if (!store.can('content_calendar_meta_manage') && !store.can('system_manage_settings') && !store.isMaster()) {
+    const { toast } = await import('../components/toast.js');
+    toast.error('Sem permissão para criar metadados do calendário de conteúdo.');
+    return;
+  }
   const { renderEmojiPicker, bindEmojiPicker } = await import('../components/emojiPicker.js');
   const what = kind === 'platform' ? 'plataforma'
              : kind === 'category' ? 'categoria'
@@ -172,7 +180,30 @@ async function _quickCreateMeta(kind) {
                             : await meta.createContent(data);
               close();
               resolve(created);
-            } catch (e) { toast.error(e.message); }
+            } catch (e) {
+              // v4.49.58+ Mensagem clara pra diagnóstico do user.
+              // 3 cenários possíveis:
+              //   1. Firestore rules não deployadas (admin precisa rodar
+              //      `firebase deploy --only firestore:rules`)
+              //   2. Role do user não tem content_calendar_meta_manage
+              //      (admin precisa habilitar em Configurações → Roles)
+              //   3. permissionOverrides setado pra false explícito
+              const msg = String(e?.message || e || '');
+              const code = String(e?.code || '');
+              if (code === 'permission-denied' || /permission/i.test(msg) || /insufficient/i.test(msg)) {
+                toast.error(
+                  'Sem permissão pra criar ' + what + '. ' +
+                  'Peça ao admin pra habilitar "Criar plataformas, tipos e categorias" ' +
+                  'no seu role (Configurações → Roles → Analista) e garantir que ' +
+                  'as regras Firestore foram deployadas.',
+                  { duration: 9000 },
+                );
+                console.error('[quickCreateMeta] permission-denied detalhe:', e);
+              } else {
+                toast.error('Erro ao criar ' + what + ': ' + msg);
+                console.error('[quickCreateMeta] erro inesperado:', e);
+              }
+            }
           },
         },
       ],
@@ -408,6 +439,22 @@ function slotsForDate(date) {
   // 4.35.8+ Aplica TODOS os filtros ativos (account/platform/contentType/status)
   // — antes só account, daí "Instagram ICs com newsletter" mostrava newsletter
   // misturada com posts mesmo com platform=instagram selecionado.
+  //
+  // 4.49.5+ Respeita TAMBÉM o filtro de TIPO (visibleTaskTypes). Antes, slots
+  // reais ignoravam o filtro porque slot real não tem typeId direto — só
+  // virtual slot tinha. Resultado: usuário filtra por "Post/Story Primetour"
+  // e via misturado "Dia Nacional do Museu", "Notícia", "Dia dos Namorados"
+  // (slots editoriais sem task vinculada de outro tipo).
+  //
+  // Regra: quando filtro de tipo ativo, slot real só passa se:
+  //   1. Tem taskId E task vinculada tem typeId no visibleTaskTypes; OU
+  //   2. Sua plataforma/conta casa com a configuração do tipo (heurística
+  //      pra slots sem task — exemplo: slot.platform='instagram' + tipo
+  //      Post/Story Primetour com nucleo de Instagram).
+  // Fallback: se nenhum dos dois cobrir, esconder (UX mais consistente).
+  const restricted = Array.isArray(visibleTaskTypes) && visibleTaskTypes.length > 0;
+  const linkedTaskById = _linkedTasks instanceof Map ? _linkedTasks : null;
+
   return allSlots.filter(s => {
     if (!s.scheduledDate) return false;
     const sd = parseLocalDate(s.scheduledDate);
@@ -417,6 +464,14 @@ function slotsForDate(date) {
     if (activePlatform    && s.platform    !== activePlatform)    return false;
     if (activeContentType && s.contentType !== activeContentType) return false;
     if (activeStatus      && s.status      !== activeStatus)      return false;
+    if (restricted) {
+      // Match via task vinculada (caminho preferencial)
+      const linkedTask = s.taskId && linkedTaskById ? linkedTaskById.get(s.taskId) : null;
+      const linkedTypeId = linkedTask?.typeId || s.taskTypeId || null;
+      if (linkedTypeId && visibleTaskTypes.includes(linkedTypeId)) return true;
+      // Slot sem task vinculada e sem typeId direto → esconde (filtro é estrito)
+      return false;
+    }
     return true;
   });
 }
@@ -654,6 +709,19 @@ function getTypeIcon(type) {
 export async function renderContentCalendar(container) {
   const main = container || document.getElementById('page-content') || document.getElementById('main');
   if (!main) return;
+
+  // 4.49.11+ Wire da perm content_calendar_view (que estava ÓRFÃ no catálogo —
+  // definida em rbac.js mas nunca checada no código). Master sempre vê;
+  // demais precisam ter content_calendar_view.
+  if (!store.isMaster?.() && !store.can?.('content_calendar_view')
+      && !store.canViewContentCalendar?.()) {
+    main.innerHTML = `<div class="empty-state" style="min-height:50vh;">
+      <div class="empty-state-icon">🔒</div>
+      <div class="empty-state-title">Sem acesso ao Calendário de Conteúdo</div>
+      <p class="text-sm text-muted mt-2">Seu role não tem permissão pra ver este módulo.</p>
+    </div>`;
+    return;
+  }
 
   // ── Parse URL ──────────────────────────────────────────
   // Aceita:
@@ -1812,6 +1880,16 @@ function renderListView(container) {
   if (activeStatus)      filtered = filtered.filter(s => s.status === activeStatus);
   if (activePlatform)    filtered = filtered.filter(s => s.platform === activePlatform);
   if (activeContentType) filtered = filtered.filter(s => s.contentType === activeContentType);
+  // 4.49.5+ List view também respeita filtro de tipo (mesma regra do
+  // slotsForDate: slot só passa se task vinculada tem typeId no filtro).
+  const restrictTypes = Array.isArray(visibleTaskTypes) && visibleTaskTypes.length > 0;
+  if (restrictTypes) {
+    filtered = filtered.filter(s => {
+      const t = s.taskId && _linkedTasks instanceof Map ? _linkedTasks.get(s.taskId) : null;
+      const tid = t?.typeId || s.taskTypeId || null;
+      return tid && visibleTaskTypes.includes(tid);
+    });
+  }
 
   // Sort by date
   filtered.sort((a, b) => {
@@ -2089,6 +2167,16 @@ function bindCalendarCellEvents(container) {
           status:          'not_started',
           requestingArea:  slot?.requestingArea || '',
           tags:            ['agenda-previa'],
+          // 4.48.4+ Trilha de conversão: link slot virtual → tarefa criada.
+          // Usado pelo dashboard de Produtividade pra medir taxa de
+          // conversão de slots previstos (agenda prévia) em tarefas reais.
+          // typeId+slotId+date forma chave única do slot virtual no período.
+          fromSlot: {
+            typeId,
+            slotId: slotId || null,
+            date,        // ISO YYYY-MM-DD
+            createdAt: new Date().toISOString(),
+          },
         },
         onSave: async () => {
           await loadProjectTasks();
@@ -2624,6 +2712,13 @@ function openDayDetailsModal(dateStr) {
           status:          'not_started',
           requestingArea:  slot?.requestingArea || '',
           tags:            ['agenda-previa'],
+          // 4.48.4+ Trilha de conversão (mesma lógica do handler principal acima)
+          fromSlot: {
+            typeId,
+            slotId: slotId || null,
+            date: d,
+            createdAt: new Date().toISOString(),
+          },
         },
         onSave: async () => { await loadProjectTasks(); renderCalendarBody(); },
       });
@@ -2700,7 +2795,7 @@ function openSlotModal(slot, prefillDate) {
               ${PLATFORM_LIST.map(p => `<option value="${p.value}" ${s.platform === p.value ? 'selected' : ''}>${esc(p.label)}</option>`).join('')}
             </select>
             ${renderPickerButton({ btnId: 'cc-f-platform-btn', selected: findOption(PLATFORM_OPTIONS, s.platform), emptyLabel: '— Plataforma —' })}
-            ${(store.can('system_manage_settings') || store.isMaster()) ? `
+            ${(store.can('content_calendar_meta_manage') || store.can('system_manage_settings') || store.isMaster()) ? `
               <button type="button" id="cc-f-platform-new" style="font-size:0.7rem;color:var(--brand-gold);
                 background:none;border:none;cursor:pointer;padding:4px 0;margin-top:2px;text-decoration:underline;">
                 + Criar nova plataforma
@@ -2713,7 +2808,7 @@ function openSlotModal(slot, prefillDate) {
               ${CONTENT_TYPE_LIST.map(t => `<option value="${t.value}" ${s.contentType === t.value ? 'selected' : ''}>${esc(t.label)}</option>`).join('')}
             </select>
             ${renderPickerButton({ btnId: 'cc-f-contentType-btn', selected: findOption(CONTENT_TYPE_OPTIONS, s.contentType), emptyLabel: '— Tipo —' })}
-            ${(store.can('system_manage_settings') || store.isMaster()) ? `
+            ${(store.can('content_calendar_meta_manage') || store.can('system_manage_settings') || store.isMaster()) ? `
               <button type="button" id="cc-f-content-new" style="font-size:0.7rem;color:var(--brand-gold);
                 background:none;border:none;cursor:pointer;padding:4px 0;margin-top:2px;text-decoration:underline;">
                 + Criar novo tipo
@@ -2751,7 +2846,7 @@ function openSlotModal(slot, prefillDate) {
             ${CATEGORY_LIST.map(c => `<option value="${c.value}" ${s.category === c.value ? 'selected' : ''}>${esc(c.label)}</option>`).join('')}
           </select>
           ${renderPickerButton({ btnId: 'cc-f-category-btn', selected: findOption(CATEGORY_OPTIONS, s.category), emptyLabel: '— Categoria —' })}
-          ${(store.can('system_manage_settings') || store.isMaster()) ? `
+          ${(store.can('content_calendar_meta_manage') || store.can('system_manage_settings') || store.isMaster()) ? `
             <button type="button" id="cc-f-category-new" style="font-size:0.7rem;color:var(--brand-gold);
               background:none;border:none;cursor:pointer;padding:4px 0;margin-top:2px;text-decoration:underline;">
               + Criar nova categoria

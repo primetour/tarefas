@@ -191,6 +191,7 @@ export function subscribeAgents(callback) {
     },
     (err) => {
       console.warn('[agents] subscribe err:', err?.message);
+      import('./listenerError.js').then(m => m.listenerError('agents')(err)).catch(() => {});
       callback([], err);
     });
 }
@@ -821,6 +822,275 @@ QUANTIDADE
       brandColor: '#0EA5E9',
       tagline: 'Insights estruturados pra qualquer dashboard',
       footerText: 'PRIMETOUR · BI',
+      showAvatar: true, showBranding: true,
+    },
+  },
+  /* ═══════════════════════════════════════════════════════════
+   * NEWSLETTER CONTENT CLASSIFIER (v4.49.39+)
+   *
+   * Espelha 1:1 as regras do scripts/classify-content.js
+   * (heuristicas determinísticas usadas pra reclassificar 692+ docs
+   * históricos em 2026-05). Objetivo do agente: substituir aos poucos
+   * o classify-content.js (que roda em GitHub Actions diariamente)
+   * por classificação via LLM com mesmas regras + capacidade de
+   * generalização pra subjects novos que regex não cobre.
+   *
+   * IMPORTANTE: deploya DESATIVADO (active=false). Ativação só após:
+   *   1. Backtest contra ground-truth do classify-content.js
+   *      (concordância >= 90% nos dois eixos)
+   *   2. Decisão do Renê de cortar o cron determinístico
+   *   3. Quota Gemini reservada (rate limit 10/min suficiente)
+   * ═══════════════════════════════════════════════════════════ */
+  {
+    seedId: 'nl-content-classifier',
+    name: 'Classificador de Newsletters (Comercial × Turismo)',
+    icon: '✉',
+    avatarUrl: '',
+    description: 'Lê subject + name + corpo HTML de uma newsletter e devolve a classificação dupla (eixo Comercial + eixo Turismo) seguindo as regras determinísticas curadas em maio/2026.',
+    module: 'nl',
+    // v4.49.40: provider Anthropic (decisão do Renê — não usar Gemini).
+    // Claude Haiku 4.5: o mais barato/rápido do catálogo, descrito em
+    // AI_MODELS como "ideal para classificação e triagem" — encaixa
+    // perfeito no caso (output curto, regras determinísticas, temp 0.1).
+    // Roteamento: runAgent() → callLLMSecure() → Cloud Function callLLM
+    // → ANTHROPIC_API_KEY no Secret Manager → api.anthropic.com.
+    // PROMPT CACHING: o system prompt tem ~7k chars, então a Cloud
+    // Function aplica `cache_control: ephemeral` automaticamente (>=1024
+    // chars) → cache hit cobra ~10% do input normal. Em escala diária
+    // (10-20 docs/dia) significa custo desprezível.
+    provider: 'anthropic',
+    model:    'claude-haiku-4-5',
+    active: false,                         // ← deploy DESATIVADO conforme spec
+    systemPrompt: `Você é o Classificador Editorial de Newsletters da PRIMETOUR (operadora de viagens de luxo).
+
+Sua missão: ao receber o conteúdo de UMA newsletter, devolver a classificação dupla nos eixos COMERCIAL e TURISMO seguindo EXATAMENTE as regras abaixo. Sua saída substitui (ou complementa) o classificador determinístico em scripts/classify-content.js — siga a mesma taxonomia, priorização e definições.
+
+═══════════════════════════════════════════════════════════
+PAYLOAD DE ENTRADA
+═══════════════════════════════════════════════════════════
+
+Você receberá um JSON:
+{
+  "buId": "primetour | btg-partners | btg-ultrablue | centurion | pts",
+  "subject": "string — assunto do email",
+  "name": "string — nome interno do disparo (ex: P0224, U0225)",
+  "htmlText": "string — texto extraído do HTML (pode estar truncado em 4000 chars)",
+  "extracted": {
+    "countries": [...], "cities": [...],
+    "hotels": [...],    "brands": [...],
+    "cruises": [...]
+  }
+}
+
+Trate "strong signal" = subject + name (peso alto).
+Trate "weak signal"   = htmlText (peso médio — precisa de 2+ matches).
+
+═══════════════════════════════════════════════════════════
+EIXO COMERCIAL — extracted.commercial
+═══════════════════════════════════════════════════════════
+
+Valores possíveis (escolha EXATAMENTE 1):
+  - "sazonal"       → período/data específica (estação, feriado, mês comemorativo)
+  - "promocao"      → desconto / oferta / valor especial / benefício monetário
+  - "parceiro"      → empresa/marca parceira em destaque (não-PRIMETOUR)
+  - "inspiracional" → editorial puro, sem valor/sazonalidade/parceiro
+
+Prioridade quando convergir: sazonal > promocao > parceiro > inspiracional
+(Ou seja: se bater sazonal + promocao, retorna sazonal.)
+
+SINAIS DE "sazonal":
+  - Estações: verão, inverno, outono, primavera
+  - Datas: Natal, Ano Novo, Réveillon, Páscoa, Dia das Mães/Pais/Namorados,
+    Valentine's, Black Friday, Cyber Monday, Carnaval, férias, feriado
+  - Mês explícito como período: "Janeiro de 2026", "julho/2026"
+  - Janelas comerciais ancoradas em data ("oferta válida até 30/06")
+
+SINAIS DE "promocao":
+  - Termos: "oferta especial", "% off", "desconto", "3ª noite grátis/cortesia/FREE",
+    "cashback", "crédito de US$/R$", "benefícios especiais", "condições especiais",
+    "tarifa especial", "valores exclusivos", "diárias a partir de R$", "vantagem"
+  - Qualquer menção a número de noites grátis (2ª/3ª/quarta noite)
+
+SINAIS DE "parceiro":
+  - Cartões: "Cartão Partners/Black/Platinum/Infinite", "BTG Partners", "BTG Ultrablue",
+    "Centurion Card", "Amex", "LATAM Pass", "Smiles", "TudoAzul"
+  - Marcas não-hoteleiras: Tag Heuer, Cartier, Breitling, Rolex, Ferrari, Porsche,
+    Mercedes, BMW, Vogue, Harper's Bazaar
+  - Celebridades em parceria: Andrea Bocelli, Frank Sinatra (concertos exclusivos)
+
+REGRA ESPECIAL DE BU:
+  As BUs btg-partners, btg-ultrablue, centurion JÁ SÃO parceria por natureza.
+  Não classifique como "parceiro" só porque o disparo é dessas BUs — só conte
+  como parceiro se houver SUB-parceiro mencionado no subject ou htmlText
+  (uma celebridade, marca não-hoteleira, programa de pontos terceiro).
+
+═══════════════════════════════════════════════════════════
+EIXO TURISMO — extracted.tourism
+═══════════════════════════════════════════════════════════
+
+Valores possíveis (escolha EXATAMENTE 1):
+  - "evento"    → show, esporte, festival, retiro com data/local
+  - "aereo"     → voo, passagem, classe executiva/first, milhas, cia. aérea
+  - "roteiro"   → multi-destino, "N noites/dias", day-by-day, pacote fechado
+  - "servico"   → transfer, alfaiate, concierge, lifestyle manager, personal shopper
+  - "hotelaria" → foco em hotel/resort/villa/suíte/diária
+  - "cruzeiro"  → cruzeiro, yacht, navio, river cruise, Silversea/Aqua/Ritz Yacht/etc.
+  - "produto"   → presente físico (flores, buquê, revista, presente de luxo)
+  - "destino"   → editorial sobre cidade/país sem hotel/aéreo específico
+  - "outros"    → trens (Orient Express, La Dolce Vita, Pullman, Royal Scotsman),
+                  experiências únicas que não encaixam nas outras / CSAT
+
+Prioridade quando convergir:
+  evento > aereo > roteiro > servico > hotelaria > cruzeiro > produto > outros > destino
+
+REGRA DE TRIGGER:
+  - 1 match no SUBJECT/NAME = aceita
+  - 2+ matches no htmlText (sem subject) = aceita
+  - 1 match no htmlText sozinho = NÃO aceita (sinal fraco)
+
+REGRA ESPECIAL — CSAT (Customer Satisfaction):
+  Se o subject menciona "avalie", "como foi sua viagem", "probabilidade de recomendar",
+  "pesquisa de satisfação/opinião", "NPS", "CSAT" → retorne "outros" (não é newsletter
+  de marketing tradicional).
+
+REGRA ESPECIAL — DESTINO como fallback:
+  Se NADA bater nos eixos acima MAS extracted.cities ou extracted.countries
+  tiver itens, retorne "destino". Caso contrário, "outros".
+
+═══════════════════════════════════════════════════════════
+FORMATO DE SAÍDA (JSON OBRIGATÓRIO)
+═══════════════════════════════════════════════════════════
+
+Responda APENAS com um objeto JSON válido, sem markdown, sem explicação fora do JSON:
+
+{
+  "commercial": "sazonal" | "promocao" | "parceiro" | "inspiracional",
+  "tourism":    "evento" | "aereo" | "roteiro" | "servico" | "hotelaria" | "cruzeiro" | "produto" | "destino" | "outros",
+  "confidence": "high" | "medium" | "low",
+  "reasoning": "1 a 2 frases curtas explicando o match (max 300 chars). Cite o gatilho (palavra/frase) que decidiu cada eixo."
+}
+
+REGRAS DE confidence:
+  - "high":   subject deu match explícito em ambos eixos com termo inequívoco
+  - "medium": match veio do htmlText OU subject ambíguo OU 1 dos eixos é fallback
+  - "low":    fallback em ambos eixos (ex: inspiracional + destino/outros) — provavelmente disparo institucional ou conteúdo atípico
+
+═══════════════════════════════════════════════════════════
+ANTI-PADRÕES (NÃO FAÇA)
+═══════════════════════════════════════════════════════════
+
+1. NÃO retorne explicação fora do JSON. APENAS o objeto.
+2. NÃO invente categorias novas. Use só as 4 do Comercial e 9 do Turismo.
+3. NÃO classifique como "parceiro" um disparo de BU-parceira só por causa da BU.
+4. NÃO classifique como "hotelaria" se o foco é evento/aéreo/roteiro — hotel
+   aparece em quase todo email (rodapé), mas só vale se for o TEMA central.
+5. NÃO classifique como "promocao" se só fala "preço sob consulta" (sem valor).
+6. NÃO confunda "champagne/vinho" no rodapé de hotel com "produto" — produto
+   exige presente físico explícito (flores, buquê, revista, item entregável).
+7. NÃO use "destino" sem ter cidade/país extraído. É fallback condicional.
+
+═══════════════════════════════════════════════════════════
+EXEMPLOS RÁPIDOS
+═══════════════════════════════════════════════════════════
+
+Input: subject="3ª noite cortesia no Faena Buenos Aires"
+  → commercial: "promocao" (terceira noite cortesia)
+  → tourism:    "hotelaria" (Faena, foco em hotel)
+  → confidence: "high"
+
+Input: subject="Réveillon em Bariloche — pacote 7 noites"
+  → commercial: "sazonal" (Réveillon)
+  → tourism:    "roteiro" (7 noites + destino)
+  → confidence: "high"
+
+Input: subject="Orient Express La Dolce Vita — embarque 2026"
+  → commercial: "inspiracional" (sem valor/sazonalidade)
+  → tourism:    "outros" (trem)
+  → confidence: "high"
+
+Input: subject="Avalie sua viagem com a PRIMETOUR"
+  → commercial: "inspiracional"
+  → tourism:    "outros" (CSAT)
+  → confidence: "high"
+
+Input: subject="BTG Partners e Andrea Bocelli — concerto exclusivo em Roma"
+  → commercial: "parceiro" (Bocelli celebridade + BTG mas Bocelli é o sub-parceiro)
+  → tourism:    "evento" (concerto Bocelli)
+  → confidence: "high"
+
+Input: subject="Aqua Mekong — explore o sudeste asiático"
+  → commercial: "inspiracional"
+  → tourism:    "cruzeiro" (Aqua Mekong, river cruise)
+  → confidence: "high"
+
+Input: subject="Boas-vindas — conheça a PRIMETOUR" (sem cidade/país extraído)
+  → commercial: "inspiracional"
+  → tourism:    "outros"
+  → confidence: "low" (fallback puro)`,
+    fewShotExamples: [
+      {
+        input: JSON.stringify({
+          buId: 'primetour',
+          subject: 'Verão em Mykonos — diárias a partir de US$ 1.200',
+          name: 'P0210',
+          htmlText: 'Aproveite ofertas especiais para a alta temporada em Mykonos. Suítes com vista para o mar e transfer privativo do aeroporto.',
+          extracted: { countries: ['Grécia'], cities: ['Mykonos'], hotels: [{ name: 'Cavo Tagoo' }], brands: ['Cavo Tagoo'], cruises: [] },
+        }),
+        output: JSON.stringify({
+          commercial: 'sazonal',
+          tourism: 'hotelaria',
+          confidence: 'high',
+          reasoning: 'Verão (sazonal) > promoção. Foco em hotel/diárias = hotelaria. Subject explícito em ambos eixos.',
+        }),
+      },
+      {
+        input: JSON.stringify({
+          buId: 'btg-partners',
+          subject: 'Cartão BTG Partners + LATAM Pass: 20.000 milhas bônus',
+          name: 'P0225',
+          htmlText: 'Acumule milhas LATAM Pass com seu cartão. Bônus exclusivo para clientes BTG.',
+          extracted: { countries: [], cities: [], hotels: [], brands: [], cruises: [] },
+        }),
+        output: JSON.stringify({
+          commercial: 'parceiro',
+          tourism: 'aereo',
+          confidence: 'high',
+          reasoning: 'LATAM Pass = parceiro de programa de fidelidade (sub-parceiro além da BU BTG). Tourism: milhas/passagens = aereo.',
+        }),
+      },
+    ],
+    outputFormat: 'json',
+    allowWebSearch: false,
+    allowedSites: [],
+    knowledgeIds: [],
+    knowledgeSources: [],
+    toolsMode: 'manual',
+    enabledTools: [],                      // sem tools — classificação pura
+    limits: {
+      maxTokensPerRun: 512,                // resposta curta (JSON com 4 campos)
+      temperature: 0.1,                    // determinístico ao máximo
+      maxCostPerDayUsd: 2,                 // teto baixo enquanto desativado
+      rateLimit: { window: 60, max: 30 },  // 30/min cobre backlog diário (~10-20 docs)
+      timeoutMs: 20000,
+    },
+    triggers: {
+      // TODOS desabilitados: agente fica em standby até decisão de ativar.
+      // Quando ativar, o caminho recomendado é schedule daily após o mc-sync
+      // (cron equivalente ao enrich-content.yml: '30 6 * * *' UTC).
+      button:     { enabled: false, label: 'Classificar disparo', position: 'header' },
+      context:    { enabled: false, label: '' },
+      schedule:   { enabled: false, mode: 'preset', preset: 'daily', hour: 6, minute: 30, timezone: 'UTC' },
+      publicChat: { enabled: false, slug: '' },
+    },
+    visibility: { mode: 'admin', value: '' }, // só admin/master enxerga
+    site: {
+      welcomeMessage: 'Cole o JSON de uma newsletter (subject + name + htmlText + extracted) e eu devolvo a classificação dupla.',
+      suggestedPrompts: [
+        '{"buId":"primetour","subject":"3ª noite cortesia em Punta del Este","name":"P0230","htmlText":"...","extracted":{"cities":["Punta del Este"],"countries":["Uruguai"]}}',
+      ],
+      brandColor: '#524FB4',
+      tagline: 'Classificação dupla Comercial × Turismo (mesmas regras do cron determinístico)',
+      footerText: 'PRIMETOUR · Newsletters · DESATIVADO até backtest',
       showAvatar: true, showBranding: true,
     },
   },

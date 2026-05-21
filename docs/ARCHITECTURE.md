@@ -71,9 +71,10 @@ A divisão atual é **deliberada**, não acidental: Cloud Functions hospeda tudo
 | Cenário | Fica em |
 |---|---|
 | Precisa responder a evento real-time (Firestore write, HTTP request) | **Function** |
-| Precisa de secret runtime (API key LLM, etc) | **Function** (Secret Manager) |
+| Precisa de secret runtime exposto ao browser (API key LLM via callable) | **Function** (Secret Manager) |
 | Cron diário/mensal puxando API externa pesada (GB de dados) | **Action** |
-| One-shot administrativo (cleanup, seed inicial) | **Action** (manual dispatch) |
+| Cron diário batch que lê Firestore + chama LLM externo + escreve Firestore (ex: `classify-content-ai.js` 4.49.41+) | **Action** (key fica em GitHub Secret, não Secret Manager — é CI, não runtime) |
+| One-shot administrativo (cleanup, seed inicial, cutover, rollback) | **Action** (manual dispatch com confirmação literal) |
 | Job que pode demorar >9 min | **Action** |
 | Logs precisam ser auditáveis publicamente | **Action** |
 | Volume de invocations alto (>100k/mês) | **Function** (custo por invocation < custo por minuto Action) |
@@ -276,6 +277,49 @@ continuam com Serper-prefetch.
 Smoke tests CLI (não logam a key):
 - `functions/test-anthropic-smoke.cjs` — text + web_search
 - `functions/test-anthropic-vision.cjs` — image block
+
+### IA Hub — Agentes orquestrados pelo módulo (4.49.41+)
+
+**Princípio**: o IA Hub é **registry + governança** (define o agente, prompt,
+modelo, kill switch). A **orquestração** (quem chama, quando, sobre que dados,
+com que frequência, com que escrita de volta) é **nativa do módulo dono**.
+
+Não existe um `agentScheduler` genérico que varre `ai_agents` e dispara por
+`triggers.schedule`. Cada agente tem seu próprio runtime contextual:
+
+| Agente | Orquestrador nativo do módulo |
+|---|---|
+| `bi-insights-analyst` | UI dentro dos dashboards (Produtividade/NL/GA/Meta/Portal/Roteiro). Botão "Sugerir Insights" por widget. |
+| `nl-content-classifier` (4.49.41+) | Script `scripts/classify-content-ai.js` + workflow `classify-content-ai.yml` (cron diário). Dashboard NL → Conteúdo & Temas → bloco shadow mode pra revisão humana. |
+| `task-triage` | Botão no header de Tarefas + cron diário via Cloud Function. |
+| `roteiro-generator` | UI "Criar com IA" dedicada em Roteiros. |
+| `portal-tip-updater` | Script de atualização periódica de dicas vencidas. |
+| `content-week-planner` | UI no Calendário de Conteúdo. |
+| `content-caption` | UI inline em cada post do Calendário. |
+
+**Vantagens dessa arquitetura**:
+- Cada módulo decide a melhor superfície (cron, botão, UI inline, workflow CI)
+  conforme sua natureza de dado
+- Falhas isoladas — quebra do classificador de NL não derruba o BI Insights
+- Custo controlado per-agente via `agent.limits.maxCostPerDayUsd` (enforçado
+  tanto na Cloud Function `callLLM` quanto no script de classificação)
+- Audit unificado em `ai_usage_logs` (tanto chamadas client via Cloud Function
+  quanto scripts em CI gravam no mesmo formato)
+- **Kill switch soft**: pausar o agente no IA Hub (`active: false`) desliga
+  TODOS os orquestradores do agente sem mexer em nenhum cron/workflow
+
+**Shadow mode como padrão de migração** (4.49.41+):
+Quando o agente substitui uma feature determinística existente (ex: regex
+classifier → LLM classifier), o padrão recomendado é:
+1. Agente roda em paralelo, grava em campos `extracted.ai*` separados (não toca
+   os de produção)
+2. Dashboard mostra concordância vs heurística + divergências top
+3. Humano revisa e marca "IA certa / regex certo" em divergências
+4. Cutover formal via workflow manual com backup automático em `*Prev`
+5. Rollback em 1 comando se algo der errado
+
+Detalhes operacionais em `scripts/SHADOW-MODE-NL-CLASSIFIER.md` e
+`RULES-AND-AUTOMATIONS.md` §10.5d.
 
 ## Segurança em camadas
 

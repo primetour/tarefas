@@ -17,6 +17,8 @@ import {
   NEWSLETTER_STATUSES, TASK_TYPES, REQUESTING_AREAS,
 } from '../services/tasks.js';
 import { fetchProjects }  from '../services/projects.js';
+// v4.49.54+ Setor solicitante = mesma fonte do filtro Setor (módulo Setores)
+import { getUserSectorOptions } from './filterBar.js';
 import { getTaskType } from '../services/taskTypes.js';
 import { resolveUserName, resolveUserSync } from '../services/userResolver.js';
 /* getSubtaskTemplate: lazy-loaded (may not exist in older deployments) */
@@ -227,9 +229,21 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
   let currentObservers = [...(task.observers||[])];
 
   // ── Auto-assign self for NEW tasks ──
+  // 4.49.21+ Condicional por role:
+  //   - Analista (member) → auto-assign (tipicamente cria a própria tarefa)
+  //   - Coord/Gerente/Head/Diretoria → NÃO auto-assign (criam pra equipe)
+  //
+  // Bug reportado: gestor criava tarefa pra outra pessoa mas metaLinks
+  // ficavam no UID dele (auto-assigned como primeiro responsável → vira
+  // `activeUserId` no picker de metas → meta linkada ao gestor em vez do
+  // executor). Pruning no save + condicional aqui = problema resolvido.
   if (!isEdit && !isPrefill && currentAssignees.length === 0) {
-    const uid = store.get('currentUser')?.uid;
-    if (uid) { currentAssignees = [uid]; task.assignees = [uid]; }
+    const roleId = store.get('userRole')?.id;
+    const isAnalystOnly = roleId === 'member' || roleId === 'partner';
+    if (isAnalystOnly) {
+      const uid = store.get('currentUser')?.uid;
+      if (uid) { currentAssignees = [uid]; task.assignees = [uid]; }
+    }
   }
   const modalTitle = isEdit
     ? 'Detalhes da Tarefa'
@@ -1235,8 +1249,10 @@ function buildHTML(task, users, projects, tags, assignees, observers, isEdit, ta
     projectList
       .map(p => `<option value="${p.id}" ${task.projectId===p.id?'selected':''}>${esc(p.icon||'')} ${esc(p.name)}</option>`).join('');
 
+  // v4.49.54+ Lista vem do módulo Setores (mesma fonte do filtro Setor).
+  // requestingArea é o setor SOLICITANTE — mesmo universo de divisões.
   const areaOpts = `<option value="">— Selecione —</option>` +
-    REQUESTING_AREAS.map(a => `<option value="${a}" ${task.requestingArea===a?'selected':''}>${esc(a)}</option>`).join('');
+    getUserSectorOptions().map(a => `<option value="${a}" ${task.requestingArea===a?'selected':''}>${esc(a)}</option>`).join('');
 
   const tagsHTML = tags.map(t => {
     const hue = [...t].reduce((a,c)=>a+c.charCodeAt(0),0)%360;
@@ -1296,9 +1312,19 @@ function buildHTML(task, users, projects, tags, assignees, observers, isEdit, ta
       }).join('')
     : `<div style="padding:12px;color:var(--text-muted);font-size:0.875rem;">Nenhum usuário ativo.</div>`;
 
-  // Build requester-edit banner if task was modified by the portal user
+  // Build requester-edit banner if task was modified by the portal user.
+  // v4.49.61+ Suprime se este user já deu ack pro último edit
+  // (requesterEditAckBy[uid] >= requesterEditAt). Garantia: novas edições
+  // futuras geram TS maior → banner reaparece automaticamente.
   const editBanner = (() => {
     if (!task.requesterEditFlag) return '';
+    const myUid = store.get('currentUser')?.uid;
+    const ackEntry = myUid && task.requesterEditAckBy?.[myUid];
+    if (ackEntry) {
+      const editTs = task.requesterEditAt?.toMillis ? task.requesterEditAt.toMillis() : 0;
+      const ackTs  = ackEntry?.toMillis ? ackEntry.toMillis() : 0;
+      if (ackTs >= editTs) return ''; // já vi este edit
+    }
     const editDate = task.requesterEditAt?.toDate
       ? task.requesterEditAt.toDate().toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})
       : '';
@@ -1306,7 +1332,7 @@ function buildHTML(task, users, projects, tags, assignees, observers, isEdit, ta
       title: 'Título', description: 'Descrição', desiredDate: 'Data',
       urgency: 'Urgência', outOfCalendar: 'Fora do calendário',
       variationId: 'Variação', variationName: 'Variação',
-      nucleo: 'Núcleo', sector: 'Setor', requestingArea: 'Área solicitante',
+      nucleo: 'Squad', sector: 'Setor', requestingArea: 'Setor solicitante',
     };
     const changedFields = (task.requesterEditChanges || '')
       .split(',').map(f => f.trim()).filter(Boolean)
@@ -1655,7 +1681,7 @@ function buildHTML(task, users, projects, tags, assignees, observers, isEdit, ta
         return '';
       })()}
       <div class="task-detail-field">
-        <div class="task-detail-label">Área solicitante</div>
+        <div class="task-detail-label">Setor solicitante</div>
         <!-- Select escondido = fonte de verdade pro handleSave/listeners.
              Botão visível abaixo é trigger do optionPicker. -->
         <select id="tm-area" style="display:none;">
@@ -1833,17 +1859,38 @@ function bindEvents(task, users, currentTags, currentAssignees, currentObservers
   const root = rootEl || document;
   const qId = (id) => (rootEl ? rootEl.querySelector('#' + id) : document.getElementById(id));
 
-  // Dismiss requester-edit banner + clear flag on task
-  document.getElementById('tm-dismiss-edit-banner')?.addEventListener('click', async () => {
-    document.getElementById('tm-requester-edit-banner')?.remove();
+  // v4.49.61+ Ack PER-USER (não apaga flag global — outros users também
+  // precisam ver). Antes: updateDoc({requesterEditFlag:false}) → bug,
+  // primeiro user que clicava sumia o aviso pra todo mundo. Agora grava
+  // requesterEditAckBy[uid] = ts, e o filtro _isAckedByMe (em tasks.js)
+  // mostra/esconde individualmente.
+  document.getElementById('tm-dismiss-edit-banner')?.addEventListener('click', async (ev) => {
+    const btn = ev.currentTarget;
+    if (btn) { btn.disabled = true; btn.textContent = 'Salvando…'; btn.style.opacity = '0.6'; }
     if (task.id && task.requesterEditFlag) {
       try {
-        const { doc, updateDoc } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+        const { doc, updateDoc, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
         const { db } = await import('../firebase.js');
-        await updateDoc(doc(db, 'tasks', task.id), {
-          requesterEditFlag: false,
-        });
-      } catch(e) { /* silent */ }
+        const { store } = await import('../store.js');
+        const { withRetry } = await import('../services/retry.js');
+        const uid = store.get('currentUser')?.uid;
+        if (uid) {
+          await withRetry(
+            () => updateDoc(doc(db, 'tasks', task.id), {
+              [`requesterEditAckBy.${uid}`]: serverTimestamp(),
+            }),
+            { label: 'task.requesterEdit.ackInModal', maxAttempts: 3 },
+          );
+        }
+        document.getElementById('tm-requester-edit-banner')?.remove();
+      } catch (e) {
+        console.warn('[ack modal] falha:', e);
+        if (btn) { btn.disabled = false; btn.textContent = '✓ OK, estou ciente'; btn.style.opacity = ''; }
+        const { toast } = await import('./toast.js');
+        toast.error('Falha ao confirmar — tente de novo.');
+      }
+    } else {
+      document.getElementById('tm-requester-edit-banner')?.remove();
     }
   });
 
@@ -1949,17 +1996,18 @@ function bindEvents(task, users, currentTags, currentAssignees, currentObservers
   // handleSave; bindOptionPicker dispara `change` ao selecionar pra que
   // listeners existentes continuem reagindo.
 
-  // Área solicitante (lista fixa de REQUESTING_AREAS)
+  // v4.49.54+ Setor solicitante puxa do módulo Setores (mesma fonte do
+  // filtro Setor). Antes: REQUESTING_AREAS hardcoded.
   bindOptionPicker({
     btnId:    'tm-area-btn',
     selectId: 'tm-area',
-    emptyLabel: '— Selecione área —',
+    emptyLabel: '— Selecione setor —',
     buildConfig: () => ({
-      empty: { id: '', label: '— Selecione área —' },
-      options: REQUESTING_AREAS.map(a => ({ id: a, label: a })),
-      searchPlaceholder: 'Buscar área…',
+      empty: { id: '', label: '— Selecione setor —' },
+      options: getUserSectorOptions().map(a => ({ id: a, label: a, icon: '◈' })),
+      searchPlaceholder: 'Buscar setor…',
     }),
-    findSelected: (id) => id ? { id, label: id } : null,
+    findSelected: (id) => id ? { id, label: id, icon: '◈' } : null,
   });
 
   // Projeto — lookup primário no cache _currentProjects (passado pra
@@ -2495,7 +2543,19 @@ function bindEvents(task, users, currentTags, currentAssignees, currentObservers
   });
   document.getElementById('assignee-picker')?.addEventListener('click', (e) => {
     const chip=e.target.closest('.assignee-chip[data-uid]');
-    if (chip){const uid=chip.dataset.uid;const i=currentAssignees.indexOf(uid);if(i>-1)currentAssignees.splice(i,1);chip.remove();}
+    if (chip){
+      const uid=chip.dataset.uid;
+      const i=currentAssignees.indexOf(uid);
+      if(i>-1)currentAssignees.splice(i,1);
+      chip.remove();
+      // 4.49.21+ Sync metaLinks: remover responsável → tirar todos os links dele.
+      // Senão fica "fantasma" no doc e o handleSave precisa limpar de qualquer jeito.
+      // Refletir aqui também mantém o UI consistente (badge de contagem nas abas
+      // do picker de meta).
+      if (Array.isArray(task.metaLinks) && task.metaLinks.length) {
+        task.metaLinks = task.metaLinks.filter(l => l.userId !== uid);
+      }
+    }
   });
   document.addEventListener('click', () => { const dd=document.getElementById('assignee-dropdown'); if(dd)dd.style.display='none'; });
 
@@ -3364,6 +3424,17 @@ async function handleSave(task, tags, assignees, observers, isEdit, close, onSav
     || store.get('userSector')
     || null;
 
+  // 4.49.21+ Prune metaLinks: o userId DEVE estar nos assignees finais.
+  // Antes: se o gestor era auto-assigned como criador, depois trocava o
+  // responsável e a metaLink ficava órfã apontando pro UID do criador.
+  // Bug reportado: "meta fica vinculada ao meu user mesmo que eu coloque
+  // outras pessoas como responsáveis". Fix: o vínculo segue o assignee.
+  // O sentinel '__task__' (link sem responsável específico) passa.
+  const SCOPE_USER_SAVE = '__task__';
+  const assigneeSet = new Set(assignees || []);
+  const prunedMetaLinks = (Array.isArray(task.metaLinks) ? task.metaLinks : [])
+    .filter(l => l && (l.userId === SCOPE_USER_SAVE || assigneeSet.has(l.userId)));
+
   const data={
     title,
     subtasks:     Array.isArray(task.subtasks) ? task.subtasks : [],
@@ -3375,9 +3446,11 @@ async function handleSave(task, tags, assignees, observers, isEdit, close, onSav
     // e o picker NÃO foi tocado, NÃO enviamos metaLinks — caso contrário
     // syncLegacyFields zeraria o goalId silenciosamente. Preserva o vínculo
     // legacy até que alguém o edite de fato no picker.
+    //
+    // 4.49.21+ Usa prunedMetaLinks: só responsáveis válidos da task atual.
     ...(task._legacyPreserve
       ? {}
-      : { metaLinks: Array.isArray(task.metaLinks) ? task.metaLinks : [] }),
+      : { metaLinks: prunedMetaLinks }),
     status:       $('tm-status')?.value||'not_started',
     priority:     $('tm-priority')?.value||'medium',
     projectId:    $('tm-project')?.value||null,
@@ -3415,6 +3488,11 @@ async function handleSave(task, tags, assignees, observers, isEdit, close, onSav
     requesterEditFlag:    task.requesterEditFlag    || false,
     requesterEditAt:      task.requesterEditAt      || null,
     requesterEditChanges: task.requesterEditChanges || '',
+    // 4.48.4+ fromSlot: trilha de conversão slot virtual → tarefa.
+    // Setado quando o modal é aberto a partir de um cc-virtual-slot click
+    // (contentCalendar.js). Persiste no Firestore pra agregação no dashboard
+    // de Produtividade (taxa de conversão de slots previstos).
+    fromSlot:             task.fromSlot             || null,
   };
   // Collect nucleos from legacy chips
   data.nucleos = Array.from(document.querySelectorAll('.tm-nucleo-check:checked')).map(cb => cb.value);

@@ -358,52 +358,17 @@ function stripHtml(html) {
 
 /* ─── Extrai URLs de imagens do HTML cru com filtros ──────────
  * Newsletters PRIMETOUR têm o conteúdo principal em IMAGENS (banners
- * de hotéis, cards de destinos), não em texto. Pra analisar via Vision,
- * extraímos URLs filtrando: tracking pixels (1×1), logos pequenos,
- * spacers. Pega top N imagens "de conteúdo" (maiores).
+ * de hotéis, cards de destinos), não em texto.
  *
- * Retorna array de { url, alt, width, height, score } ordenado por score desc.
+ * v4.49.57+ Refatorado pra usar lib/extract-content-images.cjs (single
+ * source of truth com mc-sync, backfill-image-urls e categorize-no-art).
+ * Mudança comportamental: NÃO ordena mais por score — preserva ordem do
+ * HTML (necessário pra composição vertical no modal "Ver arte"). Captura
+ * também o link <a> envolvente quando presente.
+ *
+ * Retorna array de { url, alt, link, width, height, position } na ordem do HTML.
  */
-function extractContentImages(html, topN = 5) {
-  if (!html) return [];
-  const imgs = [];
-  const re = /<img\s+([^>]*?)>/gi;
-  let m;
-  while ((m = re.exec(html)) !== null) {
-    const attrs = m[1];
-    const url = (attrs.match(/\bsrc\s*=\s*["']([^"']+)["']/i) || [])[1] || '';
-    if (!url) continue;
-    // Pula data: URIs e javascript:
-    if (/^(data:|javascript:)/i.test(url)) continue;
-    // Pula tracking pixels conhecidos (analytics, mailing trackers)
-    if (/\.gif(\?|$)/i.test(url) && /(open|track|pixel|beacon|t\.gif|spacer)/i.test(url)) continue;
-
-    const alt = ((attrs.match(/\balt\s*=\s*["']([^"']*)["']/i) || [])[1] || '').trim();
-    const width  = parseInt((attrs.match(/\bwidth\s*=\s*["']?(\d+)/i)  || [])[1], 10) || 0;
-    const height = parseInt((attrs.match(/\bheight\s*=\s*["']?(\d+)/i) || [])[1], 10) || 0;
-
-    // Filtros de tamanho:
-    // 1×1 ou 1×N = tracking pixel
-    if ((width === 1 && height >= 0) || (height === 1 && width >= 0)) continue;
-    // Spacer (<10px qualquer dimensão)
-    if (width > 0 && width < 10) continue;
-    if (height > 0 && height < 10) continue;
-    // Logos típicos: <200×<100
-    if (width > 0 && width < 200 && height > 0 && height < 100) continue;
-
-    // Score: imagens maiores + com alt text descritivo
-    const area = (width || 400) * (height || 300);
-    const altScore = alt.length > 20 ? 1.5 : (alt.length > 5 ? 1.2 : 1.0);
-    const score = area * altScore;
-
-    imgs.push({ url, alt, width, height, score });
-  }
-  // Dedup por URL
-  const seen = new Set();
-  const dedup = imgs.filter(i => { if (seen.has(i.url)) return false; seen.add(i.url); return true; });
-  // Ordena por score desc, pega topN
-  return dedup.sort((a, b) => b.score - a.score).slice(0, topN);
-}
+const { extractContentImages } = require('./lib/extract-content-images.cjs');
 
 /* ─── Download de imagem + base64 (pra Vision API) ─────────── */
 async function fetchImageAsBase64(url) {
@@ -662,8 +627,19 @@ async function saveImageExtractionCache(url, extracted) {
  * @param {Object} agent — config do agente
  * @returns {{ json, provider, model }} ou null
  */
+// 4.49.34+ Circuit breaker contra quota exhausted (429). Quando a IA
+// retorna "exceeded quota" não é rate limit transitório — é o tier
+// inteiro estourado. Continuar batendo gasta 15-20s por chamada e
+// estoura timeout do workflow (15min). Solução: 1ª falha de quota
+// → desabilita enrichment pro RESTO do run. Sync segue capturando
+// métricas (sends/opens/clicks), só não enriquece extracted.
+// Backfill via Claude (sem custo API) cobre a defasagem depois.
+let _enrichmentCircuitOpen = false;
+let _enrichmentCircuitReason = '';
+
 async function extractEntitiesViaAgent(input, agent, retries = 3) {
   if (!agent) return null;
+  if (_enrichmentCircuitOpen) return null;   // já desistiu pra esse run
 
   const provider = agent.provider || 'gemini';
   const model    = agent.model    || 'gemini-2.5-flash';
@@ -754,6 +730,17 @@ async function extractEntitiesViaAgent(input, agent, retries = 3) {
     });
     return { json, provider, model, imagesUsed: imagesUsed.length, cacheHitsImg };
   } catch (e) {
+    // 4.49.34+ Detecta QUOTA EXCEEDED (free tier estourado) vs rate
+    // limit transitório. Quota exhausted = circuit breaker open, sync
+    // continua sem enrichment. Rate limit transitório = retry com backoff.
+    const isQuotaExhausted = /exceeded.*quota|quota.*exhaust|billing.*details/i.test(e.message);
+    if (isQuotaExhausted) {
+      _enrichmentCircuitOpen = true;
+      _enrichmentCircuitReason = e.message.slice(0, 200);
+      console.warn(`  ⚠ Circuit breaker ON · quota da IA estourada · enrichment desabilitado pro resto do run`);
+      console.warn(`    Sync continua salvando métricas. Re-rodar backfill Claude depois.`);
+      return null;
+    }
     if (retries > 0 && /429|5\d\d/.test(e.message)) {
       const waitMatch = e.message.match(/try again in ([\d.]+)s/i);
       const waitMs = waitMatch ? Math.ceil(parseFloat(waitMatch[1]) * 1000) + 500 : 5000;
@@ -932,20 +919,32 @@ async function main() {
               summary.cacheHits += matchingDocIds.length;
               // Mesmo em cache hit, salva htmlText (até 30k chars).
               const htmlText = asset.html ? stripHtml(asset.html).slice(0, 30000) : '';
+              // 4.49.29+ Extrai top imagens pra UI "Ver arte" (mesmo extractor
+              // que vai pra Vision API, mas guarda URLs no doc também).
+              const imageUrls = asset.html ? extractContentImages(asset.html, 5) : [];
               enrichmentMap.set(name, {
                 description: asset.description, htmlHash, structural, extracted: null,
-                htmlText,
+                htmlText, imageUrls,
               });
               return;
             }
 
-            // Sem cache: extrai via agente. Passa contexto rico:
-            // - html cru (pra Vision extrair imagens)
-            // - text stripped (rodapé/disclaimer pode ter contexto)
-            // - subject + name (representativos da campanha)
+            // 4.49.35+ DESACOPLADO: mc-sync NÃO chama mais IA Vision.
+            // Sync = 1 responsabilidade: buscar métricas + HTML + imageUrls.
+            // Enrichment (cidades/hotéis/marcas) é workflow SEPARADO via
+            // scripts/enrich-content.js (Claude-curado, sem custo de API).
+            //
+            // Por que isso é melhor:
+            //   - Sync nunca trava por quota de IA estourada (era o que
+            //     causou gap 07/05→19/05).
+            //   - Enrichment pode rodar várias vezes (idempotente).
+            //   - Vision IA fica disponível pra casos onde imagem importa
+            //     (não rotineiro).
             let extracted = null;
             let extractedMeta = null;
-            if (enrichEnabled && asset.html) {
+            if (false && enrichEnabled && asset.html) {
+              // Mantido como dead-code branch caso alguém queira reativar
+              // enrichment síncrono via flag. Padrão: desligado.
               const text = stripHtml(asset.html);
               const sample = sends.find(s => (s.EmailName || '').trim() === name);
               const result = await extractEntitiesViaAgent({
@@ -974,11 +973,13 @@ async function main() {
             // real (destinos, hotéis) vem DEPOIS no HTML cru (estrutura de
             // tabelas aninhadas).
             const htmlText = asset.html ? stripHtml(asset.html).slice(0, 30000) : '';
+            // 4.49.29+ Top imagens do email (mesmas que vão pra Vision)
+            const imageUrls = asset.html ? extractContentImages(asset.html, 5) : [];
             enrichmentMap.set(name, {
               description: asset.description,
               htmlHash, structural, extracted, extractedMeta,
               assetId: asset.assetId, assetName: asset.assetName,
-              htmlText,
+              htmlText, imageUrls,
             });
           }));
         }
@@ -1013,6 +1014,13 @@ async function main() {
           // Dump texto stripped (até 10k chars) pra auditoria + re-extração
           // futura sem refazer fetch SFMC.
           if (enrich.htmlText) doc.htmlText = enrich.htmlText;
+          // 4.49.29+ Salva URLs das top imagens (mesma extração que vai pra
+          // Vision API) pra UI "🖼 Ver arte" no dashboard. SFMC CDN URLs são
+          // públicas e estáveis — não precisamos re-hospedar.
+          // Estrutura: { url, alt, width, height, score }
+          if (Array.isArray(enrich.imageUrls) && enrich.imageUrls.length) {
+            doc.imageUrls = enrich.imageUrls.slice(0, 5);
+          }
         }
 
         batch.set(db.collection('mc_performance').doc(docId), doc, { merge: true });
@@ -1046,6 +1054,16 @@ async function main() {
       ? ` · 🖼 ${summary.imagesUsed} imgs Vision (${summary.imageCacheHits || 0} cache img)`
       : '';
     console.log(`🤖 Enriquecimento IA: ${summary.enriched} novos · ${summary.cacheHits} cache hits · ${summary.llmCalls} chamadas LLM${visionInfo}`);
+  }
+  // 4.49.34+ Sinaliza claramente quando circuit breaker tripou.
+  // Exit code 0 mesmo assim — sync das métricas teve sucesso, só
+  // enrichment ficou pra trás (recuperável via backfill Claude).
+  if (_enrichmentCircuitOpen) {
+    console.warn(`\n⚠ ⚠ ⚠  QUOTA DA IA ESTOURADA  ⚠ ⚠ ⚠`);
+    console.warn(`Reason: ${_enrichmentCircuitReason}`);
+    console.warn(`Métricas sincronizadas, mas docs novos NÃO tiveram enrichment IA.`);
+    console.warn(`Próximo passo: rodar functions/enrich-mc-claude.cjs + classify-mc-claude.cjs`);
+    console.warn(`(ambos são determinísticos, sem custo de API)\n`);
   }
 }
 

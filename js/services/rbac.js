@@ -59,12 +59,27 @@ export const PERMISSION_CATALOG = [
     ],
   },
   {
-    group: 'Dashboards e Relatórios',
+    // 4.49.11+ REORG: substitui "Dashboards e Relatórios" genérico por
+    // grupo granular com 1 perm de view por dashboard. Permite controle fino
+    // (ex: "esse role só vê dashboard de Portal, não de Roteiros").
+    group: 'Dashboards (visualização por módulo)',
     permissions: [
-      { key: 'dashboard_view',       label: 'Ver dashboards',                      info: 'Acesso à página de dashboards e métricas.' },
-      { key: 'dashboard_customize',  label: 'Personalizar dashboards',             info: 'Criar e editar configurações de dashboard por workspace.' },
-      { key: 'report_export',        label: 'Exportar relatórios',                 info: 'Exportar dados em CSV ou TXT.' },
-      { key: 'analytics_view',      label: 'Ver análises avançadas',              info: 'Acesso a módulos de análise: Newsletters, Instagram, produtividade.' },
+      { key: 'dashboard_home_view',         label: 'Ver painel inicial (#dashboard)',          info: 'Painel home do app — primeiros indicadores e atalhos. Sem essa perm, user cai direto em outro módulo após login.' },
+      { key: 'dashboard_productivity_view', label: 'Ver dashboards executivos (produtividade)', info: 'Página /dashboards: charts de produtividade, velocidade, ranking de equipe, conversão de slots. Renomeado de dashboard_view em 4.49.11.' },
+      { key: 'dashboard_portal_view',       label: 'Ver dashboard do Portal de Dicas',         info: 'Página /portal-dashboard: métricas de geração de dicas, links ativos, top destinos. Antes era gated por portal_manage (que dá acesso administrativo total).' },
+      { key: 'dashboard_roteiros_view',     label: 'Ver dashboard de Roteiros',                info: 'Página /roteiro-dashboard: métricas de roteiros gerados, performance por consultor, status. Antes era gated por roteiro_manage.' },
+      { key: 'dashboard_csat_view',         label: 'Ver dashboard CSAT',                       info: 'Página /csat: visão consolidada de pesquisas, respostas, NPS. Separado das perms de envio/gestão (csat_send/manage/queue_view).' },
+      // v4.49.60+ Granularidade individual pros 3 dashboards de marketing
+      // (antes todos gated por analytics_view única). Permite liberar
+      // Newsletters pro analista de marketing sem dar Instagram/GA.
+      { key: 'dashboard_nl_view',           label: 'Ver dashboard de Newsletters',             info: 'Página /nl-performance: performance de disparos das 5 BUs SFMC (abertura, cliques, bounces) + aba Conteúdo & Temas com classificação dupla Comercial × Turismo + modal Ver Arte. Antes gated por analytics_view única.' },
+      { key: 'dashboard_meta_view',         label: 'Ver dashboard de Instagram (Meta)',        info: 'Página /meta-performance: alcance, engajamento, top posts do Instagram/Facebook via Graph API. Antes gated por analytics_view única.' },
+      { key: 'dashboard_ga_view',           label: 'Ver dashboard de Google Analytics',        info: 'Página /ga-performance: sessões, pageviews, fontes de tráfego, dispositivos, Core Web Vitals do site primetour.com.br. Antes gated por analytics_view única.' },
+      // 4.49.12+ dashboard_customize REMOVIDO — feature nunca foi implementada
+      // (sem código consumindo a perm). Removido pra evitar checkbox que não
+      // tem efeito prático. Se voltar no futuro, re-adicionar aqui.
+      { key: 'report_export',               label: 'Exportar relatórios',                       info: 'Exportar dados em CSV/XLSX/PDF (botão "Exportar" no /dashboards).' },
+      { key: 'analytics_view',              label: 'Análises avançadas (fallback genérico)',    info: 'Fallback genérico que libera Newsletters + Instagram + GA juntos (v4.49.60+: cada um tem perm específica dashboard_nl_view/dashboard_meta_view/dashboard_ga_view; analytics_view continua aceita por back-compat). Também controla Pautas e Clipping (#news-monitor).' },
     ],
   },
   {
@@ -97,13 +112,22 @@ export const PERMISSION_CATALOG = [
       { key: 'portal_access',        label: 'Acessar Portal de Dicas',             info: 'Ver e gerar dicas de destinos.' },
       { key: 'portal_create',        label: 'Criar e editar dicas',                info: 'Criar, editar e excluir dicas de destinos no portal.' },
       { key: 'portal_manage',        label: 'Administrar Portal de Dicas',         info: 'Gerenciar áreas, destinos, templates do Portal.' },
+      // 4.49.2+ Granular: analista precisa criar destinos sem ter portal_manage
+      // (que dá acesso a banco de imagens + templates + tudo). Default true pra
+      // member — viaja e cadastra cidade nova diretamente.
+      { key: 'portal_destinations_manage', label: 'Gerenciar destinos',            info: 'Criar, editar e excluir destinos (Continente → País → Cidade) usados em Portal de Dicas e Roteiros. Separado do portal_manage pra liberar pro analista sem dar acesso a banco de imagens/áreas.' },
+      // 4.49.6+ Granular: analista também precisa criar/editar segmentos
+      // (hospedagem, gastronomia, etc.) e categorias dentro de cada segmento.
+      // Mesmo princípio do destinos — separa da admin completa do Portal.
+      { key: 'portal_segments_manage',     label: 'Gerenciar segmentos e categorias', info: 'Criar, editar e excluir segmentos (hospedagem, gastronomia, etc.) e suas categorias internas. Separado do portal_manage pra liberar pro analista sem dar acesso a banco de imagens/áreas.' },
       // 4.35.31+ Permissão específica pra banco de imagens (upload/edit/delete).
       // Antes ficava agrupada em portal_manage; separamos pra liberar pra diretoria
       // sem dar acesso a todo o resto da administração do Portal.
       { key: 'portal_images_manage', label: 'Gerenciar Banco de Imagens',          info: 'Upload, edição e exclusão de imagens no banco. Restrito à diretoria e administradores.' },
-      // 4.36.0+ Escritório Virtual (visualização de presença em tempo real)
-      { key: 'office_view',          label: 'Acessar Escritório Virtual',          info: 'Ver mapa real-time dos colegas online e em qual módulo cada um está. Restrito a gestores e diretoria.' },
       { key: 'portal_download_unlimited', label: 'Downloads ilimitados',           info: 'Gerar downloads sem limite diário. Parceiros têm limite de 5/dia.' },
+      // 4.49.8+ office_view MOVIDO daqui pro grupo "Equipe, Ausências e Presença" —
+      // Escritório Virtual não é parte do Portal de Dicas, é feature de presença
+      // do time. Manter aqui criava confusão na UI de Roles.
     ],
   },
   {
@@ -127,9 +151,14 @@ export const PERMISSION_CATALOG = [
   {
     group: 'Calendário de Conteúdo',
     permissions: [
-      { key: 'content_calendar_view',   label: 'Visualizar calendário de conteúdo', info: 'Ver o calendário de conteúdo e slots de publicação.' },
-      { key: 'content_calendar_create', label: 'Criar e editar slots de conteúdo',  info: 'Criar, editar e sugerir conteúdo com IA.' },
-      { key: 'content_calendar_manage', label: 'Administrar calendário',            info: 'Ver todos os slots, aprovar conteúdos, gerar relatórios.' },
+      { key: 'content_calendar_view',         label: 'Visualizar calendário de conteúdo',        info: 'Ver o calendário de conteúdo e slots de publicação.' },
+      { key: 'content_calendar_create',       label: 'Criar e editar slots de conteúdo',         info: 'Criar, editar e sugerir conteúdo com IA.' },
+      { key: 'content_calendar_manage',       label: 'Administrar calendário',                   info: 'Ver todos os slots, aprovar conteúdos, gerar relatórios.' },
+      // v4.49.50+ Granularidade pra liberar "+ criar nova plataforma/tipo/categoria"
+      // pra analista/coord/gerência sem precisar dar system_manage_settings (perm
+      // "tudo ou nada" da diretoria). Antes desse perm o gate era hardcoded
+      // (system_manage_settings || isMaster) — only diretor podia criar metadados.
+      { key: 'content_calendar_meta_manage',  label: 'Criar plataformas, tipos e categorias',    info: 'Quick create de novas plataformas, tipos de conteúdo e categorias direto do modal de slot (+ Criar nova plataforma/tipo/categoria). Edição/exclusão completa continua em Administração → Conteúdo · Config.' },
     ],
   },
   {
@@ -146,10 +175,13 @@ export const PERMISSION_CATALOG = [
     ],
   },
   {
-    group: 'Equipe e Ausências',
+    group: 'Equipe, Ausências e Presença',
     permissions: [
       { key: 'absence_view_team',   label: 'Ver ausências da equipe',       info: 'Ver calendário de ausências e disponibilidade dos colegas. Sem essa permissão, só vê as próprias.' },
       { key: 'absence_manage_team', label: 'Gerenciar ausências da equipe', info: 'Registrar, editar e excluir ausências de outros usuários. Reservado a gestores.' },
+      // 4.49.8+ Movido pra cá (era em "Portal de Dicas") — pertence ao mesmo
+      // domínio de visibilidade de equipe (presença em tempo real).
+      { key: 'office_view',         label: 'Acessar Escritório Virtual',    info: 'Ver mapa real-time dos colegas online e em qual módulo cada um está. Restrito a gestores e diretoria.' },
     ],
   },
   {
@@ -222,15 +254,21 @@ export const SYSTEM_ROLES = [
       task_complete: true,
       task_override_urgency: true,
       project_create: true,   project_edit: true,   project_delete: true,
-      dashboard_view: true,   dashboard_customize: true, report_export: true,
+      dashboard_home_view: true, dashboard_productivity_view: true,
+      dashboard_portal_view: true, dashboard_roteiros_view: true, dashboard_csat_view: true,
+      // v4.49.60+ Granular por dashboard de marketing
+      dashboard_nl_view: true, dashboard_meta_view: true, dashboard_ga_view: true,
+      report_export: true,
       csat_send: true,        csat_view_all: true,    csat_manage: true,    csat_queue_view: true,
       goals_view: true,       goals_manage: true,   goals_evaluate: true,
       analytics_view: true,
       feedback_view: true, feedback_create: true,
       portal_access: true,  portal_create: true,  portal_manage: true,  portal_images_manage: true,  portal_download_unlimited: true,
+      portal_destinations_manage: true,
+      portal_segments_manage: true,
       portal_areas_view: true, portal_areas_manage: true,
       roteiro_access: true, roteiro_create: true, roteiro_manage: true, roteiro_view_cost: true,
-      content_calendar_view: true, content_calendar_create: true, content_calendar_manage: true,
+      content_calendar_view: true, content_calendar_create: true, content_calendar_manage: true, content_calendar_meta_manage: true,
       site_audit_view: true, site_audit_manage: true,
       requests_manage: true,
       absence_view_team: true, absence_manage_team: true,
@@ -264,15 +302,20 @@ export const SYSTEM_ROLES = [
       task_complete: true,
       task_override_urgency: true,
       project_create: true,   project_edit: true,   project_delete: false,
-      dashboard_view: true,   dashboard_customize: true, report_export: true,
+      dashboard_home_view: true, dashboard_productivity_view: true,
+      dashboard_portal_view: true, dashboard_roteiros_view: true, dashboard_csat_view: true,
+      dashboard_nl_view: true, dashboard_meta_view: true, dashboard_ga_view: true,
+      report_export: true,
       csat_send: true,        csat_view_all: true,    csat_manage: true,    csat_queue_view: true,
       goals_view: true,       goals_manage: true,   goals_evaluate: true,
       analytics_view: true,
       feedback_view: true, feedback_create: true,
       portal_access: true,  portal_create: true,  portal_manage: false, portal_images_manage: false, portal_download_unlimited: true,
+      portal_destinations_manage: true,
+      portal_segments_manage: true,
       portal_areas_view: true, portal_areas_manage: true,
       roteiro_access: true, roteiro_create: true, roteiro_manage: true, roteiro_view_cost: true,
-      content_calendar_view: true, content_calendar_create: true, content_calendar_manage: true,
+      content_calendar_view: true, content_calendar_create: true, content_calendar_manage: true, content_calendar_meta_manage: true,
       site_audit_view: true, site_audit_manage: true,
       requests_manage: true,
       absence_view_team: true, absence_manage_team: true,
@@ -306,18 +349,25 @@ export const SYSTEM_ROLES = [
       task_complete: true,
       task_override_urgency: true,
       project_create: true,   project_edit: true,   project_delete: false,
-      dashboard_view: true,   dashboard_customize: true, report_export: true,
+      dashboard_home_view: true, dashboard_productivity_view: true,
+      dashboard_portal_view: true, dashboard_roteiros_view: true, dashboard_csat_view: true,
+      dashboard_nl_view: true, dashboard_meta_view: true, dashboard_ga_view: true,
+      report_export: true,
       csat_send: true,        csat_view_all: true,    csat_manage: false,   csat_queue_view: true,
       goals_view: true,       goals_manage: true,   goals_evaluate: false,
       analytics_view: true,
       feedback_view: true, feedback_create: true,
       portal_access: true,  portal_create: true,  portal_manage: false, portal_images_manage: false, portal_download_unlimited: true,
+      portal_destinations_manage: true,
+      portal_segments_manage: true,
       portal_areas_view: true, portal_areas_manage: false,
       roteiro_access: true, roteiro_create: true, roteiro_manage: false, roteiro_view_cost: false,
-      content_calendar_view: true, content_calendar_create: true, content_calendar_manage: false,
+      content_calendar_view: true, content_calendar_create: true, content_calendar_manage: false, content_calendar_meta_manage: true,
       site_audit_view: true, site_audit_manage: false,
       requests_manage: true,
       absence_view_team: true, absence_manage_team: false,
+      // 4.49.8+ Coordenador é gestor — tem visão de presença do time
+      office_view: true,
       branding_manage: false,
       ai_skills_manage: false, ai_dashboard_view: false, ai_keys_manage: false,
       luxury_travel_manage: false,
@@ -347,19 +397,27 @@ export const SYSTEM_ROLES = [
       task_complete: false,
       task_override_urgency: false,
       project_create: false,   project_edit: false,  project_delete: false,
-      dashboard_view: false,   dashboard_customize: false, report_export: false,
+      // 4.49.11+ Parceiro NÃO tem nenhum dashboard (acesso só ao Portal de Dicas)
+      dashboard_home_view: false, dashboard_productivity_view: false,
+      dashboard_portal_view: false, dashboard_roteiros_view: false, dashboard_csat_view: false,
+      dashboard_nl_view: false, dashboard_meta_view: false, dashboard_ga_view: false,
+      report_export: false,
       csat_send: false,        csat_view_all: false,   csat_manage: false,
       goals_view: false,       goals_manage: false,   goals_evaluate: false,
       analytics_view: false,
       feedback_view: false, feedback_create: false,
       portal_access: true,     portal_create: false,
       portal_manage: false,    portal_images_manage: false, portal_download_unlimited: false,
+      portal_destinations_manage: false,
+      portal_segments_manage: false,
       portal_areas_view: false, portal_areas_manage: false,
       roteiro_access: false, roteiro_create: false, roteiro_manage: false, roteiro_view_cost: false,
-      content_calendar_view: false, content_calendar_create: false, content_calendar_manage: false,
+      content_calendar_view: false, content_calendar_create: false, content_calendar_manage: false, content_calendar_meta_manage: false,
       site_audit_view: false, site_audit_manage: false,
       requests_manage: false,
       absence_view_team: false, absence_manage_team: false,
+      // 4.49.8+ Parceiro NÃO vê presença do time (externo)
+      office_view: false,
       branding_manage: false,
       ai_skills_manage: false, ai_dashboard_view: false, ai_keys_manage: false,
       luxury_travel_manage: false,
@@ -389,7 +447,21 @@ export const SYSTEM_ROLES = [
       task_complete: false,
       task_override_urgency: false,
       project_create: false,   project_edit: false,  project_delete: false,
-      dashboard_view: true,    dashboard_customize: false, report_export: false,
+      // 4.49.11+ Analista vê o painel inicial. Demais dashboards executivos
+      // (produtividade/roteiros/csat) ficam restritos a coord+.
+      // 4.49.14+ Liberado dashboard_portal_view pro Analista — operação
+      // diária do consultor (vê top destinos, links ativos, dicas geradas).
+      // v4.49.60+ Os 3 dashboards de marketing (NL/Meta/GA) com perm
+      // granular: default false; admin libera por role ou per-user override
+      // conforme o consultor (ex: analista de marketing → liberar todos;
+      // analista de operação → manter false).
+      dashboard_home_view: true,
+      dashboard_productivity_view: false,
+      dashboard_portal_view: true,
+      dashboard_roteiros_view: false,
+      dashboard_csat_view: false,
+      dashboard_nl_view: false, dashboard_meta_view: false, dashboard_ga_view: false,
+      report_export: false,
       csat_send: false,        csat_view_all: false,   csat_manage: false,
       goals_view: true,        goals_manage: false,  goals_evaluate: false,
       analytics_view: false,
@@ -398,12 +470,22 @@ export const SYSTEM_ROLES = [
       // de editar/excluir (só visualização).
       feedback_view: true, feedback_create: false,
       portal_access: true,  portal_create: true,  portal_manage: false, portal_images_manage: false, portal_download_unlimited: true,
+      // 4.49.2+ Analista AGORA cria destinos (cidade nova durante a viagem)
+      // sem ter portal_manage. Vai pra hierarquia Continente → País → Cidade.
+      portal_destinations_manage: true,
+      // 4.49.6+ Analista também cria/edita segmentos e categorias
+      // (hospedagem, gastronomia, etc.) — operações cotidianas do consultor.
+      portal_segments_manage: true,
       portal_areas_view: true, portal_areas_manage: false,
       roteiro_access: true, roteiro_create: true, roteiro_manage: false, roteiro_view_cost: false,
-      content_calendar_view: true, content_calendar_create: true, content_calendar_manage: false,
+      // v4.49.50+ Analista NÃO cria metadados por default; admin pode liberar
+      // via override per-usuário ou na role customizada.
+      content_calendar_view: true, content_calendar_create: true, content_calendar_manage: false, content_calendar_meta_manage: false,
       site_audit_view: true, site_audit_manage: false,
       requests_manage: false,
       absence_view_team: false, absence_manage_team: false,
+      // 4.49.8+ Analista NÃO vê Escritório Virtual (restrito a gestores+)
+      office_view: false,
       branding_manage: false,
       ai_skills_manage: false, ai_dashboard_view: false, ai_keys_manage: false,
       luxury_travel_manage: false,

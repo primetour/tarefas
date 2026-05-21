@@ -52,7 +52,15 @@ export async function renderTeam(container) {
 
   const users      = store.get('users') || [];
   const workspaces = store.get('userWorkspaces') || [];
-  const canViewAll = store.can('absence_manage_team') || store.can('system_manage_users') || store.can('system_view_all');
+  // 4.49.12+ Wire de absence_view_team (perm que estava ÓRFÃ — definida no
+  // catálogo mas nunca checada). Agora: quem tem absence_view_team OU
+  // absence_manage_team OU system_manage_users OU isMaster vê ausências da
+  // equipe. Antes só admin via.
+  const canViewAll = store.isMaster()
+    || store.can('absence_view_team')
+    || store.can('absence_manage_team')
+    || store.can('system_manage_users')
+    || store.can('system_view_all');
 
   container.innerHTML = `
     <div class="page-header">

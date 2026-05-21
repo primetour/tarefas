@@ -6,7 +6,13 @@
  *   - content_platforms  (Instagram, Facebook, Newsletter, ...)
  *   - content_contents   (Post, Reel, Carrossel, ...)
  *
- * Padrão idêntico a sectors/nucleos — leitura aberta, escrita só admin.
+ * Padrão de permissão (v4.49.59+):
+ *   - read: qualquer auth (dropdowns precisam carregar)
+ *   - create/update: admin/master OU content_calendar_meta_manage
+ *     (perm granular liberável pra coord/analista — pareia com
+ *      Firestore rules em firestore.rules:233-249)
+ *   - delete: apenas master (mais restritivo, consistente com rules)
+ *
  * Cache local 5min via store. Live invalidate ao criar/editar/excluir.
  *
  * Cada doc tem shape:
@@ -59,10 +65,24 @@ export async function fetchPlatforms()  { return _list('platforms'); }
 export async function fetchContents()   { return _list('contents');  }
 export async function fetchCategories() { return _list('categories'); }
 
+/* ─── Permission check compartilhado pra create/update ───────
+ * v4.49.59+ Aceita content_calendar_meta_manage (perm granular)
+ * além de system_manage_settings + master. Single source of truth
+ * pra não dispersar checks. Bug histórico (v4.49.50→58): essa
+ * função era inline com `system_manage_settings` only — derrubava
+ * analista mesmo com a perm granular ligada no role.
+ */
+function _canWriteMeta() {
+  return store.isMaster()
+      || store.can('content_calendar_meta_manage')
+      || store.can('system_manage_settings');
+}
+
 /* ─── Criar ───────────────────────────────────────────────── */
 async function _create(kind, data) {
-  if (!store.can('system_manage_settings') && !store.isMaster()) {
-    throw new Error('Permissão negada. Apenas admin/diretoria.');
+  if (!_canWriteMeta()) {
+    throw new Error('Sem permissão pra criar item do calendário de conteúdo. ' +
+      'Peça ao admin pra habilitar "Criar plataformas, tipos e categorias" no seu role.');
   }
   const clean = sanitize(data);
   if (!clean.label) throw new Error('Nome é obrigatório.');
@@ -83,8 +103,8 @@ export const createCategory  = (d) => _create('categories', d);
 
 /* ─── Atualizar ───────────────────────────────────────────── */
 async function _update(kind, id, data) {
-  if (!store.can('system_manage_settings') && !store.isMaster()) {
-    throw new Error('Permissão negada.');
+  if (!_canWriteMeta()) {
+    throw new Error('Sem permissão pra editar item do calendário de conteúdo.');
   }
   const clean = sanitize(data);
   await updateDoc(doc(db, COLS[kind], id), { ...clean, updatedAt: serverTimestamp() });

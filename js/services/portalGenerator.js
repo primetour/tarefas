@@ -463,12 +463,52 @@ function buildFilename(allTips, format) {
 }
 
 /* ─── Content builder ─────────────────────────────────────── */
+// 4.49.22+ Helper pra detectar segmentos efetivamente VAZIOS.
+// Antes: buildContent só checava `!data`. Resultado: se um segmento
+// existia no doc mas com `items=[]` e sem texto, o exporter renderizava
+// o HEADING ("RESTAURANTES") seguido de espaço em branco.
+// User reportou: "vi um roteiro/dica que carregava um bloco vazio. Se
+// está vazio, precisaria ocultar". Esta função aplica o mesmo critério
+// do segHasContent() do editor (v4.49.13+).
+function segHasContent(segDef, data) {
+  if (!data) return false;
+  // special_info (Informações Gerais): considera qualquer campo do info preenchido
+  if (segDef.mode === 'special_info') {
+    const info = data.info || {};
+    if (info.descricao || info.dica) return true;
+    if (info.populacao || info.moeda || info.lingua || info.religiao) return true;
+    if (info.voltagem  || info.ddd   || info.fusoSinal || info.fusoHoras) return true;
+    if (info.representacao?.nome) return true;
+    const cli = info.clima || {};
+    for (let i = 0; i < 12; i++) {
+      if (cli[`max_${i}`] != null || cli[`min_${i}`] != null) return true;
+    }
+    return false;
+  }
+  // simple_list (Bairros, Arredores): items + (themeDesc opcional)
+  if (segDef.mode === 'simple_list') {
+    if (Array.isArray(data.items) && data.items.some(it =>
+      (it?.title || it?.titulo || it?.description))) return true;
+    if (typeof data.themeDesc === 'string' && data.themeDesc.trim()) return true;
+    return false;
+  }
+  // place_list (Atrações, Restaurantes, Compras…) e agenda
+  if (Array.isArray(data.items) && data.items.some(it =>
+    (it?.titulo || it?.title || it?.descricao || it?.description))) return true;
+  if (typeof data.themeDesc === 'string' && data.themeDesc.trim()) return true;
+  if (typeof data.periodoAgenda === 'string' && data.periodoAgenda.trim()) return true;
+  return false;
+}
+
 function buildContent(tip, segments) {
   const segs = [];
   for (const segKey of segments) {
     const segDef = SEGMENTS.find(s => s.key === segKey);
     const data   = tip?.segments?.[segKey];
     if (!segDef || !data) continue;
+    // 4.49.22+ Skip silencioso de segmento vazio — sem isso renderizava
+    // só o cabeçalho do segmento e ficava feio no PDF/Word/PPT.
+    if (!segHasContent(segDef, data)) continue;
     segs.push({ segDef, data });
   }
   return segs;

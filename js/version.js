@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 48,
-  patch: 3,
-  build: '20260518-cache-loop-prevention',
+  minor: 49,
+  patch: 63,
+  build: '20260521-portal-import-destino-match-cadastrar-inline',
 };
 
 /** "1.2.0" */

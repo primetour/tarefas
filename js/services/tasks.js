@@ -36,13 +36,67 @@ function playCompletionSound() {
   }
 }
 
-/* ─── Banner global de edição pelo solicitante ───────────── */
-// Key = `${taskId}:${editTimestamp}` so each edit (new timestamp) triggers a fresh banner
+/* ─── Banner global de edição pelo solicitante ─────────────
+ * v4.49.61+ Banner com botão "Estou ciente" que PERSISTE o ack no
+ * doc da task (campo `requesterEditAckBy[uid]: ts`). Banner só
+ * aparece pra users SEM ack pra aquele edit. Resolve 2 dores:
+ *   1. Banner não some até user confirmar (antes auto-dismiss 15s →
+ *      user ocupado perdia)
+ *   2. Banner reaparecia em F5 (Set in-memory) → agora persistido
+ *      no Firestore, cross-session e cross-device
+ *
+ * Estado in-memory continua como CACHE local de banners já mostrados
+ * na sessão (evita re-render flicker quando snapshot reaplica).
+ */
 let _editBannerShownKeys = new Set();
+
+function _isAckedByMe(task) {
+  const me = store.get('currentUser')?.uid;
+  if (!me) return true; // sem user logado, não mostra
+  const ackBy = task.requesterEditAckBy;
+  if (!ackBy || typeof ackBy !== 'object') return false;
+  const myAck = ackBy[me];
+  if (!myAck) return false;
+  // Ack é válido se TS do ack >= TS do edit (cobre múltiplas edições)
+  const editTs = task.requesterEditAt?.toMillis ? task.requesterEditAt.toMillis() : 0;
+  const ackTs  = myAck?.toMillis ? myAck.toMillis() : (typeof myAck === 'number' ? myAck : 0);
+  return ackTs >= editTs;
+}
+
+async function _ackRequesterEdit(taskId, bannerEl) {
+  const me = store.get('currentUser')?.uid;
+  if (!me) return;
+  // Disable botões durante o save
+  bannerEl.querySelectorAll('button').forEach(b => { b.disabled = true; b.style.opacity = '0.5'; });
+  const ackBtn = bannerEl.querySelector('[data-ack="1"]');
+  if (ackBtn) ackBtn.textContent = 'Salvando…';
+
+  try {
+    const { withRetry } = await import('./retry.js');
+    await withRetry(
+      () => updateDoc(doc(db, 'tasks', taskId), {
+        [`requesterEditAckBy.${me}`]: serverTimestamp(),
+      }),
+      { label: 'task.requesterEdit.ack', maxAttempts: 3 },
+    );
+    // Sucesso — fade out
+    bannerEl.style.animation = 'fadeOut 0.2s ease-out';
+    setTimeout(() => bannerEl.remove(), 200);
+  } catch (e) {
+    console.error('[ack] falha após retry:', e);
+    if (ackBtn) ackBtn.textContent = 'Estou ciente';
+    bannerEl.querySelectorAll('button').forEach(b => { b.disabled = false; b.style.opacity = ''; });
+    // Toast com erro vai pelo connection (já sinalizado dentro do withRetry)
+    const { toast } = await import('../components/toast.js');
+    toast.error('Falha ao confirmar ciência — tente novamente.');
+  }
+}
 
 function showRequesterEditBanners(tasks) {
   const edited = tasks.filter(t => {
     if (!t.requesterEditFlag) return false;
+    // v4.49.61+ Skip se eu já dei ack pra este edit
+    if (_isAckedByMe(t)) return false;
     const ts = t.requesterEditAt?.toMillis ? t.requesterEditAt.toMillis() : 0;
     const key = `${t.id}:${ts}`;
     return !_editBannerShownKeys.has(key);
@@ -64,7 +118,7 @@ function showRequesterEditBanners(tasks) {
     const banner = document.createElement('div');
     banner.id = bannerId;
     banner.style.cssText = `
-      position:fixed;top:12px;right:12px;z-index:10005;max-width:400px;
+      position:fixed;top:12px;right:12px;z-index:10005;max-width:420px;
       background:#FEF3C7;border:1px solid #F59E0B;border-radius:10px;
       padding:14px 16px;box-shadow:0 8px 32px rgba(0,0,0,0.15);
       animation:slideUp 0.3s ease-out;font-family:var(--font-ui);
@@ -81,29 +135,38 @@ function showRequesterEditBanners(tasks) {
             ${fields ? '<br>Campos alterados: <strong>' + fields + '</strong>' : ''}
             ${editDate ? '<br>Alterado em: ' + editDate : ''}
           </div>
-          <div style="font-size:0.6875rem;color:#B45309;margin-top:5px;">
-            Confira as informações antes de prosseguir com a produção.
+          <div style="display:flex;gap:6px;margin-top:10px;align-items:center;">
+            <button data-ack="1" style="background:#92400E;color:#FEF3C7;border:none;
+              padding:6px 12px;border-radius:6px;font-size:0.75rem;font-weight:600;cursor:pointer;
+              transition:opacity 0.15s;">
+              Estou ciente
+            </button>
+            <button data-snooze="1" style="background:transparent;color:#92400E;border:1px solid #92400E;
+              padding:6px 10px;border-radius:6px;font-size:0.75rem;cursor:pointer;"
+              title="Fecha agora mas reaparece no próximo carregamento">
+              Depois
+            </button>
           </div>
         </div>
-        <button style="background:none;border:none;color:#92400E;cursor:pointer;
-          font-size:1rem;padding:0 4px;flex-shrink:0;line-height:1;" title="Fechar">✕</button>
+        <button data-close="1" style="background:none;border:none;color:#92400E;cursor:pointer;
+          font-size:1rem;padding:0 4px;flex-shrink:0;line-height:1;align-self:flex-start;"
+          title="Fechar (volta no próximo refresh)">✕</button>
       </div>
     `;
     document.body.appendChild(banner);
 
-    // Close button
-    banner.querySelector('button').addEventListener('click', () => {
-      banner.style.animation = 'fadeOut 0.2s ease-out';
-      setTimeout(() => banner.remove(), 200);
-    });
-
-    // Auto-dismiss after 15 seconds
-    setTimeout(() => {
-      if (banner.parentElement) {
+    // Ack persistente (salva no Firestore)
+    banner.querySelector('[data-ack="1"]').addEventListener('click', () => _ackRequesterEdit(t.id, banner));
+    // Snooze + close = só fecha visualmente nessa sessão (cache in-memory já marcou)
+    banner.querySelectorAll('[data-snooze="1"], [data-close="1"]').forEach(b => {
+      b.addEventListener('click', () => {
         banner.style.animation = 'fadeOut 0.2s ease-out';
         setTimeout(() => banner.remove(), 200);
-      }
-    }, 15000);
+      });
+    });
+
+    // v4.49.61+ SEM auto-dismiss — banner persiste até ack ou snooze manual.
+    // Antes desaparecia em 15s, user ocupado perdia o aviso.
   });
 
   // Stack multiple banners vertically
@@ -234,6 +297,12 @@ export const PRIORITY_MAP  = Object.fromEntries(PRIORITIES.map(p => [p.value, p]
 /* ─── Criar tarefa ───────────────────────────────────────── */
 export async function createTask(data) {
   if (!store.can('task_create')) throw new Error('Permissão negada.');
+  // 4.49.10+ SECURITY: bloqueia criar tarefa JÁ "done" sem ter task_complete.
+  // Bypass anterior: chamar createTask({ status:'done', ...}) direto criava
+  // a task como concluída sem passar pelas guards de status-transition.
+  if (data?.status === 'done' && !store.can('task_complete')) {
+    throw new Error('Você não tem permissão para criar tarefas já concluídas. Crie como "Não iniciado" e peça homologação.');
+  }
   // Sandbox: simula sucesso sem persistir no Firestore
   const { sandboxGuard } = await import('./sandbox.js');
   if (sandboxGuard('criar tarefa')) {
@@ -801,6 +870,16 @@ export async function bulkUpdateTasks(items, onProgress) {
   if (!user?.uid) throw new Error('Usuário não autenticado.');
   if (!Array.isArray(items) || !items.length) return { total: 0, updated: 0, failed: 0 };
 
+  // 4.49.10+ SECURITY: bloqueia conclusão em massa sem permissão.
+  // Antes esse método permitia que qualquer user com task_create marcasse
+  // várias tasks como 'done' via bulkActionBar → popover de status,
+  // contornando o guard de updateTask (que SÓ valida em single-update).
+  // Caso documentado: Beatriz Arantes (analista) concluiu task via bulk.
+  const wantsDone = items.some(it => it?.data?.status === 'done');
+  if (wantsDone && !store.can('task_complete')) {
+    throw new Error('Você não tem permissão para concluir tarefas em massa. Peça a um coordenador para homologar.');
+  }
+
   const total = items.length;
   let   updated = 0;
   let   failed  = 0;
@@ -811,7 +890,17 @@ export async function bulkUpdateTasks(items, onProgress) {
     const batch = writeBatch(db);
     slice.forEach(({ id, data }) => {
       if (!id || !data) return;
-      const updates = { ...data, updatedAt: serverTimestamp(), updatedBy: user.uid };
+      // 4.49.10+ Quando trocar pra 'done' em batch, seta completedAt automatico
+      // (mesma semantica de updateTask). Sem isso o card ficava "concluído" mas
+      // sem data — quebrava analytics e os filtros de "concluídas hoje/no prazo".
+      const isCompleting = data.status === 'done';
+      const updates = {
+        ...data,
+        ...(isCompleting && !data.completedAt ? { completedAt: serverTimestamp() } : {}),
+        ...(data.status && data.status !== 'done' ? { completedAt: null } : {}),
+        updatedAt: serverTimestamp(),
+        updatedBy: user.uid,
+      };
       batch.update(doc(db, 'tasks', id), updates);
     });
     try {
@@ -836,6 +925,12 @@ export async function bulkUpdateTasks(items, onProgress) {
 export async function bulkDeleteTasks(ids, onProgress) {
   const user = store.get('currentUser');
   if (!user?.uid) throw new Error('Usuário não autenticado.');
+  // 4.49.10+ SECURITY: bloqueia delete em massa sem task_delete.
+  // Antes: bulk action bar permitia "Excluir" → bulkDeleteTasks SEM guard.
+  // Análogo ao gap de bulkUpdateTasks descoberto no mesmo audit.
+  if (!store.can('task_delete')) {
+    throw new Error('Você não tem permissão para excluir tarefas em massa.');
+  }
   if (!Array.isArray(ids) || !ids.length) return { total: 0, deleted: 0, failed: 0 };
 
   const total = ids.length;
@@ -1073,12 +1168,21 @@ export function subscribeToTasks(callback, filters = {}) {
       callback(tasks);
     }, 300);
   }, (error) => {
-    // Handle errors gracefully — fallback to one-time fetch.
-    // 'failed-precondition' (índice ausente) e 'permission-denied' são
-    // os casos comuns para usuários não-admin. Em ambos, tentamos um
-    // fetch direto que ordena client-side e não exige índice composto.
+    // v4.49.61+ Handler aprimorado:
+    //   - permission-denied / failed-precondition: fallback p/ fetch direto
+    //   - unavailable / aborted / network: sinaliza connection.markNetworkError
+    //     (indicador UI mostra "Reconectando…") + agenda re-subscribe em 5s
+    //   - outros: log + fallback
     console.warn('subscribeToTasks error:', error.code, error.message);
+    import('./connection.js').then(({ markNetworkError, isFirestoreError }) => {
+      if (isFirestoreError(error)) markNetworkError('subscribeToTasks', error);
+    }).catch(() => {});
+
     if (error.code === 'permission-denied' || error.code === 'failed-precondition') {
+      fetchTasks(filters).then(callback).catch(() => callback([]));
+    } else {
+      // Network/transient: tenta fetch direto pra não deixar UI vazia,
+      // e o cliente refaz subscribe na próxima ação que provocar mount.
       fetchTasks(filters).then(callback).catch(() => callback([]));
     }
   });

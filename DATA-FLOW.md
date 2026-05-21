@@ -108,6 +108,50 @@ Cloud Scheduler (09h BRT) → dailySecurityDigest
        → posta em Slack (se SIEM_SLACK_WEBHOOK configurado)
 ```
 
+### F8. Newsletter Shadow Mode IA (4.49.41+)
+```
+GitHub Actions cron (06h45 UTC) → classify-content-ai.yml
+       → npm install firebase-admin
+       → smoke tests (61 unit tests) ANTES da chamada Claude
+       → scripts/classify-content-ai.js
+              → lê ai_agents.<nl-content-classifier> (prompt = SSOT)
+              → kill switch: if !active → exit 0
+              → cost cap: lê nl_ai_classifier_runs do dia, exit 2 se > cap
+              → query mc_performance sem extracted.aiClassifiedAt
+              → POST api.anthropic.com/v1/messages (cache_control no system prompt)
+              → parse JSON + validateOutput (whitelist 4 commercial × 9 tourism)
+              → grava extracted.aiCommercial/aiTourism/aiConfidence/aiReasoning/aiCostUsd
+              → audit per-doc em ai_usage_logs (formato compatível callLLM)
+              → resumo da run em nl_ai_classifier_runs
+```
+
+Conteúdo enviado à Anthropic: `subject` + `name` + `htmlText` (4000 chars
+truncados) + `extracted.cities/countries/hotels/brands/cruises`. Newsletter
+TEMPLATE (não personalizada por destinatário). Audit em
+`SECURITY-AUDIT-2026-05-19.md` cataloga como 🟡 MEDIUM (PII potencial em
+unsubscribe links de algumas templates — DPA Anthropic recomendado antes
+de ativação prod).
+
+### F9. Cutover & Rollback (4.49.42+)
+```
+[Manual workflow_dispatch — confirmação literal PROMOVER]
+       → promote-ai-to-prod.yml
+              → scripts/promote-ai-to-prod.js
+              → filtro confidence ≠ low + idempotência (skip se já promovido)
+              → backup: extracted.commercialPrev ← commercial (regex original)
+              → promove: extracted.commercial ← aiCommercial
+              → audit em nl_classifier_promotions
+
+[Manual workflow_dispatch — confirmação literal REVERTER]
+       → rollback-ai-classification.yml
+              → scripts/rollback-ai-classification.js
+              → restaura commercialPrev → commercial
+              → apaga marcadores de promoção
+              → mantém campos ai* (shadow mode continua)
+              → defesa missingBackup (skip docs sem backup)
+              → audit em nl_classifier_rollbacks
+```
+
 ---
 
 ## Inventário PII por Collection (Firestore)
@@ -132,6 +176,10 @@ Cloud Scheduler (09h BRT) → dailySecurityDigest
 | system_config | não | interna | indefinida | n/a |
 | ai_api_keys | sensitive | crítica | só admin | n/a |
 | system_secrets | sensitive | crítica | rules: deny all | n/a |
+| mc_performance | parcial (htmlText pode conter PII em unsubscribe links) | interna | indefinida | legítimo interesse (analytics interno) |
+| nl_ai_classifier_runs (4.49.41+) | não | interna | indefinida (sem TTL) | legítimo interesse |
+| nl_classifier_promotions (4.49.42+) | não | interna | indefinida (audit imutável) | legítimo interesse |
+| nl_classifier_rollbacks (4.49.42+) | não | interna | indefinida (audit imutável) | legítimo interesse |
 
 ---
 

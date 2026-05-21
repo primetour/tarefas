@@ -6,13 +6,78 @@
 import { store } from '../store.js';
 import { toast } from '../components/toast.js';
 import {
-  fetchDestinations, fetchTip, saveTip,
-  SEGMENTS, DEFAULT_CATEGORIES, MONTHS,
+  fetchDestinations, fetchTip, saveTip, saveDestination,
+  SEGMENTS, DEFAULT_CATEGORIES, MONTHS, CONTINENTS,
 } from '../services/portal.js';
-import { parsePortalPdf } from '../services/portalPdfParser.js';
+import { parsePortalPdf, parsePortalDocx } from '../services/portalPdfParser.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g, c =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+/* ─── Normalização (v4.49.63+) ────────────────────────────────
+ * Compara destinos da planilha vs cadastro Firestore ignorando
+ * caixa, acentos e espaços extras. Antes era === strict, que
+ * rejeitava "Brasil" vs "brasil" ou "São Paulo" vs "Sao Paulo".
+ * ─────────────────────────────────────────────────────────── */
+const _norm = s => String(s || '').trim().toLowerCase()
+  .normalize('NFD').replace(/[̀-ͯ]/g, '')
+  .replace(/\s+/g, ' ');
+
+/**
+ * Encontra destino cadastrado match com a linha da planilha.
+ * Estratégia em camadas:
+ *   1. match(country + city + continent) — todos preenchidos.
+ *   2. match(country + city) — ignora continente (often redundante).
+ *   3. match(country) só, **apenas se a planilha não tem cidade**.
+ * Retorna { destDoc, matchLevel } ou { destDoc: null, suggestion }.
+ */
+function _matchDest(allDests, dest) {
+  const nPais  = _norm(dest.pais);
+  const nCid   = _norm(dest.cidade);
+  const nCont  = _norm(dest.continente);
+  if (!nPais) return { destDoc: null, suggestion: null };
+
+  // L1: match completo
+  let m = allDests.find(d =>
+    _norm(d.country) === nPais &&
+    (!nCid  || _norm(d.city)      === nCid)  &&
+    (!nCont || _norm(d.continent) === nCont)
+  );
+  if (m) return { destDoc: m, matchLevel: 'exact' };
+
+  // L2: ignora continente (mais permissivo)
+  m = allDests.find(d =>
+    _norm(d.country) === nPais &&
+    (!nCid || _norm(d.city) === nCid)
+  );
+  if (m) return { destDoc: m, matchLevel: 'no-continent' };
+
+  // L3: planilha sem cidade — match só por país
+  if (!nCid) {
+    m = allDests.find(d => _norm(d.country) === nPais && !d.city);
+    if (m) return { destDoc: m, matchLevel: 'country-only' };
+  }
+
+  // Sugestão: cidade igual + país parecido (Levenshtein <= 2)
+  const suggestion = nCid
+    ? allDests.find(d => _norm(d.city) === nCid)
+    : allDests.find(d => _levDist(_norm(d.country), nPais) <= 2);
+  return { destDoc: null, suggestion: suggestion || null };
+}
+
+/** Levenshtein simples pra hint de "você quis dizer X?". */
+function _levDist(a, b) {
+  if (a === b) return 0;
+  const m = a.length, n = b.length;
+  if (!m) return n; if (!n) return m;
+  const dp = Array.from({ length: m + 1 }, (_, i) => [i]);
+  for (let j = 1; j <= n; j++) dp[0][j] = j;
+  for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++)
+    dp[i][j] = a[i-1] === b[j-1]
+      ? dp[i-1][j-1]
+      : 1 + Math.min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1]);
+  return dp[m][n];
+}
 
 export async function renderPortalImport(container, { embedded = false } = {}) {
   if (!store.canCreateTip()) {
@@ -64,12 +129,25 @@ export async function renderPortalImport(container, { embedded = false } = {}) {
         onmouseout="this.style.borderColor='var(--border-subtle)'">
         <div style="font-size:2.5rem;margin-bottom:10px;">📊</div>
         <div style="font-size:1rem;font-weight:600;margin-bottom:6px;">
-          Arraste os arquivos .xlsx ou .pdf aqui ou clique para selecionar
+          Arraste os arquivos .xlsx, .pdf ou .docx aqui ou clique para selecionar
         </div>
         <div style="font-size:0.875rem;color:var(--text-muted);">
-          Aceita múltiplos arquivos · .xlsx (planilha modelo) ou .pdf (dica completa)
+          Aceita múltiplos arquivos · .xlsx (planilha modelo), .pdf ou .docx (dica completa)
         </div>
-        <input type="file" id="import-file-input" multiple accept=".xlsx,.xls,.pdf" style="display:none;">
+        <input type="file" id="import-file-input" multiple accept=".xlsx,.xls,.pdf,.docx" style="display:none;">
+      </div>
+
+      <!-- 4.49.13+ Aviso destacado pra PDFs/DOCX: o parser usa o NOME DO ARQUIVO
+           pra inferir continente/país/cidade. Antes esse requisito ficava
+           escondido no manual e gerava erro sem explicação. -->
+      <div style="margin-top:14px;padding:12px 14px;border-radius:8px;
+        background:rgba(212,168,67,0.06);border-left:3px solid var(--brand-gold);
+        font-size:0.8125rem;color:var(--text-secondary);">
+        <strong>📄 PDFs e DOCX:</strong> o nome do arquivo precisa estar no formato
+        <code style="background:var(--bg-surface);padding:1px 6px;border-radius:4px;">Continente - País - Cidade.pdf</code>
+        ou <code style="background:var(--bg-surface);padding:1px 6px;border-radius:4px;">.docx</code>
+        (ex.: <code style="background:var(--bg-surface);padding:1px 6px;border-radius:4px;">Europa - França - Paris.docx</code>).
+        Sem isso, o parser não consegue identificar o destino e mostra erro.
       </div>
 
       <div id="import-file-list" style="margin-top:12px;display:flex;flex-direction:column;gap:6px;"></div>
@@ -124,14 +202,14 @@ export async function renderPortalImport(container, { embedded = false } = {}) {
 let parsedImportData = [];
 
 async function handleFiles(files) {
-  const accepted = files.filter(f => /\.(xlsx?|pdf)$/i.test(f.name));
-  if (!accepted.length) { toast.error('Selecione arquivos .xlsx ou .pdf'); return; }
+  const accepted = files.filter(f => /\.(xlsx?|pdf|docx)$/i.test(f.name));
+  if (!accepted.length) { toast.error('Selecione arquivos .xlsx, .pdf ou .docx'); return; }
 
   const list = document.getElementById('import-file-list');
   if (list) list.innerHTML = accepted.map(f => `
     <div style="display:flex;align-items:center;gap:8px;padding:8px 12px;
       background:var(--bg-surface);border-radius:var(--radius-sm);">
-      <span style="font-size:1rem;">${/\.pdf$/i.test(f.name) ? '📄' : '📊'}</span>
+      <span style="font-size:1rem;">${/\.pdf$/i.test(f.name) ? '📄' : /\.docx$/i.test(f.name) ? '📝' : '📊'}</span>
       <span style="flex:1;font-size:0.875rem;">${esc(f.name)}</span>
       <span style="font-size:0.75rem;color:var(--text-muted);">${(f.size/1024).toFixed(1)} KB</span>
       <span class="file-parse-status" style="font-size:0.75rem;color:var(--brand-gold);">Lendo…</span>
@@ -156,7 +234,9 @@ async function handleFiles(files) {
     try {
       const result = /\.pdf$/i.test(file.name)
         ? await parsePortalPdf(file)
-        : await parseXLSX(file);
+        : /\.docx$/i.test(file.name)
+          ? await parsePortalDocx(file)
+          : await parseXLSX(file);
       parsedImportData.push(...result);
       if (statusEls[fi]) {
         statusEls[fi].textContent = `✓ ${result.length} item(s)`;
@@ -250,8 +330,17 @@ function normalizeInfoRow(row) {
   };
 }
 
-/* ─── Review ──────────────────────────────────────────────── */
-function showReview() {
+/* ─── Review ──────────────────────────────────────────────────
+ * v4.49.63+ Pré-classificação de destinos:
+ *   - lê destinos cadastrados live (fetchDestinations)
+ *   - cada destino da planilha recebe badge ✅ Cadastrado /
+ *     ⚠ Não cadastrado, com sugestão fuzzy se houver
+ *   - botão "+ Cadastrar destino" inline cria o destino e
+ *     re-classifica automaticamente
+ *   - "Confirmar e Importar" só fica habilitado quando todos
+ *     estão cadastrados
+ * ──────────────────────────────────────────────────────────── */
+async function showReview() {
   const review = document.getElementById('import-review');
   if (review) review.style.display = 'block';
 
@@ -266,31 +355,13 @@ function showReview() {
   const content = document.getElementById('import-mapping-content');
   if (!content) return;
 
-  content.innerHTML = `
-    <div style="margin-bottom:12px;font-size:0.875rem;color:var(--text-secondary);">
-      <strong>${Object.keys(byDest).length}</strong> destino(s) identificado(s) ·
-      <strong>${parsedImportData.length}</strong> item(s) total.
-      Verifique os dados antes de confirmar.
-    </div>
-    <div style="display:flex;flex-direction:column;gap:10px;max-height:400px;overflow-y:auto;">
-      ${Object.entries(byDest).map(([key, dest]) => `
-        <div style="border:1px solid var(--border-subtle);border-radius:var(--radius-md);padding:14px;">
-          <div style="font-weight:700;font-size:0.9375rem;margin-bottom:8px;">
-            ✈ ${esc([dest.cidade, dest.pais, dest.continente].filter(Boolean).join(', '))}
-          </div>
-          <div style="display:flex;flex-wrap:wrap;gap:6px;">
-            ${[...new Set(dest.items.map(i => i.segmento).filter(Boolean))].map(s =>
-              `<span style="font-size:0.75rem;padding:2px 8px;background:var(--bg-surface);
-                border-radius:var(--radius-full);border:1px solid var(--border-subtle);">
-                ${esc(s)} (${dest.items.filter(i=>i.segmento===s).length})
-              </span>`).join('')}
-          </div>
-        </div>
-      `).join('')}
-    </div>
-  `;
+  // Loading state enquanto fetch
+  content.innerHTML = `<div style="padding:20px;text-align:center;color:var(--text-muted);">
+    🔎 Verificando destinos cadastrados…
+  </div>`;
 
-  document.getElementById('import-confirm-btn')?.addEventListener('click', () => runImport(byDest));
+  await renderReviewBody(byDest, content);
+
   document.getElementById('import-cancel-btn')?.addEventListener('click', () => {
     if (review) review.style.display = 'none';
     parsedImportData = [];
@@ -298,8 +369,194 @@ function showReview() {
   });
 }
 
-/* ─── Import ──────────────────────────────────────────────── */
-async function runImport(byDest) {
+async function renderReviewBody(byDest, content) {
+  const allDests = await fetchDestinations();
+
+  // Para cada destino, classifica
+  const classified = Object.entries(byDest).map(([key, dest]) => {
+    const { destDoc, matchLevel, suggestion } = _matchDest(allDests, dest);
+    return { key, dest, destDoc, matchLevel, suggestion };
+  });
+
+  const okCount     = classified.filter(c => c.destDoc).length;
+  const missingCount = classified.length - okCount;
+
+  content.innerHTML = `
+    <div style="margin-bottom:12px;font-size:0.875rem;color:var(--text-secondary);">
+      <strong>${classified.length}</strong> destino(s) identificado(s) ·
+      <strong>${parsedImportData.length}</strong> item(s) total.
+      ${okCount > 0 ? `<span style="color:#22C55E;">✓ ${okCount} cadastrado(s)</span>` : ''}
+      ${missingCount > 0 ? ` · <span style="color:#F59E0B;">⚠ ${missingCount} não cadastrado(s)</span>` : ''}
+    </div>
+    ${missingCount > 0 ? `
+      <div style="margin-bottom:14px;padding:10px 12px;border-radius:8px;
+        background:rgba(245,158,11,0.06);border-left:3px solid #F59E0B;
+        font-size:0.8125rem;color:var(--text-secondary);">
+        Existem destinos da planilha que não estão cadastrados. Clique
+        <strong>+ Cadastrar</strong> em cada um pra criar agora — ou use o atalho
+        <a href="#portal-destinations" style="color:var(--brand-gold);font-weight:600;">Destinos</a>.
+        A importação só pode prosseguir quando todos estiverem cadastrados.
+      </div>` : ''}
+    <div style="display:flex;flex-direction:column;gap:10px;max-height:400px;overflow-y:auto;">
+      ${classified.map(c => _renderDestCard(c)).join('')}
+    </div>
+  `;
+
+  // Bind cadastrar inline buttons
+  content.querySelectorAll('[data-cadastrar-key]').forEach(btn => {
+    btn.addEventListener('click', () => openInlineCadastrarModal(btn.dataset.cadastrarKey, byDest, content));
+  });
+
+  // Confirm só habilitado se zero missing
+  const confirmBtn = document.getElementById('import-confirm-btn');
+  if (confirmBtn) {
+    if (missingCount > 0) {
+      confirmBtn.disabled = true;
+      confirmBtn.style.opacity = '0.5';
+      confirmBtn.style.cursor = 'not-allowed';
+      confirmBtn.title = `${missingCount} destino(s) precisam ser cadastrados antes`;
+    } else {
+      confirmBtn.disabled = false;
+      confirmBtn.style.opacity = '';
+      confirmBtn.style.cursor = '';
+      confirmBtn.title = '';
+    }
+    // Re-bind (substitui handler antigo)
+    const clone = confirmBtn.cloneNode(true);
+    confirmBtn.parentNode.replaceChild(clone, confirmBtn);
+    clone.addEventListener('click', () => {
+      if (clone.disabled) return;
+      runImport(byDest, allDests);
+    });
+  }
+}
+
+function _renderDestCard({ key, dest, destDoc, matchLevel, suggestion }) {
+  const label = esc([dest.cidade, dest.pais, dest.continente].filter(Boolean).join(', '));
+  const isOk = !!destDoc;
+  const borderColor = isOk ? '#22C55E' : '#F59E0B';
+  const bgTint = isOk ? 'rgba(34,197,94,0.04)' : 'rgba(245,158,11,0.04)';
+
+  const segments = [...new Set(dest.items.map(i => i.segmento).filter(Boolean))];
+
+  return `
+    <div style="border:1px solid var(--border-subtle);border-left:3px solid ${borderColor};
+      border-radius:var(--radius-md);padding:14px;background:${bgTint};">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;">
+        <div style="font-weight:700;font-size:0.9375rem;">
+          ${isOk ? '✅' : '⚠️'} ${label}
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          ${isOk
+            ? `<span style="font-size:0.75rem;color:#22C55E;font-weight:600;">
+                ${matchLevel === 'exact' ? 'Cadastrado' :
+                  matchLevel === 'no-continent' ? 'Cadastrado (sem continente)' :
+                  'Cadastrado (só país)'}
+              </span>`
+            : `<button type="button" class="btn btn-primary btn-sm" data-cadastrar-key="${esc(key)}"
+                 style="padding:4px 12px;font-size:0.8125rem;">
+                 + Cadastrar destino
+               </button>`}
+        </div>
+      </div>
+      ${!isOk && suggestion
+        ? `<div style="font-size:0.8125rem;color:var(--text-muted);margin-bottom:8px;">
+            💡 Você quis dizer <strong>${esc([suggestion.city, suggestion.country].filter(Boolean).join(', '))}</strong>?
+            Corrija na planilha ou cadastre o destino exato.
+          </div>` : ''}
+      <div style="display:flex;flex-wrap:wrap;gap:6px;">
+        ${segments.map(s =>
+          `<span style="font-size:0.75rem;padding:2px 8px;background:var(--bg-surface);
+            border-radius:var(--radius-full);border:1px solid var(--border-subtle);">
+            ${esc(s)} (${dest.items.filter(i=>i.segmento===s).length})
+          </span>`).join('')}
+      </div>
+    </div>
+  `;
+}
+
+/** v4.49.63+ Modal inline de cadastro de destino — pré-preenche
+ *  continente/país/cidade da planilha. Após salvar, recarrega
+ *  fetchDestinations e re-classifica tudo. */
+function openInlineCadastrarModal(key, byDest, content) {
+  const dest = byDest[key];
+  if (!dest) return;
+
+  const modal = document.createElement('div');
+  modal.style.cssText = `
+    position:fixed;inset:0;z-index:10200;background:rgba(0,0,0,0.6);
+    display:flex;align-items:center;justify-content:center;padding:20px;
+  `;
+  modal.innerHTML = `
+    <div style="background:var(--bg-elevated);border:1px solid var(--border-subtle);
+      border-radius:var(--radius-lg);padding:24px;max-width:480px;width:100%;
+      box-shadow:0 12px 40px rgba(0,0,0,0.4);">
+      <h3 style="margin:0 0 6px;font-size:1.0625rem;">Cadastrar novo destino</h3>
+      <p style="margin:0 0 18px;font-size:0.8125rem;color:var(--text-muted);">
+        Os campos foram pré-preenchidos pela planilha. Ajuste se preciso.
+      </p>
+      <div style="display:flex;flex-direction:column;gap:12px;">
+        <label style="display:flex;flex-direction:column;gap:4px;font-size:0.8125rem;color:var(--text-secondary);">
+          Continente
+          <select id="inline-cad-continent" class="form-input">
+            <option value="">— selecione —</option>
+            ${(CONTINENTS || []).map(c =>
+              `<option value="${esc(c)}" ${_norm(c) === _norm(dest.continente) ? 'selected' : ''}>${esc(c)}</option>`
+            ).join('')}
+          </select>
+        </label>
+        <label style="display:flex;flex-direction:column;gap:4px;font-size:0.8125rem;color:var(--text-secondary);">
+          País <span style="color:#EF4444;">*</span>
+          <input type="text" id="inline-cad-country" class="form-input" value="${esc(dest.pais)}" />
+        </label>
+        <label style="display:flex;flex-direction:column;gap:4px;font-size:0.8125rem;color:var(--text-secondary);">
+          Cidade
+          <input type="text" id="inline-cad-city" class="form-input" value="${esc(dest.cidade)}" />
+        </label>
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:20px;">
+        <button class="btn btn-secondary btn-sm" id="inline-cad-cancel">Cancelar</button>
+        <button class="btn btn-primary btn-sm" id="inline-cad-save">Salvar destino</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  modal.querySelector('#inline-cad-cancel').addEventListener('click', () => modal.remove());
+  modal.querySelector('#inline-cad-save').addEventListener('click', async () => {
+    const continent = modal.querySelector('#inline-cad-continent').value.trim();
+    const country   = modal.querySelector('#inline-cad-country').value.trim();
+    const city      = modal.querySelector('#inline-cad-city').value.trim();
+    if (!country) { toast.error('País é obrigatório.'); return; }
+
+    const saveBtn = modal.querySelector('#inline-cad-save');
+    saveBtn.disabled = true; saveBtn.textContent = 'Salvando…';
+    try {
+      const { withRetry } = await import('../services/retry.js');
+      await withRetry(
+        () => saveDestination(null, { continent, country, city }),
+        { label: 'portalImport.cadastrarInline', maxAttempts: 3 },
+      );
+      modal.remove();
+      toast.success('Destino cadastrado.');
+      // Re-classifica — fetch fresh
+      content.innerHTML = `<div style="padding:20px;text-align:center;color:var(--text-muted);">
+        🔄 Re-verificando…
+      </div>`;
+      await renderReviewBody(byDest, content);
+    } catch (e) {
+      console.error('[inline cadastrar]', e);
+      toast.error('Falha ao salvar: ' + (e?.message || ''));
+      saveBtn.disabled = false; saveBtn.textContent = 'Salvar destino';
+    }
+  });
+}
+
+/* ─── Import ──────────────────────────────────────────────────
+ * v4.49.63+ Usa _matchDest (normalizado, multi-camada). Aceita
+ * allDests pre-fetched do review pra evitar double-fetch.
+ * ──────────────────────────────────────────────────────────── */
+async function runImport(byDest, preFetchedDests = null) {
   document.getElementById('import-review').style.display   = 'none';
   document.getElementById('import-progress').style.display = 'block';
   const log = document.getElementById('import-log');
@@ -315,21 +572,23 @@ async function runImport(byDest) {
   addLog('Iniciando importação…');
   let imported = 0, errors = 0;
 
+  // Refetch sempre — usuário pode ter cadastrado destinos novos
+  // enquanto o review estava aberto.
   const allDests = await fetchDestinations();
 
   for (const [, dest] of Object.entries(byDest)) {
     const label = [dest.cidade, dest.pais, dest.continente].filter(Boolean).join(', ');
     addLog(`\n📍 ${label}`);
 
-    // Find destination in Firestore
-    let destDoc = allDests.find(d =>
-      d.country === dest.pais &&
-      (!dest.continente || d.continent === dest.continente) &&
-      (!dest.cidade || d.city === dest.cidade)
-    );
+    // Match normalizado (case/accent-insensitive, multi-camada)
+    const { destDoc, suggestion } = _matchDest(allDests, dest);
 
     if (!destDoc) {
-      addLog(`  ⚠ Destino não encontrado no sistema — pulando. Cadastre primeiro em Destinos.`, '#F59E0B');
+      const hint = suggestion
+        ? `  💡 Sugestão: "${[suggestion.city, suggestion.country].filter(Boolean).join(', ')}". Corrija planilha ou cadastre o destino.`
+        : `  💡 Cadastre o destino em Portal de Dicas → Destinos antes de re-importar.`;
+      addLog(`  ⚠ Destino não cadastrado — pulando.`, '#F59E0B');
+      addLog(hint, '#94a3b8');
       errors++;
       continue;
     }

@@ -174,6 +174,47 @@ class Store {
   canManagePortalImages() {
     return this.isMaster() || this.can('portal_images_manage') || this.can('portal_manage');
   }
+  // 4.49.2+ destinos (cidade/país/continente): perm granular pra liberar pro
+  // analista criar destino novo sem ter portal_manage (que dá acesso a tudo).
+  // Aceita portal_destinations_manage (novo) ou portal_manage (legado/master).
+  canManageDestinations() {
+    return this.isMaster() || this.can('portal_destinations_manage') || this.can('portal_manage');
+  }
+  // 4.49.6+ segmentos + categorias do Portal — mesma lógica do destinos.
+  canManagePortalSegments() {
+    return this.isMaster() || this.can('portal_segments_manage') || this.can('portal_manage');
+  }
+  // 4.49.11+ Helpers granulares de dashboards (1 perm por dashboard).
+  // Master sempre vê tudo. Cada helper aceita também a perm legada como
+  // fallback pra back-compat durante a migração.
+  canViewHomeDashboard() {
+    return this.isMaster() || this.can('dashboard_home_view');
+  }
+  canViewProductivityDashboard() {
+    // Compat: aceita dashboard_view (nome antigo) E analytics_view (genérico legacy)
+    return this.isMaster() || this.can('dashboard_productivity_view')
+      || this.can('dashboard_view') || this.can('analytics_view');
+  }
+  canViewPortalDashboard() {
+    // Compat: portal_manage continua dando acesso (admin do portal)
+    return this.isMaster() || this.can('dashboard_portal_view') || this.can('portal_manage');
+  }
+  canViewRoteirosDashboard() {
+    return this.isMaster() || this.can('dashboard_roteiros_view') || this.can('roteiro_manage');
+  }
+  canViewCsatDashboard() {
+    // Compat: csat_view_all OU csat_manage também liberam (admins do CSAT)
+    return this.isMaster() || this.can('dashboard_csat_view')
+      || this.can('csat_view_all') || this.can('csat_manage');
+  }
+  // 4.49.2+ áreas/BUs (templates): wire das perms `portal_areas_*` que estavam
+  // no catálogo mas não eram consultadas no código (orphan).
+  canViewPortalAreas() {
+    return this.isMaster() || this.can('portal_areas_view') || this.can('portal_manage');
+  }
+  canManagePortalAreas() {
+    return this.isMaster() || this.can('portal_areas_manage') || this.can('portal_manage');
+  }
 
   canAccessRoteiros()  { return this.isMaster() || this.can('roteiro_access'); }
   canCreateRoteiro()   { return this.isMaster() || this.can('roteiro_create'); }

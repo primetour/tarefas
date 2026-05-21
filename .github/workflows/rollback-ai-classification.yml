@@ -1,0 +1,75 @@
+name: Rollback AI Classification
+
+# Reverte o promote-ai-to-prod.js — restaura commercialPrev/tourismPrev
+# para commercial/tourism. Mantém os campos ai* intactos (shadow mode
+# continua rodando).
+#
+# Manual only (workflow_dispatch) — NUNCA roda automaticamente.
+
+# v4.49.44+ Least-privilege
+permissions:
+  contents: read
+
+concurrency:
+  group: nl-classifier-cutover
+  cancel-in-progress: false
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry:
+        description: 'Dry-run (mostra o que faria sem gravar)'
+        required: false
+        type: boolean
+        default: true
+      since:
+        description: 'Só reverte docs promovidos depois desta data ISO (ex: 2026-05-20T00:00:00Z). Vazio = reverter TODOS.'
+        required: false
+        type: string
+        default: ''
+      confirmar:
+        description: 'Digite "REVERTER" pra confirmar'
+        required: true
+        type: string
+
+jobs:
+  rollback:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Sanity check da confirmação
+        env:
+          INPUT_CONFIRMAR: ${{ github.event.inputs.confirmar }}
+        run: |
+          set -euo pipefail
+          if [ "${INPUT_CONFIRMAR:-}" != "REVERTER" ]; then
+            echo "❌ Confirmação inválida. Digite exatamente 'REVERTER' no input."
+            exit 1
+          fi
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: npm install firebase-admin
+        working-directory: scripts
+      - name: Rollback
+        env:
+          FIREBASE_PROJECT_ID:   ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_CLIENT_EMAIL: ${{ secrets.FIREBASE_CLIENT_EMAIL }}
+          FIREBASE_PRIVATE_KEY:  ${{ secrets.FIREBASE_PRIVATE_KEY }}
+          INPUT_DRY:   ${{ github.event.inputs.dry }}
+          INPUT_SINCE: ${{ github.event.inputs.since }}
+        run: |
+          set -euo pipefail
+          args=()
+          if [ "${INPUT_DRY:-}" = "true" ]; then args+=(--dry); fi
+          # Validação: --since aceita apenas ISO 8601 (YYYY-MM-DDTHH:MM:SSZ).
+          # Defesa contra shell injection via string livre.
+          if [ -n "${INPUT_SINCE:-}" ]; then
+            if [[ ! "$INPUT_SINCE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$ ]]; then
+              echo "❌ Input 'since' deve ser ISO 8601 (ex: 2026-05-20T00:00:00Z). Recebido: $INPUT_SINCE"; exit 1
+            fi
+            args+=(--since="$INPUT_SINCE")
+          fi
+          node rollback-ai-classification.js "${args[@]}"
+        working-directory: scripts

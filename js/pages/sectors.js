@@ -1,6 +1,8 @@
 /**
  * PRIMETOUR — Sectors Page
- * Gestão de setores e núcleos (dinâmico)
+ * Gestão de setores e squads (dinâmico).
+ * v4.49.54+ Nomenclatura UI: "núcleo" → "squad" (campo técnico `nucleos`/
+ * coleção `nucleos` mantida pra back-compat com docs existentes).
  */
 
 import { store }  from '../store.js';
@@ -52,12 +54,12 @@ export async function renderSectors(container) {
   container.innerHTML = `
     <div class="page-header">
       <div class="page-header-left">
-        <h1 class="page-title">Setores e Núcleos</h1>
+        <h1 class="page-title">Setores e Squads</h1>
         <p class="page-subtitle">Gerencie a estrutura organizacional da empresa</p>
       </div>
       <div class="page-header-actions" style="display:flex;gap:8px;">
         <button class="btn btn-secondary" id="new-sector-btn">+ Novo Setor</button>
-        <button class="btn btn-primary" id="new-nucleo-btn">+ Novo Núcleo</button>
+        <button class="btn btn-primary" id="new-nucleo-btn">+ Novo Squad</button>
       </div>
     </div>
 
@@ -68,7 +70,7 @@ export async function renderSectors(container) {
       <span>ℹ</span>
       <span>
         <strong>Setores</strong> são as áreas da empresa (ex: Marketing e Comunicação, C&amp;P, TI).
-        <strong>Núcleos</strong> são subgrupos dentro de um setor (ex: Design, Jornalismo, Redes Sociais).
+        <strong>Squads</strong> são subgrupos dentro de um setor (ex: Design, Jornalismo, Redes Sociais).
         Usuários cadastrados em um setor só enxergam dados daquele setor.
         Apenas a Diretoria tem visibilidade completa.
       </span>
@@ -101,7 +103,7 @@ async function load(visibleSectors) {
     const scope = store.isMaster() ? live : (visibleSectors || []);
     render(scope);
   } catch(e) {
-    toast.error('Erro ao carregar setores/núcleos: ' + e.message);
+    toast.error('Erro ao carregar setores/squads: ' + e.message);
   }
 }
 
@@ -140,12 +142,12 @@ function render(visibleSectors) {
                 ${esc(sector)}
                 ${!sectorDoc ? `<span style="font-size:0.625rem;color:var(--text-muted);font-weight:400;background:var(--bg-elevated);padding:1px 6px;border-radius:4px;" title="Setor padrão do sistema (não persistido). Crie um setor novo com este nome para habilitar edição.">padrão</span>` : ''}
               </div>
-              <div class="card-subtitle">${users.length} membro${users.length!==1?'s':''} · ${nucleos.length} núcleo${nucleos.length!==1?'s':''}</div>
+              <div class="card-subtitle">${users.length} membro${users.length!==1?'s':''} · ${nucleos.length} squad${nucleos.length!==1?'s':''}</div>
             </div>
           </div>
           <div style="display:flex;gap:4px;align-items:center;">
             <button class="btn btn-ghost btn-sm add-nucleo-btn" data-sector="${esc(sector)}">
-              + Núcleo
+              + Squad
             </button>
             ${sectorDoc ? `
               <button class="btn btn-ghost btn-icon" data-sector-edit="${sectorDoc.id}"
@@ -162,7 +164,7 @@ function render(visibleSectors) {
         <div class="card-body" style="padding:8px 16px 16px;">
           ${!nucleos.length ? `
             <div style="font-size:0.8125rem;color:var(--text-muted);padding:8px 0;">
-              Nenhum núcleo cadastrado neste setor.
+              Nenhum squad cadastrado neste setor.
             </div>
           ` : `
             <div style="display:flex;flex-wrap:wrap;gap:8px;">
@@ -261,7 +263,7 @@ function openMembersModal(nucleo, visibleSectors) {
         <div class="empty-state-icon">◈</div>
         <div class="empty-state-title">Nenhum usuário ativo no setor "${esc(nucleo.sector)}".</div>
         <div class="empty-state-text" style="margin-top:8px;font-size:0.8125rem;color:var(--text-muted);">
-          Cadastre usuários no setor em Configurações → Usuários antes de atribuí-los ao núcleo.
+          Cadastre usuários no setor em Configurações → Usuários antes de atribuí-los ao squad.
         </div>
       </div>`,
       footer: [ { label: 'Fechar', class: 'btn-secondary', closeOnClick: true } ],
@@ -303,8 +305,8 @@ function openMembersModal(nucleo, visibleSectors) {
           border-radius:var(--radius-md);padding:10px 14px;
           font-size:0.75rem;color:var(--text-secondary);line-height:1.5;">
           <span>ℹ</span>
-          <span>Um usuário pode participar de vários núcleos.
-            Marcar aqui <strong>adiciona este núcleo</strong> à lista dele;
+          <span>Um usuário pode participar de vários squads.
+            Marcar aqui <strong>adiciona este squad</strong> à lista dele;
             desmarcar <strong>remove apenas este</strong> sem afetar os outros.
             Só usuários do setor <strong>${esc(nucleo.sector)}</strong> aparecem.</span>
         </div>
@@ -417,7 +419,7 @@ function openNucleoModal(nucleo = null, presetSector = '') {
   const visibleSectors = store.isMaster() ? SECTORS : (store.get('visibleSectors') || []);
 
   modal.open({
-    title:   isEdit ? `Editar — ${nucleo.name}` : 'Novo Núcleo',
+    title:   isEdit ? `Editar — ${nucleo.name}` : 'Novo Squad',
     size:    'sm',
     content: `
       <div style="display:flex;flex-direction:column;gap:14px;">
@@ -440,7 +442,7 @@ function openNucleoModal(nucleo = null, presetSector = '') {
           <span class="form-error-msg" id="nc-sector-error"></span>
         </div>
         <div class="form-group">
-          <label class="form-label">Nome do núcleo *</label>
+          <label class="form-label">Nome do squad *</label>
           <input type="text" class="form-input" id="nc-name"
             value="${esc(nucleo?.name||'')}" maxlength="60"
             placeholder="Ex: Design, Jornalismo, Redes Sociais..." />
@@ -450,7 +452,7 @@ function openNucleoModal(nucleo = null, presetSector = '') {
           <label class="form-label">Descrição</label>
           <input type="text" class="form-input" id="nc-desc"
             value="${esc(nucleo?.description||'')}" maxlength="120"
-            placeholder="Descreva o papel deste núcleo..." />
+            placeholder="Descreva o papel deste squad..." />
         </div>
         <div class="form-group">
           <label class="form-label">Cor de identificação</label>
@@ -470,7 +472,7 @@ function openNucleoModal(nucleo = null, presetSector = '') {
     footer: [
       { label:'Cancelar', class:'btn-secondary', closeOnClick:true },
       {
-        label: isEdit ? 'Salvar' : 'Criar núcleo',
+        label: isEdit ? 'Salvar' : 'Criar squad',
         class: 'btn-primary', closeOnClick: false,
         onClick: async (_, { close }) => {
           const name   = document.getElementById('nc-name')?.value?.trim();
@@ -490,8 +492,8 @@ function openNucleoModal(nucleo = null, presetSector = '') {
           const btn = document.querySelector('.modal-footer .btn-primary');
           if(btn){ btn.classList.add('loading'); btn.disabled=true; }
           try {
-            if (isEdit) { await updateNucleo(nucleo.id, data); toast.success('Núcleo atualizado!'); }
-            else        { await createNucleo(data);             toast.success('Núcleo criado!'); }
+            if (isEdit) { await updateNucleo(nucleo.id, data); toast.success('Squad atualizado!'); }
+            else        { await createNucleo(data);             toast.success('Squad criado!'); }
             close();
             // Reload nucleos in store
             const { loadNucleos } = await import('../services/sectors.js');
@@ -537,14 +539,14 @@ async function confirmDelete(nucleoId) {
   const n = allNucleos.find(x => x.id === nucleoId);
   if (!n) return;
   const ok = await modal.confirm({
-    title:`Excluir núcleo "${n.name}"`,
-    message:`Usuários vinculados a este núcleo não serão afetados, mas perderão o vínculo com este núcleo.`,
+    title:`Excluir squad "${n.name}"`,
+    message:`Usuários vinculados a este squad não serão afetados, mas perderão o vínculo com este squad.`,
     confirmText:'Excluir', danger:true, icon:'✕',
   });
   if (!ok) return;
   try {
     await deleteNucleo(nucleoId);
-    toast.success('Núcleo excluído.');
+    toast.success('Squad excluído.');
     const { loadNucleos } = await import('../services/sectors.js');
     await loadNucleos();
     const visibleSectors = store.isMaster() ? SECTORS : (store.get('visibleSectors') || []);
@@ -662,7 +664,7 @@ async function confirmDeleteSector(sectorId, sectorName) {
       ${nucCount || userCount ? `
         <p style="margin-top:8px;color:var(--color-warning);">
           <strong>Atenção:</strong> existe${nucCount + userCount === 1 ? '' : 'm'}
-          ${nucCount ? `${nucCount} núcleo${nucCount === 1 ? '' : 's'}` : ''}
+          ${nucCount ? `${nucCount} squad${nucCount === 1 ? '' : 's'}` : ''}
           ${nucCount && userCount ? ' e ' : ''}
           ${userCount ? `${userCount} usuário${userCount === 1 ? '' : 's'}` : ''}
           vinculado${nucCount + userCount === 1 ? '' : 's'} a este setor — eles continuarão referenciando o nome.

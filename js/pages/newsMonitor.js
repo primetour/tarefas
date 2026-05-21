@@ -31,7 +31,9 @@ let allClippings = [];
 let activeTab = 'noticias';
 
 export async function renderNewsMonitor(container) {
-  if (!store.can('dashboard_view') && !store.isMaster()) {
+  // 4.49.11+ Migrado de dashboard_view (renomeado) pra analytics_view
+  // (faz sentido: Monitor de Notícias é análise externa, não dashboard interno)
+  if (!store.isMaster() && !store.can('analytics_view')) {
     container.innerHTML = `<div class="empty-state"><span style="font-size:2rem;">🔒</span><p>Acesso restrito</p><p class="text-muted">Você não tem permissão para acessar o Monitoramento de Notícias.</p></div>`;
     return;
   }

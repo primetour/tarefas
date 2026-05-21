@@ -33,6 +33,10 @@
 - [`MIGRATION-CLOUDFLARE.md`](./MIGRATION-CLOUDFLARE.md) — Plano de migração CF Pages
 - [`tests/README-rules-tests.md`](./tests/README-rules-tests.md) — Testes regressão de rules
 
+### Auditorias periódicas
+- [`docs/SECURITY-AUDIT-2026-05-15.md`](./docs/SECURITY-AUDIT-2026-05-15.md) — Sprint 5 (LGPD + hardening)
+- [`SECURITY-AUDIT-2026-05-19.md`](./SECURITY-AUDIT-2026-05-19.md) — Sprint shadow mode IA classificador (2 CRITICAL + 2 HIGH corrigidos: Firestore rules ausentes, shell injection em workflows, decision buttons sem gate, permissions least-privilege)
+
 ---
 
 ## ✅ Quick Wins implementados (commit atual)
@@ -42,6 +46,20 @@
 - ✓ `ai_knowledge/{*}` — visibility-based access (public/internal/sector/restricted)
 - ✓ `ai_skills_archive` + `ai_automations_archive` — append-only (`update,delete: if false`)
 - ✓ `time_clock_audit` — append-only
+- ✓ `nl_ai_classifier_runs` / `nl_classifier_promotions` / `nl_classifier_rollbacks` (4.49.44+) — append-only via Admin SDK (`create/update/delete: false` no client; scripts em CI bypassam)
+
+### Content Security Policy (`index.html`)
+- ✓ `default-src 'self'` — bloqueio total por padrão
+- ✓ `script-src` — whitelist explícita (gstatic, Google APIs, jsDelivr, cdnjs, GTM)
+- ✓ `style-src` — `'self' 'unsafe-inline'` (componentes usam style="..." pesado; será removível após migração pra build com nonce)
+- ✓ `img-src` — whitelist por host (sem wildcard `https:`). Cobertura:
+  - Próprios: `pub-…r2.dev`, `primetour-images.…workers.dev`
+  - Google/Microsoft/Wikipedia: `lh3.googleusercontent.com`, `graph.microsoft.com`, `gstatic.com`, `upload.wikimedia.org`, `images.unsplash.com`
+  - **SFMC CDNs das 5 BUs** (4.49.31+ → 4.49.37+): `image.viagens.newsletterprime.com.br`, `image.viagens.partnersbtgpactual.com.br`, `image.viagens.ultrabtgpactual.tur.br`, `image.viagens.mktpts.tur.br`, `image.centurion.mktpts.tur.br`, `ftpprime.blob.core.windows.net`, `image.exct.net`, `image.s10.exacttarget.com`
+- ✓ `connect-src` — whitelist incluindo `api.anthropic.com`, `api.openai.com`, `generativelanguage.googleapis.com` (LLM providers) + `us-central1-….cloudfunctions.net` (Cloud Functions secure path)
+- ✓ `frame-ancestors 'self'` — bloqueia clickjacking via iframe
+- ✓ `form-action 'self' https://login.microsoftonline.com` — SSO OK, demais POSTs externos bloqueados
+- ✓ `object-src 'none'`, `base-uri 'self'`
 
 ### Headers HTTP
 - ✓ `X-Content-Type-Options: nosniff`

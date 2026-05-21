@@ -513,6 +513,104 @@ Botão **✎ Editar** em cada envio na aba "Conteúdo & Temas" abre modal pra co
 - Master pode editar manualmente cada doc via botão ✎ na aba Conteúdo
 - `ENRICH_DISABLED=1` desliga IA mantendo sync de métricas SFMC
 
+### 10.5c Newsletter — Eixos duplos Comercial × Turismo (4.49.27+)
+
+A classificação `newsletterType` única foi substituída por **2 eixos
+independentes** (mantida apenas como `extracted.newsletterTypeLegacy`
+em alguns docs históricos, sem uso ativo):
+
+- **Comercial**: `sazonal | promocao | parceiro | inspiracional`
+  Prioridade quando convergem: `sazonal > promocao > parceiro > inspiracional`
+- **Turismo**: `evento | aereo | roteiro | servico | hotelaria | cruzeiro | produto | destino | outros`
+  Prioridade: `evento > aereo > roteiro > servico > hotelaria > cruzeiro > produto > outros > destino`
+
+**Implementação atual** (regex determinístico): `scripts/classify-content.js`
+rodado pelo workflow `enrich-content.yml` step "Classify (commercial/tourism)"
+às 06:30 UTC daily (15min após `mc-sync.yml`).
+
+Regras especiais:
+- **Trigger rule**: 1 match no subject/name OU 2+ matches no htmlText
+- **Regra de BU**: BTG Partners/Ultrablue/Centurion NÃO viram "parceiro"
+  só pela BU — exige sub-parceiro explícito (celebridade, marca não-hoteleira,
+  programa de pontos terceiro)
+- **CSAT bypass**: pesquisas de satisfação → `tourism: "outros"` (não é
+  newsletter de marketing tradicional)
+- **Destino como fallback condicional**: só se `extracted.cities` ou
+  `extracted.countries` tiver itens; senão `outros`
+
+### 10.5d Newsletter — Shadow Mode IA do classificador (4.49.41+)
+
+**Princípio arquitetural**: cada agente vive no seu módulo (não há
+agentScheduler genérico). IA Hub é registry + governança; orquestração
+é específica do módulo.
+
+**Pipeline shadow mode** (LLM roda em paralelo com regex, grava em
+campos paralelos `extracted.ai*`, cliente compara antes de promover):
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  IA Hub (Firestore: ai_agents)                              │
+│  - Agente nl-content-classifier (single source of truth)    │
+│  - systemPrompt, model, temperature, active flag            │
+│  - Provider: Anthropic / claude-haiku-4-5                   │
+└─────────────────────┬───────────────────────────────────────┘
+                      │ lido por
+                      ▼
+┌─────────────────────────────────────────────────────────────┐
+│  scripts/classify-content-ai.js                             │
+│  - Lê agente do Firestore (prompt = SSOT)                   │
+│  - Se !active → exit 0 (kill switch soft)                   │
+│  - Cost cap diário (lê nl_ai_classifier_runs)               │
+│  - Itera mc_performance docs sem extracted.aiClassifiedAt   │
+│  - Chama api.anthropic.com com cache_control no system      │
+│  - Grava extracted.aiCommercial/aiTourism/aiConfidence/etc  │
+│  - Audit per-doc em ai_usage_logs                           │
+│  - Resumo em nl_ai_classifier_runs                          │
+└─────────────────────┬───────────────────────────────────────┘
+                      │ disparado por
+                      ▼
+┌─────────────────────────────────────────────────────────────┐
+│  .github/workflows/classify-content-ai.yml                  │
+│  - Cron 45 6 * * * UTC (15min após enrich-content.yml)     │
+│  - workflow_dispatch com flags dry/force/limit/verbose      │
+│  - Smoke tests (classify-content-ai.test.js, 61 testes)    │
+│    ANTES da chamada Claude (falha rápido sem queimar tokens)│
+│  - Concurrency lock (group: classify-content-ai)            │
+│  - permissions: contents: read (least-privilege)            │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Cutover** (`scripts/promote-ai-to-prod.js` + workflow `promote-ai-to-prod.yml`):
+- Manual only (workflow_dispatch), confirmação literal `PROMOVER`
+- Filtro de confiança configurável (default: `medium`)
+- Backup automático: `extracted.commercialPrev` recebe valor antigo do regex
+- Audit em `nl_classifier_promotions`
+
+**Rollback** (`scripts/rollback-ai-classification.js` + workflow `rollback-ai-classification.yml`):
+- Manual only, confirmação literal `REVERTER`
+- Restaura `commercialPrev → commercial`, apaga marcadores de promoção
+- Mantém campos `ai*` (shadow mode continua)
+- Audit em `nl_classifier_rollbacks`
+- Defesa `missingBackup`: docs sem `commercialPrev` são pulados (foram
+  classificados SÓ pela IA, restaurar deixaria sem categoria)
+
+**Decisão humana** (UI no dashboard NL → Conteúdo & Temas → bloco shadow mode):
+- Botões "IA certa" / "regex certo" por divergência
+- Gravam `extracted.humanDecisionCommercial/Tourism` + By/At
+- Gated por `isMaster() || system_manage_settings`
+
+**Critérios de cutover** (registrados no SHADOW-MODE-NL-CLASSIFIER.md):
+- [ ] Concordância em AMBOS eixos ≥ 90% por 2 corridas consecutivas
+- [ ] Divergências top revisadas (taxa de "IA certa" ≥ 70%)
+- [ ] Custo aceitável (consultar `nl_ai_classifier_runs.costUsd`)
+- [ ] Aprovação explícita
+
+**Custo estimado**: ~US$ 0,50/mês em escala normal (10-20 docs/dia,
+cache hit ~95% dos tokens de input via prompt caching automático
+≥1024 chars).
+
+**Documentação operacional completa**: `scripts/SHADOW-MODE-NL-CLASSIFIER.md`.
+
 ### 10.6 IA Hub
 
 - **Cascata automática de API key**: `ref.scope = 'auto'` faz lookup user → núcleo → setor → global. Primeira chave válida é usada. Permite que gestores configurem keys por equipe sem touch global.

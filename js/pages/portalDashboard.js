@@ -45,7 +45,10 @@ let rawLinks    = [];
 
 /* ─── Entry point ────────────────────────────────────────── */
 export async function renderPortalDashboard(container) {
-  if (!store.canManagePortal()) {
+  // 4.49.11+ Granular: dashboard_portal_view (separado de portal_manage).
+  // Antes precisava ser admin/manager pra ver métricas — agora pode liberar
+  // pra perfis de "monitoramento" sem dar acesso administrativo total.
+  if (!store.canViewPortalDashboard()) {
     container.innerHTML = `<div class="empty-state" style="min-height:60vh;">
       <div class="empty-state-icon">🔒</div><div class="empty-state-title">Acesso restrito</div>
     </div>`;

@@ -42,7 +42,14 @@ let _activeTab = 'agents';
 let _unsubAgents = null;
 
 export async function renderAiHub(container) {
-  if (!store.isMaster() && !store.can('system_manage_settings')) {
+  // 4.49.2+ Wire das perms granulares ai_dashboard_view + ai_skills_manage
+  // (eram orphan no catálogo). Aceita também o legado system_manage_settings
+  // pra não quebrar acesso de admins atuais.
+  const canView = store.isMaster()
+    || store.can('ai_dashboard_view')
+    || store.can('ai_skills_manage')
+    || store.can('system_manage_settings');
+  if (!canView) {
     container.innerHTML = `<div class="empty-state" style="min-height:60vh;">
       <div class="empty-state-icon">🔒</div>
       <div class="empty-state-title">Acesso restrito</div>
@@ -65,7 +72,11 @@ export async function renderAiHub(container) {
     <div style="display:flex;gap:0;margin-bottom:24px;border-bottom:1px solid var(--border-subtle);overflow-x:auto;">
       ${[
         { id:'agents',     label:'Agentes',      icon:'◈' },
-        { id:'apikeys',    label:'API Keys',     icon:'⚿' },
+        // 4.49.12+ Aba API Keys agora gated pela perm ai_keys_manage.
+        // Era visível pra qualquer um com acesso ao IA Hub; agora só quem
+        // tem perm específica de gerenciar keys (master + roles com a flag).
+        ...((store.isMaster() || store.can('ai_keys_manage'))
+          ? [{ id:'apikeys', label:'API Keys', icon:'⚿' }] : []),
         { id:'connections',label:'Conexões',     icon:'🔌' },
         { id:'knowledge',  label:'Biblioteca',   icon:'📚' },
         { id:'logs',       label:'Logs',         icon:'⌚' },

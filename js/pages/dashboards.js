@@ -21,7 +21,7 @@ import {
   getProductivityByType,
 } from '../services/analytics.js';
 import { fetchSurveys } from '../services/csat.js';
-import { REQUESTING_AREAS } from '../components/filterBar.js';
+import { REQUESTING_AREAS, getUserSectorOptions } from '../components/filterBar.js';
 import { renderPickerButton, bindOptionPicker } from '../components/optionPicker.js';
 
 const HASH_PALETTE = ['#6366F1','#8B5CF6','#EC4899','#F59E0B','#22C55E','#0EA5E9','#D4A843','#64748B','#10B981'];
@@ -74,7 +74,9 @@ async function loadChartJS() {
 /* ─── Render shell ────────────────────────────────────────── */
 export async function renderDashboards(container) {
   // Guard: permissão necessária
-  if (!store.can('analytics_view') && !store.can('dashboard_view') && !store.isMaster()) {
+  // 4.49.11+ Migrado pra canViewProductivityDashboard (aceita perm nova
+  // dashboard_productivity_view + back-compat com dashboard_view/analytics_view)
+  if (!store.canViewProductivityDashboard()) {
     container.innerHTML = `<div class="empty-state" style="padding:60px 20px;text-align:center;">
       <div class="empty-state-icon">🔒</div>
       <div class="empty-state-title">Acesso restrito</div>
@@ -102,8 +104,12 @@ export async function renderDashboards(container) {
         if (!uSector) return true;
         return _visibleSectors && _visibleSectors.includes(uSector);
       });
-  const visibleAreasOuter = _isMasterOrAdmin ? REQUESTING_AREAS
-    : REQUESTING_AREAS.filter(s => _visibleSectors && _visibleSectors.includes(s));
+  // v4.49.54+ Setor = divisão da empresa (fonte: módulo Setores). REQUESTING_AREAS
+  // hardcoded fica como fallback técnico de back-compat. Master vê todos os setores
+  // ativos do módulo; demais usuários veem apenas os do seu escopo.
+  const _allSectorsLive = getUserSectorOptions();
+  const visibleAreasOuter = _isMasterOrAdmin ? _allSectorsLive
+    : _allSectorsLive.filter(s => _visibleSectors && _visibleSectors.includes(s));
 
   container.innerHTML = `
     <div class="page-header">
@@ -112,7 +118,9 @@ export async function renderDashboards(container) {
         <p class="page-subtitle">Métricas e análises do time</p>
       </div>
       <div class="page-header-actions" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-        <!-- Split-button Export -->
+        <!-- 4.49.12+ Botão Export gated por report_export. Era visível pra
+             qualquer um com acesso ao dashboard. Agora respeita a perm. -->
+        ${(store.isMaster() || store.can('report_export')) ? `
         <div class="uikit-export-wrap" style="position:relative;display:inline-block;">
           <button class="btn btn-secondary uikit-export-trigger" data-export-trigger="1"
             style="display:flex;align-items:center;gap:6px;padding:6px 12px;">
@@ -134,7 +142,7 @@ export async function renderDashboards(container) {
               <span style="font-size:0.7em;color:var(--text-muted);">↓</span><span>PDF</span>
             </button>
           </div>
-        </div>
+        </div>` : ''}
         <button class="btn btn-primary" id="dash-new-task">+ Nova Tarefa</button>
       </div>
     </div>
@@ -180,9 +188,10 @@ export async function renderDashboards(container) {
             if (!uSector) return true; // user without sector — show (safe, tasks already filtered)
             return visibleSectors && visibleSectors.includes(uSector);
           });
-      // Filter areas: master sees all; others see only their visible sectors
-      const visibleAreas = isMasterOrAdmin ? REQUESTING_AREAS
-        : REQUESTING_AREAS.filter(s => visibleSectors && visibleSectors.includes(s));
+      // v4.49.54+ Setor = divisão da empresa (fonte: módulo Setores)
+      const allSectorsLive = getUserSectorOptions();
+      const visibleAreas = isMasterOrAdmin ? allSectorsLive
+        : allSectorsLive.filter(s => visibleSectors && visibleSectors.includes(s));
       // Núcleos: show all (núcleos are cross-sector, no permission restriction needed)
       return `
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;align-items:center;">
@@ -210,13 +219,13 @@ export async function renderDashboards(container) {
           return renderPickerButton({
             btnId: 'dash-nucleo-filter-btn',
             selected: n ? { id: n.value, label: n.label, icon: '◇', color: hashColor(n.value) } : null,
-            emptyLabel: 'Todos os núcleos',
+            emptyLabel: 'Todos os squads',
           });
         })()}
       </div>
       <div class="toolbar-filter-wrap" style="min-width:170px;">
         <select id="dash-sector-filter" style="display:none;">
-          <option value="">Todas as áreas</option>
+          <option value="">Todos os setores</option>
           ${visibleAreas.map(s => `<option value="${esc(s)}" ${filterSector===s?'selected':''}>${esc(s)}</option>`).join('')}
         </select>
         ${(() => {
@@ -224,7 +233,7 @@ export async function renderDashboards(container) {
           return renderPickerButton({
             btnId: 'dash-sector-filter-btn',
             selected: s ? { id: s, label: s, icon: '◈', color: hashColor(s) } : null,
-            emptyLabel: 'Todas as áreas',
+            emptyLabel: 'Todos os setores',
           });
         })()}
       </div>
@@ -393,11 +402,11 @@ export async function renderDashboards(container) {
       selectId: 'dash-sector-filter',
       buildConfig: () => ({
         options: dashSectorOpts(),
-        empty: { id: '', label: 'Todas as áreas' },
-        searchPlaceholder: 'Buscar área…',
+        empty: { id: '', label: 'Todos os setores' },
+        searchPlaceholder: 'Buscar setor…',
       }),
       findSelected: (id) => findIn(dashSectorOpts(), id),
-      emptyLabel: 'Todas as áreas',
+      emptyLabel: 'Todos os setores',
     });
   }
   document.getElementById('dash-clear-filters')?.addEventListener('click', () => {
@@ -697,12 +706,97 @@ function renderAllCharts(Chart, m) {
     emptyWidget('charts-grid', 'projects-chart', 'col-span-4', '📦 Progresso por Projeto', 200);
   }
 
+  /* 4b — 4.48.4+ Conversão de Slots (4-col)
+     Mede quantos slots previstos (agenda prévia via scheduleSlots[] do tipo)
+     viraram tarefas reais no período. Source da realização: task.fromSlot
+     gravado quando user clica num cc-virtual-slot no contentCalendar. */
+  (() => {
+    try {
+      const { start, end } = getPeriodDates(activePeriod());
+      const allTypes = store.get('taskTypes') || [];
+      const typesWithSlots = allTypes.filter(t =>
+        Array.isArray(t.scheduleSlots) && t.scheduleSlots.some(s => s.active !== false)
+      );
+      if (!typesWithSlots.length) {
+        emptyWidget('charts-grid', 'slot-conversion-chart', 'col-span-4', '◌ Conversão de Slots', 200);
+        return;
+      }
+      const conversions = typesWithSlots.map(t => {
+        const slots = t.scheduleSlots.filter(s => s.active !== false);
+        // Conta ocorrências esperadas no período (weekly + monthly_days + custom)
+        let expected = 0;
+        const cursor = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+        const endDay = new Date(end.getFullYear(), end.getMonth(), end.getDate());
+        while (cursor <= endDay) {
+          const dow = cursor.getDay();
+          const dom = cursor.getDate();
+          const iso = `${cursor.getFullYear()}-${String(cursor.getMonth()+1).padStart(2,'0')}-${String(cursor.getDate()).padStart(2,'0')}`;
+          for (const s of slots) {
+            if (s.recurrence === 'weekly'        && s.weekDay === dow)                 expected++;
+            else if (s.recurrence === 'monthly_days' && (s.monthDays   || []).includes(dom)) expected++;
+            else if (s.recurrence === 'custom'       && (s.customDates || []).includes(iso)) expected++;
+          }
+          cursor.setDate(cursor.getDate() + 1);
+        }
+        // Conta tarefas no período (m.tasks) com fromSlot.typeId casando
+        const filled = (m.tasks || []).filter(task => task.fromSlot?.typeId === t.id).length;
+        const rate = expected > 0
+          ? Math.min(100, Math.round((filled / expected) * 100))
+          : (filled > 0 ? 100 : 0);
+        return { id: t.id, name: t.name, color: t.color || '#D4A843', expected, filled, rate };
+      })
+      .filter(c => c.expected > 0 || c.filled > 0)
+      .sort((a, b) => b.rate - a.rate);
+
+      if (!conversions.length) {
+        emptyWidget('charts-grid', 'slot-conversion-chart', 'col-span-4', '◌ Conversão de Slots', 200);
+        return;
+      }
+      renderHorizontalBarChart(Chart, 'charts-grid', 'slot-conversion-chart', 'col-span-4', {
+        title:    '◌ Conversão de Slots',
+        subtitle: 'Slots previstos virando tarefas no período',
+        labels:   conversions.slice(0, 6).map(c => `${c.name} (${c.filled}/${c.expected})`),
+        data:     conversions.slice(0, 6).map(c => c.rate),
+        colors:   conversions.slice(0, 6).map(c => c.color),
+        height:   220,
+      });
+    } catch (e) {
+      console.warn('[Slot conversion widget] err:', e?.message);
+      emptyWidget('charts-grid', 'slot-conversion-chart', 'col-span-4', '◌ Conversão de Slots', 200);
+    }
+  })();
+
+  // 4.49.20+ Deep-link usa preset NOMEADO quando o período do dash bate
+  // com um dos presets de tasks.js (activityIn7d/30d/90d). Custom range
+  // só pra '12m' ou 'custom'. Resultado: URL mais limpa + contagem batida.
+  //
+  // O critério é IDÊNTICO ao `inPeriod()` do dashboard:
+  // createdAt OR completedAt dentro do range. Garante card ↔ lista.
+  const periodLinkSuffix = (() => {
+    const namedPreset = ({
+      '7d':  'activityIn7d',
+      '30d': 'activityIn30d',
+      '90d': 'activityIn90d',
+    })[activePeriod()];
+    if (namedPreset) return `&datePreset=${namedPreset}`;
+    // 12m / custom → manda custom range explícito
+    const { start: s, end: e } = getPeriodDates(activePeriod());
+    const toYMD = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+    return `&datePreset=activityInPeriod&from=${toYMD(s)}&to=${toYMD(e)}`;
+  })();
+
   /* 6 — Member leaderboard (4-col) */
+  // 4.49.18+ getTasksByMember agora filtra pendingSso/inactive (analytics.js).
+  // Items ganham deep-link pra #tasks?assignee=<uid>&datePreset=<preset>
+  // pra dar drill-down idêntico ao do ranking por tipo.
   const byMember = getTasksByMember(tasks);
   renderLeaderboard('bottom-grid', 'member-board', 'col-span-4', {
     title: '🏆 Ranking da Equipe',
     subtitle: 'Por tarefas concluídas no período',
-    items: byMember.slice(0, 8),
+    items: byMember.slice(0, 8).map(m => ({
+      ...m,
+      href: `#tasks?assignee=${encodeURIComponent(m.uid)}${periodLinkSuffix}`,
+    })),
   });
 
   /* 6b — Productivity by task type (4-col) — inclui volume de parcerias */
@@ -714,13 +808,15 @@ function renderAllCharts(Chart, m) {
       const parcSuffix = t.partnerships > 0
         ? ` · 🤝 ${t.partnerships} parc. (${t.partnershipRate}%)`
         : '';
+      // typeId real ou sentinel __NONE__ pro filtro de #tasks
+      const typeParam = (t.typeId && t.typeId !== '__none__') ? t.typeId : '__NONE__';
+      const href = `#tasks?type=${encodeURIComponent(typeParam)}${periodLinkSuffix}`;
       return {
-        // 4.34.8+ name SEM o ícone (avatar mostra o ícone separado)
-        // Antes virava "📰N" como sigla do "📰 Newsletter" — feio e redundante.
         name: `${t.name}${parcSuffix}`,
-        icon: t.icon,         // ícone do tipo (renderizado dentro da bolinha)
-        iconOnly: true,       // flag pro renderLeaderboard mostrar ícone em vez de iniciais
+        icon: t.icon,
+        iconOnly: true,
         avatarColor: t.color,
+        href,                 // 4.49.18+ click → drill-down em #tasks
         done: t.done,
         total: t.total,
         rate: t.rate,
@@ -947,8 +1043,12 @@ function renderLeaderboard(gridId, id, colClass, opts) {
       ${opts.items.length === 0
         ? `<div class="empty-state" style="padding:24px;"><div class="empty-state-icon">🏆</div>
             <div class="empty-state-title">Nenhum dado disponível</div></div>`
-        : opts.items.map((u, i) => `
-          <div class="leaderboard-item">
+        : opts.items.map((u, i) => {
+          // 4.49.18+ se u.href existir → wrap em <a> pra drill-down
+          // (ex: ranking por tipo → #tasks?type=<id>&datePreset=last30Days)
+          const open  = u.href ? `<a href="${esc(u.href)}" class="leaderboard-item" style="text-decoration:none;color:inherit;display:flex;cursor:pointer;">` : `<div class="leaderboard-item">`;
+          const close = u.href ? `</a>` : `</div>`;
+          return `${open}
             <div class="leaderboard-rank ${i<3?['gold','silver','bronze'][i]:''}">
               ${i < 3 ? rankLabels[i+1] : i+1}
             </div>
@@ -962,8 +1062,8 @@ function renderLeaderboard(gridId, id, colClass, opts) {
               <div class="leaderboard-sub">${u.total} tarefa${u.total!==1?'s':''}  · ${u.rate}% concluída${u.rate!==1?'s':''}</div>
             </div>
             <div class="leaderboard-value" style="color:var(--color-success);">${u.done}</div>
-          </div>
-        `).join('')
+          ${close}`;
+        }).join('')
       }
     </div>
   `;

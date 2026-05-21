@@ -29,8 +29,10 @@ const NAV_GROUPS = [
   {
     label: 'Tarefas e Projetos',
     items: [
-      { route: 'check-in',   icon: 'check-in',   label: 'Check-in',     perm: 'dashboard_view' },
-      { route: 'dashboard',  icon: 'dashboard',  label: 'Meu Painel',   perm: 'dashboard_view' },
+      // 4.49.11+ Migrado de dashboard_view (renomeado) pra dashboard_home_view.
+      // Check-in e Meu Painel são parte do painel inicial — mesma perm.
+      { route: 'check-in',   icon: 'check-in',   label: 'Check-in',     perm: 'dashboard_home_view' },
+      { route: 'dashboard',  icon: 'dashboard',  label: 'Meu Painel',   perm: 'dashboard_home_view' },
       { route: 'tasks',      icon: 'tasks',      label: 'Tarefas',      perm: 'task_create' },
       { route: 'projects',   icon: 'projects',   label: 'Projetos',     perm: 'task_create',       altPerm: 'project_create' },
       { route: 'kanban',     icon: 'kanban',     label: 'Steps',        perm: 'task_create' },
@@ -43,11 +45,19 @@ const NAV_GROUPS = [
     items: [
       { route: 'workspaces',    icon: 'workspaces',    label: 'Squads',       perm: 'workspace_create', altPerm: 'system_view_all' },
       { route: 'requests',      icon: 'requests',      label: 'Solicitações', perm: 'task_create',      badge: true },
-      { route: 'notifications', icon: 'notifications', label: 'Notificações', perm: 'dashboard_view',   badge: true },
+      // 4.49.11+ Notificações sempre visíveis pra qualquer user autenticado
+      // (não faz sentido bloquear notificações próprias). Antes usava
+      // dashboard_view (renomeado). Sem perm = sempre visível.
+      { route: 'notifications', icon: 'notifications', label: 'Notificações',                           badge: true },
       { route: 'team',          icon: 'team',          label: 'Equipe',       perm: 'task_view_all' },
-      { route: 'feedbacks',     icon: 'feedbacks',     label: 'Feedbacks',    perm: 'feedback_view',    altPerm: 'feedback_create' },
+      // 4.49.23+ Label "Feedbacks 1:1" pra deixar inequívoco que é o
+      // módulo de gestão de pessoas (RH/avaliação), diferenciando do
+      // "Feedbacks do Sistema" (bug/sugestão do app) — ver §Administração.
+      { route: 'feedbacks',     icon: 'feedbacks',     label: 'Feedbacks 1:1', perm: 'feedback_view',    altPerm: 'feedback_create' },
       { route: 'goals',         icon: 'goals',         label: 'Metas',        perm: 'goals_view' },
-      { route: 'csat',          icon: 'csat',          label: 'CSAT',         perm: 'csat_send',        altPerm: 'csat_view_all' },
+      // 4.49.12+ CSAT: perm primária agora é dashboard_csat_view (acesso à página);
+      // csat_send/view_all são pra ações dentro. Quem tem qualquer uma vê o item.
+      { route: 'csat',          icon: 'csat',          label: 'CSAT',         perm: 'dashboard_csat_view', altPerm: 'csat_send' },
     ]
   },
   {
@@ -56,26 +66,33 @@ const NAV_GROUPS = [
       { route: 'content-calendar', icon: 'content-calendar', label: 'Calendário de Conteúdo', perm: 'content_calendar_view' },
       { route: 'roteiros',         icon: 'roteiros',         label: 'Gerador de Roteiros',    perm: 'roteiro_access' },
       { route: 'portal-tips',      icon: 'portal-tips',      label: 'Portal de Dicas',        perm: 'portal_access'  },
-      { route: 'portal-areas',     icon: 'portal-areas',     label: 'Templates de áreas',     perm: 'portal_areas_manage', altPerm: 'portal_manage' },
-      { route: 'portal-images',    icon: 'portal-images',    label: 'Banco de Imagens',       perm: 'portal_manage'  },
+      // 4.49.12+ Templates de áreas: tanto portal_areas_view quanto portal_areas_manage liberam ver
+      { route: 'portal-areas',     icon: 'portal-areas',     label: 'Templates de áreas',     perm: 'portal_areas_view',   altPerm: 'portal_areas_manage' },
+      // 4.49.12+ Banco de Imagens: perm granular nova com fallback legacy
+      { route: 'portal-images',    icon: 'portal-images',    label: 'Banco de Imagens',       perm: 'portal_images_manage', altPerm: 'portal_manage' },
       { route: 'landing-pages',    icon: 'landing-pages',    label: 'Landing Pages',          perm: 'portal_manage'  },
       { route: 'cms',              icon: 'cms',              label: 'CMS / Site',             perm: 'portal_manage'  },
       { route: 'sites-btg',        icon: 'cms',              label: 'Sites',                  perm: 'portal_manage', href: '/btg/dashboard/sites/' },
       { route: 'arts-editor',      icon: 'arts-editor',      label: 'Editor de Artes',        perm: 'portal_manage'  },
-      { route: 'luxury-travel',    icon: 'luxury-travel',    label: 'Revista Luxury Travel' },
-      { route: 'news-monitor',     icon: 'news-monitor',     label: 'Pautas e Clipping',      perm: 'dashboard_view' },
+      // 4.49.12+ Luxury Travel: gated por luxury_travel_manage (antes sempre visível)
+      { route: 'luxury-travel',    icon: 'luxury-travel',    label: 'Revista Luxury Travel',  perm: 'luxury_travel_manage' },
+      // 4.49.11+ Pautas/Clipping = análise → analytics_view (consistente com newsMonitor.js)
+      { route: 'news-monitor',     icon: 'news-monitor',     label: 'Pautas e Clipping',      perm: 'analytics_view' },
       // 'ai-automations' DEPRECADO em favor do IA Hub (triggers.schedule do agente).
     ]
   },
   {
     label: 'Análise de Dados',
     items: [
-      { route: 'dashboards',        icon: 'dashboards',        label: 'Produtividade',     perm: 'analytics_view',  altPerm: 'dashboard_view' },
-      { route: 'nl-performance',    icon: 'nl-performance',    label: 'Newsletters',       perm: 'analytics_view' },
-      { route: 'meta-performance',  icon: 'meta-performance',  label: 'Instagram',         perm: 'analytics_view' },
-      { route: 'ga-performance',    icon: 'ga-performance',    label: 'Google Analytics',  perm: 'analytics_view' },
-      { route: 'portal-dashboard',  icon: 'portal-dashboard',  label: 'Portal de Dicas',   perm: 'portal_manage' },
-      { route: 'roteiro-dashboard', icon: 'roteiro-dashboard', label: 'Roteiros',          perm: 'roteiro_manage' },
+      // 4.49.12+ Invertido: perm primária é dashboard_productivity_view; analytics_view é fallback
+      { route: 'dashboards',        icon: 'dashboards',        label: 'Produtividade',     perm: 'dashboard_productivity_view', altPerm: 'analytics_view' },
+      // v4.49.60+ Granular: perm primária específica + analytics_view como fallback.
+      { route: 'nl-performance',    icon: 'nl-performance',    label: 'Newsletters',       perm: 'dashboard_nl_view',   altPerm: 'analytics_view' },
+      { route: 'meta-performance',  icon: 'meta-performance',  label: 'Instagram',         perm: 'dashboard_meta_view', altPerm: 'analytics_view' },
+      { route: 'ga-performance',    icon: 'ga-performance',    label: 'Google Analytics',  perm: 'dashboard_ga_view',   altPerm: 'analytics_view' },
+      // 4.49.11+ Migrado pra perms granulares (aceitam o legado como altPerm)
+      { route: 'portal-dashboard',  icon: 'portal-dashboard',  label: 'Portal de Dicas',   perm: 'dashboard_portal_view',   altPerm: 'portal_manage' },
+      { route: 'roteiro-dashboard', icon: 'roteiro-dashboard', label: 'Roteiros',          perm: 'dashboard_roteiros_view', altPerm: 'roteiro_manage' },
       // 'ai-dashboard' agora dentro do IA Hub (aba Custos)
     ]
   },
@@ -83,16 +100,20 @@ const NAV_GROUPS = [
     label: 'Administração',
     items: [
       { route: 'users',      icon: 'users',      label: 'Usuários',          perm: 'system_manage_users' },
-      { route: 'sectors',    icon: 'sectors',    label: 'Setores e Núcleos', perm: 'system_manage_users' },
+      { route: 'sectors',    icon: 'sectors',    label: 'Setores e Squads',  perm: 'system_manage_users' },
       { route: 'task-types', icon: 'task-types', label: 'Tipos de Tarefa',   perm: 'task_type_create',    altPerm: 'system_manage_users' },
       { route: 'roles',      icon: 'roles',      label: 'Roles e Acesso',    perm: 'system_manage_roles', altPerm: 'system_manage_users' },
-      { route: 'ai-hub',     icon: 'ai-hub',     label: 'IA Hub',            perm: 'system_manage_settings' },
+      // 4.49.12+ IA Hub: perm primária ai_dashboard_view; system_manage_settings é fallback legacy
+      { route: 'ai-hub',     icon: 'ai-hub',     label: 'IA Hub',            perm: 'ai_dashboard_view',   altPerm: 'system_manage_settings' },
       // 'ai-skills' DEPRECADO em favor do IA Hub. Skills migradas viram agents.
       { route: 'audit',           icon: 'audit',      label: 'Auditoria',           perm: 'system_manage_settings' },
       // 4.36.0+ Escritório Virtual — visualização real-time dos users no sistema
       { route: 'office',          icon: 'office',     label: 'Escritório Virtual',  perm: 'office_view' },
       { route: 'governance',      icon: 'governance', label: 'Governança',          perm: null }, // todos os autenticados
-      { route: 'system-feedback', icon: 'feedbacks',  label: 'Feedbacks do Sistema',perm: 'system_manage_settings' },
+      // 4.49.23+ Ícone trocado pra 'system-feedback' (megafone) — antes
+      // usava o mesmo 'feedbacks' (balão de chat) que o módulo 1:1 de
+      // RH. Visualmente confundia os dois conceitos no menu.
+      { route: 'system-feedback', icon: 'system-feedback', label: 'Feedbacks do Sistema',perm: 'system_manage_settings' },
       { route: 'settings',        icon: 'settings',   label: 'Configurações',       perm: 'system_manage_settings' },
       { route: 'about',      icon: 'about',      label: 'Sobre o sistema',   perm: 'system_manage_users' },
       { route: 'help',       icon: 'help',       label: 'Ajuda',             perm: null }, // todos

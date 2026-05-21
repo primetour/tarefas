@@ -1352,15 +1352,9 @@ function buildPricingSection(doc, roteiro, primary, secondary) {
   const pricing = roteiro.pricing;
   const currency = pricing.currency || 'USD';
 
-  let y = (doc.lastAutoTable?.finalY || 0) + 15;
-  if (!y || y > PAGE_H - 80) {
-    doc.addPage();
-    y = MARGIN;
-  }
-
-  y = addSectionTitle(doc, y, 'VALORES', primary, secondary);
-  y += 2;
-
+  // 4.49.22+ Constr\u00F3i rows ANTES de renderizar o t\u00EDtulo \u2014 se vazias,
+  // sai cedo. Antes o t\u00EDtulo "VALORES" era escrito antes do .length check
+  // e ficava t\u00EDtulo solto quando custom row tinha label sem value.
   const rows = [];
   if (pricing.perPerson) {
     rows.push(['Valor por pessoa', formatCurrency(pricing.perPerson, currency)]);
@@ -1373,9 +1367,20 @@ function buildPricingSection(doc, roteiro, primary, secondary) {
   }
   if (pricing.customRows?.length) {
     for (const cr of pricing.customRows) {
-      if (cr.label) rows.push([cr.label, cr.value || '']);
+      // 4.49.22+ Exige label E value \u2014 antes label sem value virava row \u00F3rf\u00E3
+      if (cr.label && cr.value) rows.push([cr.label, cr.value]);
     }
   }
+  if (!rows.length) return;   // \u2190 sem dado, sem se\u00E7\u00E3o (4.49.22+)
+
+  let y = (doc.lastAutoTable?.finalY || 0) + 15;
+  if (!y || y > PAGE_H - 80) {
+    doc.addPage();
+    y = MARGIN;
+  }
+
+  y = addSectionTitle(doc, y, 'VALORES', primary, secondary);
+  y += 2;
 
   if (rows.length) {
     doc.autoTable({
@@ -1424,6 +1429,20 @@ function buildOptionalsSection(doc, roteiro, primary, secondary) {
   const [pr, pg, pb] = hexToRgb(primary);
   const [sr, sg, sb] = hexToRgb(secondary);
 
+  // 4.49.22+ Filtra opcionais com algum dado real ANTES de renderizar
+  // t\u00EDtulo. Antes: optionals=[{},{}] passava no .length do orchestrator
+  // mas tableBody renderizava linhas vazias seguidas do t\u00EDtulo solto.
+  const currency = roteiro.pricing?.currency || 'USD';
+  const tableBody = (roteiro.optionals || [])
+    .filter(o => o && (o.service || o.priceAdult != null || o.priceChild != null || o.notes || o.observations))
+    .map(o => [
+      o.service || '',
+      o.priceAdult != null ? formatCurrency(o.priceAdult, currency) : '\u2014',
+      o.priceChild != null ? formatCurrency(o.priceChild, currency) : '\u2014',
+      o.notes || o.observations || '',
+    ]);
+  if (!tableBody.length) return;   // \u2190 sem dado, sem se\u00E7\u00E3o (4.49.22+)
+
   let y = (doc.lastAutoTable?.finalY || 0) + 15;
   if (y > PAGE_H - 60) {
     doc.addPage();
@@ -1432,14 +1451,6 @@ function buildOptionalsSection(doc, roteiro, primary, secondary) {
 
   y = addSectionTitle(doc, y, 'SERVI\u00C7OS OPCIONAIS', primary, secondary);
   y += 2;
-
-  const currency = roteiro.pricing?.currency || 'USD';
-  const tableBody = roteiro.optionals.map(o => [
-    o.service || '',
-    o.priceAdult != null ? formatCurrency(o.priceAdult, currency) : '\u2014',
-    o.priceChild != null ? formatCurrency(o.priceChild, currency) : '\u2014',
-    o.notes || o.observations || '',
-  ]);
 
   doc.autoTable({
     startY: y,
@@ -1648,15 +1659,9 @@ function buildImportantInfoSection(doc, roteiro, primary, secondary) {
   const [sr, sg, sb] = hexToRgb(secondary);
   const info = roteiro.importantInfo;
 
-  let y = (doc.lastAutoTable?.finalY || 0) + 15;
-  if (y > PAGE_H - 60) {
-    doc.addPage();
-    y = MARGIN;
-  }
-
-  y = addSectionTitle(doc, y, 'INFORMA\u00C7\u00D5ES IMPORTANTES', primary, secondary);
-  y += 4;
-
+  // 4.49.22+ Calcula sections ANTES de renderizar t\u00EDtulo. hasImportantInfo
+  // (chamada pelo orchestrator) j\u00E1 filtra a maioria, mas se customFields
+  // tiver entries vazias passa pelo check e renderiza t\u00EDtulo sem conte\u00FAdo.
   const sections = [
     { label: 'PASSAPORTE', value: info.passport },
     { label: 'VISTO', value: info.visa },
@@ -1674,6 +1679,16 @@ function buildImportantInfoSection(doc, roteiro, primary, secondary) {
       }
     }
   }
+  if (!sections.length) return;   // \u2190 sem dado, sem se\u00E7\u00E3o (4.49.22+)
+
+  let y = (doc.lastAutoTable?.finalY || 0) + 15;
+  if (y > PAGE_H - 60) {
+    doc.addPage();
+    y = MARGIN;
+  }
+
+  y = addSectionTitle(doc, y, 'INFORMA\u00C7\u00D5ES IMPORTANTES', primary, secondary);
+  y += 4;
 
   for (const section of sections) {
     y = checkPageBreak(doc, y, 20);

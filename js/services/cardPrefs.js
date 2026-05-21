@@ -12,7 +12,7 @@ import { store } from '../store.js';
 
 /* ─── Campos disponíveis ─────────────────────────────────── */
 export const CARD_FIELDS = [
-  { key: 'requestingArea', label: 'Área solicitante',      icon: '📍', default: true  },
+  { key: 'requestingArea', label: 'Setor solicitante',     icon: '📍', default: true  },
   { key: 'variationName',  label: 'Variação do material',  icon: '🔀', default: true  },
   { key: 'dueDate',        label: 'Prazo de entrega',      icon: '📅', default: true  },
   { key: 'taskType',       label: 'Tipo de tarefa',        icon: '📋', default: false },

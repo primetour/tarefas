@@ -13,6 +13,10 @@ import {
   renderMultiPickerButton, bindMultiOptionPicker,
 } from './optionPicker.js';
 import { renderIcon } from './icons.js';
+// v4.49.55+ Single source of truth pra lista de setores ativos:
+// services/sectors.js já trata back-compat (DEFAULT_SECTORS legados),
+// override de admin (replacesLegacyName), dedup case-insensitive.
+import { getActiveSectors } from '../services/sectors.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -46,8 +50,12 @@ const hashColor = (s) => {
 function sectorOpts(list) {
   return list.map(s => ({ id: s, label: s, icon: '◈', color: hashColor(s) }));
 }
+// 4.49.17+ Sentinel pra filtrar tarefas SEM tipo (typeId vazio/null).
+// Resolve relato do user: "não tem opção de ver quais estão sem tipo".
+export const TYPE_NONE_SENTINEL = '__NONE__';
+
 function typeOpts(list) {
-  return list.map(t => {
+  const out = list.map(t => {
     // Extrai emoji se o nome começa com um (mesma lógica do portal.js)
     const name = String(t.name || '').trim();
     const fc = name[0];
@@ -60,6 +68,14 @@ function typeOpts(list) {
       color: '#0EA5E9',
     };
   });
+  // Opção "Sem tipo" — sempre disponível, fica no topo da lista.
+  out.unshift({
+    id:    TYPE_NONE_SENTINEL,
+    label: 'Sem tipo',
+    icon:  '∅',
+    color: 'var(--text-muted)',
+  });
+  return out;
 }
 function projectOpts(list) {
   return list.map(p => ({
@@ -70,18 +86,83 @@ function projectOpts(list) {
   }));
 }
 function areaOpts() {
-  // 4.23.2+ — UNIÃO de dinâmicos + legados (mesma lógica de getUserSectorOptions).
-  const dyn = Array.isArray(store.get('sectors')) ? store.get('sectors') : [];
-  const dynByName = new Map(dyn.filter(s => s?.name)
-    .map(s => [String(s.name).toLowerCase(), s]));
-  const list = [];
-  for (const s of dyn.slice().sort((a, b) => (a.order ?? 999) - (b.order ?? 999))) {
-    if (s.active !== false) list.push(s.name);
+  // v4.49.54+ FUNDAMENTAÇÃO: "Área solicitante" e "Setor" são o MESMO conceito
+  // (uma divisão da empresa). A diferença é só de CONTEXTO:
+  //   - task.sector          = setor proprietário (quem executa)
+  //   - task.requestingArea  = setor solicitante (quem pediu)
+  // Por isso, o dropdown do filtro de "Área solicitante" usa a MESMA fonte
+  // do filtro Setor (módulo Setores), não mais REQUESTING_AREAS hardcoded.
+  // REQUESTING_AREAS permanece como fallback técnico de back-compat pra
+  // tasks legadas com requestingArea = string que não existe mais no módulo.
+  return getUserSectorOptions().map(a => ({
+    id: a, label: a, icon: '', color: hashColor(a),
+  }));
+}
+// v4.49.51+ Squads (workspaces) — pra usar como filtro em Calendar/Steps/etc.
+// "Sem squad" é uma opção real (tasks podem ter workspaceId vazio).
+// v4.49.55+ Retorna GROUPS agrupados por setor (pedido do user: "filtro de
+// squad tem que separar por setor dentro do filtro"). Squads multissetor
+// caem em "Multissetor"; squads sem sector caem em "— Outros —".
+function squadOpts() {
+  const grouped = squadOptsGrouped();
+  // Flat fallback (consumers que não passam `groups` ainda recebem array
+  // plano com a mesma semântica). Header "Sem squad" sempre primeiro.
+  const flat = [{ id: '__none__', label: '— Sem squad', icon: '∅', color: 'var(--text-muted)' }];
+  for (const g of grouped) {
+    for (const item of g.items) flat.push(item);
   }
-  for (const name of REQUESTING_AREAS) {
-    if (!dynByName.has(name.toLowerCase())) list.push(name);
+  return flat;
+}
+
+export function squadOptsGrouped() {
+  const ws = Array.isArray(store.get('userWorkspaces')) ? store.get('userWorkspaces') : [];
+  // Map sector → [items]
+  const bySector = new Map();
+  const multissetorItems = [];
+  const orfaos = [];
+  for (const w of ws) {
+    const item = {
+      id: w.id,
+      label: w.name,
+      icon: w.icon || '◈',
+      color: w.color || hashColor(w.name),
+    };
+    if (w.multiSector) {
+      // Multissetor: cai num grupo próprio. Se quiser ver dentro de cada
+      // sector, descomenta o for abaixo (mas dup o item — visual confuso).
+      multissetorItems.push(item);
+      continue;
+    }
+    const sector = w.sector || w.sectorName || '';
+    if (!sector) { orfaos.push(item); continue; }
+    if (!bySector.has(sector)) bySector.set(sector, []);
+    bySector.get(sector).push(item);
   }
-  return list.map(a => ({ id: a, label: a, icon: '', color: hashColor(a) }));
+
+  // Ordena setores pela ordem canônica do módulo Setores
+  const sectorOrder = getActiveSectors();
+  const groups = [];
+  // 1) Grupo Header "Sem squad" (uma única opção, sem agrupar)
+  groups.push({
+    id: '__header_none', label: 'Sem squad', color: 'var(--text-muted)',
+    items: [{ id: '__none__', label: '— Sem squad', icon: '∅', color: 'var(--text-muted)' }],
+  });
+  // 2) Por setor (ordem canônica)
+  for (const s of sectorOrder) {
+    const items = bySector.get(s);
+    if (items && items.length) {
+      groups.push({ id: 'sec:' + s, label: s, color: hashColor(s), items });
+    }
+  }
+  // 3) Multissetor
+  if (multissetorItems.length) {
+    groups.push({ id: '__multi', label: 'Multissetor', color: '#A78BFA', items: multissetorItems });
+  }
+  // 4) Órfãos (squads sem campo sector — back-compat)
+  if (orfaos.length) {
+    groups.push({ id: '__orphan', label: '— Sem setor —', color: 'var(--text-muted)', items: orfaos });
+  }
+  return groups;
 }
 // 4.40.25+ Padroniza avatar com perfil do user: avatarColor (cor escolhida
 // em Perfil → Aparência) substitui hashColor. Antes, picker mostrava cor
@@ -113,27 +194,32 @@ const metaOpts = () => [
 /**
  * getUserSectorOptions()
  * Returns the sectors the current user is allowed to see.
- * null means "all" (master). Otherwise returns the filtered list.
+ * Dedup'a (case-insensitive por name) e une dyn Firestore + legacy
+ * REQUESTING_AREAS. Master/system_view_all → todos; demais → visíveis.
+ *
+ * Exportado a partir de v4.49.53 — tasks.js (filtro Setor novo) precisa
+ * usar a MESMA lógica pra evitar duplicatas/ordenação inconsistente com
+ * kanban/calendar/timeline.
  */
-function getUserSectorOptions() {
+export function getUserSectorOptions() {
+  // v4.49.55+ Usa getActiveSectors() como SINGLE SOURCE OF TRUTH.
+  // Essa função (services/sectors.js) já trata:
+  //   1. Setores ativos do módulo Setores (store.get('sectors'))
+  //   2. DEFAULT_SECTORS legados (REQUESTING_AREAS) que ainda existem em
+  //      tarefas históricas, EXCETO os que foram redefinidos via UI
+  //   3. Override admin: replacesLegacyName (admin marca "Concierge Bradesco"
+  //      como substituído por "Concierge" → some da lista)
+  //   4. Dedup case-insensitive
+  // Antes eu reinventei a roda em v4.49.54 e perdi os pontos 2 e 3.
+  const allSectors = getActiveSectors();
   const visible = store.getVisibleSectors(); // null | string[]
-  // 4.23.2+ — UNIÃO de dinâmicos + legados (não substitui).
-  // Mesma lógica de getActiveSectors() em services/sectors.js, inlined pra
-  // evitar import cíclico (filterBar é importado em vários lugares hot-path).
-  const dyn = Array.isArray(store.get('sectors')) ? store.get('sectors') : [];
-  const dynByName = new Map(dyn.filter(s => s?.name)
-    .map(s => [String(s.name).toLowerCase(), s]));
-  const out = [];
-  for (const s of dyn.slice().sort((a, b) => (a.order ?? 999) - (b.order ?? 999))) {
-    if (s.active !== false) out.push(s.name);
-  }
-  for (const name of REQUESTING_AREAS) {
-    if (!dynByName.has(name.toLowerCase())) out.push(name);
-  }
-  const allSectors = out;
   if (visible === null) return allSectors;
   if (visible.length === 0) return allSectors;
-  return visible;
+  // Filtra pela visibilidade do user (head/member). Mantém só os que o
+  // user tem permissão de ver, MAS preserva a ordem canônica de
+  // getActiveSectors (priorizando dinâmicos sobre legados).
+  const allowed = new Set(visible.map(s => String(s).toLowerCase()));
+  return allSectors.filter(s => allowed.has(String(s).toLowerCase()));
 }
 
 /* Helper: select hidden + picker button — mantem data-filter pro bind. */
@@ -159,7 +245,13 @@ function pickerField(filterKey, selectId, opts, selectedOption, emptyLabel) {
 /**
  * renderFilterBar({ show, state, taskTypes, projects, users })
  * Returns HTML string. show = array of keys to include.
- * Available keys: 'sector', 'type', 'project', 'area', 'assignee', 'observer', 'status', 'meta'
+ * Available keys: 'sector', 'type', 'project', 'area', 'squad', 'assignee', 'observer', 'status', 'meta'
+ *
+ * Notas:
+ *  - 'area' é LEGADO (sinônimo de 'sector' em alguns docs antigos). v4.49.51+
+ *    removido do default dos views Steps/Calendar/Timeline; mantido aqui pra
+ *    código existente que ainda passa.
+ *  - 'squad' (v4.49.51+) filtra por task.workspaceId. Opção '__none__' = sem squad.
  */
 export function renderFilterBar(opts = {}) {
   const {
@@ -209,7 +301,11 @@ export function renderFilterBar(opts = {}) {
   }
   if (show.includes('area')) {
     const o = areaOpts();
-    blocks.push(pickerField('area', 'fb-area', o, findIn(o, state.area), 'Todas as áreas'));
+    blocks.push(pickerField('area', 'fb-area', o, findIn(o, state.area), 'Todos os setores solicitantes'));
+  }
+  if (show.includes('squad')) {
+    const o = squadOpts();
+    blocks.push(pickerField('squad', 'fb-squad', o, findIn(o, state.squad), 'Todos os squads'));
   }
   if (show.includes('assignee') && users.length) {
     // 4.21+ — assignee passou a aceitar multi-select. state.assignee agora pode
@@ -286,6 +382,7 @@ function buildOptionsForKey(key, opts) {
     }
     case 'project':  return projectOpts(projects);
     case 'area':     return areaOpts();
+    case 'squad':    return squadOpts();
     case 'assignee': return assigneeOpts(users);
     case 'observer': return observerOpts(users);
     case 'status':   return statusOpts();
@@ -298,7 +395,8 @@ const EMPTY_LABELS = {
   sector:   'Todos os setores',
   type:     'Todos os tipos',
   project:  'Todos os projetos',
-  area:     'Todas as áreas',
+  area:     'Todos os setores solicitantes',
+  squad:    'Todos os squads',
   assignee: 'Todos os responsáveis',
   observer: '👁 Todos os observadores',
   status:   'Todos os status',
@@ -331,7 +429,8 @@ export function bindFilterBar(container, state, onChange, ctx = {}) {
 
   // 2) Wire optionPicker em cada select escondido (single-select)
   // assignee é tratado separadamente abaixo (multi-select desde 4.21).
-  ['sector','type','project','area','status','meta'].forEach(key => {
+  // v4.49.55+ squad usa groups (agrupado por setor); demais usam options flat.
+  ['sector','type','project','area','squad','status','meta'].forEach(key => {
     const sel = container.querySelector(`[data-filter="${key}"]`);
     if (!sel) return;
     const selectId = sel.id;
@@ -339,11 +438,17 @@ export function bindFilterBar(container, state, onChange, ctx = {}) {
     bindOptionPicker({
       btnId: selectId + '-btn',
       selectId,
-      buildConfig: () => ({
-        options: buildOpts(),
-        empty: { id: '', label: EMPTY_LABELS[key] },
-        searchPlaceholder: 'Buscar…',
-      }),
+      buildConfig: () => key === 'squad'
+        ? ({
+            groups: squadOptsGrouped(),
+            empty: { id: '', label: EMPTY_LABELS[key] },
+            searchPlaceholder: 'Buscar squad…',
+          })
+        : ({
+            options: buildOpts(),
+            empty: { id: '', label: EMPTY_LABELS[key] },
+            searchPlaceholder: 'Buscar…',
+          }),
       findSelected: (id) => buildOpts().find(o => o.id === id) || null,
       emptyLabel: EMPTY_LABELS[key],
     });
@@ -395,9 +500,17 @@ export function bindFilterBar(container, state, onChange, ctx = {}) {
 export function buildFilterFn(state = {}) {
   return (task) => {
     if (state.sector   && task.sector          !== state.sector)                  return false;
-    if (state.type     && task.typeId          !== state.type)                    return false;
+    // 4.49.17+ Sentinel TYPE_NONE_SENTINEL filtra tarefas SEM typeId.
+    // task.type (legacy string) também conta — só "sem tipo" se ambos vazios.
+    if (state.type === TYPE_NONE_SENTINEL) {
+      if (task.typeId || task.type) return false;
+    } else if (state.type     && task.typeId          !== state.type)             return false;
     if (state.project  && task.projectId       !== state.project)                 return false;
     if (state.area     && task.requestingArea  !== state.area)                    return false;
+    // v4.49.51+ Squad filter (workspaceId). '__none__' = tasks sem squad.
+    if (state.squad === '__none__') {
+      if (task.workspaceId) return false;
+    } else if (state.squad && task.workspaceId !== state.squad)                   return false;
     // 4.40.25+ COMBINAÇÃO assignee + observer: UNION quando ambos têm
     // seleção (task passa se assignee match OR observer match). Quando só
     // um dos dois tem seleção, comporta como filtro único (mesma semântica

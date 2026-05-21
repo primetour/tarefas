@@ -1,0 +1,95 @@
+name: Backfill MC Image URLs (one-off)
+
+# v4.49.30+ Refetch HTML do SFMC pra docs sem imageUrls.
+# v4.49.57+ Detecta schema legado (array de strings) e atualiza
+#           automaticamente pra novo schema { url, alt, link, position }.
+#           Flag --force pra re-extrair TUDO (após mudança de extractor).
+
+# v4.49.44+ Least-privilege + concurrency lock + inputs como env vars
+# (defesa contra shell injection).
+permissions:
+  contents: read
+
+concurrency:
+  group: backfill-image-urls
+  cancel-in-progress: false
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry:
+        description: 'Dry-run (não escreve)'
+        required: false
+        type: boolean
+        default: false
+      force:
+        description: 'Force — re-extrai TODOS os docs (usado quando o extractor muda)'
+        required: false
+        type: boolean
+        default: false
+      bu:
+        description: 'BU específica (vazio = todas)'
+        required: false
+        type: choice
+        options: ['', 'primetour', 'btg-partners', 'btg-ultrablue', 'centurion', 'pts']
+        default: ''
+      limit:
+        description: 'Limite de assets (vazio = todos)'
+        required: false
+        type: string
+        default: ''
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install node-fetch firebase-admin
+        working-directory: scripts
+
+      - name: Run backfill
+        env:
+          MC_CLIENT_ID:          ${{ secrets.MC_CLIENT_ID }}
+          MC_CLIENT_SECRET:      ${{ secrets.MC_CLIENT_SECRET }}
+          MC_AUTH_URL:           ${{ secrets.MC_AUTH_URL }}
+          MC_REST_URL:           ${{ secrets.MC_REST_URL }}
+          FIREBASE_PROJECT_ID:   ${{ secrets.FIREBASE_PROJECT_ID }}
+          FIREBASE_CLIENT_EMAIL: ${{ secrets.FIREBASE_CLIENT_EMAIL }}
+          FIREBASE_PRIVATE_KEY:  ${{ secrets.FIREBASE_PRIVATE_KEY }}
+          # v4.49.57+ Inputs via env vars (não interpoladas direto em bash).
+          INPUT_DRY:   ${{ github.event.inputs.dry }}
+          INPUT_FORCE: ${{ github.event.inputs.force }}
+          INPUT_BU:    ${{ github.event.inputs.bu }}
+          INPUT_LIMIT: ${{ github.event.inputs.limit }}
+        run: |
+          set -euo pipefail
+          args=()
+          if [ "${INPUT_DRY:-}"   = "true" ]; then args+=(--dry); fi
+          if [ "${INPUT_FORCE:-}" = "true" ]; then args+=(--force); fi
+          # BU é type:choice — valor confiável de allowlist, mas validamos por defesa.
+          if [ -n "${INPUT_BU:-}" ]; then
+            case "$INPUT_BU" in
+              primetour|btg-partners|btg-ultrablue|centurion|pts)
+                args+=(--bu="$INPUT_BU") ;;
+              *) echo "❌ BU inválida: $INPUT_BU"; exit 1 ;;
+            esac
+          fi
+          # Limit precisa ser dígitos (defesa contra injection).
+          if [ -n "${INPUT_LIMIT:-}" ]; then
+            if [[ ! "$INPUT_LIMIT" =~ ^[0-9]+$ ]]; then
+              echo "❌ limit deve ser numérico: $INPUT_LIMIT"; exit 1
+            fi
+            args+=(--limit="$INPUT_LIMIT")
+          fi
+          echo "Running: node backfill-image-urls.js ${args[@]}"
+          node backfill-image-urls.js "${args[@]}"
+        working-directory: scripts

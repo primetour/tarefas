@@ -377,6 +377,82 @@ export function initAuthObserver(onReady) {
           return;
         }
 
+        // ── 4.48.4+ Lingering pending cleanup (defesa em profundidade) ──
+        //
+        // Por que: a consolidação no 1º login (linhas 286-290) podia
+        // falhar SILENCIOSAMENTE se a regra Firestore `allow delete:
+        // if isAdmin()` bloqueasse a deleção (user `member` não passa).
+        // Resultado em prod: Bruno Spiguel tinha pending_* + users/{uid}
+        // simultaneamente, gerando duplicidade no listing de Users.
+        //
+        // Esta rotina RODA EM TODO LOGIN (não só o 1º) e:
+        //   1. Procura outros docs com mesmo email (excluindo o uid atual)
+        //   2. Re-binda workspaces que ainda apontam pro id antigo
+        //   3. Deleta os docs antigos
+        //
+        // Combinado com a carve-out 4.48.4+ em firestore.rules (self-delete
+        // de pending_* por email match), agora user consegue limpar o
+        // próprio fantasma sem precisar de admin. Idempotente — se nada
+        // foi encontrado, faz noop. Roda em background pra não atrasar o
+        // boot (não-bloqueante).
+        (async () => {
+          try {
+            const userEmail = (profile.email || firebaseUser.email || '').toLowerCase();
+            if (!userEmail) return;
+            const dupQ = query(collection(db, 'users'), where('email', '==', userEmail));
+            const dupSnap = await getDocs(dupQ);
+            const stragglers = dupSnap.docs
+              .map(d => ({ ref: d.ref, id: d.id, ...d.data() }))
+              .filter(d => d.id !== firebaseUser.uid);
+            if (stragglers.length === 0) return;
+
+            const newUid = firebaseUser.uid;
+            // Re-binda workspaces (members + adminIds) dos ids antigos pro UID atual
+            try {
+              const fb = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+              for (const old of stragglers) {
+                const wsQ = query(collection(db, 'workspaces'),
+                  where('members', 'array-contains', old.id));
+                const wsSnap = await getDocs(wsQ);
+                await Promise.all(wsSnap.docs.map(async (wsDoc) => {
+                  const data = wsDoc.data();
+                  await updateDoc(wsDoc.ref, { members: fb.arrayRemove(old.id) }).catch(() => {});
+                  if (!(data.members || []).includes(newUid)) {
+                    await updateDoc(wsDoc.ref, { members: fb.arrayUnion(newUid) }).catch(() => {});
+                  }
+                  if ((data.adminIds || []).includes(old.id)) {
+                    await updateDoc(wsDoc.ref, { adminIds: fb.arrayRemove(old.id) }).catch(() => {});
+                    if (!(data.adminIds || []).includes(newUid)) {
+                      await updateDoc(wsDoc.ref, { adminIds: fb.arrayUnion(newUid) }).catch(() => {});
+                    }
+                  }
+                }));
+                if (wsSnap.size > 0) {
+                  console.log(`[Auth cleanup] Re-vinculou ${wsSnap.size} squad(s) de ${old.id} → ${newUid}`);
+                }
+              }
+            } catch (rebindErr) {
+              console.warn('[Auth cleanup] Re-bind de squads falhou:', rebindErr.message);
+            }
+
+            // Deleta os stragglers. Pra pending_*, a rule 4.48.4+ permite
+            // self-delete via email match. Pra docs reais antigos (UID antigo),
+            // user comum não consegue — só admin. Erros são logados pra
+            // visibilidade (antes era .catch silencioso → duplicate stuck).
+            for (const old of stragglers) {
+              try {
+                await deleteDoc(old.ref);
+                console.log(`[Auth cleanup] Doc ghost deletado: ${old.id}`);
+              } catch (delErr) {
+                console.warn(`[Auth cleanup] Falha ao deletar ${old.id}:`, delErr.message);
+              }
+            }
+          } catch (cleanupErr) {
+            // Não-bloqueante — falha silenciosa não impede login
+            console.warn('[Auth cleanup] Falhou:', cleanupErr.message);
+          }
+        })();
+
         // Inicializar roles padrão se necessário (silencioso)
         initSystemRoles().catch(() => {});
 

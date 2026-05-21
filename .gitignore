@@ -41,3 +41,4 @@ logs/
 # Claude local settings
 .claude/
 SOUND EFFECTS/
+scripts/package-lock.json

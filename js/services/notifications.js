@@ -143,6 +143,67 @@ export function isSystemSecurityType(type) {
   return SYSTEM_SECURITY_TYPES.has(type);
 }
 
+/* ─── 4.49+ Deep-link helper ─────────────────────────────────
+ *
+ * Resolve a rota navegável final pra uma notificação. Antes:
+ *   - notify({ route: 'tasks' })  → click só ia pra lista /#tasks
+ *     (user precisa achar a task manualmente)
+ *   - notify() sem route          → click só marca como lida (sem nav)
+ *
+ * Agora: deriveRouteForEntity(entityType, entityId) → caminho profundo
+ * que cai DIRETO na entidade (abre modal, scroll-into-view, ou rota
+ * específica do editor).
+ *
+ * Convenção: cada page consome seu próprio query param do hash
+ * (ex: tasks.js lê `?taskId=X` pra openTaskModal direto). Mantém
+ * URL como source-of-truth e permite share/copy do deep-link.
+ */
+export function deriveRouteForEntity(entityType, entityId, fallbackRoute = null) {
+  if (!entityType) return fallbackRoute || null;
+  // Se o fallbackRoute já é específico (tem `?` ou referencia uma rota
+  // diferente da padrão), respeita ele — caller já fez o trabalho.
+  if (fallbackRoute && fallbackRoute.includes('?')) return fallbackRoute;
+
+  const id = entityId ? String(entityId) : '';
+
+  switch (entityType) {
+    case 'task':
+    case 'subtask':
+      return id ? `tasks?taskId=${encodeURIComponent(id)}` : 'tasks';
+    case 'project':
+      return id ? `projects?id=${encodeURIComponent(id)}` : 'projects';
+    case 'portal_tip':
+    case 'tip':
+      return id ? `portal-tips?tipId=${encodeURIComponent(id)}` : 'portal-tips';
+    case 'roteiro':
+      return id ? `roteiro-editor?id=${encodeURIComponent(id)}` : 'roteiros';
+    case 'goal':
+    case 'meta':
+      return id ? `goals?id=${encodeURIComponent(id)}` : 'goals';
+    case 'csat':
+    case 'csat_survey':
+      return id ? `csat?id=${encodeURIComponent(id)}` : 'csat';
+    case 'request':
+      return id ? `requests?id=${encodeURIComponent(id)}` : 'requests';
+    case 'workspace':
+    case 'squad':
+      return id ? `squads?id=${encodeURIComponent(id)}` : 'squads';
+    case 'user':
+      // 'user.new_sso_entry' → admin precisa ver o user pra atribuir squad/role
+      return 'users';
+    case 'feedback':
+      return id ? `feedbacks?id=${encodeURIComponent(id)}` : 'feedbacks';
+    case 'content_calendar':
+      return 'content-calendar';
+    case 'portal_areas':
+      return 'portal-areas';
+    case 'agent':
+      return 'ai-hub';
+    default:
+      return fallbackRoute || null;
+  }
+}
+
 /* ════════════════════════════════════════════════════════════
    notify() — Central gateway
    Creates one notification per recipient (skips the actor)

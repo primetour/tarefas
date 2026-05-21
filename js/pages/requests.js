@@ -341,7 +341,7 @@ async function openRequestDetail(req) {
             <div style="font-size:0.8125rem;color:var(--text-muted);">${esc(req.requesterEmail)}</div>
           </div>
           <div>
-            <div style="font-size:0.6875rem;color:var(--text-muted);margin-bottom:2px;">Área solicitante</div>
+            <div style="font-size:0.6875rem;color:var(--text-muted);margin-bottom:2px;">Setor solicitante</div>
             <div style="font-size:0.875rem;">${esc(req.requestingArea||'—')}</div>
             <div style="font-size:0.75rem;color:var(--text-muted);">Recebido: ${fmtDate(req.createdAt)}</div>
           </div>
@@ -452,7 +452,7 @@ async function openRequestDetail(req) {
       }] : []),
 
       // Recusar — only when pending
-      ...(req.status === 'pending' ? [{
+      ...((req.status === 'pending' && (store.isMaster() || store.can('requests_manage'))) ? [{
         label: '✕ Recusar', class: 'btn-secondary btn-sm', closeOnClick: false,
         style: 'color:var(--color-danger);border-color:var(--color-danger);',
         onClick: async (_, { close }) => {
@@ -480,7 +480,7 @@ async function openRequestDetail(req) {
       }] : []),
 
       // Converter com IA — only when pending
-      ...(req.status === 'pending' ? [{
+      ...((req.status === 'pending' && (store.isMaster() || store.can('requests_manage'))) ? [{
         label: '✨ Converter com IA', class: 'btn-secondary', closeOnClick: false,
         style: 'color:var(--brand-gold);border-color:var(--brand-gold);',
         onClick: async (btn, { close }) => {
@@ -543,7 +543,7 @@ async function openRequestDetail(req) {
       }] : []),
 
       // Converter em tarefa — only when pending
-      ...(req.status === 'pending' ? [{
+      ...((req.status === 'pending' && (store.isMaster() || store.can('requests_manage'))) ? [{
         label: '✓ Converter em tarefa', class: 'btn-primary', closeOnClick: false,
         onClick: async (_, { close }) => {
           const wsId = document.getElementById('req-workspace')?.value || null;
@@ -557,7 +557,7 @@ async function openRequestDetail(req) {
             title: 'Título', description: 'Descrição', desiredDate: 'Data',
             urgency: 'Urgência', outOfCalendar: 'Fora do calendário',
             variationId: 'Variação', variationName: 'Variação',
-            nucleo: 'Núcleo', sector: 'Setor', requestingArea: 'Área solicitante',
+            nucleo: 'Squad', sector: 'Setor', requestingArea: 'Setor solicitante',
           };
           const history = Array.isArray(req.editHistory) ? req.editHistory : [];
           const hasEdits = history.length > 0;

@@ -41,7 +41,13 @@ export async function renderSystemFeedback(container) {
     <div class="page-header">
       <div class="page-header-left">
         <h1 class="page-title">Feedbacks do Sistema</h1>
-        <p class="page-subtitle">Bugs, sugestões, dúvidas e elogios enviados pelos usuários</p>
+        <p class="page-subtitle">
+          Bugs, sugestões, dúvidas e elogios enviados pelos usuários sobre o app
+          <span style="display:inline-block;margin-left:6px;font-size:0.6875rem;color:var(--text-muted);">
+            · Avaliações 1:1 de pessoas? Use
+            <a href="#feedbacks" style="color:var(--brand-gold);text-decoration:underline;">Feedbacks 1:1</a>
+          </span>
+        </p>
       </div>
       <div class="page-header-actions">
         <button class="btn btn-secondary btn-sm" id="sf-refresh">↻ Atualizar</button>

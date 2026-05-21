@@ -49,6 +49,28 @@ service cloud.firestore {
       return isAdmin() || isManager();
     }
 
+    // v4.49.50+ Helper genérico de permission granular (espelha store.can()):
+    // master → sempre true; override per-user (userDoc.permissionOverrides[perm])
+    // tem prioridade; senão lê role base (roles/{roleId}.permissions[perm]).
+    //
+    // v4.49.58+ FIX: usa .get(key, default) em vez de [key] direto. Acesso
+    // direto em map ausente lançava runtime error em rules, derrubando
+    // toda a expressão (rule retornava false mesmo quando role tinha perm).
+    // Esse era o bug do analista que "não conseguia criar plataforma/tipo
+    // /categoria" mesmo com a permission ligada no role — sem o
+    // permissionOverrides setado, o branch de role base nunca executava.
+    function hasPermission(perm) {
+      return isMaster() || (isAuth() && (
+        // Override per-user. .get aceita map ausente → retorna 'undef'.
+        // Só `== true` se tiver explicit true; undef ou false → cai no role.
+        userDoc().get('permissionOverrides', {}).get(perm, false) == true ||
+        // Role base. exists() defende contra roleId inválido.
+        (exists(/databases/$(database)/documents/roles/$(userDoc().roleId)) &&
+         get(/databases/$(database)/documents/roles/$(userDoc().roleId)).data
+           .get('permissions', {}).get(perm, false) == true)
+      ));
+    }
+
     // ── Usuários ──────────────────────────────────────────────
     // SECURITY NOTE (audit 2026-05-15): read aberto pra auth users por
     // necessidade operacional — UI exibe nome+avatar+role+sector em centenas
@@ -72,7 +94,23 @@ service cloud.firestore {
         !request.resource.data.diff(resource.data).affectedKeys()
           .hasAny(['role','isMaster','roleId','visibleSectors','permissions','active','sector','nucleos','nucleo'])
       );
-      allow delete: if isAdmin();
+      // 4.48.4+ Self-cleanup de doc pending_* via email match.
+      //
+      // Por que: quando admin pré-cadastra um SSO user, cria-se um doc
+      // 'users/pending_<email_slug>' (placeholder). No 1º login do user,
+      // o auto-provision em auth.js cria 'users/{uid}' e tenta deletar
+      // o pending. Como o user é 'member' (ainda não admin), a rule
+      // antiga `allow delete: if isAdmin()` bloqueava → pending ficava
+      // preso pra sempre, gerando duplicidade no listing de Users.
+      //
+      // Esta carve-out permite QUE o próprio dono (verificado pelo email
+      // do auth token) limpe seu pending. Seguro: só o legitimo holder
+      // do email consegue passar, ninguém pode deletar pending alheio.
+      allow delete: if isAdmin() || (
+        userId.matches('^pending_.*') &&
+        isAuth() &&
+        resource.data.email == request.auth.token.email
+      );
     }
 
     // ── Projetos ──────────────────────────────────────────────
@@ -195,23 +233,25 @@ service cloud.firestore {
     // (Post, Reel, ...). Substituem PLATFORM_OPTIONS/CONTENT_TYPE_OPTIONS
     // hardcoded — agora editáveis via /content-config.
     // Leitura aberta (dropdowns precisam carregar mesmo pra users sem
-    // permissão de admin); escrita só admin; delete só master.
+    // permissão de admin); escrita: admin OU permission granular
+    // content_calendar_meta_manage (v4.49.50+ liberou pra analista/coord
+    // quando admin marcar a perm no role ou override); delete só master.
     match /content_platforms/{id} {
       allow read:   if isAuth();
-      allow create: if isAdmin();
-      allow update: if isAdmin();
+      allow create: if isAdmin() || hasPermission('content_calendar_meta_manage');
+      allow update: if isAdmin() || hasPermission('content_calendar_meta_manage');
       allow delete: if isMaster();
     }
     match /content_contents/{id} {
       allow read:   if isAuth();
-      allow create: if isAdmin();
-      allow update: if isAdmin();
+      allow create: if isAdmin() || hasPermission('content_calendar_meta_manage');
+      allow update: if isAdmin() || hasPermission('content_calendar_meta_manage');
       allow delete: if isMaster();
     }
     match /content_categories/{id} {
       allow read:   if isAuth();
-      allow create: if isAdmin();
-      allow update: if isAdmin();
+      allow create: if isAdmin() || hasPermission('content_calendar_meta_manage');
+      allow update: if isAdmin() || hasPermission('content_calendar_meta_manage');
       allow delete: if isMaster();
     }
 
@@ -483,10 +523,30 @@ service cloud.firestore {
 
     // ── Performance de Newsletters (Marketing Cloud) ──────────
     // Read: qualquer usuário autenticado (analytics interno)
-    // Write: GitHub Actions (sem auth) E master (analise manual / re-extracao)
+    // Write: GitHub Actions (Admin SDK bypassa) E master (analise manual / re-extracao /
+    //        veredito humano em divergências shadow mode)
     match /mc_performance/{docId} {
       allow read:  if isAuth();
       allow write: if isMaster();
+    }
+
+    // ── NL Classifier — Shadow Mode (v4.49.41+) ───────────────
+    // Audit collections do agente nl-content-classifier. Gravadas
+    // EXCLUSIVAMENTE via Admin SDK (scripts/classify-content-ai.js,
+    // promote-ai-to-prod.js, rollback-ai-classification.js).
+    // Cliente: read-only pra renderizar sparkline e auditoria.
+    // Defesa contra adulteração: write false (Admin SDK bypassa).
+    match /nl_ai_classifier_runs/{docId} {
+      allow read:               if isAuth();
+      allow create, update, delete: if false; // append-only via Admin SDK
+    }
+    match /nl_classifier_promotions/{docId} {
+      allow read:               if isAuth() && isAdmin();
+      allow create, update, delete: if false; // append-only via Admin SDK
+    }
+    match /nl_classifier_rollbacks/{docId} {
+      allow read:               if isAuth() && isAdmin();
+      allow create, update, delete: if false; // append-only via Admin SDK
     }
 
     // ── Cache de extração de imagens (Vision API) ─────────────
