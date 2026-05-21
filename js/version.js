@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 72,
-  build: '20260521-portal-import-overwrite-existing-tip-warn',
+  patch: 73,
+  build: '20260521-portal-import-docx-ext-dropdown-hier',
 };
 
 /** "1.2.0" */

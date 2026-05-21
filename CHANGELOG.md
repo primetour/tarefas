@@ -6,6 +6,29 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.73+20260521-portal-import-docx-ext-dropdown-hier] — 2026-05-21
+
+Release **PATCH** — 2 fixes encontrados validando o fluxo de
+overwrite em produção.
+
+**Bug 1 — `parseFileName` não tirava .docx**: regex
+`/\.[pP][dD][fF]$/` só removia `.pdf`. Arquivos DOCX ficavam com
+".docx" no nome da cidade ("Cape Town.docx"), não batiam em
+nenhum destino cadastrado. **Fix**: regex passou a aceitar `pdf`,
+`doc`, `docx`, `xls`, `xlsx`.
+
+**Bug 2 — dropdown plano de destinos** (Renê): "o campo lista de
+destinos para escolher manualmente precisa estar melhor dividida
+(separada por continente e país)". Lista plana com 59+ destinos
+era ruim de varrer. **Fix**: usar `<optgroup label="<continente>">`
+agrupando destinos por continente; dentro de cada optgroup,
+ordenado por país → cidade. Formato da option mudou de
+"Cidade · País · Continente" para "País — Cidade".
+
+**Validação**: `node --check` ok.
+
+---
+
 ## [4.49.72+20260521-portal-import-overwrite-existing-tip-warn] — 2026-05-21
 
 Release **PATCH** — Portal de Dicas/Importação: detecta tips
