@@ -41,7 +41,35 @@ produção (todos hoje protegidos por trava de hostname — só atuam em staging
 |---|---|---|
 | 1 | `firebase.json` ganhou bloco `hosting` | Não levar esse trecho para `main` — produção não usa Firebase Hosting. Risco zero. |
 | 2 | Modo demonstração (login bypass) em `js/pages/login.js` | Remover num commit único antes do merge. |
-| 3 | Plugs de produção (IA, upload de imagem, solicitações) | Código preparável agora; só os deploys das Cloud Functions / regras acontecem no cutover. |
+| 3 | Plugs de produção (IA, upload de imagem, busca de fotos, solicitações) | Código preparável agora; só os deploys das Cloud Functions / regras acontecem no cutover. |
+
+## Plugs de produção a religar no cutover
+
+Várias features rodam em modo staging (mock / desativadas) porque dependem
+de Cloud Functions com CORS e autenticação restritos ao projeto de
+produção. No cutover, cada uma precisa de um pequeno ajuste de código +
+redeploy:
+
+| Plug | O que fazer | Onde |
+|---|---|---|
+| **IA — sugerir/revisar** | Adicionar os 3 domínios BTG ao CORS da função `callLLM` + preencher `PROD_CONFIG` | `functions/index.js`, `btg/shared/btg-ai.js` |
+| **Upload de imagem (R2)** | Adicionar os 3 domínios BTG ao CORS da função `getR2UploadUrl` | `functions/index.js` |
+| **Busca de fotos (Unsplash)** | Adicionar os 3 domínios BTG ao CORS da função `fetchDestinationPhoto` | `functions/index.js` |
+| **Solicitações de newsletter** | Apontar a gravação para a coleção `requests` (hoje `btg_requests_dev`) e remover o gate de hostname | `btg/shared/btg-requests-service.js`, `js/services/requests.js` |
+
+As 3 primeiras compartilham o mesmo padrão: basta acrescentar os domínios
+(`partners` / `ultrablue` / `operadora` `.primetour.com.br`) à lista `cors`
+da função e fazer um redeploy de funções no projeto de produção.
+
+## Melhoria no cutover: "Setor solicitante" via SSO
+
+Hoje a solicitação de newsletter grava o **"Setor solicitante"** fixo como
+`'BTG Pactual'` — não há login nem usuários no staging. Com o SSO ativo em
+produção, esse campo deve passar a vir do **perfil do colaborador logado**
+(coleção `users`, campo `sector`).
+
+O **"Setor responsável"** (Marketing e Comunicação) continua fixo — é o
+*destino* da solicitação, não a origem.
 
 ## Decisões tomadas
 
