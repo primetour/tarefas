@@ -515,14 +515,23 @@ function segLabel(key) {
  *  de um bloco (heurística pra dividir items quando não há blank line):
  *   - curta (≤ 60 chars)
  *   - sem ponto final / interrogação / exclamação
- *   - NÃO é endereço/telefone/site/link (regex prefix)
+ *   - NÃO é endereço/telefone/site/link/etc (qualquer CONTACT_PREFIX completo)
  *   - começa com maiúscula
- *   - tem ≥ 1 letra */
+ *   - tem ≥ 1 letra
+ *
+ *  v4.49.68+ Usa CONTACT_PREFIXES completos (incluindo "Telefone:",
+ *  "Endereço:", "Site:") em vez de regex curto que só pegava "Tel:". */
 function _looksLikeItemTitle(line) {
   const s = String(line || '').trim();
   if (!s || s.length > 60) return false;
   if (/[.!?]$/.test(s)) return false;
-  if (/^(?:tel\.?|endere[cç]o|site|link|hor[aá]rio|fone|whatsapp|email|e-mail|metr[oô]|valor|pre[cç]o)\s*[:.-]/i.test(s)) return false;
+  // Linhas que são prefixes de contato NUNCA são título de item.
+  if (CONTACT_PREFIXES.telefone.test(s)) return false;
+  if (CONTACT_PREFIXES.site.test(s))     return false;
+  if (CONTACT_PREFIXES.endereco.test(s)) return false;
+  if (CONTACT_PREFIXES.email.test(s))    return false;
+  // Outros padrões que NÃO são título de item
+  if (/^(?:hor[aá]rio|metr[oô]|valor|pre[cç]o|categoria|tipo|estilo)\s*[:.\-–]/i.test(s)) return false;
   if (/^https?:\/\//i.test(s)) return false;
   if (/^\+?\d/.test(s) && /\d{4,}/.test(s)) return false; // telefone/codigo
   const first = s.match(/\p{L}/u)?.[0];

@@ -6,6 +6,25 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.69+20260521-portal-import-parser-prefix-no-split] — 2026-05-21
+
+Release **PATCH** — fix: `_looksLikeItemTitle` agora exclui
+prefixes COMPLETOS de contato (não só "Tel"/"Site" curtos).
+
+**Bug encontrado validando v4.49.68**: La Sqala ficou com endereço
+mas SEM telefone. Causa: `_looksLikeItemTitle("Telefone: +212...")`
+retornava `true` (porque o regex de exclusão só pegava "Tel:"
+curto, não "Telefone:"). Resultado: `splitBlockIntoItems` quebrava
+o block do La Sqala em 2 items, e o segundo ("Telefone: +212...")
+sem descrição era filtrado fora.
+
+**Mudança**: `_looksLikeItemTitle` agora usa `CONTACT_PREFIXES`
+completo (mesma fonte de verdade do `extractContactFields`) pra
+excluir telefone/site/endereco/email + outros padrões
+(horário/metrô/valor/preço/categoria/tipo/estilo).
+
+---
+
 ## [4.49.68+20260521-portal-import-parser-contact-prefixes] — 2026-05-21
 
 Release **PATCH** — Portal de Dicas/Importação: parser reconhece
