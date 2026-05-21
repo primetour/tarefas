@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="robots" content="noindex, nofollow" />
+  <title>Sites — Gestor Primetour</title>
+  <link rel="stylesheet" href="/btg/shared/btg-base.css" />
+  <style>
+    body {
+      background: #f5f6f8;
+      min-height: 100vh;
+      font-family: 'BTGPactualSans', -apple-system, system-ui, "Segoe UI", Roboto, sans-serif;
+      color: #1f2937;
+    }
+    .wrap { max-width: 1200px; margin: 0 auto; padding: 0 24px 64px; }
+
+    .topbar {
+      display: flex; align-items: center; gap: 12px;
+      padding: 14px 0; font-size: 13px; color: #6b7280;
+    }
+    .topbar a { color: #05132a; font-weight: 600; }
+    .topbar__sep { color: #d1d5db; }
+
+    .modhero { padding: 24px 0 8px; }
+    .modhero__eyebrow {
+      font-size: 12px; font-weight: 700; letter-spacing: 0.14em;
+      text-transform: uppercase; color: #2E73D4;
+    }
+    .modhero h1 { font-size: 30px; font-weight: 300; color: #05132a; margin: 6px 0 0; }
+    .modhero p { font-size: 15px; color: #4b5563; margin: 12px 0 0; max-width: 720px; line-height: 1.55; }
+
+    .section-label {
+      font-size: 12px; font-weight: 700; letter-spacing: 0.1em;
+      text-transform: uppercase; color: #6b7280;
+      margin: 40px 0 16px;
+    }
+
+    /* ─── Grid de sites ─── */
+    .sites-grid {
+      display: grid; grid-template-columns: 1fr; gap: 20px;
+    }
+    @media (min-width: 680px) { .sites-grid { grid-template-columns: 1fr 1fr; } }
+    @media (min-width: 1000px) { .sites-grid { grid-template-columns: repeat(3, 1fr); } }
+
+    .site-card {
+      background: #fff; border: 1px solid #e5e7eb; border-radius: 10px;
+      overflow: hidden; display: flex; flex-direction: column;
+    }
+    .site-card__bar { height: 6px; }
+    .site-card__body { padding: 20px; flex: 1; }
+    .site-card__brand {
+      font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
+      text-transform: uppercase; color: #9ca3af;
+    }
+    .site-card__name { font-size: 18px; font-weight: 600; color: #05132a; margin: 4px 0 0; }
+    .site-card__meta { font-size: 13px; color: #6b7280; margin: 10px 0 0; }
+    .site-card__status {
+      display: inline-block; margin-top: 12px;
+      padding: 2px 10px; border-radius: 999px;
+      font-size: 11px; font-weight: 600;
+      background: #d1fae5; color: #065f46;
+    }
+    .site-card__actions {
+      display: flex; gap: 8px; padding: 14px 20px;
+      border-top: 1px solid #f3f4f6;
+    }
+    .btn {
+      flex: 1; text-align: center; padding: 8px 12px;
+      border-radius: 6px; font-size: 12px; font-weight: 600;
+      cursor: pointer; text-decoration: none;
+      border: 1px solid #d1d5db; background: #fff; color: #1f2937;
+    }
+    .btn--primary { background: #05132a; color: #fff; border-color: #05132a; }
+    .btn--soft { color: #9ca3af; cursor: default; }
+
+    .site-card--new {
+      border-style: dashed; align-items: center; justify-content: center;
+      padding: 32px 20px; text-align: center; color: #6b7280;
+      background: #fafafa;
+    }
+    .site-card--new .plus { font-size: 28px; color: #9ca3af; }
+    .site-card--new strong { display: block; margin-top: 8px; font-size: 14px; color: #4b5563; }
+    .site-card--new span { font-size: 12px; }
+
+    /* ─── Anatomia / blocos ─── */
+    .anatomy {
+      display: grid; grid-template-columns: 1fr; gap: 28px;
+      background: #fff; border: 1px solid #e5e7eb; border-radius: 10px;
+      padding: 28px;
+    }
+    @media (min-width: 880px) { .anatomy { grid-template-columns: 1fr 320px; } }
+    .anatomy h2 { font-size: 20px; font-weight: 300; color: #05132a; margin: 0; }
+    .anatomy p { font-size: 14px; color: #4b5563; line-height: 1.6; margin: 12px 0 0; }
+    .anatomy ul { margin: 14px 0 0; padding-left: 18px; font-size: 14px; color: #4b5563; line-height: 1.7; }
+
+    .blockstack {
+      background: #f5f6f8; border: 1px solid #e5e7eb; border-radius: 8px;
+      padding: 14px;
+    }
+    .blockstack__title {
+      font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
+      text-transform: uppercase; color: #9ca3af; margin-bottom: 10px;
+    }
+    .block {
+      background: #fff; border: 1px solid #e5e7eb; border-radius: 6px;
+      padding: 10px 12px; margin-bottom: 8px;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .block:last-child { margin-bottom: 0; }
+    .block__dot { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+    .block__name { font-size: 13px; font-weight: 600; color: #1f2937; }
+    .block__type { font-size: 11px; color: #9ca3af; margin-left: auto; }
+
+    /* ─── Biblioteca de blocos ─── */
+    .lib {
+      display: flex; flex-wrap: wrap; gap: 10px;
+    }
+    .lib__chip {
+      background: #fff; border: 1px solid #e5e7eb; border-radius: 999px;
+      padding: 8px 14px; font-size: 13px; color: #374151;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .lib__chip .d { width: 8px; height: 8px; border-radius: 2px; }
+
+    .note {
+      margin-top: 16px; padding: 12px 14px;
+      background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px;
+      font-size: 13px; color: #1e40af; line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="topbar">
+      <a href="/">← Voltar ao Gestor</a>
+      <span class="topbar__sep">/</span>
+      <span>Módulo: Sites</span>
+    </div>
+
+    <div class="modhero">
+      <p class="modhero__eyebrow">Módulo do Gestor</p>
+      <h1>Sites &amp; Landing Pages</h1>
+      <p>
+        Central de gestão dos sites e landing pages da Primetour. Cada site é
+        montado a partir de <strong>blocos reutilizáveis</strong> — o mesmo bloco
+        (Hero, Intro, Vantagens, etc.) pode ser usado em qualquer site ou
+        landing page, com conteúdo próprio. É o construtor de páginas do Gestor.
+      </p>
+    </div>
+
+    <div class="section-label">Sites publicados</div>
+    <div class="sites-grid">
+      <!-- Operadora -->
+      <div class="site-card">
+        <div class="site-card__bar" style="background:#1a2b4a;"></div>
+        <div class="site-card__body">
+          <p class="site-card__brand">Primetour</p>
+          <p class="site-card__name">Operadora</p>
+          <p class="site-card__meta">6 páginas · home, cruzeiros e 4 de viagens</p>
+          <span class="site-card__status">Publicado</span>
+        </div>
+        <div class="site-card__actions">
+          <a class="btn btn--primary" href="/btg/operadora/" target="_blank" rel="noopener">Ver site</a>
+          <span class="btn btn--soft" title="Editor visual de blocos — em desenvolvimento">Abrir editor</span>
+        </div>
+      </div>
+
+      <!-- Partners -->
+      <div class="site-card">
+        <div class="site-card__bar" style="background:#05132a;"></div>
+        <div class="site-card__body">
+          <p class="site-card__brand">BTG Pactual</p>
+          <p class="site-card__name">Cartão Partners</p>
+          <p class="site-card__meta">10 páginas · home, viagens, concierge, benefícios</p>
+          <span class="site-card__status">Publicado</span>
+        </div>
+        <div class="site-card__actions">
+          <a class="btn btn--primary" href="/btg/partners/" target="_blank" rel="noopener">Ver site</a>
+          <span class="btn btn--soft" title="Editor visual de blocos — em desenvolvimento">Abrir editor</span>
+        </div>
+      </div>
+
+      <!-- Ultrablue -->
+      <div class="site-card">
+        <div class="site-card__bar" style="background:#0b2859;"></div>
+        <div class="site-card__body">
+          <p class="site-card__brand">BTG Pactual</p>
+          <p class="site-card__name">Cartão Ultrablue</p>
+          <p class="site-card__meta">10 páginas · home, viagens, concierge, benefícios</p>
+          <span class="site-card__status">Publicado</span>
+        </div>
+        <div class="site-card__actions">
+          <a class="btn btn--primary" href="/btg/ultrablue/" target="_blank" rel="noopener">Ver site</a>
+          <span class="btn btn--soft" title="Editor visual de blocos — em desenvolvimento">Abrir editor</span>
+        </div>
+      </div>
+
+      <!-- Novo site (visão) -->
+      <div class="site-card site-card--new">
+        <span class="plus">+</span>
+        <strong>Novo site</strong>
+        <span>Criar a partir de blocos — em desenvolvimento</span>
+      </div>
+    </div>
+
+    <div class="section-label">Anatomia de um site</div>
+    <div class="anatomy">
+      <div>
+        <h2>Cada página é uma pilha de blocos</h2>
+        <p>
+          No módulo de Sites, uma página não é um arquivo solto — é uma
+          sequência de blocos empilhados. Cada bloco tem um tipo (Hero, Intro,
+          Grid de ofertas…) e seu próprio conteúdo editável.
+        </p>
+        <ul>
+          <li><strong>Reutilização:</strong> o mesmo tipo de bloco serve os 3 sites e futuras landing pages.</li>
+          <li><strong>Consistência:</strong> mudou o estilo do bloco "Closing CTA" — muda em todo lugar que ele aparece.</li>
+          <li><strong>Autonomia:</strong> a equipe de conteúdo monta páginas escolhendo e ordenando blocos, sem depender de dev.</li>
+        </ul>
+        <div class="note">
+          Visão "Elementor próprio". O <strong>"Inclui no pacote" em blocos</strong>
+          do formulário de ofertas já é a primeira instância desse padrão de
+          bloco repetível. O editor visual drag-and-drop é o próximo passo.
+        </div>
+      </div>
+
+      <div class="blockstack">
+        <p class="blockstack__title">Site Operadora · home</p>
+        <div class="block"><span class="block__dot" style="background:#1a2b4a;"></span><span class="block__name">Hero</span><span class="block__type">vídeo</span></div>
+        <div class="block"><span class="block__dot" style="background:#2E73D4;"></span><span class="block__name">Intro</span><span class="block__type">2 colunas</span></div>
+        <div class="block"><span class="block__dot" style="background:#15803d;"></span><span class="block__name">Ofertas em destaque</span><span class="block__type">grid</span></div>
+        <div class="block"><span class="block__dot" style="background:#d4a017;"></span><span class="block__name">Categorias</span><span class="block__type">2 cards</span></div>
+        <div class="block"><span class="block__dot" style="background:#0c4a6e;"></span><span class="block__name">Closing CTA</span><span class="block__type">centrado</span></div>
+        <div class="block"><span class="block__dot" style="background:#6b7280;"></span><span class="block__name">Rodapé</span><span class="block__type">fino</span></div>
+      </div>
+    </div>
+
+    <div class="section-label">Biblioteca de blocos</div>
+    <div class="lib">
+      <span class="lib__chip"><span class="d" style="background:#1a2b4a;"></span>Hero (vídeo / imagem / cor sólida)</span>
+      <span class="lib__chip"><span class="d" style="background:#2E73D4;"></span>Intro 2 colunas</span>
+      <span class="lib__chip"><span class="d" style="background:#15803d;"></span>Grid de ofertas</span>
+      <span class="lib__chip"><span class="d" style="background:#d4a017;"></span>Cards de categoria</span>
+      <span class="lib__chip"><span class="d" style="background:#7c3aed;"></span>Seção de vantagens</span>
+      <span class="lib__chip"><span class="d" style="background:#0c4a6e;"></span>Abas (tabs)</span>
+      <span class="lib__chip"><span class="d" style="background:#b91c1c;"></span>Hub de viagens</span>
+      <span class="lib__chip"><span class="d" style="background:#05132a;"></span>Closing CTA</span>
+      <span class="lib__chip"><span class="d" style="background:#6b7280;"></span>Rodapé</span>
+    </div>
+
+    <div class="section-label">Atalhos do módulo BTG</div>
+    <div class="lib">
+      <span class="lib__chip"><a href="/btg/dashboard/ofertas/">Todas as ofertas</a></span>
+      <span class="lib__chip"><a href="/btg/dashboard/nova-oferta/">Nova oferta</a></span>
+      <span class="lib__chip"><a href="/btg/dashboard/import/">Importar oferta</a></span>
+    </div>
+  </div>
+</body>
+</html>
