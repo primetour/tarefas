@@ -6,6 +6,57 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.78+20260522-roteiros-briefing-layout-alinhado] — 2026-05-22
+
+Release **PATCH** — Briefing do gerador de roteiros refeito pra
+seguir o padrão visual do próprio editor (classes `.re-*`).
+
+**Contexto** (Renê): "nao me parece que o layout do briefing esta
+alinhado ao layout do sistema... eu vou ter que falar item por
+item pra vc alterar ou vc vai fazer uma varredura geral?"
+
+**Auditoria** (agent Explore varreu portalImport.js,
+portalDashboard.js, portalDestinations.js vs roteiroEditor.js
+linha-a-linha). Achados principais aplicados:
+
+1. **Inputs**: deixaram de ter `style="padding:6px 10px;background:
+   transparent;border:..."` inline → agora usam `class="re-input"`
+   (consistente com Cliente/Viagem/Hotéis).
+2. **Selects**: idem → `class="re-select"`.
+3. **Textareas**: idem → `class="re-textarea"`.
+4. **Grid 2 colunas**: `style="display:grid;grid-template-columns:
+   1fr 1fr;gap:14px;"` → `class="re-grid-2"`.
+5. **Labels**: `<label>...` sem classe → `<label class="re-label">`
+   (uppercase, letter-spacing, mesma identidade do resto).
+6. **Asterisco obrigatório**: `<span style="color:#EF4444">*</span>`
+   → `<span class="re-required">*</span>` (classe reutilizável).
+7. **Card de destinos**: cor hardcoded `rgba(124,58,237,0.06)` /
+   `border-left:3px solid #7c3aed` → `var(--bg-surface)` +
+   `var(--brand-blue)` (segue tema).
+8. **Linhas de destino** (input cidade/país/noites + remover):
+   grid 4 colunas (`2fr 2fr 100px 36px`) com gap consistente.
+   Remover usa `.re-remove-btn` (igual ao resto do editor).
+9. **Botão "Cadastrar destino novo"**: nova variante
+   `.re-add-btn--gold` (cor brand-gold) — sem inline styles.
+10. **Bloco "Gerar com IA"**: deixou de ter gradient roxo
+    hardcoded + box-shadow inline. Agora usa
+    `.re-briefing-ai` + variantes `--ready`/`--blocked`, com
+    `var(--brand-blue)` como cor principal (alinhado ao tema do
+    editor). Botão grande usa `.re-ai-btn--primary`.
+11. **Checklist do que falta**: classe `.re-briefing-ai-checklist`
+    em vez de `style="list-style:none;..."` inline.
+12. **Responsive**: `@media (max-width:768px)` reflow específico
+    pra `.re-briefing-dest-row` (grid colapsa pra 2x2).
+
+**Resultado**: zero cores hardcoded (rgba), zero styles inline de
+input/select/textarea, tipografia/spacing 100% via classes
+existentes do editor. O Briefing agora se parece com Cliente,
+Viagem, Hotéis e demais seções.
+
+**Validação**: `node --check` ok.
+
+---
+
 ## [4.49.77+20260521-roteiros-checkbox-collect-fix] — 2026-05-21
 
 Release **PATCH** — bugfix: checkboxes não persistiam.

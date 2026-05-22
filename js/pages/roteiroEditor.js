@@ -298,6 +298,128 @@ const EDITOR_CSS = `
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
+/* ─── v4.49.78+ Briefing (Seção 0) — alinhado ao padrão do editor ─── */
+.re-required { color: #EF4444; font-weight: 700; }
+.re-briefing-intro {
+  margin: 0 0 18px;
+  padding: 12px 14px;
+  background: var(--bg-surface, #222);
+  border-left: 3px solid var(--brand-blue, #3B82F6);
+  border-radius: 6px;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  line-height: 1.55;
+}
+.re-briefing-card {
+  margin: 18px 0;
+  padding: 14px 16px;
+  background: var(--bg-surface, #222);
+  border: 1px solid var(--border-subtle, #333);
+  border-radius: 8px;
+}
+.re-briefing-card-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; margin-bottom: 12px; flex-wrap: wrap;
+}
+.re-briefing-card-title {
+  font-weight: 600; font-size: 0.9375rem; color: var(--text-primary);
+}
+.re-briefing-suggest-toggle {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 0.8125rem; color: var(--text-secondary); cursor: pointer;
+  user-select: none;
+}
+.re-briefing-suggest-toggle input { margin: 0; cursor: pointer; }
+.re-briefing-note {
+  padding: 10px 12px; border-radius: 6px;
+  font-size: 0.8125rem; color: var(--text-secondary); line-height: 1.5;
+  margin-bottom: 10px;
+}
+.re-briefing-note--accent {
+  background: var(--bg-card, #1a1a2e);
+  border: 1px dashed var(--brand-blue, #3B82F6);
+}
+.re-briefing-dest-list {
+  display: flex; flex-direction: column; gap: 8px; margin: 10px 0;
+}
+.re-briefing-empty {
+  padding: 14px; text-align: center;
+  color: var(--text-muted); font-size: 0.8125rem;
+  border: 1px dashed var(--border-subtle, #333); border-radius: 6px;
+}
+.re-briefing-dest-row {
+  display: grid; grid-template-columns: 2fr 2fr 100px 36px; gap: 8px;
+  align-items: center; padding: 8px;
+  background: var(--bg-card, #1a1a2e);
+  border: 1px solid var(--border-subtle, #333); border-radius: 6px;
+}
+.re-briefing-dest-row .re-input { padding: 6px 10px; font-size: 0.8125rem; }
+.re-briefing-card-actions {
+  display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px;
+}
+.re-briefing-hint {
+  margin-top: 8px; font-size: 0.75rem;
+  color: var(--text-muted); line-height: 1.5;
+}
+.re-add-btn--gold {
+  color: var(--brand-gold, #D4A843);
+  border-color: var(--brand-gold, #D4A843);
+}
+.re-add-btn--gold:hover {
+  background: var(--brand-gold, #D4A843); color: #fff;
+}
+.re-briefing-ai {
+  margin-top: 24px; padding: 20px;
+  border-radius: 10px; text-align: center;
+  border: 2px solid var(--border-subtle, #333);
+  background: var(--bg-surface, #222);
+}
+.re-briefing-ai--ready {
+  border-color: var(--brand-blue, #3B82F6);
+  background: var(--bg-card, #1a1a2e);
+}
+.re-briefing-ai-msg {
+  font-size: 0.9375rem; font-weight: 600;
+  color: var(--text-primary); margin-bottom: 12px;
+}
+.re-briefing-ai-meta {
+  margin-top: 10px; font-size: 0.75rem; color: var(--text-muted);
+}
+.re-briefing-ai-checklist {
+  list-style: none; padding: 0; margin: 0 0 14px;
+  font-size: 0.875rem; color: #F59E0B; line-height: 1.7;
+}
+.re-ai-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 12px 28px; font-size: 0.9375rem; font-weight: 700;
+  border-radius: 8px; cursor: pointer; transition: all 0.15s;
+  border: none; font-family: inherit;
+}
+.re-ai-btn--primary {
+  background: var(--brand-blue, #3B82F6); color: #fff;
+}
+.re-ai-btn--primary:hover {
+  background: var(--brand-blue-hover, #2563EB);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+}
+.re-ai-btn--disabled {
+  background: var(--bg-surface, #222);
+  color: var(--text-muted);
+  border: 1px solid var(--border-subtle, #333);
+  cursor: not-allowed; opacity: 0.6;
+}
+
+@media (max-width: 768px) {
+  .re-briefing-dest-row {
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto auto;
+  }
+  .re-briefing-dest-row .re-remove-btn {
+    grid-column: 2; grid-row: 1; justify-self: end;
+  }
+}
+
 @media (max-width: 768px) {
   .re-layout { grid-template-columns: 1fr; }
   .re-sidebar { position: static; display: flex; flex-wrap: wrap; gap: 4px; }
@@ -790,156 +912,134 @@ function renderBriefingSection() {
 
   return `
     <div class="re-section">
-      <div class="re-section-header">
-        <h2 class="re-section-title">🎯 Briefing</h2>
-        <span style="font-size:0.75rem;color:var(--text-muted);">contexto pro agente IA</span>
-      </div>
+      <h2 class="re-section-title">🎯 Briefing</h2>
 
-      <div style="padding:14px 16px;border-radius:8px;background:rgba(124,58,237,0.06);border-left:3px solid #7c3aed;margin-bottom:20px;font-size:0.875rem;color:var(--text-secondary);">
-        Preencha o briefing abaixo pra que o consultor de IA entenda o cliente antes de propor o roteiro.
-        O briefing é a base do raciocínio do agente — quanto mais rico, melhor o resultado.
-        Apenas <strong>perfil</strong> + <strong>tipo de viagem</strong> + <strong>datas</strong> + <strong>destinos</strong> (ou sugestão) são obrigatórios.
-      </div>
+      <p class="re-briefing-intro">
+        Preencha o briefing pra que o consultor de IA entenda o cliente antes de propor o roteiro.
+        Quanto mais rico o briefing, melhor o resultado.
+        Apenas <strong>tipo de viagem</strong>, <strong>perfil</strong>, <strong>datas</strong>
+        e <strong>destinos</strong> (ou sugestão) são obrigatórios.
+      </p>
 
-      <!-- Grid 2 colunas -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+      <!-- Tipo + Orçamento -->
+      <div class="re-grid-2">
         <div class="re-form-group">
-          <label>Tipo de viagem <span style="color:#EF4444;">*</span></label>
-          <select data-field="briefing.tipoViagem">
+          <label class="re-label">Tipo de viagem <span class="re-required">*</span></label>
+          <select class="re-select" data-field="briefing.tipoViagem">
             ${TIPOS_VIAGEM.map(t => `<option value="${esc(t.value)}" ${b.tipoViagem === t.value ? 'selected' : ''}>${esc(t.label)}</option>`).join('')}
           </select>
         </div>
         <div class="re-form-group">
-          <label>Faixa de orçamento</label>
-          <select data-field="briefing.orcamentoFaixa">
+          <label class="re-label">Faixa de orçamento</label>
+          <select class="re-select" data-field="briefing.orcamentoFaixa">
             ${ORCAMENTO_FAIXAS.map(o => `<option value="${esc(o.value)}" ${b.orcamentoFaixa === o.value ? 'selected' : ''}>${esc(o.label)}</option>`).join('')}
           </select>
         </div>
       </div>
 
-      <div class="re-form-group" style="margin-top:14px;">
-        <label>Perfil dos viajantes <span style="color:#EF4444;">*</span></label>
-        <textarea data-field="briefing.perfilViajantes" rows="3"
-          placeholder="Ex: Casal 55-60, brasileiros, viajantes experientes (já fizeram Europa 3x). Apreciam vinhos, arte e gastronomia. Sem restrições físicas."
-          style="width:100%;resize:vertical;">${esc(b.perfilViajantes || '')}</textarea>
+      <!-- Perfil -->
+      <div class="re-form-group">
+        <label class="re-label">Perfil dos viajantes <span class="re-required">*</span></label>
+        <textarea class="re-textarea" data-field="briefing.perfilViajantes" rows="3"
+          placeholder="Ex: Casal 55-60, brasileiros, viajantes experientes (já fizeram Europa 3x). Apreciam vinhos, arte e gastronomia. Sem restrições físicas.">${esc(b.perfilViajantes || '')}</textarea>
       </div>
 
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px;">
+      <!-- Interesses + Restrições -->
+      <div class="re-grid-2">
         <div class="re-form-group">
-          <label>Interesses / preferências</label>
-          <textarea data-field="briefing.interesses" rows="3"
-            placeholder="Ex: museus de arte, refeições estreladas Michelin, vinícolas boutique, caminhadas leves."
-            style="width:100%;resize:vertical;">${esc(b.interesses || '')}</textarea>
+          <label class="re-label">Interesses / preferências</label>
+          <textarea class="re-textarea" data-field="briefing.interesses" rows="3"
+            placeholder="Ex: museus de arte, refeições estreladas Michelin, vinícolas boutique, caminhadas leves.">${esc(b.interesses || '')}</textarea>
         </div>
         <div class="re-form-group">
-          <label>Restrições / cuidados</label>
-          <textarea data-field="briefing.restricoes" rows="3"
-            placeholder="Ex: cliente tem joelho recém-operado (evitar muita caminhada). Não comem porco. Alergia a frutos do mar."
-            style="width:100%;resize:vertical;">${esc(b.restricoes || '')}</textarea>
+          <label class="re-label">Restrições / cuidados</label>
+          <textarea class="re-textarea" data-field="briefing.restricoes" rows="3"
+            placeholder="Ex: cliente tem joelho recém-operado (evitar muita caminhada). Não comem porco. Alergia a frutos do mar.">${esc(b.restricoes || '')}</textarea>
         </div>
       </div>
 
       <!-- Datas -->
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px;">
+      <div class="re-grid-2">
         <div class="re-form-group">
-          <label>Data de início <span style="color:#EF4444;">*</span></label>
-          <input type="date" data-field="travel.startDate" value="${esc(travel.startDate || '')}" />
+          <label class="re-label">Data de início <span class="re-required">*</span></label>
+          <input class="re-input" type="date" data-field="travel.startDate" value="${esc(travel.startDate || '')}" />
         </div>
         <div class="re-form-group">
-          <label>Data de fim <span style="color:#EF4444;">*</span></label>
-          <input type="date" data-field="travel.endDate" value="${esc(travel.endDate || '')}" />
+          <label class="re-label">Data de fim <span class="re-required">*</span></label>
+          <input class="re-input" type="date" data-field="travel.endDate" value="${esc(travel.endDate || '')}" />
         </div>
       </div>
 
-      <!-- Destinos -->
-      <div style="margin-top:18px;padding:14px;border-radius:8px;background:var(--bg-surface);border:1px solid var(--border-subtle);">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px;">
-          <div style="font-weight:600;font-size:0.9375rem;">📍 Destinos da viagem <span style="color:#EF4444;">*</span></div>
-          <label style="display:flex;align-items:center;gap:6px;font-size:0.8125rem;color:var(--text-secondary);cursor:pointer;">
+      <!-- Destinos card -->
+      <div class="re-briefing-card">
+        <div class="re-briefing-card-head">
+          <span class="re-briefing-card-title">📍 Destinos da viagem <span class="re-required">*</span></span>
+          <label class="re-briefing-suggest-toggle">
             <input type="checkbox" data-field="briefing.querSugestaoDestino" ${querSugestao ? 'checked' : ''} />
             🔮 Quero que o agente sugira destinos baseado no briefing
           </label>
         </div>
 
         ${querSugestao ? `
-          <div style="padding:10px 12px;background:rgba(124,58,237,0.08);border-radius:6px;border:1px dashed #a855f7;font-size:0.8125rem;color:var(--text-secondary);">
-            ✨ O agente vai analisar o briefing + tipo de viagem e propor 2-3 destinos coerentes. Os campos abaixo ficam opcionais (você pode adicionar destinos "âncora" se quiser, ex: "passar por Roma obrigatoriamente").
+          <div class="re-briefing-note re-briefing-note--accent">
+            ✨ O agente vai analisar o briefing e propor 2-3 destinos coerentes. Os campos abaixo ficam opcionais (você pode adicionar destinos âncora, ex: "passar por Roma obrigatoriamente").
           </div>
         ` : ''}
 
-        <!-- Lista de destinos -->
-        <div id="re-briefing-dests" style="display:flex;flex-direction:column;gap:8px;margin-top:10px;">
+        <div id="re-briefing-dests" class="re-briefing-dest-list">
           ${destinations.length === 0 ? `
-            <div style="padding:14px;text-align:center;color:var(--text-muted);font-size:0.8125rem;border:1px dashed var(--border-subtle);border-radius:6px;">
-              ${querSugestao ? 'Opcional: adicionar destinos "âncora" obrigatórios' : 'Nenhum destino — adicione pelo menos um'}
+            <div class="re-briefing-empty">
+              ${querSugestao ? 'Opcional: adicionar destinos âncora obrigatórios' : 'Nenhum destino — adicione pelo menos um'}
             </div>
           ` : destinations.map((d, idx) => `
-            <div data-brief-dest-idx="${idx}" style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--bg-elevated);border-radius:6px;border:1px solid var(--border-subtle);">
-              <input type="text" data-field="travel.destinations.${idx}.city" list="re-dest-list"
-                value="${esc(d.city || '')}" placeholder="Cidade"
-                style="flex:2;padding:6px 10px;background:transparent;border:1px solid var(--border-subtle);border-radius:4px;color:var(--text-primary);" />
-              <input type="text" data-field="travel.destinations.${idx}.country"
-                value="${esc(d.country || '')}" placeholder="País"
-                style="flex:2;padding:6px 10px;background:transparent;border:1px solid var(--border-subtle);border-radius:4px;color:var(--text-primary);" />
-              <input type="number" data-field="travel.destinations.${idx}.nights" min="1"
-                value="${d.nights || ''}" placeholder="Noites"
-                style="width:80px;padding:6px 10px;background:transparent;border:1px solid var(--border-subtle);border-radius:4px;color:var(--text-primary);" />
-              <button class="re-add-btn" data-action="remove-brief-dest" data-idx="${idx}"
-                style="margin-top:0;padding:4px 10px;font-size:0.75rem;background:transparent;color:#EF4444;border:1px solid #EF4444;">×</button>
+            <div data-brief-dest-idx="${idx}" class="re-briefing-dest-row">
+              <input class="re-input" type="text" data-field="travel.destinations.${idx}.city" list="re-dest-list"
+                value="${esc(d.city || '')}" placeholder="Cidade" />
+              <input class="re-input" type="text" data-field="travel.destinations.${idx}.country"
+                value="${esc(d.country || '')}" placeholder="País" />
+              <input class="re-input" type="number" data-field="travel.destinations.${idx}.nights" min="1"
+                value="${d.nights || ''}" placeholder="Noites" />
+              <button class="re-remove-btn" data-action="remove-brief-dest" data-idx="${idx}" title="Remover destino">×</button>
             </div>
           `).join('')}
         </div>
 
-        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
-          <button class="re-add-btn" data-action="add-brief-dest" style="margin-top:0;padding:6px 14px;font-size:0.8125rem;">+ Adicionar destino à lista</button>
-          <button class="re-add-btn" data-action="cadastrar-novo-destino" style="margin-top:0;padding:6px 14px;font-size:0.8125rem;background:transparent;color:var(--brand-gold);border:1px solid var(--brand-gold);">+ Cadastrar destino novo (no banco)</button>
+        <div class="re-briefing-card-actions">
+          <button class="re-add-btn" data-action="add-brief-dest">+ Adicionar destino à lista</button>
+          <button class="re-add-btn re-add-btn--gold" data-action="cadastrar-novo-destino">+ Cadastrar destino novo (no banco)</button>
         </div>
-        <div style="margin-top:6px;font-size:0.75rem;color:var(--text-muted);">
+        <div class="re-briefing-hint">
           Os destinos vêm do <strong>banco compartilhado de Destinos</strong> (mesma fonte do Portal de Dicas e Banco de Imagens). Se o destino não está na lista, cadastre pra ficar disponível em todos os módulos.
         </div>
 
-        <!-- datalist pra autocomplete -->
         <datalist id="re-dest-list">${destOptionsHtml}</datalist>
       </div>
 
-      <div class="re-form-group" style="margin-top:14px;">
-        <label>Contexto livre (opcional)</label>
-        <textarea data-field="briefing.contextoLivre" rows="3"
-          placeholder="Qualquer informação adicional: aniversário, ocasião especial, restrições não cobertas acima, expectativas do cliente, briefing recebido por e-mail, etc."
-          style="width:100%;resize:vertical;">${esc(b.contextoLivre || '')}</textarea>
+      <!-- Contexto livre -->
+      <div class="re-form-group">
+        <label class="re-label">Contexto livre (opcional)</label>
+        <textarea class="re-textarea" data-field="briefing.contextoLivre" rows="3"
+          placeholder="Qualquer informação adicional: aniversário, ocasião especial, restrições não cobertas acima, expectativas do cliente, briefing recebido por e-mail, etc.">${esc(b.contextoLivre || '')}</textarea>
       </div>
 
-      <!-- Botão Gerar com IA -->
-      <div style="margin-top:24px;padding:20px;border-radius:12px;
-        background:linear-gradient(135deg,rgba(124,58,237,0.10) 0%,rgba(168,85,247,0.10) 100%);
-        border:2px solid ${isReady ? '#7c3aed' : 'var(--border-subtle)'};
-        text-align:center;">
+      <!-- Bloco de geração com IA -->
+      <div class="re-briefing-ai ${isReady ? 're-briefing-ai--ready' : 're-briefing-ai--blocked'}">
         ${isReady ? `
-          <div style="margin-bottom:12px;font-size:0.9375rem;font-weight:600;color:var(--text-primary);">
-            ✅ Briefing pronto! O agente vai pesquisar em Virtuoso, Fine Hotels & Resorts e Leading Hotels of the World.
+          <div class="re-briefing-ai-msg">
+            ✅ Briefing pronto. O agente vai pesquisar em <strong>Virtuoso</strong>, <strong>Fine Hotels &amp; Resorts</strong> e <strong>Leading Hotels of the World</strong>.
           </div>
-          <button class="re-add-btn" data-action="ai-generate-full"
-            style="margin-top:0;padding:14px 32px;font-size:1rem;font-weight:700;
-              background:linear-gradient(135deg,#7c3aed 0%,#a855f7 100%);
-              color:#fff;border:none;box-shadow:0 4px 14px rgba(124,58,237,0.4);">
+          <button class="re-ai-btn re-ai-btn--primary" data-action="ai-generate-full">
             ✨ Gerar roteiro com IA
           </button>
-          <div style="margin-top:10px;font-size:0.75rem;color:var(--text-muted);">
+          <div class="re-briefing-ai-meta">
             ~30-60s · Sonnet 4.5 · prompt caching ativo · zero alucinação garantida
           </div>
         ` : `
-          <div style="font-size:0.9375rem;color:var(--text-secondary);margin-bottom:10px;">
-            🔒 Para gerar com IA, ainda falta:
-          </div>
-          <ul style="list-style:none;padding:0;margin:0 0 12px;font-size:0.875rem;color:#F59E0B;">
+          <div class="re-briefing-ai-msg">🔒 Para gerar com IA, ainda falta:</div>
+          <ul class="re-briefing-ai-checklist">
             ${missing.map(m => `<li>⚠ ${esc(m)}</li>`).join('')}
           </ul>
-          <button class="re-add-btn" disabled
-            style="margin-top:0;padding:14px 32px;font-size:1rem;font-weight:700;
-              background:var(--bg-surface);color:var(--text-muted);
-              border:1px solid var(--border-subtle);cursor:not-allowed;opacity:0.6;">
-            ✨ Gerar roteiro com IA
-          </button>
+          <button class="re-ai-btn re-ai-btn--disabled" disabled>✨ Gerar roteiro com IA</button>
         `}
       </div>
     </div>

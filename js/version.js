@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 77,
-  build: '20260521-roteiros-checkbox-collect-fix',
+  patch: 78,
+  build: '20260522-roteiros-briefing-layout-alinhado',
 };
 
 /** "1.2.0" */
