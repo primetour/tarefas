@@ -6,6 +6,50 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.97+20260522-roteiros-fix-icones-overflow-filtros] — 2026-05-22
+
+Release **PATCH** — 3 ajustes na listagem do Gerador de Roteiros.
+
+**(1) Fix overflow dos ícones de ação (regressão do v96)**:
+Renê: "a tabela onde ficam os ícones não está legal. você alterou os
+ícones e agora eles ficaram em cima da coluna à esquerda".
+
+Causa: v96 usou buttons 30×30 (total 5 × 30 + 4 × gap = 166px) numa
+coluna de 140px. Texto da coluna Atualizado ("4min atrás") aparecia
+por baixo dos ícones.
+
+Fix:
+- Buttons 26×26 (total 5 × 26 + 4 × gap 2 = 138px)
+- SVG ícones 14×14 (era 15×15)
+- Coluna Atualizado 84px → 110px (folga pro "X min atrás")
+- Coluna Ações 140px → 160px (folga extra)
+- gap entre ícones 4px → 2px (mais compacto)
+
+**(2) Identidade visual nos ícones** (CLAUDE.md §4):
+Hover azul (genérico) → hover **dourado PRIMETOUR** (`var(--brand-gold)`).
+Hover do botão "Excluir" continua vermelho (semântica de perigo).
+
+**(3) Filtros de período + filtros avançados** (Renê reclamou 3×):
+
+Filtro de período:
+- Pills agora **dourado** (gold) quando ativo, alinhado à identidade.
+  Antes era azul (igual aos status pills — confundia).
+- Label "PERÍODO" antes dos pills, em uppercase tracked (clareza).
+- Padding 5px 14px (alinha à altura dos status pills).
+
+Filtros avançados:
+- `<summary>` discreto (▸ Filtros avançados) → **botão chip** com
+  ícone "lines" + label + chevron rotativo.
+- Hover acende dourado, aberto mantém dourado de fundo.
+- Quando ativo: **badge dourado** com contagem ("2 ativos") no chip.
+- Body do filtro com bg-surface + border + radius (separa visualmente).
+- Selects rebatizados pra `.rt-advanced-select` com estilo próprio
+  (hover gold).
+- **Botão "Limpar filtros"** aparece à direita quando há filtros
+  ativos (handler `clear-advanced` zera todos os 4 e re-renderiza).
+
+---
+
 ## [4.49.96+20260522-roteiros-icones-acao-svg] — 2026-05-22
 
 Release **PATCH** — ícones de ação na home do Gerador de Roteiros.

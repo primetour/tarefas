@@ -230,17 +230,23 @@ export const PERIOD_PRESETS = {
  */
 export function renderPeriodPills({ active = '30d', show } = {}) {
   const keys = show || Object.keys(PERIOD_PRESETS);
+  // v4.49.97+ Pills com identidade gold (PRIMETOUR brand), alinhada aos
+  // status pills em altura e weight. Antes era azul, agora dourado pra
+  // diferenciar do status (azul) e reforçar identidade.
   return `
-    <div class="uikit-period-pills" style="display:flex;gap:4px;flex-wrap:wrap;">
+    <div class="uikit-period-pills" style="display:flex;gap:4px;flex-wrap:wrap;align-items:center;">
+      <span style="font-size:0.6875rem;font-weight:600;color:var(--text-muted);
+        text-transform:uppercase;letter-spacing:0.06em;margin-right:6px;">Período</span>
       ${keys.map(k => {
         const p = PERIOD_PRESETS[k];
         if (!p) return '';
-        return `<button class="uikit-period-pill ${k === active ? 'active' : ''}" data-period="${esc(k)}"
-          style="padding:4px 12px;border-radius:999px;font-size:0.75rem;font-weight:600;
-          border:1px solid ${k === active ? 'var(--brand-blue,#3B82F6)' : 'var(--border,#e5e7eb)'};
-          background:${k === active ? 'var(--brand-blue,#3B82F6)' : 'transparent'};
-          color:${k === active ? '#fff' : 'var(--text-muted)'};
-          cursor:pointer;transition:all 0.15s;font-family:inherit;">
+        const isActive = k === active;
+        return `<button class="uikit-period-pill ${isActive ? 'active' : ''}" data-period="${esc(k)}"
+          style="padding:5px 14px;border-radius:999px;font-size:0.75rem;font-weight:600;
+          border:1px solid ${isActive ? 'var(--brand-gold,#D4A843)' : 'var(--border,#e5e7eb)'};
+          background:${isActive ? 'var(--brand-gold,#D4A843)' : 'transparent'};
+          color:${isActive ? '#0A1628' : 'var(--text-muted)'};
+          cursor:pointer;transition:all 0.15s;font-family:inherit;line-height:1;">
           ${esc(p.label)}
         </button>`;
       }).join('')}
@@ -262,9 +268,10 @@ export function wirePeriodPills(container, onChange) {
       p.style.borderColor = 'var(--border, #e5e7eb)';
     });
     pill.classList.add('active');
-    pill.style.background = 'var(--brand-blue, #3B82F6)';
-    pill.style.color = '#fff';
-    pill.style.borderColor = 'var(--brand-blue, #3B82F6)';
+    // v4.49.97+ Gold identity (consistent com renderPeriodPills)
+    pill.style.background = 'var(--brand-gold, #D4A843)';
+    pill.style.color = '#0A1628';
+    pill.style.borderColor = 'var(--brand-gold, #D4A843)';
 
     const key = pill.dataset.period;
     const preset = PERIOD_PRESETS[key];

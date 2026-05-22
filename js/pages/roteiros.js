@@ -175,35 +175,43 @@ export async function renderRoteiros(container) {
         max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
         font-size:0.75rem; color:var(--text-muted);
       }
-      /* v4.49.96+ Action buttons: SVG icons + tooltip estilizado.
-         Antes: chars unicode (✎ ⧉ ↓ ⊠ ✕) sem label clara — Renê: "ícones
-         confusos e sem explicação". Agora: SVG reconhecíveis + tooltip
-         CSS dark sobre hover (mais visível que title nativo do browser). */
-      .rt-actions { display:flex; gap:4px; justify-content:flex-end; flex-wrap:nowrap; }
+      /* v4.49.97+ Action buttons compactos: ícones 26x26 cabem na coluna
+         de 160px (5 botões × 26 + 4 × gap 2 = 138px). v96 quebrou layout
+         com 30x30 invadindo coluna Atualizado.
+         Identidade: hover gold (brand PRIMETOUR), não azul. */
+      .rt-actions { display:flex; gap:2px; justify-content:flex-end; flex-wrap:nowrap; }
       .rt-actions button {
         position:relative;
-        width:30px; height:30px; padding:0;
+        width:26px; height:26px; padding:0;
         display:inline-flex; align-items:center; justify-content:center;
-        border-radius:6px;
+        border-radius:5px;
         border:1px solid transparent; background:transparent; cursor:pointer;
         color:var(--text-muted); transition:all 0.12s;
         flex-shrink:0;
       }
-      .rt-actions button svg { width:15px; height:15px; stroke:currentColor; fill:none; stroke-width:1.75; stroke-linecap:round; stroke-linejoin:round; }
-      .rt-actions button:hover { background:var(--bg-hover, rgba(0,0,0,0.05)); border-color:var(--border-default); color:var(--text-primary); }
-      .rt-actions button.danger:hover { background:rgba(239,68,68,0.1); border-color:rgba(239,68,68,0.25); color:#EF4444; }
+      .rt-actions button svg { width:14px; height:14px; stroke:currentColor; fill:none; stroke-width:1.75; stroke-linecap:round; stroke-linejoin:round; }
+      .rt-actions button:hover {
+        background:rgba(212,168,67,0.10);
+        border-color:rgba(212,168,67,0.35);
+        color:var(--brand-gold, #D4A843);
+      }
+      .rt-actions button.danger:hover {
+        background:rgba(239,68,68,0.10);
+        border-color:rgba(239,68,68,0.30);
+        color:#EF4444;
+      }
       /* Tooltip estilizado: aparece abaixo do botão no hover */
       .rt-actions button::after {
         content:attr(data-tip);
-        position:absolute; top:calc(100% + 4px); left:50%;
+        position:absolute; top:calc(100% + 5px); left:50%;
         transform:translateX(-50%) translateY(-2px);
-        background:var(--bg-tooltip, #0A1628); color:#fff;
+        background:#0A1628; color:#fff;
         padding:4px 9px; border-radius:4px;
         font-size:0.6875rem; font-weight:500; letter-spacing:0.01em;
         white-space:nowrap; pointer-events:none;
         opacity:0; transition:opacity 0.15s, transform 0.15s;
         z-index:50;
-        box-shadow:0 2px 8px rgba(0,0,0,0.15);
+        box-shadow:0 2px 10px rgba(0,0,0,0.18);
       }
       .rt-actions button:hover::after { opacity:1; transform:translateX(-50%) translateY(0); }
 
@@ -211,6 +219,68 @@ export async function renderRoteiros(container) {
         display:inline-block; padding:1px 7px; border-radius:999px; font-size:0.65rem; font-weight:600;
         background:rgba(59,130,246,0.1); color:var(--brand-blue, #3B82F6);
         border:1px solid rgba(59,130,246,0.2); margin-left:6px; vertical-align:middle;
+      }
+
+      /* v4.49.97+ Filtros avançados — summary com ícone + chevron + badge */
+      .rt-advanced-filters { list-style:none; }
+      .rt-advanced-filters > summary { list-style:none; }
+      .rt-advanced-filters > summary::-webkit-details-marker { display:none; }
+      .rt-advanced-summary {
+        display:inline-flex; align-items:center; gap:8px;
+        padding:6px 12px; border-radius:8px;
+        background:var(--bg-surface, #f8fafc);
+        border:1px solid var(--border, #e5e7eb);
+        font-size:0.8125rem; font-weight:500;
+        color:var(--text-secondary);
+        cursor:pointer; user-select:none;
+        transition:all 0.12s;
+      }
+      .rt-advanced-summary:hover {
+        border-color:var(--brand-gold, #D4A843);
+        color:var(--text-primary);
+      }
+      .rt-advanced-filters[open] .rt-advanced-summary {
+        background:rgba(212,168,67,0.06);
+        border-color:rgba(212,168,67,0.30);
+        color:var(--brand-gold, #D4A843);
+      }
+      .rt-advanced-chevron {
+        transition:transform 0.18s; opacity:0.7;
+      }
+      .rt-advanced-filters[open] .rt-advanced-chevron { transform:rotate(180deg); }
+      .rt-advanced-badge {
+        display:inline-flex; align-items:center; padding:1px 8px;
+        border-radius:999px; background:var(--brand-gold, #D4A843); color:#0A1628;
+        font-size:0.6875rem; font-weight:700; letter-spacing:0.01em;
+      }
+      .rt-advanced-body {
+        display:flex; gap:8px; flex-wrap:wrap;
+        margin-top:10px; padding:12px;
+        background:var(--bg-surface, #fafbfc);
+        border:1px solid var(--border, #e5e7eb);
+        border-radius:8px;
+        align-items:center;
+      }
+      .rt-advanced-select {
+        height:34px; padding:0 12px;
+        font-size:0.8125rem; font-family:inherit;
+        min-width:160px; max-width:240px;
+        border:1px solid var(--border, #e5e7eb); border-radius:6px;
+        background:#fff; color:var(--text-primary);
+        cursor:pointer; transition:border-color 0.12s;
+      }
+      .rt-advanced-select:hover, .rt-advanced-select:focus {
+        border-color:var(--brand-gold, #D4A843); outline:none;
+      }
+      .rt-advanced-clear {
+        padding:6px 12px; border-radius:6px;
+        background:transparent; border:1px solid var(--border, #e5e7eb);
+        font-size:0.75rem; font-weight:500; font-family:inherit;
+        color:var(--text-muted); cursor:pointer; transition:all 0.12s;
+        margin-left:auto;
+      }
+      .rt-advanced-clear:hover {
+        border-color:#EF4444; color:#EF4444;
       }
 
       /* Paginação */
@@ -364,20 +434,28 @@ export async function renderRoteiros(container) {
         metaText: '',
         paginationHTML: '',
       })}
-      <details ${advancedActive ? 'open' : ''} class="rt-advanced-filters" style="margin-top:6px;margin-bottom:12px;">
-        <summary style="cursor:pointer;font-size:0.8125rem;color:var(--text-muted);user-select:none;padding:4px 0;">
-          Filtros avançados${advancedActive ? ` <span style="color:var(--brand-blue,#3B82F6);font-weight:600;">(ativos)</span>` : ''}
+      <!-- v4.49.97+ Filtros avançados — botão claro com chevron + badge de ativos.
+           Antes era um <summary> discreto com seta tracejada — Renê reclamou
+           3x que filtros precisavam revisão. -->
+      <details ${advancedActive ? 'open' : ''} class="rt-advanced-filters" style="margin-top:8px;margin-bottom:14px;">
+        <summary class="rt-advanced-summary">
+          <svg class="rt-advanced-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M7 12h10M11 18h2"/></svg>
+          <span>Filtros avançados</span>
+          ${advancedActive ? `<span class="rt-advanced-badge">${
+            [selectedAreaId, selectedDestino, selectedClientType, selectedConsultant].filter(Boolean).length
+          } ativo${[selectedAreaId, selectedDestino, selectedClientType, selectedConsultant].filter(Boolean).length > 1 ? 's' : ''}</span>` : ''}
+          <svg class="rt-advanced-chevron" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
         </summary>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;align-items:center;">
+        <div class="rt-advanced-body">
           ${advancedSelects.map(s => `
-            <select id="${esc(s.id)}" class="filter-select"
-              style="height:34px;font-size:0.8125rem;min-width:160px;max-width:220px;">
+            <select id="${esc(s.id)}" class="rt-advanced-select">
               <option value="">${esc(s.label || '— Filtrar —')}</option>
               ${(s.options || []).map(o => `
                 <option value="${esc(o.value)}" ${o.value === s.value ? 'selected' : ''}>${esc(o.label)}</option>
               `).join('')}
             </select>
           `).join('')}
+          ${advancedActive ? `<button type="button" class="rt-advanced-clear" data-action="clear-advanced">Limpar filtros</button>` : ''}
         </div>
       </details>
     `;
@@ -573,8 +651,8 @@ export async function renderRoteiros(container) {
             ${sortable('destinos', 'Destinos', 'style="width:160px;"')}
             ${sortable('period', 'Período', 'style="width:160px;"')}
             ${sortable('consultant', 'Consultor', 'style="width:110px;"')}
-            ${sortable('updatedAt', 'Atualizado', 'style="width:84px;"')}
-            <th style="text-align:right;width:140px;">Ações</th>
+            ${sortable('updatedAt', 'Atualizado', 'style="width:110px;"')}
+            <th style="text-align:right;width:160px;">Ações</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
@@ -599,6 +677,17 @@ export async function renderRoteiros(container) {
 
     if (action === 'new-roteiro') {
       location.hash = '#roteiro-editor';
+      return;
+    }
+
+    // v4.49.97+ Limpar filtros avançados
+    if (action === 'clear-advanced') {
+      selectedAreaId = '';
+      selectedDestino = '';
+      selectedClientType = '';
+      selectedConsultant = '';
+      renderFilters();
+      renderTable();
       return;
     }
 

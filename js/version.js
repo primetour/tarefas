@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 96,
-  build: '20260522-roteiros-icones-acao-svg',
+  patch: 97,
+  build: '20260522-roteiros-fix-icones-overflow-filtros',
 };
 
 /** "1.2.0" */
