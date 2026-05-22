@@ -217,7 +217,10 @@ export const callLLM = onCall({
   cors: ['https://primetour.github.io', 'http://localhost:5000'],
   secrets: [ANTHROPIC_API_KEY, OPENAI_API_KEY, GEMINI_API_KEY, GROQ_API_KEY],
   maxInstances: 50,
-  timeoutSeconds: 120,
+  // v4.49.80+ 120 → 300s. Agente de roteiros (Sonnet 4.5 + web_search
+  // forçado, 5 buscas máx) excedia o timeout antigo. Firebase 2nd gen
+  // onCall permite até 540s; deixei 300s pra equilibrar custo/risco.
+  timeoutSeconds: 300,
   memory: '512MiB',
 }, async (request) => {
   const auth = requireAuth(request);

@@ -6,6 +6,32 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.80+20260522-callLLM-timeout-300s] — 2026-05-22
+
+Release **PATCH** — Cloud Function `callLLM` timeout 120s → 300s.
+
+**Bug encontrado validando v4.49.79**: ao disparar agente
+roteiros-luxo-gen com web_search forçado (v3 do system prompt),
+o Cloud Function estourava `deadline-exceeded` aos ~120s. Stack:
+
+```
+[runAgent] Cloud Function falhou, fallback chatWithAI: [functions/deadline-exceeded] deadline-exceeded
+[ai-roteiro] Erro: Error: Erro Anthropic (Cloud Function): deadline-exceeded
+```
+
+**Causa**: Sonnet 4.5 + system prompt 10370 chars + web_search 5 buscas
+máx + JSON estruturado ~6kB → tempo total da chamada ultrapassa 2 min.
+
+**Fix**: `functions/index.js:callLLM` `timeoutSeconds: 120 → 300`.
+Firebase 2nd gen onCall permite até 540s; deixei 300s pra balancear
+custo de invocação travada × risco de cortar agente legítimo.
+
+**Deploy**: `firebase deploy --only functions:callLLM` ✓.
+
+**Validação**: deploy successful; E2E pendente após GH Pages publicar.
+
+---
+
 ## [4.49.79+20260522-roteiros-imagens-auto-websearch-forcado] — 2026-05-22
 
 Release **PATCH** — 2 melhorias na geração via IA: auto-resolve de
