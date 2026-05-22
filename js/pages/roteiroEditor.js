@@ -2475,10 +2475,12 @@ function switchSection(index) {
   }
 
   // 4.43.0+ (Sprint 4) — popula lista de tarefas vinculadas async
-  // após render da seção Avançado (12). Não-bloqueante.
-  if (index === 12 && Array.isArray(currentRoteiro?.linkedTaskIds) && currentRoteiro.linkedTaskIds.length) {
+  // após render da seção Avançado (11 pós v4.49.88). Não-bloqueante.
+  if (index === 11 && Array.isArray(currentRoteiro?.linkedTaskIds) && currentRoteiro.linkedTaskIds.length) {
     queueMicrotask(() => populateLinkedTasksList(currentRoteiro.linkedTaskIds));
   }
+  // v4.49.93+ Imagens (9) — resolve thumbs automáticas via enrichRoteiroImages.
+  if (index === 9) queueMicrotask(() => populateAutoImagePreviews());
 }
 
 /**
@@ -2499,6 +2501,94 @@ function rerenderCurrentSection() {
   if (activeSection === 11 && Array.isArray(currentRoteiro?.linkedTaskIds) && currentRoteiro.linkedTaskIds.length) {
     queueMicrotask(() => populateLinkedTasksList(currentRoteiro.linkedTaskIds));
   }
+  // v4.49.93+ Imagens: preview do que o sistema vai colocar automaticamente.
+  if (activeSection === 9) queueMicrotask(() => populateAutoImagePreviews());
+}
+
+/**
+ * v4.49.93+ Resolve imagens automáticas e preenche thumbs (banco → Unsplash).
+ * Sem override manual, mostra preview do que será usado no PDF/link.
+ */
+/**
+ * v4.49.93+ Auto-attach dicas do Portal de Dicas pra um país.
+ * Debounced — espera 1.5s sem mudança antes de disparar. Skip se país
+ * já tem dica anexada. Toast leve só quando adiciona.
+ */
+let _autoTipsDebounceTimer = null;
+const _autoTipsAttempted = new Set(); // dedup por país já tentado nesta sessão
+function scheduleAutoAttachTipsForCountry(country) {
+  if (!country || country.length < 3) return;
+  clearTimeout(_autoTipsDebounceTimer);
+  _autoTipsDebounceTimer = setTimeout(() => autoAttachTipsForCountry(country), 1500);
+}
+async function autoAttachTipsForCountry(country) {
+  if (!country) return;
+  if (_autoTipsAttempted.has(country)) return;
+  _autoTipsAttempted.add(country);
+  try {
+    const [{ fetchTips }, { snapshotTipForEmbed }] = await Promise.all([
+      import('../services/portal.js'),
+      import('../services/roteiros.js'),
+    ]);
+    const tips = await fetchTips({ country });
+    if (!tips.length) return;
+    if (!Array.isArray(currentRoteiro.embeddedTips)) currentRoteiro.embeddedTips = [];
+    const already = new Set(currentRoteiro.embeddedTips.map(e => e.tipId).filter(Boolean));
+    const toAttach = tips.filter(t => !already.has(t.id));
+    if (!toAttach.length) return;
+    let added = 0;
+    for (const t of toAttach) {
+      try {
+        const snapshot = await snapshotTipForEmbed(t.id);
+        currentRoteiro.embeddedTips.push(snapshot);
+        added++;
+      } catch (_) { /* skip falhas pontuais */ }
+    }
+    if (added) {
+      markDirty();
+      showToast(`${added} dica${added>1?'s':''} de ${country} anexada${added>1?'s':''} automaticamente.`, 'success');
+    }
+  } catch (e) {
+    console.warn('[roteiroEditor] autoAttachTipsForCountry falhou:', e?.message || e);
+  }
+}
+
+async function populateAutoImagePreviews() {
+  try {
+    const { enrichRoteiroImages } = await import('../services/roteiroGenerator.js');
+    const enriched = await enrichRoteiroImages(currentRoteiro);
+    if (!enriched) return;
+
+    // Hero
+    if (enriched.heroUrl) {
+      _swapImgThumb('hero', enriched.heroUrl, 'Auto (banco → Unsplash)');
+    }
+    // Cidades — chave do override é `city_${normKey}` (igual ao map enriched.byCity)
+    if (enriched.byCity) {
+      Object.entries(enriched.byCity).forEach(([cityKey, url]) => {
+        if (url) _swapImgThumb(`city_${cityKey}`, url, 'Auto (banco → Unsplash)');
+      });
+    }
+    // Hotéis — chave do override é `hotel_${idx}`
+    if (enriched.byHotel) {
+      Object.entries(enriched.byHotel).forEach(([idx, url]) => {
+        if (url) _swapImgThumb(`hotel_${idx}`, url, 'Auto (banco → Unsplash)');
+      });
+    }
+  } catch (e) {
+    console.warn('[roteiroEditor] populateAutoImagePreviews falhou:', e?.message || e);
+  }
+}
+
+function _swapImgThumb(imgKey, url, label) {
+  const row = document.querySelector(`[data-img-target="${imgKey}"]`);
+  if (!row) return;
+  const thumb = row.querySelector('.re-img-thumb');
+  const sub = row.querySelector('.re-img-sub');
+  if (thumb && !thumb.querySelector('img')) {
+    thumb.innerHTML = `<img src="${url}" alt="${imgKey}" />`;
+  }
+  if (sub && label) sub.textContent = label;
 }
 
 /* ─── Generate empty days from travel data ────────────────── */
@@ -2641,7 +2731,7 @@ async function handleEditorClick(e) {
     case 'generate-days':
       currentRoteiro = collectFormData();
       generateDaysFromTravel();
-      switchSection(1);
+      rerenderCurrentSection();
       break;
 
     case 'add-day': {
@@ -2654,7 +2744,7 @@ async function handleEditorClick(e) {
         city: '', title: '', narrative: '', overnightCity: '',
         activities: [], imageIds: [],
       });
-      switchSection(1);
+      rerenderCurrentSection();
       markDirty();
       break;
     }
@@ -2663,7 +2753,7 @@ async function handleEditorClick(e) {
       currentRoteiro = collectFormData();
       currentRoteiro.days.splice(idx, 1);
       currentRoteiro.days.forEach((d, i) => d.dayNumber = i + 1);
-      switchSection(1);
+      rerenderCurrentSection();
       markDirty();
       break;
 
@@ -2704,7 +2794,7 @@ async function handleEditorClick(e) {
       if (!currentRoteiro.days[dayIdx]) break;
       if (!currentRoteiro.days[dayIdx].activities) currentRoteiro.days[dayIdx].activities = [];
       currentRoteiro.days[dayIdx].activities.push({ time: '', description: '', type: 'passeio' });
-      switchSection(1);
+      rerenderCurrentSection();
       markDirty();
       break;
     }
@@ -2716,7 +2806,7 @@ async function handleEditorClick(e) {
       if (currentRoteiro.days[dIdx]?.activities) {
         currentRoteiro.days[dIdx].activities.splice(aIdx, 1);
       }
-      switchSection(1);
+      rerenderCurrentSection();
       markDirty();
       break;
     }
@@ -2764,14 +2854,14 @@ async function handleEditorClick(e) {
     case 'add-prow':
       currentRoteiro = collectFormData();
       currentRoteiro.pricing.customRows.push({ label: '', value: '' });
-      switchSection(3);
+      rerenderCurrentSection();
       markDirty();
       break;
 
     case 'remove-prow':
       currentRoteiro = collectFormData();
       currentRoteiro.pricing.customRows.splice(idx, 1);
-      switchSection(3);
+      rerenderCurrentSection();
       markDirty();
       break;
 
@@ -2779,14 +2869,14 @@ async function handleEditorClick(e) {
     case 'add-opt':
       currentRoteiro = collectFormData();
       currentRoteiro.optionals.push({ service: '', priceAdult: null, priceChild: null, notes: '' });
-      switchSection(4);
+      rerenderCurrentSection();
       markDirty();
       break;
 
     case 'remove-opt':
       currentRoteiro = collectFormData();
       currentRoteiro.optionals.splice(idx, 1);
-      switchSection(4);
+      rerenderCurrentSection();
       markDirty();
       break;
 
@@ -2913,28 +3003,28 @@ async function handleEditorClick(e) {
     case 'add-inc':
       currentRoteiro = collectFormData();
       currentRoteiro.includes.push('');
-      switchSection(5);
+      rerenderCurrentSection();
       markDirty();
       break;
 
     case 'remove-inc':
       currentRoteiro = collectFormData();
       currentRoteiro.includes.splice(idx, 1);
-      switchSection(5);
+      rerenderCurrentSection();
       markDirty();
       break;
 
     case 'add-exc':
       currentRoteiro = collectFormData();
       currentRoteiro.excludes.push('');
-      switchSection(5);
+      rerenderCurrentSection();
       markDirty();
       break;
 
     case 'remove-exc':
       currentRoteiro = collectFormData();
       currentRoteiro.excludes.splice(idx, 1);
-      switchSection(5);
+      rerenderCurrentSection();
       markDirty();
       break;
 
@@ -2949,7 +3039,7 @@ async function handleEditorClick(e) {
           existing.add(p.trim().toLowerCase());
         }
       });
-      switchSection(5);
+      rerenderCurrentSection();
       markDirty();
       showToast('Itens padr\u00e3o adicionados (Inclui).', 'success');
       break;
@@ -2964,7 +3054,7 @@ async function handleEditorClick(e) {
           existing.add(p.trim().toLowerCase());
         }
       });
-      switchSection(5);
+      rerenderCurrentSection();
       markDirty();
       showToast('Itens padr\u00e3o adicionados (N\u00e3o Inclui).', 'success');
       break;
@@ -2974,14 +3064,14 @@ async function handleEditorClick(e) {
     case 'add-canc':
       currentRoteiro = collectFormData();
       currentRoteiro.cancellation.push({ period: '', penalty: '' });
-      switchSection(7);
+      rerenderCurrentSection();
       markDirty();
       break;
 
     case 'remove-canc':
       currentRoteiro = collectFormData();
       currentRoteiro.cancellation.splice(idx, 1);
-      switchSection(7);
+      rerenderCurrentSection();
       markDirty();
       break;
 
@@ -2991,7 +3081,7 @@ async function handleEditorClick(e) {
         const exists = currentRoteiro.cancellation.some(c => c.period === p.period);
         if (!exists) currentRoteiro.cancellation.push({ ...p });
       });
-      switchSection(7);
+      rerenderCurrentSection();
       markDirty();
       showToast('Pol\u00edtica de cancelamento padr\u00e3o adicionada.', 'success');
       break;
@@ -3000,14 +3090,14 @@ async function handleEditorClick(e) {
     case 'add-infoc':
       currentRoteiro = collectFormData();
       currentRoteiro.importantInfo.customFields.push({ label: '', value: '' });
-      switchSection(8);
+      rerenderCurrentSection();
       markDirty();
       break;
 
     case 'remove-infoc':
       currentRoteiro = collectFormData();
       currentRoteiro.importantInfo.customFields.splice(idx, 1);
-      switchSection(8);
+      rerenderCurrentSection();
       markDirty();
       break;
 
@@ -3029,7 +3119,7 @@ async function handleEditorClick(e) {
       delete currentRoteiro.images.overrides[imgKey];
       if (imgKey === 'hero') currentRoteiro.images.hero = null;
       markDirty();
-      switchSection(9);
+      rerenderCurrentSection();
       showToast('Imagem removida (volta para automática).', 'success');
       break;
     }
@@ -3287,6 +3377,10 @@ function handleEditorChange(e) {
           : allDestinations;
         dl.innerHTML = cities.map(d => `<option value="${esc(d.city || '')}">`).join('');
       }
+    }
+    // v4.49.93+ Auto-attach dicas do Portal pra esse país (debounced 1.5s).
+    if (e.type === 'change' || e.type === 'input') {
+      scheduleAutoAttachTipsForCountry(target.value.trim());
     }
   }
 

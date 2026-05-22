@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 92,
-  build: '20260522-roteiros-aereo-no-link-publico',
+  patch: 93,
+  build: '20260522-roteiros-bugs-ux-imagens-dicas-auto',
 };
 
 /** "1.2.0" */

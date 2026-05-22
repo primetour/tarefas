@@ -6,6 +6,62 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.93+20260522-roteiros-bugs-ux-imagens-dicas-auto] — 2026-05-22
+
+Release **PATCH** — bugfix em massa + 2 features de UX no editor.
+
+**Bugs reportados pelo Renê**:
+1. "Opcionais → + Adicionar Opcional não funciona"
+2. "Inclui/Não inclui — botões não funcionam"
+3. "Cancelamento — botões não funcionam"
+4. "Imagens — não exibe thumb do que vai ser colocado pelo sistema"
+5. "Dicas anexas — já tem de estar pré-preenchida automaticamente
+   quando o usuário colocar o destino"
+
+**Fix #1-3 — handlers usando switchSection após collectFormData**:
+Mesmo bug pré-existente do v4.49.87 (que afetava add-dest, e do
+v4.49.91 que afetava add-hotel/flight): `switchSection(N)` ao
+final do handler chama `collectFormData()` ANTES do re-render,
+sobrescrevendo o `push/splice` in-memory com o estado do DOM antigo.
+
+21 handlers migrados pra `rerenderCurrentSection()`:
+- Pricing rows: add-prow, remove-prow
+- Opcionais: add-opt, remove-opt
+- Includes/Excludes: add-inc, remove-inc, add-exc, remove-exc,
+  preset-includes, preset-excludes
+- Cancelamento: add-canc, remove-canc, preset-canc
+- ImportantInfo custom: add-infoc, remove-infoc
+- Imagens: img-clear
+- Days/Activities: generate-days, add-day, remove-day, add-activity,
+  remove-activity (preventivo)
+
+**Fix bug do índice 12**:
+Após v4.49.88 (Viagem absorvida), Avançado virou índice 11 mas em
+`switchSection()` continuava checando `index === 12` pra disparar
+populateLinkedTasksList. Tarefas vinculadas não apareciam ao trocar
+pra Avançado. Corrigido pra `=== 11`.
+
+**Fix #4 — Imagens: preview do auto**:
+`renderImagensSection` agora dispara `populateAutoImagePreviews()`
+em queueMicrotask após render (também em rerender e em
+switchSection(9)). Chama `enrichRoteiroImages(currentRoteiro)` do
+roteiroGenerator (mesmo que PDF usa) e troca placeholder "AUTO"
+pelo `<img>` real (banco → Unsplash → Wikipedia). Subtitle atualiza
+de "Auto (banco → Unsplash)" pra labels mais precisos quando resolve.
+
+**Fix #5 — Dicas anexas auto-prefill**:
+Hook em `handleEditorChange` quando `data-dest === 'country'`:
+chama `scheduleAutoAttachTipsForCountry(country)` (debounce 1.5s).
+- `fetchTips({ country })` busca todas dicas do país no `portal_tips`.
+- Filtra as ainda não anexadas (dedup por `tipId`).
+- `snapshotTipForEmbed(t.id)` por dica — pusha em
+  `currentRoteiro.embeddedTips[]`.
+- Toast leve "X dicas de País anexadas automaticamente".
+- Dedup por sessão (`_autoTipsAttempted` Set) evita re-disparar pro
+  mesmo país a cada keystroke.
+
+---
+
 ## [4.49.92+20260522-roteiros-aereo-no-link-publico] — 2026-05-22
 
 Release **PATCH** — adiciona seção **Aéreo** no `roteiro-view.html`
