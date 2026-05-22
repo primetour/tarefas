@@ -6,6 +6,71 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.85+20260522-roteiros-destinos-3-bugs-fix] — 2026-05-22
+
+Release **PATCH** — 3 bugs reportados pelo Renê no fluxo de
+destinos do Briefing.
+
+**Contexto** (Renê): *"em destinos, vc coloca cidade, depois país...
+quando clica abre uma lista com cidade de pais toda confusa, sem
+organizacao... ai eu tenho excluir a linha de cidade e ele nao desfaz
+a ação... qdo clico pra cadastrar destino novo no banco ele deixa
+campo livre, nao mostra o que tem"*.
+
+### Bug 1 — Ordem dos campos + datalist organizada
+
+- **Antes**: ordem `[Cidade] [País]` + uma datalist única com valores
+  "Cidade, País" combinado (~60 opções desorganizadas).
+- **Depois**: ordem `[País] [Cidade]` (mais natural — define geo
+  amplo, depois específico). Datalists **separadas**:
+  - `#re-country-list` — lista de países únicos ordenados
+  - `#re-city-list` — lista de cidades únicas ordenadas
+- Inputs ganham `autocomplete="off"` pra não confundir com histórico
+  do browser.
+
+### Bug 2 — Excluir linha não desfazia
+
+Root cause: handlers `add-brief-dest` e `remove-brief-dest` chamavam
+`switchSection(0)` pra re-renderizar. Mas `switchSection()` invoca
+`collectFormData()` no início — que **re-lê o DOM ANTIGO** (com as
+linhas que iam ser removidas) e sobrescreve o `splice()` in-memory.
+
+O próprio CLAUDE.md do código já tinha aviso documentado:
+*"Handlers que modificam currentRoteiro diretamente precisam
+re-renderizar a UI mas NÃO podem chamar switchSection... Use
+rerenderCurrentSection"*. Eu ignorei isso quando criei.
+
+**Fix**: `add-brief-dest` e `remove-brief-dest` agora usam
+`rerenderCurrentSection()`.
+
+### Bug 3 — Modal "Cadastrar destino" abria vazio
+
+- **Antes**: `openCadastrarDestinoModal()` sempre abria com campos
+  vazios — mesmo se o user já tinha digitado País+Cidade na linha.
+- **Depois**: aceita `{city, country, continent}` como prefill.
+  Handler `cadastrar-novo-destino` pega a **última linha de destino
+  com dado** via `[...dests].reverse().find(d => d.city || d.country)`
+  e passa pro modal.
+- **Bonus**: se o país já existe em `portal_destinations`, infere o
+  continente automaticamente e pré-seleciona o `<select>`.
+
+### Regra adicionada ao CLAUDE.md
+
+Nova seção **§6 — SEMPRE simular TODOS os cenários antes de dizer
+"feito"**. Lista 13 cenários obrigatórios por feature (estado vazio,
+1 item, N itens, ordem alternativa, reversibilidade, pré-população,
+autocomplete ordenado, cancelar, duplicação, inputs adversários…).
+Renê reclamou: *"você não prevê todas as ações possíveis... eu, em
+dois cliques, acho bug"*. Adicionada também ao user-level
+(`~/.claude/CLAUDE.md`).
+
+**Validação**: `node --check` ok. Os 3 bugs são determinísticos
+(não dependem de IA externa) — vou testar via Chrome MCP os 5
+cenários principais (vazio, 1 item, add+remove, modal prefill,
+datalist ordenada).
+
+---
+
 ## [4.49.84+20260522-uikit-export-menu-label-customizavel] — 2026-05-22
 
 Release **PATCH** — `uiKit.renderExportMenu` aceita `cfg.label`

@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 84,
-  build: '20260522-uikit-export-menu-label-customizavel',
+  patch: 85,
+  build: '20260522-roteiros-destinos-3-bugs-fix',
 };
 
 /** "1.2.0" */

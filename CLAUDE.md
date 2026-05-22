@@ -164,7 +164,58 @@ Quando a mudança altera arquitetura, fluxo de dados, contrato externo ou regra 
 
 ---
 
-## 6. Anti-padrões (NÃO FAZER)
+## 6. SEMPRE simular TODOS os cenários antes de dizer "feito"
+
+**Caminho feliz não é teste.** O Renê reclama com razão: *"você não prevê todas as ações possíveis... eu, em dois cliques, acho bug"*.
+
+Antes de dizer "pronto/testado/funcionando":
+
+### Cenários OBRIGATÓRIOS por feature
+
+Pra qualquer formulário/lista/input/picker:
+
+1. **Estado vazio** — sem dados, primeira vez
+2. **Estado com 1 item** — degenerado
+3. **Estado com N itens** — denso
+4. **Estado parcial** — alguns campos preenchidos, outros não
+5. **Ordem de preenchimento alternativa** — user pula campo, volta depois
+6. **Reversibilidade** — adicionar item → REMOVER item → estado fica coerente?
+7. **Pré-população** — se acabei de digitar X, modal/campo relacionado mostra X (não vazio)
+8. **Autocomplete/dropdown** — opções estão ORDENADAS? AGRUPADAS? Filtram pelo que já digitei?
+9. **Erro inline** — campo obrigatório vazio → erro contextual no campo, não toast genérico
+10. **Edição** — abrir item existente, mudar, salvar — mantém o que não mudou?
+11. **Cancelar** — fechar modal sem salvar → preserva estado anterior?
+12. **Duplicação** — tentar criar item igual ao existente → o que acontece?
+13. **Inputs adversários** — copy/paste com lixo, números negativos, strings muito longas, emoji
+
+### Cenários OBRIGATÓRIOS por fluxo
+
+- **Listagem → Editar → Voltar** → lista atualiza?
+- **Listagem → Novo → Salvar → Voltar** → novo item aparece no topo?
+- **Listagem → Novo → Cancelar** → nada criado?
+- **Filtros + busca** → combinam? clearAll funciona?
+- **Refresh durante operação** → não perde rascunho?
+- **Estado offline/erro de rede** → mensagem clara, retry?
+
+### Como testar SEM o Renê
+
+Antes de pedir validação, **eu mesmo abro Chrome MCP e testo a checklist acima**. Não dá pra cobrir 100%, mas cobrir 0% é o que vem acontecendo.
+
+Se um cenário for inviável de simular automaticamente (ex: drag-drop, upload de arquivo real), **eu digo isso explicitamente**: "testei caminho feliz, não cobri X porque Y — pode validar Z manualmente?" — em vez de generalizar "está OK".
+
+### Anti-padrões de teste (NÃO FAZER)
+
+- ❌ Testar só o caminho feliz ("preencheu, clicou, deu certo")
+- ❌ Achar que `node --check` é teste
+- ❌ Achar que ver o DOM via JS é teste de UX (precisa ver visualmente também)
+- ❌ Dizer "está OK" sem ter feito pelo menos 4-5 cenários
+- ❌ Implementar combobox/autocomplete sem testar com lista pequena, vazia e grande
+- ❌ Implementar modal sem testar Cancelar e duplicação
+- ❌ Implementar "remover" sem testar se o estado realmente reflete a remoção
+
+---
+
+## 7. Anti-padrões visuais (NÃO FAZER)
 
 - ❌ Dizer "testado" sem ter realmente aberto o Chrome
 - ❌ Fazer commit sem bumpar versão + cache-bust
@@ -177,7 +228,7 @@ Quando a mudança altera arquitetura, fluxo de dados, contrato externo ou regra 
 
 ---
 
-## 7. Checklist mental antes de dizer "feito"
+## 8. Checklist mental antes de dizer "feito"
 
 ```
 [ ] Versão bumpada (js/version.js + index.html cache-bust)
@@ -187,7 +238,9 @@ Quando a mudança altera arquitetura, fluxo de dados, contrato externo ou regra 
 [ ] GH Pages publicou (curl confirmou patch novo)
 [ ] Chrome MCP aberto na versão nova
 [ ] Caminho feliz testado E2E
+[ ] **§6 — Cenários adversários testados** (vazio, 1 item, N itens, edição, cancelar, duplicação, ordem alternativa, reversibilidade)
 [ ] Pelo menos 1 caminho de erro testado
+[ ] Pré-população de modais relacionados verificada
 [ ] Console limpo (sem JS errors)
 [ ] dev_hours entrada criada (Firestore)
 [ ] DEV-HOURS.md header atualizado

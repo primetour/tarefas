@@ -868,18 +868,18 @@ function renderBriefingSection() {
   }
   const isReady = missing.length === 0;
 
-  // Lista destinos pra autocomplete (vem de allDestinations já carregado no init)
-  const destOptionsHtml = (allDestinations || [])
-    .slice()
-    .sort((a, b) => {
-      const c = (a.continent||'').localeCompare(b.continent||'', 'pt-BR');
-      if (c !== 0) return c;
-      const co = (a.country||'').localeCompare(b.country||'', 'pt-BR');
-      if (co !== 0) return co;
-      return (a.city||'').localeCompare(b.city||'', 'pt-BR');
-    })
-    .map(d => `<option value="${esc([d.city, d.country].filter(Boolean).join(', '))}" data-id="${esc(d.id)}" data-continent="${esc(d.continent)}" data-country="${esc(d.country)}" data-city="${esc(d.city)}"></option>`)
-    .join('');
+  // v4.49.85+ Datalists separadas pra autocomplete: PAÍSES únicos e CIDADES únicas.
+  // Antes era uma datalist única com "Cidade, País" combinado — ficava confuso
+  // (browser mostra opções desorganizadas, e o user disse "lista de cidade de
+  // país toda confusa, sem organização").
+  // Agora: input PAÍS lista só nomes de país; input CIDADE lista só nomes de cidade.
+  const uniqueCountries = [...new Set((allDestinations || []).map(d => d.country).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  const uniqueCities = [...new Set((allDestinations || []).map(d => d.city).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, 'pt-BR'));
+
+  const countryOptionsHtml = uniqueCountries.map(c => `<option value="${esc(c)}"></option>`).join('');
+  const cityOptionsHtml = uniqueCities.map(c => `<option value="${esc(c)}"></option>`).join('');
 
   return `
     <div class="re-section">
@@ -901,10 +901,10 @@ function renderBriefingSection() {
             <div class="re-briefing-empty">${querSugestao ? 'Sem destino fixado — agente vai propor' : 'Adicione pelo menos um destino'}</div>
           ` : destinations.map((d, idx) => `
             <div data-brief-dest-idx="${idx}" class="re-briefing-dest-row">
-              <input class="re-input" type="text" data-field="travel.destinations.${idx}.city" list="re-dest-list" value="${esc(d.city || '')}" placeholder="Cidade" />
-              <input class="re-input" type="text" data-field="travel.destinations.${idx}.country" value="${esc(d.country || '')}" placeholder="País" />
+              <input class="re-input" type="text" data-field="travel.destinations.${idx}.country" list="re-country-list" value="${esc(d.country || '')}" placeholder="País" autocomplete="off" />
+              <input class="re-input" type="text" data-field="travel.destinations.${idx}.city" list="re-city-list" value="${esc(d.city || '')}" placeholder="Cidade" autocomplete="off" />
               <input class="re-input" type="number" data-field="travel.destinations.${idx}.nights" min="1" value="${d.nights || ''}" placeholder="Noites" />
-              <button class="re-remove-btn" data-action="remove-brief-dest" data-idx="${idx}" title="Remover">×</button>
+              <button class="re-remove-btn" data-action="remove-brief-dest" data-idx="${idx}" title="Remover destino">×</button>
             </div>
           `).join('')}
         </div>
@@ -914,7 +914,8 @@ function renderBriefingSection() {
           <button class="btn btn-ghost btn-sm" data-action="cadastrar-novo-destino">+ Cadastrar destino novo no banco</button>
         </div>
 
-        <datalist id="re-dest-list">${destOptionsHtml}</datalist>
+        <datalist id="re-country-list">${countryOptionsHtml}</datalist>
+        <datalist id="re-city-list">${cityOptionsHtml}</datalist>
       </div>
 
       <!-- Datas -->
@@ -2758,21 +2759,26 @@ async function handleEditorClick(e) {
 
     case 'add-brief-dest': {
       // v4.49.75+ Adiciona destino à lista do Briefing
+      // v4.49.85+ Usa rerenderCurrentSection em vez de switchSection — esta
+      // re-coleta do DOM ANTES do re-render, sobrescrevendo a mudança que
+      // acabamos de fazer in-memory. Bug latente desde Sprint A.
       currentRoteiro = collectFormData();
       if (!currentRoteiro.travel.destinations) currentRoteiro.travel.destinations = [];
       currentRoteiro.travel.destinations.push({ city: '', country: '', nights: 1 });
-      switchSection(0);
+      rerenderCurrentSection();
       markDirty();
       break;
     }
 
     case 'remove-brief-dest': {
       // v4.49.75+ Remove destino da lista do Briefing
+      // v4.49.85+ Mesma correção do add-brief-dest — rerenderCurrentSection.
+      // Antes o splice era sobrescrito por collectFormData no switchSection.
       currentRoteiro = collectFormData();
       const ri = parseInt(target.dataset.idx);
       if (!Number.isInteger(ri) || !currentRoteiro.travel?.destinations) break;
       currentRoteiro.travel.destinations.splice(ri, 1);
-      switchSection(0);
+      rerenderCurrentSection();
       markDirty();
       break;
     }
@@ -2781,8 +2787,15 @@ async function handleEditorClick(e) {
       // v4.49.75+ Abre modal pra cadastrar destino no banco compartilhado
       // (portal_destinations) — mesma collection usada pelo Portal de Dicas
       // e Banco de Imagens.
+      // v4.49.85+ Pré-popula com a última linha de destino que tenha dado —
+      // antes abria sempre vazio, mesmo se user já tinha digitado país/cidade.
       currentRoteiro = collectFormData();
-      openCadastrarDestinoModal();
+      const dests = currentRoteiro.travel?.destinations || [];
+      const prefill = [...dests].reverse().find(d => d.city || d.country) || {};
+      openCadastrarDestinoModal({
+        city: prefill.city || '',
+        country: prefill.country || '',
+      });
       break;
     }
 
@@ -3606,7 +3619,18 @@ export async function renderRoteiroEditor(container) {
  * de allDestinations e re-render do Briefing pra mostrar a opção
  * nova já no datalist.
  * ──────────────────────────────────────────────────────────── */
-function openCadastrarDestinoModal() {
+function openCadastrarDestinoModal(prefill = {}) {
+  // v4.49.85+ aceita { city, country, continent } pra pré-popular
+  // os campos do modal — antes abria sempre vazio.
+  const _city = prefill.city || '';
+  const _country = prefill.country || '';
+  const _continent = prefill.continent || '';
+  // Tenta inferir continente automaticamente se o país já existe no banco
+  let inferredContinent = _continent;
+  if (!inferredContinent && _country) {
+    const match = (allDestinations || []).find(d => d.country === _country);
+    if (match?.continent) inferredContinent = match.continent;
+  }
   const modal = document.createElement('div');
   modal.dataset.cadDestModal = '1';
   modal.style.cssText = `
@@ -3626,16 +3650,16 @@ function openCadastrarDestinoModal() {
           Continente
           <select id="cad-dest-cont" style="padding:8px 10px;background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:6px;color:var(--text-primary);">
             <option value="">— selecione —</option>
-            ${(CONTINENTS || []).map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('')}
+            ${(CONTINENTS || []).map(c => `<option value="${esc(c)}" ${c === inferredContinent ? 'selected' : ''}>${esc(c)}</option>`).join('')}
           </select>
         </label>
         <label style="display:flex;flex-direction:column;gap:4px;font-size:0.8125rem;color:var(--text-secondary);">
           País <span style="color:#EF4444;">*</span>
-          <input type="text" id="cad-dest-country" style="padding:8px 10px;background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:6px;color:var(--text-primary);" placeholder="Ex: Marrocos" />
+          <input type="text" id="cad-dest-country" value="${esc(_country)}" style="padding:8px 10px;background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:6px;color:var(--text-primary);" placeholder="Ex: Marrocos" />
         </label>
         <label style="display:flex;flex-direction:column;gap:4px;font-size:0.8125rem;color:var(--text-secondary);">
           Cidade
-          <input type="text" id="cad-dest-city" style="padding:8px 10px;background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:6px;color:var(--text-primary);" placeholder="Ex: Casablanca (deixe vazio se for país inteiro)" />
+          <input type="text" id="cad-dest-city" value="${esc(_city)}" style="padding:8px 10px;background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:6px;color:var(--text-primary);" placeholder="Ex: Casablanca (deixe vazio se for país inteiro)" />
         </label>
       </div>
       <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:20px;">
