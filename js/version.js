@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 89,
-  build: '20260522-roteiros-datalist-contextual-cidades',
+  patch: 90,
+  build: '20260522-roteiros-datalist-fix-template-i',
 };
 
 /** "1.2.0" */

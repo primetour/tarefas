@@ -6,6 +6,23 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.90+20260522-roteiros-datalist-fix-template-i] — 2026-05-22
+
+Release **PATCH** — hotfix do v4.49.89. Comentário HTML dentro do
+template literal de `renderTravelBlock` continha `${i}` (intenção:
+documentação). Como estava dentro de `` `...` ``, o `${i}` foi
+interpretado como expressão e quebrou o render do editor inteiro:
+`ReferenceError: i is not defined` → editor renderizava "Erro ao
+carregar — i is not defined".
+
+**Fix**: removido o comentário inteiro. As datalists permanecem
+funcionais; documentação fica no header das funções.
+
+**Aprendizado**: nunca colocar `${expr}` em comentários HTML dentro
+de template literals — JS não distingue comment de string.
+
+---
+
 ## [4.49.89+20260522-roteiros-datalist-contextual-cidades] — 2026-05-22
 
 Release **PATCH** — autocomplete de **cidade** agora filtra pelas

@@ -985,9 +985,6 @@ function renderTravelBlock() {
     <div id="re-destinations">
       ${dests.map((d, i) => renderDestRow(d, i, dests.length)).join('')}
     </div>
-    <!-- v4.49.89+ Datalist global de países (sem duplicatas) compartilhada
-         entre todas as linhas. Cidades têm datalist por linha (re-city-list-${i})
-         filtradas pelo país desta linha. -->
     <datalist id="re-country-list">
       ${[...new Set(allDestinations.map(d => d.country).filter(Boolean))].sort().map(c => `<option value="${esc(c)}">`).join('')}
     </datalist>
