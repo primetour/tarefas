@@ -644,7 +644,7 @@ export async function renderRoteiros(container) {
               <button data-action="duplicate" data-id="${idEsc}" data-tip="Duplicar" aria-label="Duplicar">
                 <svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg>
               </button>
-              <button data-action="export-pdf" data-id="${idEsc}" data-tip="Exportar PDF" aria-label="Exportar PDF">
+              <button data-action="goto-export" data-id="${idEsc}" data-tip="Preview & Export" aria-label="Preview & Export">
                 <svg viewBox="0 0 24 24"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14"/></svg>
               </button>
               <button data-action="${isArchived ? 'restore' : 'archive'}" data-id="${idEsc}"
@@ -752,8 +752,10 @@ export async function renderRoteiros(container) {
       return;
     }
 
-    if (action === 'export-pdf') {
-      location.hash = `#roteiro-editor?id=${id}&export=pdf`;
+    if (action === 'goto-export') {
+      // v4.49.100+ Atalho rápido pra aba Preview & Export do editor
+      // (todos os formatos: PDF/PPTX/DOCX/Web Link).
+      location.hash = `#roteiro-editor?id=${id}&section=preview`;
       return;
     }
 

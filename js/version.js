@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 99,
-  build: '20260522-roteiros-periodo-custom-inline',
+  patch: 100,
+  build: '20260522-roteiros-export-unificado-preview-tab',
 };
 
 /** "1.2.0" */

@@ -3589,8 +3589,9 @@ export async function renderRoteiroEditor(container) {
           <h1 class="page-title" style="margin:0;font-size:1.25rem;font-weight:700;">${esc(pageTitle)}</h1>
           <span class="status-badge">${esc(statusLabel)}</span>
           <span id="re-autosave-status" style="font-size:0.75rem;color:var(--text-muted);">${roteiroId ? '' : (isAiGenerated ? 'Gerado por IA — n\u00e3o salvo' : 'Novo roteiro')}</span>
-          <!-- v4.49.75+ Botão IA movido pra aba Briefing (Seção 0). Atalho aqui só pra navegar pra lá. -->
-          <button class="btn btn-secondary btn-sm" data-action="export-pdf">Exportar PDF</button>
+          <!-- v4.49.100+ "Exportar PDF" removido do header (Renê: "conceito
+               sujo — tem botão no topo E aba completa Preview & Export").
+               Manter só na aba dedicada (todos os formatos lá). -->
           <button class="btn btn-primary btn-sm" data-action="save">Salvar</button>
         </div>
 
@@ -3631,7 +3632,16 @@ export async function renderRoteiroEditor(container) {
     container._clickHandler = handleEditorClick;
     container._changeHandler = handleEditorChange;
 
-    activeSection = 0;
+    // v4.49.100+ Suporte a navegação direta pra Preview & Export
+    // (vindo do ícone de ação na listagem). Atalho `&section=preview`.
+    const sectionParam = location.hash.match(/[?&]section=([^&]+)/)?.[1];
+    if (sectionParam === 'preview') {
+      activeSection = 12; // Preview & Export (pós-v4.49.88 renumeração)
+      // Disparar switchSection pós-render pra ativar nav state + render correto
+      queueMicrotask(() => switchSection(12));
+    } else {
+      activeSection = 0;
+    }
     isDirty = false;
 
   } catch (err) {

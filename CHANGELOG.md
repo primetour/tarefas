@@ -6,6 +6,34 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.100+20260522-roteiros-export-unificado-preview-tab] — 2026-05-22
+
+Release **PATCH** — unificação do conceito de export.
+
+**Crítica do Renê**: "o conceito de exportar pdf ainda está sujo na UI.
+tem botão na parte superior, mas tem aba mais completa de export, com
+múltiplos formatos. vamos manter apenas na aba e, como acesso rápido,
+na coluna 'ações' da home, a gente leva o user pra aba preview & export."
+
+**Antes**:
+- Header do editor: botão "Exportar PDF" (só PDF, ignora outros formatos)
+- Aba Preview & Export: 4 botões (PDF/PPTX/DOCX/Web Link)
+- Listing → ícone download: navegava pra `#roteiro-editor?id=X&export=pdf`
+  (query nunca lida, então abria seção 0 normalmente)
+- **Conceito duplicado**: 2 caminhos pra exportar PDF (header + aba).
+
+**Agora**:
+- Header do editor: **só "Salvar"** (Exportar PDF removido).
+- Aba Preview & Export: continua sendo a ÚNICA fonte de exports.
+- Listing → ícone "Preview & Export": `data-action="goto-export"` →
+  navega pra `#roteiro-editor?id=X&section=preview`.
+- Editor lê `&section=preview` no init e abre direto na seção 12
+  (Preview & Export) com nav state correto (queueMicrotask switchSection).
+- Tooltip do ícone listing renomeado: "Exportar PDF" → "Preview & Export"
+  (reflete que abre a aba, não exporta direto).
+
+---
+
 ## [4.49.99+20260522-roteiros-periodo-custom-inline] — 2026-05-22
 
 Release **PATCH** — Período custom passa de modal para inputs inline.
