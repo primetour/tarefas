@@ -192,6 +192,11 @@ export function emptyRoteiro() {
 
     days: [],
 
+    /* v4.49.91+ Voos da viagem (companhia, número, rota, datas/horários).
+     * Cada item: { airline, flightNumber, originCity, destinationCity,
+     * departureDate, departureTime, arrivalDate, arrivalTime, notes } */
+    flights: [],
+
     hotels: [],
 
     pricing: {
@@ -403,6 +408,9 @@ function migrateRoteiroOnRead(doc) {
   // 4.43.0+ (Sprint 4) linkedTaskIds + tasksGeneratedAt
   if (!Array.isArray(out.linkedTaskIds)) out.linkedTaskIds = [];
   if (out.tasksGeneratedAt === undefined) out.tasksGeneratedAt = null;
+
+  // v4.49.91+ flights[] (novo). Defensivo pra roteiros antigos.
+  if (!Array.isArray(out.flights)) out.flights = [];
 
   return out;
 }

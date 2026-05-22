@@ -779,9 +779,19 @@ export async function generateRoteiroPDF(roteiro, area = null) {
     await buildDayByDayPages(doc, roteiro, primary, secondary, accent, images.byCity);
   }
 
+  /* ─── FLIGHTS TABLE (v4.49.91+) ──────────────────────────── */
+  if (Array.isArray(roteiro.flights) && roteiro.flights.length) {
+    doc.addPage();
+    buildFlightsSection(doc, roteiro, primary, secondary);
+  }
+
   /* ─── HOTELS TABLE ───────────────────────────────────────── */
   if (roteiro.hotels?.length) {
-    doc.addPage();
+    // v4.49.91+ Se já houve flights, mantém na mesma página se couber.
+    // Se não houve flights, addPage como antes.
+    if (!Array.isArray(roteiro.flights) || !roteiro.flights.length) {
+      doc.addPage();
+    }
     await buildHotelsSection(doc, roteiro, primary, secondary, images.byHotel);
   }
 
@@ -1250,6 +1260,62 @@ async function buildDayByDayPages(doc, roteiro, primary, secondary, accent, byCi
 }
 
 /* ─── Hotels Table ────────────────────────────────────────── */
+/* ─── Flights (v4.49.91+) ──────────────────────────────────── */
+function buildFlightsSection(doc, roteiro, primary, secondary) {
+  const [sr, sg, sb] = hexToRgb(secondary);
+  let y = MARGIN;
+  y = addSectionTitle(doc, y, 'AÉREO', primary, secondary);
+  y += 2;
+
+  const tableBody = roteiro.flights.map(f => {
+    const route = [f.originCity || '', f.destinationCity || ''].filter(Boolean).join(' → ');
+    const departure = [f.departureDate ? fmtDateBR(f.departureDate) : '', f.departureTime || ''].filter(Boolean).join(' ');
+    const arrival   = [f.arrivalDate   ? fmtDateBR(f.arrivalDate)   : '', f.arrivalTime   || ''].filter(Boolean).join(' ');
+    return [
+      f.airline || '',
+      f.flightNumber || '',
+      route,
+      departure,
+      arrival,
+    ];
+  });
+
+  doc.autoTable({
+    startY: y,
+    margin: { left: MARGIN, right: MARGIN },
+    head: [['Cia Aérea', 'Voo', 'Rota', 'Saída', 'Chegada']],
+    body: tableBody,
+    theme: 'grid',
+    headStyles: {
+      fillColor: [sr, sg, sb],
+      textColor: [255, 255, 255],
+      fontSize: 8,
+      fontStyle: 'bold',
+      halign: 'center',
+      cellPadding: 3,
+    },
+    bodyStyles: {
+      fontSize: 8,
+      textColor: [50, 50, 50],
+      cellPadding: 2.5,
+    },
+    alternateRowStyles: {
+      fillColor: [245, 245, 245],
+    },
+    columnStyles: {
+      0: { cellWidth: 30 },
+      1: { cellWidth: 25, halign: 'center' },
+      2: { cellWidth: 55 },
+      3: { cellWidth: 35, halign: 'center' },
+      4: { cellWidth: 35, halign: 'center' },
+    },
+    styles: {
+      lineColor: [220, 220, 220],
+      lineWidth: 0.3,
+    },
+  });
+}
+
 async function buildHotelsSection(doc, roteiro, primary, secondary, byHotel = {}) {
   const [pr, pg, pb] = hexToRgb(primary);
   const [sr, sg, sb] = hexToRgb(secondary);
@@ -2062,6 +2128,29 @@ export async function generateRoteiroPPTX(roteiro, area = null) {
     }
   }
 
+  // ─── Flights slide (v4.49.91+) ─────────────────────────────
+  if (Array.isArray(roteiro.flights) && roteiro.flights.length) {
+    const fSlide = pptx.addSlide();
+    fSlide.background = { color: 'FFFFFF' };
+    fSlide.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: W, h: 0.6, fill: { color: secondary } });
+    fSlide.addText('AÉREO', { x: 0.5, y: 0.05, w: W - 1, h: 0.5, fontSize: 14, bold: true, color: 'FFFFFF' });
+
+    const fRows = [
+      [{ text: 'Cia Aérea', options: { bold: true, color: 'FFFFFF', fill: { color: secondary } } },
+       { text: 'Voo',       options: { bold: true, color: 'FFFFFF', fill: { color: secondary } } },
+       { text: 'Rota',      options: { bold: true, color: 'FFFFFF', fill: { color: secondary } } },
+       { text: 'Saída',     options: { bold: true, color: 'FFFFFF', fill: { color: secondary } } },
+       { text: 'Chegada',   options: { bold: true, color: 'FFFFFF', fill: { color: secondary } } }],
+    ];
+    roteiro.flights.forEach(f => {
+      const route = [f.originCity || '', f.destinationCity || ''].filter(Boolean).join(' → ');
+      const dep = [f.departureDate ? fmtDateBR(f.departureDate) : '', f.departureTime || ''].filter(Boolean).join(' ');
+      const arr = [f.arrivalDate   ? fmtDateBR(f.arrivalDate)   : '', f.arrivalTime   || ''].filter(Boolean).join(' ');
+      fRows.push([f.airline || '', f.flightNumber || '', route, dep, arr]);
+    });
+    fSlide.addTable(fRows, { x: 0.5, y: 0.9, w: W - 1, fontSize: 9, border: { pt: 0.5, color: 'CCCCCC' }, colW: [1.6, 1.2, 3, 1.6, 1.6] });
+  }
+
   // ─── Hotels slide ──────────────────────────────────────────
   if (roteiro.hotels?.length) {
     const hSlide = pptx.addSlide();
@@ -2563,6 +2652,31 @@ export async function generateRoteiroDOCX(roteiro, area = null) {
         }
       }
     }
+  }
+
+  /* ── Aéreo (v4.49.91+) ────────────────────────────────── */
+  if (Array.isArray(roteiro.flights) && roteiro.flights.length) {
+    children.push(hdr('Aéreo'));
+    const fRows = [
+      new TableRow({ children: [
+        headerCell('Cia Aérea'), headerCell('Voo'), headerCell('Rota'),
+        headerCell('Saída'), headerCell('Chegada'),
+      ]}),
+      ...roteiro.flights.map(f => {
+        const route = [f.originCity || '', f.destinationCity || ''].filter(Boolean).join(' → ');
+        const dep = [f.departureDate ? fmtDateBR(f.departureDate) : '', f.departureTime || ''].filter(Boolean).join(' ');
+        const arr = [f.arrivalDate   ? fmtDateBR(f.arrivalDate)   : '', f.arrivalTime   || ''].filter(Boolean).join(' ');
+        return new TableRow({ children: [
+          cell(f.airline || '—'),
+          cell(f.flightNumber || '—'),
+          cell(route || '—'),
+          cell(dep || '—'),
+          cell(arr || '—'),
+        ]});
+      }),
+    ];
+    children.push(new Table({ rows: fRows, width: { size: 100, type: WidthType.PERCENTAGE } }));
+    children.push(p([])); // spacer
   }
 
   /* ── Hotéis (thumbs + tabela) ─────────────────────────── */

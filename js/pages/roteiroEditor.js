@@ -50,7 +50,7 @@ const SECTIONS = [
   // — só tinha 2 campos efetivos (datas + destinos). Tudo num lugar só.
   { icon: '\u{1F464}', label: 'Cliente e Briefing' },
   { icon: '\u{1F4C5}', label: 'Dia a dia' },
-  { icon: '\u{1F3E8}', label: 'Hot\u00e9is' },
+  { icon: '\u2708',    label: 'A\u00e9reo e Hot\u00e9is' },
   { icon: '\u{1F4B0}', label: 'Valores' },
   { icon: '\u2B50',    label: 'Opcionais' },
   { icon: '\u2713',    label: 'Inclui / N\u00e3o inclui' },
@@ -1124,9 +1124,29 @@ function renderDayCard(d, i) {
 
 /* ── 3: Hot\u00e9is ──────────────────────────────────────────── */
 function renderHoteisSection() {
+  const flights = currentRoteiro.flights || [];
   const hotels = currentRoteiro.hotels || [];
   return `
-    <div class="re-section-title">Hot\u00e9is</div>
+    <h2 class="re-section-title">A\u00e9reo e Hot\u00e9is</h2>
+
+    <h3 class="re-subsection-title" style="font-size:1rem;font-weight:600;color:var(--text-primary);margin-bottom:8px;">Voos</h3>
+    <table class="re-dyn-table">
+      <thead>
+        <tr>
+          <th>Cia A\u00e9rea</th><th>Voo</th><th>Origem</th><th>Destino</th>
+          <th>Sa\u00edda (data)</th><th>Sa\u00edda (hora)</th>
+          <th>Chegada (data)</th><th>Chegada (hora)</th><th></th>
+        </tr>
+      </thead>
+      <tbody id="re-flights-body">
+        ${flights.length
+          ? flights.map((f, i) => renderFlightRow(f, i)).join('')
+          : `<tr><td colspan="9" style="text-align:center;padding:14px;color:var(--text-muted);font-size:0.8125rem;">Nenhum voo cadastrado. Clique "+ Adicionar Voo" para incluir.</td></tr>`}
+      </tbody>
+    </table>
+    <button class="re-add-btn" data-action="add-flight" style="margin-bottom:24px;">+ Adicionar Voo</button>
+
+    <h3 class="re-subsection-title" style="font-size:1rem;font-weight:600;color:var(--text-primary);margin-top:32px;padding-top:20px;border-top:1px solid var(--border-subtle);margin-bottom:8px;">Hot\u00e9is</h3>
     <table class="re-dyn-table">
       <thead>
         <tr>
@@ -1139,6 +1159,22 @@ function renderHoteisSection() {
       </tbody>
     </table>
     <button class="re-add-btn" data-action="add-hotel">+ Adicionar Hotel</button>
+  `;
+}
+
+function renderFlightRow(f, i) {
+  return `
+    <tr data-flight-idx="${i}">
+      <td><input data-flight="airline" value="${esc(f.airline || '')}" placeholder="Ex: LATAM" /></td>
+      <td><input data-flight="flightNumber" value="${esc(f.flightNumber || '')}" placeholder="Ex: LA8064" style="width:90px;" /></td>
+      <td><input data-flight="originCity" value="${esc(f.originCity || '')}" placeholder="Origem" /></td>
+      <td><input data-flight="destinationCity" value="${esc(f.destinationCity || '')}" placeholder="Destino" /></td>
+      <td><input data-flight="departureDate" type="date" value="${f.departureDate || ''}" /></td>
+      <td><input data-flight="departureTime" type="time" value="${f.departureTime || ''}" style="width:95px;" /></td>
+      <td><input data-flight="arrivalDate" type="date" value="${f.arrivalDate || ''}" /></td>
+      <td><input data-flight="arrivalTime" type="time" value="${f.arrivalTime || ''}" style="width:95px;" /></td>
+      <td><button class="re-remove-btn" data-action="remove-flight" data-idx="${i}">\u2715</button></td>
+    </tr>
   `;
 }
 
@@ -2109,6 +2145,25 @@ function collectFormData() {
     data.days = days;
   }
 
+  // Flights (v4.49.91+)
+  const flightRows = mainContainer.querySelectorAll('[data-flight-idx]');
+  if (flightRows.length || mainContainer.querySelector('#re-flights-body')) {
+    const flights = [];
+    flightRows.forEach(row => {
+      flights.push({
+        airline:         row.querySelector('[data-flight="airline"]')?.value?.trim() || '',
+        flightNumber:    row.querySelector('[data-flight="flightNumber"]')?.value?.trim() || '',
+        originCity:      row.querySelector('[data-flight="originCity"]')?.value?.trim() || '',
+        destinationCity: row.querySelector('[data-flight="destinationCity"]')?.value?.trim() || '',
+        departureDate:   row.querySelector('[data-flight="departureDate"]')?.value || '',
+        departureTime:   row.querySelector('[data-flight="departureTime"]')?.value || '',
+        arrivalDate:     row.querySelector('[data-flight="arrivalDate"]')?.value || '',
+        arrivalTime:     row.querySelector('[data-flight="arrivalTime"]')?.value || '',
+      });
+    });
+    data.flights = flights;
+  }
+
   // Hotels
   const hotelRows = mainContainer.querySelectorAll('[data-hotel-idx]');
   if (hotelRows.length || mainContainer.querySelector('#re-hotels-body')) {
@@ -2666,18 +2721,42 @@ async function handleEditorClick(e) {
       break;
     }
 
+    /* ── Flights (v4.49.91+) ──────────────────────────────── */
+    case 'add-flight':
+      currentRoteiro = collectFormData();
+      if (!Array.isArray(currentRoteiro.flights)) currentRoteiro.flights = [];
+      currentRoteiro.flights.push({
+        airline: '', flightNumber: '',
+        originCity: '', destinationCity: '',
+        departureDate: '', departureTime: '',
+        arrivalDate: '', arrivalTime: '',
+      });
+      rerenderCurrentSection();
+      markDirty();
+      break;
+
+    case 'remove-flight':
+      currentRoteiro = collectFormData();
+      (currentRoteiro.flights || []).splice(idx, 1);
+      rerenderCurrentSection();
+      markDirty();
+      break;
+
     /* ── Hotels ───────────────────────────────────────────── */
+    // v4.49.91+ trocado switchSection(2) por rerenderCurrentSection()
+    // (mesmo bug do add-dest pré-v4.49.87 — collectFormData re-coleta
+    // o DOM antigo e sobrescreve o push/splice).
     case 'add-hotel':
       currentRoteiro = collectFormData();
       currentRoteiro.hotels.push({ city: '', hotelName: '', roomType: '', regime: '', checkIn: '', checkOut: '', nights: 0 });
-      switchSection(2);
+      rerenderCurrentSection();
       markDirty();
       break;
 
     case 'remove-hotel':
       currentRoteiro = collectFormData();
       currentRoteiro.hotels.splice(idx, 1);
-      switchSection(2);
+      rerenderCurrentSection();
       markDirty();
       break;
 
@@ -2972,7 +3051,7 @@ async function handleEditorClick(e) {
         const areaId = document.getElementById('re-area-select')?.value || currentRoteiro.areaId || '';
         if (!areaId) {
           showToast('Selecione uma \u00c1rea (BU) antes de exportar.', 'warning');
-          switchSection(10); // Preview & Export
+          switchSection(12); // Preview & Export
           break;
         }
         (async () => {
@@ -2997,7 +3076,7 @@ async function handleEditorClick(e) {
         const areaId = document.getElementById('re-area-select')?.value || currentRoteiro.areaId || '';
         if (!areaId) {
           showToast('Selecione uma Área (BU) antes de exportar.', 'warning');
-          switchSection(10);
+          switchSection(12);
           break;
         }
         (async () => {
@@ -3025,7 +3104,7 @@ async function handleEditorClick(e) {
         const areaId = document.getElementById('re-area-select')?.value || currentRoteiro.areaId || '';
         if (!areaId) {
           showToast('Selecione uma \u00c1rea (BU) antes de exportar.', 'warning');
-          switchSection(10);
+          switchSection(12);
           break;
         }
         (async () => {
@@ -3097,7 +3176,7 @@ async function doGenerateWebLink() {
   const areaId = document.getElementById('re-area-select')?.value || currentRoteiro.areaId || '';
   if (!areaId) {
     showToast('Selecione uma \u00c1rea (BU) antes de gerar o link.', 'warning');
-    switchSection(10);
+    switchSection(12);
     return;
   }
 

@@ -6,6 +6,56 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.91+20260522-roteiros-aereo-hoteis-flights-array] — 2026-05-22
+
+Release **PATCH** — seção **"Hotéis"** renomeada para **"Aéreo e
+Hotéis"** com bloco de voos no topo. Inclui também fix do bug
+pré-existente do `switchSection(10)` no export.
+
+**Pedido do Renê**: "aba Hotéis transformar em Aéreo e Hotéis,
+adicionando campos para as situações dos voos (companhia aérea,
+número do voo, rota, horário de saída, de chegada)".
+
+**Schema** (`js/services/roteiros.js`):
+- Adicionado `flights: []` no `emptyRoteiro`. Cada voo: `{ airline,
+  flightNumber, originCity, destinationCity, departureDate,
+  departureTime, arrivalDate, arrivalTime }`.
+- Migration defensiva em `migrateRoteiroOnRead`: roteiros antigos
+  sem o campo recebem `flights: []`.
+
+**Exports** (`js/services/roteiroGenerator.js`):
+- `generateRoteiroPDF` — nova `buildFlightsSection` (autoTable). Título
+  "AÉREO". Colunas: Cia Aérea, Voo, Rota (origem→destino), Saída
+  (data + hora), Chegada (data + hora). Página própria antes de
+  HOSPEDAGEM. Pula página se há flights antes de hotéis.
+- `generateRoteiroPPTX` — novo slide "AÉREO" antes do slide Hotels.
+  Mesma tabela.
+- `generateRoteiroDOCX` — novo header "Aéreo" antes de Hospedagem com
+  Table 100% width.
+- Roteiros sem flights[] (legacy) — todas as 3 funções pulam a seção
+  silenciosamente.
+
+**UI** (`js/pages/roteiroEditor.js`):
+- `SECTIONS[2].label`: "Hotéis" → "Aéreo e Hotéis", ícone trocado pra ✈.
+- `renderHoteisSection` — agora renderiza 2 sub-blocos h3: **Voos**
+  (tabela nova) + **Hotéis** (mantida). Bloco de voos tem empty state
+  ("Nenhum voo cadastrado") quando array vazio.
+- `renderFlightRow` nova — 8 colunas: Cia/Voo/Origem/Destino/
+  Saída-data/Saída-hora/Chegada-data/Chegada-hora.
+- Handlers `add-flight` / `remove-flight` — usam `rerenderCurrentSection()`
+  (não `switchSection` — bug do v4.49.87 mesmo).
+- `collectFormData` lê `data.flights = [...flightRows]`.
+- **Bonus fix**: handlers `export-pdf` / `export-docx` / `export-pptx`
+  / `generate-link` chamavam `switchSection(10)` com comentário stale
+  "// Preview & Export" — saltava pra **Dicas anexas**. Atualizados
+  para `switchSection(12)` (Preview & Export real após renumeração
+  v4.49.88). Bug pré-existente flagrado por chip externo durante o
+  refactor de v88.
+- Handlers `add-hotel` / `remove-hotel` também migrados pra
+  `rerenderCurrentSection()` (mesmo padrão dos demais — preventivo).
+
+---
+
 ## [4.49.90+20260522-roteiros-datalist-fix-template-i] — 2026-05-22
 
 Release **PATCH** — hotfix do v4.49.89. Comentário HTML dentro do

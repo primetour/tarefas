@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 90,
-  build: '20260522-roteiros-datalist-fix-template-i',
+  patch: 91,
+  build: '20260522-roteiros-aereo-hoteis-flights-array',
 };
 
 /** "1.2.0" */
