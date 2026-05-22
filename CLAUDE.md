@@ -401,3 +401,57 @@ Renê em v102: *"faça atualizar em tempo real"*.
 - ❌ Não usar rerender completo da seção quando user digita valor — perde foco.
 - ✅ Listener no input/change que atualiza **nodes específicos** (subtotal, footer, hint) com `textContent` ou `innerHTML` parcial.
 - Pattern: `recalcXyzTotals()` lê valores atuais do DOM, computa, e seta textos sem tocar nos inputs em si.
+
+### j) Cleanup obrigatório em SPA — listeners zumbis viram memory leak
+
+**Auditoria 22/05 revelou**: `aiHub.js` 50 `addEventListener`, **zero** `removeEventListener`. Idem `aiSkills.js` 37, `artsEditor.js` 50, `calendar.js` 35, `checkin.js` 36. SPA: page re-renderiza ao trocar de rota → listeners velhos continuam vivos consumindo RAM + handlers de teclado disparam em página errada.
+
+- ✅ Toda page que faz `addEventListener` global (window, document, body) PRECISA exportar `destroyXyz()` que remove esses listeners.
+- ✅ Salvar reference no container: `container._keyHandler = fn; document.addEventListener('keydown', fn);` — depois `removeEventListener(container._keyHandler)`.
+- ✅ Pattern correto já existe em `roteiroEditor.js`: `destroyRoteiroEditor()`. Replicar em todas pages com listeners globais.
+- ⚠️ `setInterval` / `setTimeout` longos também precisam `clearInterval/Timeout` no destroy. Audit achou 6 pages com 4+ `setTimeout` sem nenhum `clear`.
+
+### k) `confirm()` e `alert()` nativos são UX de 1995
+
+**Auditoria 22/05**: 53 ocorrências de `confirm()` bloqueante + 5 `alert()` em `nlPerformance.js`. Estética quebrada (window default) + bloqueia main thread + não estilizável + screen reader sofre.
+
+- ❌ `if (confirm('Tem certeza?')) ...` — diálogo nativo feio.
+- ❌ `alert('Erro: ' + e.message)` — toast já existe em `js/components/toast.js`.
+- ✅ Pra **info/sucesso/erro**: `showToast(msg, 'info'|'success'|'error')`.
+- ✅ Pra **confirmação destrutiva** (delete, archive irreversível): modal customizado com 2 botões (Cancelar gray + Confirmar danger). Ex: padrão usado em `roteiroEditor.js` `_showAiProgress()`.
+- ✅ Pra **ações reversíveis** (arquivar com 5s pra desfazer): toast com link "Desfazer" — não pede confirmação antes.
+
+### l) Cor hardcoded `#xxxxxx` quebra dark mode + brand consistency
+
+**Auditoria 22/05**: 86 ocorrências de `style="background:#XXX"` em pages — `#EF4444`, `#38BDF8`, `#F59E0B`, `#1F2937` etc. Quando o sistema mudar de tema (dark/light), essas cores não respondem.
+
+- ❌ `<div style="background:#EF4444">` ou `color:#FFF`.
+- ✅ Usar variáveis CSS já definidas: `var(--brand-gold)`, `var(--brand-blue)`, `var(--color-danger)`, `var(--text-primary)`, `var(--bg-surface)`, `var(--bg-card)`, `var(--border-default)`, `var(--border-subtle)`.
+- ✅ Se semântica nova precisa de cor própria, primeiro adicionar em `css/base.css` como `--color-xxx`, depois usar.
+
+### m) Ícones de ação na listagem — SVG, não chars unicode
+
+**Já corrigido em roteiros (v96-97)** mas ainda problema em outras pages: `taskTypes.js`, `team.js`, `checkin.js`, `portalImages.js`, `newsMonitor.js`, `contentConfig.js` usam `✎` em vez de SVG.
+
+- ❌ `<button>✎</button>` (chars unicode são pequenos, baixa legibilidade, dependem da fonte do SO).
+- ✅ SVG inline 14-16px stroke-width 1.75 (Heroicons style) + `data-tip` atributo + CSS `::after` tooltip.
+- Reference: padrão registrado em `js/pages/roteiros.js` `.rt-actions` (v4.49.96+).
+
+### n) Status workflow é padrão repetível, não exclusivo de roteiros
+
+Implementado em v103 só pra roteiros. Outras entidades têm pipeline implícito mas sem UI:
+- CSAT: respostas têm status?
+- Requests: aberto/em análise/respondido/arquivado?
+- Vacation: pending/approved/rejected (já existe schema).
+
+- ✅ Quando criar novo módulo com pipeline (>3 estados), replicar padrão `STATUS_DEFS` map + `_renderStatusDropdown` + `updateXxxStatus` com audit log.
+- Pattern centralizado pode virar componente em `js/components/uiKit.js` futuramente.
+
+### o) Schema legado nunca morre sozinho — campos zumbis acumulam
+
+**Auditoria 22/05**: 39 referências a `perPerson/perCouple` em `js/pages/` + `js/services/` mesmo depois de v101 introduzir `pricing.services`. Renderers usam fallback (OK), mas dados antigos persistem.
+
+- ❌ Não criar schema novo sem plano explícito de deprecation do antigo.
+- ✅ Documentar em comentário ao lado do campo legado: `// LEGADO v4.49.100- — manter pra retrocompat até DD/MM/YYYY (mass cleanup script depois)`.
+- ✅ Migration script periódica (mensal): converter docs antigos quando consultor abrir o doc na UI nova.
+- ⚠️ Se dado legado nunca foi populado em produção (verificável via Firestore admin), pode remover schema na hora — não esperar deprecation cycle.
