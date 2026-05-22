@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 95,
-  build: '20260522-roteiros-fix-consultantid-save',
+  patch: 96,
+  build: '20260522-roteiros-icones-acao-svg',
 };
 
 /** "1.2.0" */

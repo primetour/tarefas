@@ -6,6 +6,38 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.96+20260522-roteiros-icones-acao-svg] — 2026-05-22
+
+Release **PATCH** — ícones de ação na home do Gerador de Roteiros.
+
+**Crítica do Renê**: "ícones de ação na home do gerador de roteiros
+são confusos e não possuem explicação".
+
+**Antes** (chars unicode ambíguos, sem tooltip claro):
+- ✎ Editar (OK)
+- ⧉ Duplicar (obscuro)
+- ↓ Exportar PDF (parecia download/scroll)
+- ⊠ Arquivar (parecia "fechar")
+- ✕ Excluir (confundia com ⊠)
+
+**Agora** (SVG inline reconhecíveis + tooltip CSS estilizado):
+- Editar — lápis (Heroicons-style)
+- Duplicar — 2 quadrados sobrepostos
+- Exportar PDF — seta apontando pra baixo + linha de tray
+- Arquivar — caixa com tampa + linha
+- Restaurar — seta circular (rotate-left)
+- Excluir — lixeira
+
+**Tooltip**: `data-tip` atributo + CSS `::after` que aparece abaixo do
+botão no hover (dark bg #0A1628, font 0.6875rem, 4ms fade-in). Mais
+visível e instantâneo que o `title` nativo do browser. Mantém `aria-label`
+pra acessibilidade.
+
+**Buttons** ganharam border-radius 6px, tamanho fixo 30x30px, hover com
+border-default e bg-hover. Padrão alinhado ao `.btn-icon` do sistema.
+
+---
+
 ## [4.49.95+20260522-roteiros-fix-consultantid-save] — 2026-05-22
 
 Release **PATCH** — **HOTFIX CRÍTICO**. Bug pré-existente impedia salvar

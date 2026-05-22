@@ -175,15 +175,37 @@ export async function renderRoteiros(container) {
         max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
         font-size:0.75rem; color:var(--text-muted);
       }
-      .rt-actions { display:flex; gap:2px; justify-content:flex-end; flex-wrap:nowrap; }
+      /* v4.49.96+ Action buttons: SVG icons + tooltip estilizado.
+         Antes: chars unicode (✎ ⧉ ↓ ⊠ ✕) sem label clara — Renê: "ícones
+         confusos e sem explicação". Agora: SVG reconhecíveis + tooltip
+         CSS dark sobre hover (mais visível que title nativo do browser). */
+      .rt-actions { display:flex; gap:4px; justify-content:flex-end; flex-wrap:nowrap; }
       .rt-actions button {
-        padding:5px 7px; border-radius:5px; font-size:0.875rem;
-        border:none; background:transparent; cursor:pointer;
-        color:var(--text-muted); transition:all 0.1s;
-        line-height:1; flex-shrink:0;
+        position:relative;
+        width:30px; height:30px; padding:0;
+        display:inline-flex; align-items:center; justify-content:center;
+        border-radius:6px;
+        border:1px solid transparent; background:transparent; cursor:pointer;
+        color:var(--text-muted); transition:all 0.12s;
+        flex-shrink:0;
       }
-      .rt-actions button:hover { background:var(--bg-hover, rgba(0,0,0,0.05)); color:var(--text-primary); }
-      .rt-actions button.danger:hover { background:rgba(239,68,68,0.1); color:#EF4444; }
+      .rt-actions button svg { width:15px; height:15px; stroke:currentColor; fill:none; stroke-width:1.75; stroke-linecap:round; stroke-linejoin:round; }
+      .rt-actions button:hover { background:var(--bg-hover, rgba(0,0,0,0.05)); border-color:var(--border-default); color:var(--text-primary); }
+      .rt-actions button.danger:hover { background:rgba(239,68,68,0.1); border-color:rgba(239,68,68,0.25); color:#EF4444; }
+      /* Tooltip estilizado: aparece abaixo do botão no hover */
+      .rt-actions button::after {
+        content:attr(data-tip);
+        position:absolute; top:calc(100% + 4px); left:50%;
+        transform:translateX(-50%) translateY(-2px);
+        background:var(--bg-tooltip, #0A1628); color:#fff;
+        padding:4px 9px; border-radius:4px;
+        font-size:0.6875rem; font-weight:500; letter-spacing:0.01em;
+        white-space:nowrap; pointer-events:none;
+        opacity:0; transition:opacity 0.15s, transform 0.15s;
+        z-index:50;
+        box-shadow:0 2px 8px rgba(0,0,0,0.15);
+      }
+      .rt-actions button:hover::after { opacity:1; transform:translateX(-50%) translateY(0); }
 
       .rt-client-badge {
         display:inline-block; padding:1px 7px; border-radius:999px; font-size:0.65rem; font-weight:600;
@@ -517,12 +539,25 @@ export async function renderRoteiros(container) {
           <td class="muted" style="white-space:nowrap;">${esc(timeAgo(r.updatedAt))}</td>
           <td>
             <div class="rt-actions">
-              <button data-action="edit" data-id="${idEsc}" title="Editar">✎</button>
-              <button data-action="duplicate" data-id="${idEsc}" title="Duplicar">⧉</button>
-              <button data-action="export-pdf" data-id="${idEsc}" title="Exportar PDF">↓</button>
+              <button data-action="edit" data-id="${idEsc}" data-tip="Editar" aria-label="Editar">
+                <svg viewBox="0 0 24 24"><path d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z"/><path d="M19.5 13.5l-3 3M5 21h14"/></svg>
+              </button>
+              <button data-action="duplicate" data-id="${idEsc}" data-tip="Duplicar" aria-label="Duplicar">
+                <svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/></svg>
+              </button>
+              <button data-action="export-pdf" data-id="${idEsc}" data-tip="Exportar PDF" aria-label="Exportar PDF">
+                <svg viewBox="0 0 24 24"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14"/></svg>
+              </button>
               <button data-action="${isArchived ? 'restore' : 'archive'}" data-id="${idEsc}"
-                title="${isArchived ? 'Restaurar' : 'Arquivar'}">${isArchived ? '↺' : '⊠'}</button>
-              <button data-action="delete" data-id="${idEsc}" class="danger" title="Excluir">✕</button>
+                data-tip="${isArchived ? 'Restaurar' : 'Arquivar'}"
+                aria-label="${isArchived ? 'Restaurar' : 'Arquivar'}">
+                ${isArchived
+                  ? `<svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 109-9 9.75 9.75 0 00-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>`
+                  : `<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a2 2 0 002 2h10a2 2 0 002-2V8"/><path d="M10 12h4"/></svg>`}
+              </button>
+              <button data-action="delete" data-id="${idEsc}" class="danger" data-tip="Excluir" aria-label="Excluir">
+                <svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13a2 2 0 002 2h6a2 2 0 002-2l1-13M9 7V5a2 2 0 012-2h2a2 2 0 012 2v2"/></svg>
+              </button>
             </div>
           </td>
         </tr>`;
