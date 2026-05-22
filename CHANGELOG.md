@@ -6,6 +6,43 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.94+20260522-roteiros-dashed-solid-progress-ui] — 2026-05-22
+
+Release **PATCH** — 2 melhorias UX no editor:
+
+**1. Botões dashed → solid** (CLAUDE.md §4):
+Renê: "ainda vejo botões tracejados nesse módulo". 6 ocorrências de
+`1px dashed` migradas pra `1px solid`. `.re-add-btn` CSS reescrito
+pra refletir o visual do `.btn-secondary` do sistema (surface bg,
+solid border-default, sem cor azul harcoded). Hover usa
+`var(--bg-elevated)` + `var(--border-accent)`.
+
+**Também atualizado**: empty states de tabelas e cards de info
+(`re-briefing-note--accent`, `re-briefing-empty`, etc.) sem mais
+border tracejado.
+
+**2. Progress overlay da geração com IA**:
+Renê: "essa API não está muito lenta? acho que vale um botão de
+progresso, não acha? se não o usuário vai abandonar a página".
+
+Substituído o disabled-button + "🔮 Pesquisando…" simples por
+overlay fixed full-screen com:
+- Ícone animado (pulse 1.6s)
+- Phase rotativo: 0s "Pesquisando hotéis em Virtuoso, FHR, LHW" →
+  20s "Selecionando opções pro perfil" → 45s "Redigindo dias" →
+  80s "Finalizando JSON" → 120s "Demorando mais que o normal"
+- Barra animada (gradient slide infinito)
+- Timer elapsed segundos (tabular-nums)
+- Hint "Geração típica leva 60-120s · Não feche a aba"
+
+**Limitação honesta**: a chamada à Cloud Function `callLLM` é
+síncrona/opaca (sem streaming). O progress é "perceptual" — fases
+rotativas por tempo decorrido, não por evento real do agente.
+Streaming via SSE seria a próxima evolução (requer mudança no
+backend).
+
+---
+
 ## [4.49.93+20260522-roteiros-bugs-ux-imagens-dicas-auto] — 2026-05-22
 
 Release **PATCH** — bugfix em massa + 2 features de UX no editor.

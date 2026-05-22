@@ -175,13 +175,17 @@ const EDITOR_CSS = `
   font-family: inherit; box-sizing: border-box;
 }
 .re-dyn-table textarea { resize: vertical; min-height: 32px; }
+/* v4.49.94+ Alinhado ao .btn-secondary do sistema (CLAUDE.md §4):
+   solid border, surface bg, sem dashed. */
 .re-add-btn {
-  display: inline-flex; align-items: center; gap: 4px; padding: 6px 14px; font-size: 0.8125rem;
-  font-weight: 600; color: var(--brand-blue, #3B82F6); background: transparent;
-  border: 1px dashed var(--brand-blue, #3B82F6); border-radius: 6px;
+  display: inline-flex; align-items: center; gap: 4px; padding: 6px 14px;
+  font-size: 0.8125rem; font-weight: 500; font-family: var(--font-ui);
+  color: var(--text-primary); background: var(--bg-surface);
+  border: 1px solid var(--border-default); border-radius: var(--radius-md, 6px);
   cursor: pointer; margin-top: 8px; transition: all 0.15s;
+  line-height: 1;
 }
-.re-add-btn:hover { background: var(--brand-blue, #3B82F6); color: #fff; }
+.re-add-btn:hover { background: var(--bg-elevated); border-color: var(--border-accent); }
 .re-remove-btn {
   background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 1rem;
   padding: 2px 6px; border-radius: 6px; transition: all 0.15s;
@@ -340,7 +344,7 @@ const EDITOR_CSS = `
 }
 .re-briefing-note--accent {
   background: var(--bg-card, #1a1a2e);
-  border: 1px dashed var(--brand-blue, #3B82F6);
+  border: 1px solid var(--brand-blue, #3B82F6);
 }
 .re-briefing-dest-list {
   display: flex; flex-direction: column; gap: 8px; margin: 10px 0;
@@ -348,7 +352,7 @@ const EDITOR_CSS = `
 .re-briefing-empty {
   padding: 14px; text-align: center;
   color: var(--text-muted); font-size: 0.8125rem;
-  border: 1px dashed var(--border-subtle, #333); border-radius: 6px;
+  border: 1px solid var(--border-subtle, #333); border-radius: 6px;
 }
 .re-briefing-dest-row {
   display: grid; grid-template-columns: 2fr 2fr 100px 36px; gap: 8px;
@@ -452,7 +456,7 @@ function renderAiObservationsSection() {
           <h2 class="re-section-title">✨ Observações IA</h2>
         </div>
         <div style="padding:32px;text-align:center;color:var(--text-muted);
-          background:var(--bg-surface);border:1px dashed var(--border-subtle);border-radius:8px;">
+          background:var(--bg-surface);border: 1px solid var(--border-subtle);border-radius:8px;">
           <div style="font-size:2rem;margin-bottom:8px;">🔮</div>
           <div style="font-weight:600;margin-bottom:6px;">Nenhuma geração via IA registrada nesse roteiro.</div>
           <div style="font-size:0.875rem;">
@@ -610,7 +614,7 @@ function renderEmbeddedTipsSection() {
         `;
       }).join('')
     : `<div style="padding:40px 20px;text-align:center;color:var(--text-muted);
-        background:var(--bg-soft);border:1px dashed var(--border);border-radius:8px;">
+        background:var(--bg-soft);border: 1px solid var(--border);border-radius:8px;">
         <div style="font-size:2.5rem;margin-bottom:8px;">💡</div>
         <div style="font-weight:600;font-size:0.9375rem;color:var(--text-primary);margin-bottom:4px;">
           Nenhuma dica anexada
@@ -777,7 +781,7 @@ function renderAdvancedSection() {
         </div>
       </div>
     ` : `
-      <div style="padding:16px;border:1px dashed var(--border);border-radius:8px;text-align:center;color:var(--text-muted);font-size:0.8125rem;">
+      <div style="padding:16px;border: 1px solid var(--border);border-radius:8px;text-align:center;color:var(--text-muted);font-size:0.8125rem;">
         🔒 Você não tem permissão para ver/editar o custo interno deste roteiro.
         <br><span style="font-size:0.7rem;">Solicite ao admin a permissão <code>roteiro_view_cost</code>.</span>
       </div>
@@ -806,7 +810,7 @@ function renderAdvancedSection() {
             </div>
           </div>`
         : `<div style="padding:24px;text-align:center;color:var(--text-muted);font-size:0.8125rem;
-            background:var(--bg-soft);border:1px dashed var(--border);border-radius:8px;">
+            background:var(--bg-soft);border: 1px solid var(--border);border-radius:8px;">
             ${r.status === 'approved' && workflowMode === 'system'
               ? 'Nenhuma tarefa gerada ainda. Clique "+ Gerar agora" pra criar as operacionais.'
               : workflowMode === 'offline'
@@ -3773,11 +3777,13 @@ async function aiGenerateFullRoteiro() {
     if (!ok) return;
   }
 
-  // Loader visual
+  // v4.49.94+ Progress overlay: barra animada + phase rotativo + timer.
+  // API leva 60-120s (web_search 5 hits + ~3k tokens output). Sem feedback
+  // visual, o consultor pensa que travou e abandona a página.
   const btn = document.querySelector('[data-action="ai-generate-full"]');
   const originalText = btn?.textContent;
-  if (btn) { btn.disabled = true; btn.textContent = '🔮 Pesquisando + gerando…'; btn.style.opacity = '0.7'; }
-  showToast('Iniciando geração — pode levar 30-60s (web search + redação).', 'info');
+  if (btn) { btn.disabled = true; btn.style.opacity = '0.5'; }
+  const progress = _showAiProgress();
 
   try {
     // v4.49.86+ Contexto vem de client.* (preferences/restrictions/economicProfile/notes)
@@ -3881,8 +3887,134 @@ Pesquise em **Virtuoso**, **FHR (Amex)** e **LHW** antes de sugerir hotéis. Cit
     console.error('[ai-roteiro] Erro:', e);
     showToast('Falha na geração: ' + (e?.message || 'erro desconhecido'), 'error');
   } finally {
+    progress?.close?.();
     if (btn) { btn.disabled = false; btn.textContent = originalText; btn.style.opacity = ''; }
   }
+}
+
+/**
+ * v4.49.94+ Progress overlay pra geração com IA.
+ * Mostra: phase rotativo + timer elapsed + barra animada.
+ * Não-bloqueante: user pode ver mas operação roda em background.
+ * Retorna { close() } pra encerrar o overlay.
+ */
+function _showAiProgress() {
+  const existing = document.getElementById('re-ai-progress');
+  if (existing) existing.remove();
+
+  const phases = [
+    { at: 0,  icon: '🔍', label: 'Pesquisando hotéis em Virtuoso, FHR e LHW…' },
+    { at: 20, icon: '🏨', label: 'Selecionando opções pro perfil do cliente…' },
+    { at: 45, icon: '✍️', label: 'Redigindo dias e atividades…' },
+    { at: 80, icon: '✨', label: 'Finalizando JSON estruturado…' },
+    { at: 120, icon: '⏳', label: 'Demorando mais que o normal — aguarde, vale a pena.' },
+  ];
+
+  const overlay = document.createElement('div');
+  overlay.id = 're-ai-progress';
+  overlay.innerHTML = `
+    <style>
+      #re-ai-progress {
+        position: fixed; inset: 0; background: rgba(10,22,40,0.72);
+        display: flex; align-items: center; justify-content: center;
+        z-index: 9998; backdrop-filter: blur(2px);
+        animation: re-ai-fadein 0.2s ease;
+      }
+      @keyframes re-ai-fadein { from { opacity: 0; } to { opacity: 1; } }
+      #re-ai-progress .re-ai-card {
+        background: var(--bg-elevated, #1a1a2e); border: 1px solid var(--border-default, #333);
+        border-radius: 12px; padding: 28px 32px; min-width: 380px; max-width: 460px;
+        box-shadow: 0 10px 40px rgba(0,0,0,0.4);
+      }
+      #re-ai-progress .re-ai-icon {
+        font-size: 2.5rem; margin-bottom: 10px; text-align: center;
+        animation: re-ai-pulse 1.6s ease-in-out infinite;
+      }
+      @keyframes re-ai-pulse {
+        0%, 100% { transform: scale(1); opacity: 1; }
+        50% { transform: scale(1.08); opacity: 0.8; }
+      }
+      #re-ai-progress .re-ai-title {
+        font-size: 1.0625rem; font-weight: 600; color: var(--text-primary);
+        text-align: center; margin-bottom: 6px;
+      }
+      #re-ai-progress .re-ai-phase {
+        font-size: 0.875rem; color: var(--text-secondary); text-align: center;
+        min-height: 1.4em; margin-bottom: 18px;
+        transition: opacity 0.4s;
+      }
+      #re-ai-progress .re-ai-bar-wrap {
+        height: 4px; background: var(--bg-surface, #222); border-radius: 999px;
+        overflow: hidden; margin-bottom: 14px;
+      }
+      #re-ai-progress .re-ai-bar {
+        height: 100%; background: linear-gradient(90deg,
+          var(--brand-gold, #D4A843), var(--brand-gold-dark, #A88332), var(--brand-gold, #D4A843));
+        background-size: 200% 100%;
+        width: 100%;
+        animation: re-ai-bar-slide 1.8s linear infinite;
+      }
+      @keyframes re-ai-bar-slide { 0% { background-position: 0% 0; } 100% { background-position: -200% 0; } }
+      #re-ai-progress .re-ai-meta {
+        display: flex; justify-content: space-between; align-items: center;
+        font-size: 0.75rem; color: var(--text-muted);
+      }
+      #re-ai-progress .re-ai-timer { font-variant-numeric: tabular-nums; font-weight: 600; }
+      #re-ai-progress .re-ai-hint {
+        margin-top: 16px; padding-top: 14px;
+        border-top: 1px solid var(--border-subtle, #333);
+        font-size: 0.75rem; color: var(--text-muted); line-height: 1.5;
+      }
+    </style>
+    <div class="re-ai-card" role="status" aria-live="polite">
+      <div class="re-ai-icon" id="re-ai-icon">🔮</div>
+      <div class="re-ai-title">Gerando roteiro com IA</div>
+      <div class="re-ai-phase" id="re-ai-phase">Iniciando…</div>
+      <div class="re-ai-bar-wrap"><div class="re-ai-bar"></div></div>
+      <div class="re-ai-meta">
+        <span>Sonnet 4.5 · web_search Virtuoso/FHR/LHW</span>
+        <span class="re-ai-timer"><span id="re-ai-elapsed">0</span>s</span>
+      </div>
+      <div class="re-ai-hint">
+        Geração típica leva <strong>60-120s</strong>. A chamada roda em background — não feche essa aba.
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const startMs = Date.now();
+  let phaseIdx = 0;
+  const tick = setInterval(() => {
+    const elapsed = Math.floor((Date.now() - startMs) / 1000);
+    const elapsedEl = document.getElementById('re-ai-elapsed');
+    if (elapsedEl) elapsedEl.textContent = elapsed;
+    // Atualiza phase quando passa do ponto
+    const next = phases.findIndex(p => elapsed >= p.at);
+    let target = phases.length - 1;
+    for (let i = 0; i < phases.length; i++) if (elapsed >= phases[i].at) target = i;
+    if (target !== phaseIdx) {
+      phaseIdx = target;
+      const ph = phases[phaseIdx];
+      const iconEl = document.getElementById('re-ai-icon');
+      const phaseEl = document.getElementById('re-ai-phase');
+      if (iconEl) iconEl.textContent = ph.icon;
+      if (phaseEl) {
+        phaseEl.style.opacity = '0';
+        setTimeout(() => { phaseEl.textContent = ph.label; phaseEl.style.opacity = '1'; }, 200);
+      }
+    }
+  }, 1000);
+  // Trigger phase 0 imediatamente
+  const phaseEl0 = document.getElementById('re-ai-phase');
+  if (phaseEl0) phaseEl0.textContent = phases[0].label;
+
+  return {
+    close() {
+      clearInterval(tick);
+      overlay.style.animation = 're-ai-fadein 0.2s reverse';
+      setTimeout(() => overlay.remove(), 180);
+    },
+  };
 }
 
 function _applyAiOutputToRoteiro(ai, runResult, inputSnapshot) {

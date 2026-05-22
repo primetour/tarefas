@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 93,
-  build: '20260522-roteiros-bugs-ux-imagens-dicas-auto',
+  patch: 94,
+  build: '20260522-roteiros-dashed-solid-progress-ui',
 };
 
 /** "1.2.0" */
