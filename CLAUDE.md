@@ -84,7 +84,58 @@ Quando a mudança altera arquitetura, fluxo de dados, contrato externo ou regra 
 
 ---
 
-## 4. Quick references (onde fica o quê)
+## 4. SEMPRE respeitar o padrão visual existente
+
+**Não invente componente UI antes de auditar o sistema.** O Renê reclamou diretamente: *"se não fica parecendo que tem vários sistemas em um só"*. Erros do passado que NÃO devem se repetir:
+
+- ❌ Criei classes próprias `.re-add-btn` (dashed) no editor de roteiros — sistema usa `.btn .btn-primary/.btn-secondary/.btn-ghost`
+- ❌ Inventei gradient roxo (`#7c3aed → #a855f7`) pro botão IA — sistema usa `var(--brand-blue)` ou `var(--brand-gold)`
+- ❌ Inventei `border:1px dashed` em containers — sistema usa `border:1px solid var(--border-subtle)`
+- ❌ Hardcoded `rgba(124,58,237,0.06)` — sistema usa `var(--bg-surface)`
+
+### Checklist ANTES de criar qualquer UI:
+
+1. **Abrir 2-3 páginas-modelo já existentes**:
+   - `js/pages/portalImport.js` (forms + cards)
+   - `js/pages/portalDashboard.js` (cards/tables)
+   - `js/pages/contentCalendar.js` (page-header + filters)
+   - `js/pages/portalDestinations.js` (módulo simples padrão)
+2. **Identificar**:
+   - Qual wrapper (`<div class="page-header">`, `<h1 class="page-title">`, `<div class="card">`)
+   - Quais classes de botão (`btn btn-primary` / `btn-secondary` / `btn-ghost` / `btn-sm`)
+   - Quais classes de form (`form-input`, `form-select`, `form-textarea` — ou no editor, `re-input/.re-select/.re-textarea`)
+   - Quais variáveis CSS de cor (`var(--brand-blue)`, `var(--brand-gold)`, `var(--bg-surface)`, `var(--border-subtle)`, `var(--text-secondary)`)
+3. **Reusar uiKit centralizado**:
+   - `renderPageHeader({ title, subtitle, primary, secondary, export })` de `js/components/uiKit.js`
+   - `renderFilterBar({ statusPills, search, selects, periodPills })`
+   - `renderExportMenu`, `renderTabs`, `renderPeriodPills`
+4. **Antes de inventar uma cor**: usa as variáveis CSS existentes. Se realmente precisa de uma nova, **discutir com o Renê** primeiro — não introduzir hardcoded.
+
+### Anti-padrões visuais (NÃO fazer):
+
+- ❌ `style="background:linear-gradient(...)"` em botão — gradient não é padrão do sistema
+- ❌ `style="border:1px dashed"` — dashed não existe no sistema
+- ❌ `style="box-shadow:0 4px 14px rgba(...)"` em botão — sistema não usa sombra pesada
+- ❌ `class="re-add-btn"` pra um botão de ação primária — usar `class="btn btn-primary"`
+- ❌ Cor RGBA hardcoded — usar variável CSS
+- ❌ Inventar emoji-only labels (✨, 🎯) sem clareza textual — manter "Gerar com IA" não "✨"
+- ❌ Misturar excesso de informação no header (3-4 status strings em uma linha)
+
+### Anti-padrões de texto/UX:
+
+- ❌ Frases redundantes (3 frases dizendo "preencha tudo isso")
+- ❌ Placeholders longos parecendo manual (`Ex: Casal 55-60, brasileiros, viajantes experientes (já fizeram Europa 3x). Apreciam vinhos...`) — usar `Ex: Casal cultural` no máximo
+- ❌ Botão "Criar com IA" + botão "+Novo Roteiro" — funções duplicadas confundem
+- ❌ Checklist "🔒 Falta isso e aquilo" — usar validação contextual ao clicar
+- ❌ Mensagens com info técnica voltada pro user (`~30-60s · Sonnet 4.5 · prompt caching ativo`) — usuário não precisa saber
+
+### Princípio mestre
+
+**Antes de codar UI nova, leia 1 arquivo de página similar e responda em voz alta:** *"Que classe esse botão tem? Que variável de cor? Qual layout wrapper?"*. Depois replica. Só inventa quando o sistema realmente não oferece a primitiva.
+
+---
+
+## 5. Quick references (onde fica o quê)
 
 ### Versionamento
 - Single source: `js/version.js` (export `VERSION = { major, minor, patch, build }`)
@@ -113,7 +164,7 @@ Quando a mudança altera arquitetura, fluxo de dados, contrato externo ou regra 
 
 ---
 
-## 5. Anti-padrões (NÃO FAZER)
+## 6. Anti-padrões (NÃO FAZER)
 
 - ❌ Dizer "testado" sem ter realmente aberto o Chrome
 - ❌ Fazer commit sem bumpar versão + cache-bust
@@ -126,7 +177,7 @@ Quando a mudança altera arquitetura, fluxo de dados, contrato externo ou regra 
 
 ---
 
-## 6. Checklist mental antes de dizer "feito"
+## 7. Checklist mental antes de dizer "feito"
 
 ```
 [ ] Versão bumpada (js/version.js + index.html cache-bust)
