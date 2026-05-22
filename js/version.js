@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 74,
-  build: '20260521-roteiros-ai-agent-luxo-virtuoso-fhr-lhw',
+  patch: 75,
+  build: '20260521-roteiros-briefing-secao-ia-fluxo-claro',
 };
 
 /** "1.2.0" */

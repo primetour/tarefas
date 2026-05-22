@@ -238,6 +238,24 @@ export function emptyRoteiro() {
       overrides: {},
     },
 
+    /* v4.49.75+ Briefing inicial — coletado ANTES de gerar com IA.
+     *
+     * É a fonte primária de contexto pro agente entender o cliente
+     * antes de propor roteiro. Aparece como Seção 0 no editor.
+     *
+     * Campos curtos pra preenchimento rápido + textarea livre pro
+     * consultor adicionar nuances que não cabem nos selects.
+     */
+    briefing: {
+      tipoViagem: '',           // lua-de-mel | familia | cultural | aventura | relaxamento | luxo-allout | outro
+      perfilViajantes: '',      // textarea: "Casal 50s, brasileiros, viajantes experientes, 2ª lua-de-mel"
+      interesses: '',           // textarea: gastronomia, arte, natureza, etc
+      restricoes: '',           // textarea: alergias, mobilidade reduzida, kosher, etc
+      orcamentoFaixa: '',       // standard | superior | luxury | ultra-luxury
+      contextoLivre: '',        // textarea livre: aniversário de 25 anos, cliente pediu Roma de novo, etc
+      querSugestaoDestino: false, // se true, agente sugere 2-3 destinos baseado no perfil
+    },
+
     /* v4.49.74+ Geração com IA — observações internas do consultor.
      *
      * Não exposto no PDF/PPT exportado pro cliente. Visível apenas no

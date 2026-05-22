@@ -6,6 +6,70 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.75+20260521-roteiros-briefing-secao-ia-fluxo-claro] — 2026-05-21
+
+Release **PATCH** — UX do gerador de roteiros: briefing como Seção 0
++ botão IA contextualizado + agente capaz de sugerir destinos.
+
+**Contexto** (Renê): "tem botao de criar com IA antes mesmo de solicitar
+novo roteiro... ele dá erro automático porque alega que não escolhi
+destino... a ideia não é ele primeiro receber a solicitação do
+consultor, entender as necessidades, que tipo de cliente é... para
+depois ele atuar? o UX disso está torto".
+
+**Mudanças**:
+
+1. **Nova Seção 0 "Briefing"** (antes de Cliente):
+   - Tipo de viagem (10 opções: lua-de-mel, cultural, gastronômica…)
+   - Faixa de orçamento (4 níveis: standard → ultra-luxury)
+   - Perfil dos viajantes (textarea)
+   - Interesses + restrições (textareas)
+   - Datas (início + fim)
+   - Lista de destinos editável (autocomplete via `<datalist>` com
+     destinos cadastrados em `portal_destinations`)
+   - Checkbox **"🔮 Quero que o agente sugira destinos baseado no
+     briefing"** — quando marcado, destinos viram opcionais
+   - Contexto livre (textarea)
+
+2. **Botão "✨ Gerar com IA" sai do header global**:
+   - Vira botão grande, gradient roxo, dentro da Seção Briefing
+   - Só ativo (clicável) quando briefing mínimo está preenchido
+   - Quando faltam campos, mostra checklist amarelo do que falta
+   - Header tem agora atalho "✨ IA" que abre a Seção Briefing
+
+3. **Validação inteligente** em `aiGenerateFullRoteiro`:
+   - Valida BRIEFING (tipo + perfil + datas) em vez de
+     "destino obrigatório" cego
+   - Se `querSugestaoDestino === true`, destinos viram opcionais
+   - Em caso de falta, redireciona usuário pra aba Briefing
+     (`switchSection(0)`) com toast explicativo
+
+4. **Agent system prompt v2** (re-seeded):
+   - Nova seção "Briefing como entrada" explicando o formato estruturado
+   - Nova seção "Modo especial: sugestão de destinos" com critérios
+     (coerência, sazonalidade, logística, orçamento)
+   - Schema JSON ganhou campo `destination_suggestions[]` (label,
+     destinations[], rationale) — obrigatório em modo sugestão
+   - System prompt: 7497 → **9736 chars** (caching ephemeral ativo)
+
+5. **Schema do roteiro** (`emptyRoteiro`):
+   - Novo bloco `briefing{tipoViagem, perfilViajantes, interesses,
+     restricoes, orcamentoFaixa, contextoLivre, querSugestaoDestino}`
+
+6. **Handlers**:
+   - `go-briefing` (header → abre Seção 0)
+   - `add-brief-dest` / `remove-brief-dest` (manipular lista de
+     destinos no briefing)
+   - `ai-generate-full` agora dispara contextual error UX
+
+7. **Renumeração de SECTIONS**: todas deslocadas +1 (Cliente=1,
+   Viagem=2, Dia-a-dia=3, …, Observações IA=15).
+
+**Validação**: `node --check` ok. Seed do agente rodado (9736 chars
+no system prompt). E2E real pendente.
+
+---
+
 ## [4.49.74+20260521-roteiros-ai-agent-luxo-virtuoso-fhr-lhw] — 2026-05-21
 
 Release **MINOR-importante** — Agente de IA pra geração de roteiros

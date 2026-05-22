@@ -43,6 +43,7 @@ function formatDateForDay(startDate, dayIndex) {
 
 /* ─── Sections definition ─────────────────────────────────── */
 const SECTIONS = [
+  { icon: '\u{1F3AF}', label: 'Briefing' },           // v4.49.75+ Seção 0 — contexto + gerar IA
   { icon: '\u{1F464}', label: 'Cliente' },
   { icon: '\u{1F30D}', label: 'Viagem' },
   { icon: '\u{1F4C5}', label: 'Dia a dia' },
@@ -310,22 +311,24 @@ const EDITOR_CSS = `
 /* ─── Section renderers ───────────────────────────────────── */
 
 function renderSectionContent(index) {
+  // v4.49.75+ Seção 0 nova = Briefing. Todas as antigas deslocam +1.
   switch (index) {
-    case 0:  return renderClienteSection();
-    case 1:  return renderViagemSection();
-    case 2:  return renderDiaDiaSection();
-    case 3:  return renderHoteisSection();
-    case 4:  return renderValoresSection();
-    case 5:  return renderOpcionaisSection();
-    case 6:  return renderIncluiSection();
-    case 7:  return renderPagamentoSection();
-    case 8:  return renderCancelamentoSection();
-    case 9:  return renderInfoSection();
-    case 10: return renderImagensSection();
-    case 11: return renderEmbeddedTipsSection();  // 4.42.0+ Sprint 3
-    case 12: return renderAdvancedSection();      // 4.41.0+ Sprint 2
-    case 13: return renderPreviewSection();
-    case 14: return renderAiObservationsSection(); // v4.49.74+ Observações IA
+    case 0:  return renderBriefingSection();        // v4.49.75+ NOVA
+    case 1:  return renderClienteSection();
+    case 2:  return renderViagemSection();
+    case 3:  return renderDiaDiaSection();
+    case 4:  return renderHoteisSection();
+    case 5:  return renderValoresSection();
+    case 6:  return renderOpcionaisSection();
+    case 7:  return renderIncluiSection();
+    case 8:  return renderPagamentoSection();
+    case 9:  return renderCancelamentoSection();
+    case 10: return renderInfoSection();
+    case 11: return renderImagensSection();
+    case 12: return renderEmbeddedTipsSection();   // 4.42.0+ Sprint 3
+    case 13: return renderAdvancedSection();       // 4.41.0+ Sprint 2
+    case 14: return renderPreviewSection();
+    case 15: return renderAiObservationsSection(); // v4.49.74+ Observações IA
     default: return '';
   }
 }
@@ -720,7 +723,224 @@ function renderAdvancedSection() {
   `;
 }
 
-/* ── 0: Cliente ──────────────────────────────────────────── */
+/* ── 0: Briefing (v4.49.75+) ──────────────────────────────
+ *
+ * Primeira aba do editor. Coleta contexto pro agente IA antes de gerar:
+ *   - Tipo de viagem (lua-de-mel, cultural, etc.)
+ *   - Perfil dos viajantes (textarea)
+ *   - Interesses, restrições, orçamento
+ *   - Destinos (combobox com portal_destinations + cadastro inline)
+ *     OU "quero sugestão do agente"
+ *   - Datas
+ *   - Contexto livre
+ *
+ * Botão "✨ Gerar com IA" grande, dentro desta seção, só ativo quando
+ * briefing mínimo está preenchido. Estado claro do que ainda falta.
+ * ──────────────────────────────────────────────────────────── */
+const TIPOS_VIAGEM = [
+  { value: '',                  label: '— selecione —' },
+  { value: 'lua-de-mel',        label: '💕 Lua-de-mel' },
+  { value: 'familia',           label: '👨‍👩‍👧 Família com crianças' },
+  { value: 'cultural',          label: '🏛 Cultural / Histórica' },
+  { value: 'aventura',          label: '🏔 Aventura / Outdoor' },
+  { value: 'relaxamento',       label: '🌴 Relaxamento / Praia' },
+  { value: 'gastronomica',      label: '🍷 Gastronômica / Enoturismo' },
+  { value: 'luxo-allout',       label: '✨ Luxo all-out (sem teto)' },
+  { value: 'celebracao',        label: '🎉 Celebração (aniversário, bodas)' },
+  { value: 'multigeracional',   label: '👴 Multigeracional (3+ gerações)' },
+  { value: 'outro',             label: '✏ Outro (especificar no contexto livre)' },
+];
+
+const ORCAMENTO_FAIXAS = [
+  { value: '',              label: '— a definir —' },
+  { value: 'standard',      label: 'Standard ($500-1k USD/pessoa/dia)' },
+  { value: 'superior',      label: 'Superior ($1k-2k USD/pessoa/dia)' },
+  { value: 'luxury',        label: 'Luxury ($2k-4k USD/pessoa/dia)' },
+  { value: 'ultra-luxury',  label: 'Ultra-luxury ($4k+ USD/pessoa/dia)' },
+];
+
+function renderBriefingSection() {
+  const b = currentRoteiro.briefing || {};
+  const travel = currentRoteiro.travel || {};
+  const destinations = Array.isArray(travel.destinations) ? travel.destinations : [];
+  const querSugestao = b.querSugestaoDestino === true;
+
+  // Diagnóstico de "o que falta" pra liberar o botão IA
+  const missing = [];
+  if (!b.tipoViagem) missing.push('tipo de viagem');
+  if (!b.perfilViajantes?.trim()) missing.push('perfil dos viajantes');
+  if (!travel.startDate || !travel.endDate) missing.push('datas (início e fim)');
+  if (!querSugestao && destinations.filter(d => d.city || d.country).length === 0) {
+    missing.push('destinos (ou marque "quero sugestão do agente")');
+  }
+  const isReady = missing.length === 0;
+
+  // Lista destinos pra autocomplete (vem de allDestinations já carregado no init)
+  const destOptionsHtml = (allDestinations || [])
+    .slice()
+    .sort((a, b) => {
+      const c = (a.continent||'').localeCompare(b.continent||'', 'pt-BR');
+      if (c !== 0) return c;
+      const co = (a.country||'').localeCompare(b.country||'', 'pt-BR');
+      if (co !== 0) return co;
+      return (a.city||'').localeCompare(b.city||'', 'pt-BR');
+    })
+    .map(d => `<option value="${esc([d.city, d.country].filter(Boolean).join(', '))}" data-id="${esc(d.id)}" data-continent="${esc(d.continent)}" data-country="${esc(d.country)}" data-city="${esc(d.city)}"></option>`)
+    .join('');
+
+  return `
+    <div class="re-section">
+      <div class="re-section-header">
+        <h2 class="re-section-title">🎯 Briefing</h2>
+        <span style="font-size:0.75rem;color:var(--text-muted);">contexto pro agente IA</span>
+      </div>
+
+      <div style="padding:14px 16px;border-radius:8px;background:rgba(124,58,237,0.06);border-left:3px solid #7c3aed;margin-bottom:20px;font-size:0.875rem;color:var(--text-secondary);">
+        Preencha o briefing abaixo pra que o consultor de IA entenda o cliente antes de propor o roteiro.
+        O briefing é a base do raciocínio do agente — quanto mais rico, melhor o resultado.
+        Apenas <strong>perfil</strong> + <strong>tipo de viagem</strong> + <strong>datas</strong> + <strong>destinos</strong> (ou sugestão) são obrigatórios.
+      </div>
+
+      <!-- Grid 2 colunas -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+        <div class="re-form-group">
+          <label>Tipo de viagem <span style="color:#EF4444;">*</span></label>
+          <select data-field="briefing.tipoViagem">
+            ${TIPOS_VIAGEM.map(t => `<option value="${esc(t.value)}" ${b.tipoViagem === t.value ? 'selected' : ''}>${esc(t.label)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="re-form-group">
+          <label>Faixa de orçamento</label>
+          <select data-field="briefing.orcamentoFaixa">
+            ${ORCAMENTO_FAIXAS.map(o => `<option value="${esc(o.value)}" ${b.orcamentoFaixa === o.value ? 'selected' : ''}>${esc(o.label)}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+
+      <div class="re-form-group" style="margin-top:14px;">
+        <label>Perfil dos viajantes <span style="color:#EF4444;">*</span></label>
+        <textarea data-field="briefing.perfilViajantes" rows="3"
+          placeholder="Ex: Casal 55-60, brasileiros, viajantes experientes (já fizeram Europa 3x). Apreciam vinhos, arte e gastronomia. Sem restrições físicas."
+          style="width:100%;resize:vertical;">${esc(b.perfilViajantes || '')}</textarea>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px;">
+        <div class="re-form-group">
+          <label>Interesses / preferências</label>
+          <textarea data-field="briefing.interesses" rows="3"
+            placeholder="Ex: museus de arte, refeições estreladas Michelin, vinícolas boutique, caminhadas leves."
+            style="width:100%;resize:vertical;">${esc(b.interesses || '')}</textarea>
+        </div>
+        <div class="re-form-group">
+          <label>Restrições / cuidados</label>
+          <textarea data-field="briefing.restricoes" rows="3"
+            placeholder="Ex: cliente tem joelho recém-operado (evitar muita caminhada). Não comem porco. Alergia a frutos do mar."
+            style="width:100%;resize:vertical;">${esc(b.restricoes || '')}</textarea>
+        </div>
+      </div>
+
+      <!-- Datas -->
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px;">
+        <div class="re-form-group">
+          <label>Data de início <span style="color:#EF4444;">*</span></label>
+          <input type="date" data-field="travel.startDate" value="${esc(travel.startDate || '')}" />
+        </div>
+        <div class="re-form-group">
+          <label>Data de fim <span style="color:#EF4444;">*</span></label>
+          <input type="date" data-field="travel.endDate" value="${esc(travel.endDate || '')}" />
+        </div>
+      </div>
+
+      <!-- Destinos -->
+      <div style="margin-top:18px;padding:14px;border-radius:8px;background:var(--bg-surface);border:1px solid var(--border-subtle);">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px;">
+          <div style="font-weight:600;font-size:0.9375rem;">📍 Destinos da viagem <span style="color:#EF4444;">*</span></div>
+          <label style="display:flex;align-items:center;gap:6px;font-size:0.8125rem;color:var(--text-secondary);cursor:pointer;">
+            <input type="checkbox" data-field="briefing.querSugestaoDestino" ${querSugestao ? 'checked' : ''} />
+            🔮 Quero que o agente sugira destinos baseado no briefing
+          </label>
+        </div>
+
+        ${querSugestao ? `
+          <div style="padding:10px 12px;background:rgba(124,58,237,0.08);border-radius:6px;border:1px dashed #a855f7;font-size:0.8125rem;color:var(--text-secondary);">
+            ✨ O agente vai analisar o briefing + tipo de viagem e propor 2-3 destinos coerentes. Os campos abaixo ficam opcionais (você pode adicionar destinos "âncora" se quiser, ex: "passar por Roma obrigatoriamente").
+          </div>
+        ` : ''}
+
+        <!-- Lista de destinos -->
+        <div id="re-briefing-dests" style="display:flex;flex-direction:column;gap:8px;margin-top:10px;">
+          ${destinations.length === 0 ? `
+            <div style="padding:14px;text-align:center;color:var(--text-muted);font-size:0.8125rem;border:1px dashed var(--border-subtle);border-radius:6px;">
+              ${querSugestao ? 'Opcional: adicionar destinos "âncora" obrigatórios' : 'Nenhum destino — adicione pelo menos um'}
+            </div>
+          ` : destinations.map((d, idx) => `
+            <div data-brief-dest-idx="${idx}" style="display:flex;align-items:center;gap:8px;padding:8px;background:var(--bg-elevated);border-radius:6px;border:1px solid var(--border-subtle);">
+              <input type="text" data-field="travel.destinations.${idx}.city" list="re-dest-list"
+                value="${esc(d.city || '')}" placeholder="Cidade"
+                style="flex:2;padding:6px 10px;background:transparent;border:1px solid var(--border-subtle);border-radius:4px;color:var(--text-primary);" />
+              <input type="text" data-field="travel.destinations.${idx}.country"
+                value="${esc(d.country || '')}" placeholder="País"
+                style="flex:2;padding:6px 10px;background:transparent;border:1px solid var(--border-subtle);border-radius:4px;color:var(--text-primary);" />
+              <input type="number" data-field="travel.destinations.${idx}.nights" min="1"
+                value="${d.nights || ''}" placeholder="Noites"
+                style="width:80px;padding:6px 10px;background:transparent;border:1px solid var(--border-subtle);border-radius:4px;color:var(--text-primary);" />
+              <button class="re-add-btn" data-action="remove-brief-dest" data-idx="${idx}"
+                style="margin-top:0;padding:4px 10px;font-size:0.75rem;background:transparent;color:#EF4444;border:1px solid #EF4444;">×</button>
+            </div>
+          `).join('')}
+        </div>
+
+        <button class="re-add-btn" data-action="add-brief-dest" style="margin-top:10px;padding:6px 14px;font-size:0.8125rem;">+ Adicionar destino</button>
+
+        <!-- datalist pra autocomplete -->
+        <datalist id="re-dest-list">${destOptionsHtml}</datalist>
+      </div>
+
+      <div class="re-form-group" style="margin-top:14px;">
+        <label>Contexto livre (opcional)</label>
+        <textarea data-field="briefing.contextoLivre" rows="3"
+          placeholder="Qualquer informação adicional: aniversário, ocasião especial, restrições não cobertas acima, expectativas do cliente, briefing recebido por e-mail, etc."
+          style="width:100%;resize:vertical;">${esc(b.contextoLivre || '')}</textarea>
+      </div>
+
+      <!-- Botão Gerar com IA -->
+      <div style="margin-top:24px;padding:20px;border-radius:12px;
+        background:linear-gradient(135deg,rgba(124,58,237,0.10) 0%,rgba(168,85,247,0.10) 100%);
+        border:2px solid ${isReady ? '#7c3aed' : 'var(--border-subtle)'};
+        text-align:center;">
+        ${isReady ? `
+          <div style="margin-bottom:12px;font-size:0.9375rem;font-weight:600;color:var(--text-primary);">
+            ✅ Briefing pronto! O agente vai pesquisar em Virtuoso, Fine Hotels & Resorts e Leading Hotels of the World.
+          </div>
+          <button class="re-add-btn" data-action="ai-generate-full"
+            style="margin-top:0;padding:14px 32px;font-size:1rem;font-weight:700;
+              background:linear-gradient(135deg,#7c3aed 0%,#a855f7 100%);
+              color:#fff;border:none;box-shadow:0 4px 14px rgba(124,58,237,0.4);">
+            ✨ Gerar roteiro com IA
+          </button>
+          <div style="margin-top:10px;font-size:0.75rem;color:var(--text-muted);">
+            ~30-60s · Sonnet 4.5 · prompt caching ativo · zero alucinação garantida
+          </div>
+        ` : `
+          <div style="font-size:0.9375rem;color:var(--text-secondary);margin-bottom:10px;">
+            🔒 Para gerar com IA, ainda falta:
+          </div>
+          <ul style="list-style:none;padding:0;margin:0 0 12px;font-size:0.875rem;color:#F59E0B;">
+            ${missing.map(m => `<li>⚠ ${esc(m)}</li>`).join('')}
+          </ul>
+          <button class="re-add-btn" disabled
+            style="margin-top:0;padding:14px 32px;font-size:1rem;font-weight:700;
+              background:var(--bg-surface);color:var(--text-muted);
+              border:1px solid var(--border-subtle);cursor:not-allowed;opacity:0.6;">
+            ✨ Gerar roteiro com IA
+          </button>
+        `}
+      </div>
+    </div>
+  `;
+}
+
+/* ── 1: Cliente ──────────────────────────────────────────── */
 function renderClienteSection() {
   const c = currentRoteiro.client;
   // 4.41.0+ (Sprint 2) — viajantes substituem adults/children/childrenAges.
@@ -2488,6 +2708,33 @@ async function handleEditorClick(e) {
       break;
     }
 
+    case 'go-briefing': {
+      // v4.49.75+ Atalho do header pra aba Briefing
+      switchSection(0);
+      break;
+    }
+
+    case 'add-brief-dest': {
+      // v4.49.75+ Adiciona destino à lista do Briefing
+      currentRoteiro = collectFormData();
+      if (!currentRoteiro.travel.destinations) currentRoteiro.travel.destinations = [];
+      currentRoteiro.travel.destinations.push({ city: '', country: '', nights: 1 });
+      switchSection(0);
+      markDirty();
+      break;
+    }
+
+    case 'remove-brief-dest': {
+      // v4.49.75+ Remove destino da lista do Briefing
+      currentRoteiro = collectFormData();
+      const ri = parseInt(target.dataset.idx);
+      if (!Number.isInteger(ri) || !currentRoteiro.travel?.destinations) break;
+      currentRoteiro.travel.destinations.splice(ri, 1);
+      switchSection(0);
+      markDirty();
+      break;
+    }
+
     case 'add-activity': {
       const dayIdx = parseInt(target.dataset.day);
       currentRoteiro = collectFormData();
@@ -3234,7 +3481,8 @@ export async function renderRoteiroEditor(container) {
           <span class="re-header-title">${esc(pageTitle)}</span>
           <span class="status-badge">${esc(statusLabel)}</span>
           <span class="re-autosave" id="re-autosave-status">${roteiroId ? 'Carregado' : (isAiGenerated ? 'Gerado por IA — n\u00e3o salvo' : 'Novo roteiro')}</span>
-          <button class="re-add-btn" data-action="ai-generate-full" style="margin-top:0;padding:8px 16px;background:linear-gradient(135deg,#7c3aed 0%,#a855f7 100%);color:#fff;border:none;font-weight:600;" title="Gera roteiro completo via IA (Sonnet 4.5 + Virtuoso/FHR/LHW)">✨ Gerar com IA</button>
+          <!-- v4.49.75+ Botão IA movido pra aba Briefing (Seção 0). Atalho aqui só pra navegar pra lá. -->
+          <button class="re-add-btn" data-action="go-briefing" style="margin-top:0;padding:8px 16px;background:linear-gradient(135deg,#7c3aed 0%,#a855f7 100%);color:#fff;border:none;font-weight:600;" title="Abre a aba Briefing onde está o botão de geração com IA">✨ IA</button>
           <button class="re-add-btn" data-action="save" style="margin-top:0;font-weight:700;padding:8px 20px;">Salvar</button>
           <button class="re-add-btn" data-action="export-pdf" style="margin-top:0;padding:8px 16px;">Exportar PDF</button>
         </div>
@@ -3305,15 +3553,22 @@ export async function renderRoteiroEditor(container) {
 async function aiGenerateFullRoteiro() {
   if (!currentRoteiro) currentRoteiro = collectFormData();
 
-  // Pré-flight checks
+  // v4.49.75+ Pré-flight novo: valida BRIEFING, não destinos diretos.
+  // Destino é opcional se "quer sugestão do agente" estiver marcado.
+  const b = currentRoteiro.briefing || {};
   const travel = currentRoteiro.travel || {};
   const destinations = Array.isArray(travel.destinations) ? travel.destinations.filter(d => d.city || d.country) : [];
-  if (destinations.length === 0) {
-    showToast('Adicione pelo menos um destino (cidade ou país) antes de gerar.', 'error');
-    return;
-  }
-  if (!travel.startDate || !travel.endDate) {
-    showToast('Preencha as datas de início e fim da viagem.', 'error');
+  const querSugestao = b.querSugestaoDestino === true;
+
+  const missing = [];
+  if (!b.tipoViagem) missing.push('tipo de viagem');
+  if (!b.perfilViajantes?.trim()) missing.push('perfil dos viajantes');
+  if (!travel.startDate || !travel.endDate) missing.push('datas (início/fim)');
+  if (!querSugestao && destinations.length === 0) missing.push('destinos (ou marque "quero sugestão")');
+
+  if (missing.length) {
+    showToast(`Briefing incompleto. Falta: ${missing.join(', ')}. Vou abrir a aba Briefing.`, 'error');
+    switchSection(0);
     return;
   }
 
@@ -3333,33 +3588,65 @@ async function aiGenerateFullRoteiro() {
   showToast('Iniciando geração — pode levar 30-60s (web search + redação).', 'info');
 
   try {
-    // Monta contexto pra IA
+    // v4.49.75+ Monta contexto rico vindo do briefing + travelers
     const travelers = Array.isArray(currentRoteiro.travelers) ? currentRoteiro.travelers : [];
     const travelerLines = travelers
       .filter(t => t.name)
       .map(t => `- ${t.name}${t.age ? ` (${t.age} anos)` : ''}${t.isLead ? ' [líder do grupo]' : ''}${t.notes ? ` — ${t.notes}` : ''}`)
       .join('\n');
 
-    const destLines = destinations
-      .map(d => `- ${[d.city, d.country].filter(Boolean).join(', ')}: ${d.nights || 1} noite${(d.nights || 1) > 1 ? 's' : ''}`)
-      .join('\n');
+    const destLines = destinations.length
+      ? destinations.map(d => `- ${[d.city, d.country].filter(Boolean).join(', ')}: ${d.nights || 1} noite${(d.nights || 1) > 1 ? 's' : ''}`).join('\n')
+      : '(nenhum destino fixado pelo consultor)';
 
-    const userMessage = `Crie um roteiro de luxo PRIMETOUR seguindo todas as diretrizes do system prompt.
+    const tipoLabel = (TIPOS_VIAGEM.find(t => t.value === b.tipoViagem)?.label || b.tipoViagem || '—').replace(/^[^ ]+ /, '');
+    const orcLabel = (ORCAMENTO_FAIXAS.find(o => o.value === b.orcamentoFaixa)?.label || b.orcamentoFaixa || '—');
 
-**Dados da viagem:**
+    const userMessage = `Você recebeu um briefing de viagem da PRIMETOUR. Crie um roteiro de luxo seguindo TODAS as diretrizes do system prompt.
+
+## BRIEFING DO CONSULTOR
+
+**Tipo de viagem:** ${tipoLabel}
+**Faixa de orçamento:** ${orcLabel}
+
+**Perfil dos viajantes:**
+${b.perfilViajantes?.trim() || '(consultor não detalhou — assuma público alto padrão 50+, brasileiros)'}
+
+**Interesses / preferências:**
+${b.interesses?.trim() || '(não especificado)'}
+
+**Restrições / cuidados:**
+${b.restricoes?.trim() || '(nenhuma informada)'}
+
+${b.contextoLivre?.trim() ? `**Contexto livre do consultor:**\n${b.contextoLivre.trim()}\n` : ''}
+
+## DADOS DA VIAGEM
+
 - Período: ${travel.startDate} a ${travel.endDate}
-- Total de noites: ${travel.nights || destinations.reduce((s, d) => s + (d.nights || 0), 0)}
+- Total de noites: ${travel.nights || destinations.reduce((s, d) => s + (d.nights || 0), 0) || '—'}
 
-**Destinos solicitados (cidade · noites):**
+**Destinos solicitados:**
 ${destLines}
 
-**Viajantes (${travelers.length || 'não especificado'}):**
-${travelerLines || '(não especificado — assuma 2 adultos, perfil alto padrão 50+)'}
+**Viajantes (${travelers.length || 'não informados'}):**
+${travelerLines || '(não detalhados na lista — use o perfil acima)'}
 
-${currentRoteiro.notes ? `**Observações do consultor:**\n${currentRoteiro.notes}\n` : ''}
-${currentRoteiro.aiPrompt ? `**Briefing do cliente:**\n${currentRoteiro.aiPrompt}\n` : ''}
+${querSugestao ? `
+## ⚠️ MODO ESPECIAL: SUGESTÃO DE DESTINOS
 
-**Pesquise nos sites confiáveis (Virtuoso, FHR via Amex, LHW)** antes de sugerir hotéis. Cite as fontes em \`sources_consulted\`. Retorne APENAS o JSON estruturado, sem markdown fences nem texto extra.`;
+O consultor NÃO especificou destinos definitivos. Você deve:
+
+1. Analisar o briefing (tipo de viagem, perfil, interesses, restrições, orçamento).
+2. Propor de **2 a 3 opções de combinação de destinos** que façam sentido pra esse perfil (no campo \`destination_suggestions\` do JSON de output, ver schema).
+3. Construir o roteiro completo (\`days\`, \`hotels\`, etc.) baseado na **PRIMEIRA opção** que você sugerir (que será a sua recomendação principal).
+4. Justificar brevemente cada opção em \`destination_suggestions[].rationale\`.
+
+Lembre-se da logística inteligente: agrupar destinos próximos, respeitar pacing, sazonalidade.
+` : ''}
+
+## INSTRUÇÕES FINAIS
+
+Pesquise em **Virtuoso**, **FHR (Amex)** e **LHW** antes de sugerir hotéis. Cite as fontes em \`sources_consulted\`. Retorne APENAS o JSON estruturado, sem markdown fences nem texto extra antes/depois.`;
 
     // Dispara o agente
     const { runAgent } = await import('../services/agents.js');
@@ -3445,6 +3732,9 @@ function _applyAiOutputToRoteiro(ai, runResult, inputSnapshot) {
   if (Array.isArray(ai.includes)) currentRoteiro.includes = ai.includes.slice();
   if (Array.isArray(ai.excludes)) currentRoteiro.excludes = ai.excludes.slice();
 
+  // v4.49.75+ Sugestões de destino (modo "querSugestaoDestino")
+  const destinationSuggestions = Array.isArray(ai.destination_suggestions) ? ai.destination_suggestions : [];
+
   // Observações internas — fontes consultadas
   currentRoteiro.aiGeneration = {
     enabled: true,
@@ -3452,7 +3742,8 @@ function _applyAiOutputToRoteiro(ai, runResult, inputSnapshot) {
     citations: Array.isArray(runResult.citations) ? runResult.citations : [],
     queries: Array.isArray(runResult.webSearchQueries) ? runResult.webSearchQueries : [],
     aiSourcesFromAgent: Array.isArray(ai.sources_consulted) ? ai.sources_consulted : [],
-    promptVersion: 'roteiros-luxo-gen-v1',
+    destinationSuggestions,                  // v4.49.75+ pra modo "sugerir destino"
+    promptVersion: 'roteiros-luxo-gen-v2',   // v2 = inclui briefing structurado
     generatedAt: new Date().toISOString(),
     lastInput: inputSnapshot || '',
     consultantNotes: (ai.consultant_notes || '') + (currentRoteiro.aiGeneration?.consultantNotes ? `\n\n--- Anteriores ---\n${currentRoteiro.aiGeneration.consultantNotes}` : ''),

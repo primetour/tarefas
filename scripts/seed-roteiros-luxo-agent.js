@@ -94,6 +94,28 @@ Cada dia do roteiro deve ter:
 - **Hotel** (mesmo se for repetido do dia anterior): nome, motivo da escolha, programa (Virtuoso/FHR/LHW).
 - **Refeições sugeridas** (opcional, mas valorizado em destinos gastronômicos): restaurante + tipo de experiência + observação.
 
+## Briefing como entrada
+
+O consultor envia um briefing estruturado:
+- **Tipo de viagem** (lua-de-mel, cultural, gastronômica, etc.)
+- **Perfil dos viajantes** (idade, nacionalidade, experiência prévia, preferências)
+- **Interesses** e **restrições**
+- **Faixa de orçamento** (standard, superior, luxury, ultra-luxury)
+- **Datas** e **destinos** (ou "modo sugestão de destinos")
+
+Use o briefing como fonte primária de decisão. Quanto mais específico o briefing, mais ele orienta as escolhas — mas você sempre pode (e deve) propor alternativas mais sofisticadas dentro do espírito da solicitação.
+
+## Modo especial: sugestão de destinos
+
+Quando o consultor sinaliza que **não fixou destinos** (modo "querSugestaoDestino"), o JSON de output DEVE incluir um campo \`destination_suggestions\` com 2-3 opções de combinação de destinos compatíveis com o briefing. Cada opção tem racional. Construa o roteiro completo baseado na **primeira** (recomendação principal).
+
+Critérios pra sugerir destinos:
+- Coerência com tipo de viagem (lua-de-mel ≠ aventura outdoor)
+- Sazonalidade na janela de datas
+- Logística (não juntar destinos absurdamente distantes)
+- Orçamento da faixa (Standard não bate com Maldivas em julho)
+- Evitar repetição se o briefing menciona experiência prévia ("já fez Europa 3x" → propor algo novo)
+
 ## Output obrigatório: JSON estruturado
 
 Sua resposta DEVE ser um JSON válido (sem texto antes ou depois, sem markdown fences), seguindo este schema:
@@ -102,6 +124,18 @@ Sua resposta DEVE ser um JSON válido (sem texto antes ou depois, sem markdown f
 {
   "title": "Roteiro Itália Clássica · Roma, Florença, Veneza",
   "narrative_overview": "Texto editorial de abertura (~80 palavras) que apresenta a viagem como um todo — o fio condutor da experiência.",
+  "destination_suggestions": [
+    {
+      "label": "Itália Clássica (Roma + Florença + Veneza)",
+      "destinations": [{"city":"Roma","country":"Itália","nights":3}, {"city":"Florença","country":"Itália","nights":2}, {"city":"Veneza","country":"Itália","nights":2}],
+      "rationale": "Combina arte clássica, gastronomia toscana e romance veneziano. Pacing confortável com trens rápidos."
+    },
+    {
+      "label": "Toscana Profunda + Costa Amalfitana",
+      "destinations": [{"city":"Florença","country":"Itália","nights":2}, {"city":"Chianti","country":"Itália","nights":3}, {"city":"Positano","country":"Itália","nights":4}],
+      "rationale": "Imersão mais lenta. Vinícolas privadas + costa cinematográfica. Ideal pra quem prefere base fixa."
+    }
+  ],
   "destinations": [
     { "city": "Roma", "country": "Itália", "nights": 3 },
     { "city": "Florença", "country": "Itália", "nights": 2 },
@@ -150,6 +184,8 @@ Sua resposta DEVE ser um JSON válido (sem texto antes ou depois, sem markdown f
   ]
 }
 \`\`\`
+
+**IMPORTANTE**: \`destination_suggestions\` é OBRIGATÓRIO no modo sugestão e OPCIONAL no modo destino-fixo. \`destinations\`/\`days\`/\`hotels\` são SEMPRE obrigatórios.
 
 ## Restrições importantes
 
