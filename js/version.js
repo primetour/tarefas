@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 75,
-  build: '20260521-roteiros-briefing-secao-ia-fluxo-claro',
+  patch: 76,
+  build: '20260521-roteiros-cadastro-destino-inline-bug-fix',
 };
 
 /** "1.2.0" */

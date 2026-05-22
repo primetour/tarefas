@@ -8,7 +8,7 @@ import { toast } from '../components/toast.js';
 const showToast = (msg, type = 'info') => toast[type]?.(msg) ?? toast.info(msg);
 import { fetchRoteiro, saveRoteiro, snapshotTipForEmbed, isEmbeddedTipStale, createWebLink } from '../services/roteiros.js';
 import { generateRoteiroForExport, resolveDestinationImage } from '../services/roteiroGenerator.js';
-import { fetchDestinations, fetchAreas, fetchImages, fetchTips } from '../services/portal.js';
+import { fetchDestinations, fetchAreas, fetchImages, fetchTips, saveDestination, CONTINENTS } from '../services/portal.js';
 import { detectBankContext, showBankGuardModal } from '../services/bankClientGuard.js';
 
 /* ─── State ───────────────────────────────────────────────── */
@@ -890,7 +890,13 @@ function renderBriefingSection() {
           `).join('')}
         </div>
 
-        <button class="re-add-btn" data-action="add-brief-dest" style="margin-top:10px;padding:6px 14px;font-size:0.8125rem;">+ Adicionar destino</button>
+        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
+          <button class="re-add-btn" data-action="add-brief-dest" style="margin-top:0;padding:6px 14px;font-size:0.8125rem;">+ Adicionar destino à lista</button>
+          <button class="re-add-btn" data-action="cadastrar-novo-destino" style="margin-top:0;padding:6px 14px;font-size:0.8125rem;background:transparent;color:var(--brand-gold);border:1px solid var(--brand-gold);">+ Cadastrar destino novo (no banco)</button>
+        </div>
+        <div style="margin-top:6px;font-size:0.75rem;color:var(--text-muted);">
+          Os destinos vêm do <strong>banco compartilhado de Destinos</strong> (mesma fonte do Portal de Dicas e Banco de Imagens). Se o destino não está na lista, cadastre pra ficar disponível em todos os módulos.
+        </div>
 
         <!-- datalist pra autocomplete -->
         <datalist id="re-dest-list">${destOptionsHtml}</datalist>
@@ -2735,6 +2741,15 @@ async function handleEditorClick(e) {
       break;
     }
 
+    case 'cadastrar-novo-destino': {
+      // v4.49.75+ Abre modal pra cadastrar destino no banco compartilhado
+      // (portal_destinations) — mesma collection usada pelo Portal de Dicas
+      // e Banco de Imagens.
+      currentRoteiro = collectFormData();
+      openCadastrarDestinoModal();
+      break;
+    }
+
     case 'add-activity': {
       const dayIdx = parseInt(target.dataset.day);
       currentRoteiro = collectFormData();
@@ -3412,6 +3427,12 @@ export async function renderRoteiroEditor(container) {
           passport: '', visa: '', vaccines: '', climate: '',
           luggage: '', flights: '', customFields: [],
         },
+        // v4.49.75+ briefing inicial pro agente IA
+        briefing: {
+          tipoViagem: '', perfilViajantes: '', interesses: '',
+          restricoes: '', orcamentoFaixa: '', contextoLivre: '',
+          querSugestaoDestino: false,
+        },
       };
     }
 
@@ -3435,6 +3456,12 @@ export async function renderRoteiroEditor(container) {
     currentRoteiro.importantInfo.customFields = currentRoteiro.importantInfo.customFields || [];
     currentRoteiro.images = currentRoteiro.images || { hero: null, overrides: {} };
     currentRoteiro.images.overrides = currentRoteiro.images.overrides || {};
+    // v4.49.75+ defensive defaults pra briefing (roteiros antigos não tinham)
+    currentRoteiro.briefing = currentRoteiro.briefing || {
+      tipoViagem: '', perfilViajantes: '', interesses: '',
+      restricoes: '', orcamentoFaixa: '', contextoLivre: '',
+      querSugestaoDestino: false,
+    };
 
     const isAiGenerated = currentRoteiro.aiGenerated === true;
     const pageTitle = roteiroId ? 'Editar Roteiro' : (isAiGenerated ? 'Roteiro Gerado por IA' : 'Novo Roteiro');
@@ -3535,6 +3562,86 @@ export async function renderRoteiroEditor(container) {
         <button class="re-add-btn" onclick="location.hash='#roteiros'" style="margin-top:16px;">Voltar</button>
       </div>`;
   }
+}
+
+/* ─── v4.49.75+ Modal: Cadastrar destino novo ───────────────
+ *
+ * Reaproveita a collection portal_destinations (mesma fonte usada
+ * por Portal de Dicas e Banco de Imagens). Após cadastrar, re-fetch
+ * de allDestinations e re-render do Briefing pra mostrar a opção
+ * nova já no datalist.
+ * ──────────────────────────────────────────────────────────── */
+function openCadastrarDestinoModal() {
+  const modal = document.createElement('div');
+  modal.dataset.cadDestModal = '1';
+  modal.style.cssText = `
+    position:fixed;inset:0;z-index:10200;background:rgba(0,0,0,0.65);
+    display:flex;align-items:center;justify-content:center;padding:20px;
+  `;
+  modal.innerHTML = `
+    <div style="background:var(--bg-elevated);border:1px solid var(--border-subtle);
+      border-radius:12px;padding:24px;max-width:480px;width:100%;
+      box-shadow:0 12px 40px rgba(0,0,0,0.4);">
+      <h3 style="margin:0 0 6px;font-size:1.0625rem;">Cadastrar novo destino</h3>
+      <p style="margin:0 0 18px;font-size:0.8125rem;color:var(--text-muted);">
+        Este destino ficará disponível em TODOS os módulos (Roteiros, Portal de Dicas, Banco de Imagens).
+      </p>
+      <div style="display:flex;flex-direction:column;gap:12px;">
+        <label style="display:flex;flex-direction:column;gap:4px;font-size:0.8125rem;color:var(--text-secondary);">
+          Continente
+          <select id="cad-dest-cont" style="padding:8px 10px;background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:6px;color:var(--text-primary);">
+            <option value="">— selecione —</option>
+            ${(CONTINENTS || []).map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('')}
+          </select>
+        </label>
+        <label style="display:flex;flex-direction:column;gap:4px;font-size:0.8125rem;color:var(--text-secondary);">
+          País <span style="color:#EF4444;">*</span>
+          <input type="text" id="cad-dest-country" style="padding:8px 10px;background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:6px;color:var(--text-primary);" placeholder="Ex: Marrocos" />
+        </label>
+        <label style="display:flex;flex-direction:column;gap:4px;font-size:0.8125rem;color:var(--text-secondary);">
+          Cidade
+          <input type="text" id="cad-dest-city" style="padding:8px 10px;background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:6px;color:var(--text-primary);" placeholder="Ex: Casablanca (deixe vazio se for país inteiro)" />
+        </label>
+      </div>
+      <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:20px;">
+        <button class="re-add-btn" id="cad-dest-cancel" style="margin-top:0;padding:6px 14px;background:transparent;border:1px solid var(--border-subtle);">Cancelar</button>
+        <button class="re-add-btn" id="cad-dest-save" style="margin-top:0;padding:6px 14px;font-weight:600;">Salvar</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+
+  const close = () => modal.remove();
+  modal.querySelector('#cad-dest-cancel').addEventListener('click', close);
+  modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+
+  modal.querySelector('#cad-dest-save').addEventListener('click', async () => {
+    const continent = modal.querySelector('#cad-dest-cont').value.trim();
+    const country = modal.querySelector('#cad-dest-country').value.trim();
+    const city = modal.querySelector('#cad-dest-city').value.trim();
+    if (!country) { showToast('País é obrigatório.', 'error'); return; }
+    const saveBtn = modal.querySelector('#cad-dest-save');
+    saveBtn.disabled = true; saveBtn.textContent = 'Salvando…';
+    try {
+      await saveDestination(null, { continent, country, city });
+      showToast(`Destino "${[city, country].filter(Boolean).join(', ')}" cadastrado.`, 'success');
+      // Refetch + adiciona ao destinos do briefing
+      try {
+        allDestinations = await fetchDestinations();
+      } catch {}
+      // Adiciona automaticamente o destino cadastrado à lista do briefing
+      currentRoteiro = collectFormData();
+      if (!currentRoteiro.travel.destinations) currentRoteiro.travel.destinations = [];
+      currentRoteiro.travel.destinations.push({ city, country, nights: 1 });
+      close();
+      switchSection(0);
+      markDirty();
+    } catch (e) {
+      console.error('[cad-dest]', e);
+      showToast('Falha ao cadastrar: ' + (e?.message || 'erro'), 'error');
+      saveBtn.disabled = false; saveBtn.textContent = 'Salvar';
+    }
+  });
 }
 
 /* ─── v4.49.74+ Geração de roteiro com IA ────────────────────

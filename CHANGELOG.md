@@ -6,6 +6,39 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.76+20260521-roteiros-cadastro-destino-inline-bug-fix] — 2026-05-21
+
+Release **PATCH** — fixes encontrados validando v4.49.75 + cadastro
+inline de destinos novos.
+
+**Bug 1**: novo roteiro era inicializado inline em
+`renderRoteiroEditor` SEM o campo `briefing` (ignorava `emptyRoteiro()`).
+Inputs do briefing ficavam disconnect do state, valores não persistiam
+no re-render. **Fix**: inline init agora inclui `briefing{}` + defensive
+default pra roteiros antigos sem o campo.
+
+**Bug 2** (resolvido pela parte 4 da v4.49.75): user pedia destino
+do banco compartilhado. **Confirmado**: datalist mostra os 60+ destinos
+do `portal_destinations` em produção.
+
+**Novo**: **botão "+ Cadastrar destino novo (no banco)"** ao lado do
+"+ Adicionar à lista" no Briefing. Abre modal idêntico ao do Portal
+de Dicas (continente, país obrigatório, cidade opcional). Após salvar:
+1. `saveDestination(null, {…})` grava em `portal_destinations`
+2. `fetchDestinations()` recarrega allDestinations (datalist atualiza)
+3. Destino cadastrado é adicionado AUTOMATICAMENTE à lista de
+   destinos do briefing atual
+4. Re-render
+
+Aviso visível abaixo dos botões: "Os destinos vêm do banco
+compartilhado de Destinos (mesma fonte do Portal de Dicas e Banco
+de Imagens). Se o destino não está na lista, cadastre pra ficar
+disponível em todos os módulos."
+
+**Validação**: `node --check` ok. E2E real pendente.
+
+---
+
 ## [4.49.75+20260521-roteiros-briefing-secao-ia-fluxo-claro] — 2026-05-21
 
 Release **PATCH** — UX do gerador de roteiros: briefing como Seção 0
