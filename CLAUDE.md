@@ -320,3 +320,84 @@ Antes do commit final:
 4. Se algo "ainda está OK mas eu tocaria se estivesse fazendo do zero" — **corrigir no mesmo patch**, não num futuro.
 
 Princípio mestre: **o usuário paga uma vez pelo trabalho. Se eu deixo 3 detalhes "pra depois", ele vai ter que voltar 3 vezes me pedindo. Toda visita extra ao mesmo arquivo é falha de excelência.**
+
+---
+
+## 11. Padrões de UI/UX aprendidos com o Renê (sprint 22/05/2026)
+
+Lições concretas de 18 patches em sequência. Aplicar de cabeça nos próximos módulos.
+
+### a) Modais são exceção, não regra
+
+Renê em v99: *"tem que clicar 2x pra sair do popup... o padrão não é popup, é campo pra preencher sem sair da página"*.
+
+- ❌ Não usar `<dialog>`/overlay pra **filtro ou input rápido** (period custom, range de data, etc.). Sempre tem chance de modal ficar órfão, dois cliques pra fechar, perder contexto.
+- ✅ Usar inputs **inline** que aparecem condicionalmente embaixo do controle que ativou. Auto-aplicar on `change` (sem botão "Aplicar"). Esconder quando user desativa o controle.
+- ✅ Modal só pra: confirmações destrutivas, formulários complexos com 5+ campos, ou workflows multi-step.
+
+### b) Auto-save é OBRIGATÓRIO em qualquer formulário longo
+
+Renê em v103: *"roteiro tem de ser salvo automaticamente como rascunho a cada X sec, pra não corrermos o risco do consultor reclamar que algum problema fez ele perder o trabalho"*.
+
+- Debounce **5s** (não 30s+ — risco de perder muito), retry **10s** em erro (até 5x).
+- Indicador **dinâmico**: "Salvando…" → "Salvo agora" → "Salvo há 12 seg" → "Salvo há 3 min". Atualiza via `setInterval` independente do save.
+- `silent: true` flag pra **não disparar toast** em auto-save (só em manual click). Erro do auto-save loga no console + atualiza indicador, sem incomodar.
+- `saveInProgress` flag pra evitar race condition entre auto-save concorrente e click manual.
+
+### c) Conceito DUPLICADO confunde — só UM caminho canônico
+
+Renê em v100: *"conceito de exportar pdf sujo na UI. tem botão na parte superior, mas tem aba mais completa de export"*.
+
+- ❌ Não ter 2 botões diferentes pra mesma ação (header + aba dedicada).
+- ✅ Eleger UMA fonte canônica (aba completa) e fazer os outros lugares apenas **atalhos de navegação** pra essa fonte (ícone na listagem → `&section=preview` → editor abre direto na aba).
+- Princípio: cada ação tem **um caminho oficial**. Múltiplas formas só multiplicam pontos de falha + confusão.
+
+### d) Filtros padrão = visíveis. Esconder atrás de expand é anti-padrão
+
+Renê em v98: *"vou falar pela terceira vez: vc não mexeu nos filtros"*. Eu tava entendendo "estilizar" quando ele queria **funcionalidade + visibilidade**.
+
+- ❌ `<details>`/collapse pra filtros que o consultor usa diariamente.
+- ✅ Filtros essenciais (área, destino, tipo, consultor) **sempre visíveis** numa linha com label "FILTROS:" uppercase.
+- ✅ Quando ativos, mostrar badge contagem + botão "Limpar".
+- Reservar collapse pra filtros raríssimos (>4 filtros adicionais ou data range customizado raramente usado).
+
+### e) Quando user reclama 2x+ da mesma coisa, PARAR e PERGUNTAR
+
+Renê em v98: *"acho que estamos com problema de comunicação... coloque aqui no chat o que vc entendeu"*.
+
+- Se na 2ª iteração ele aponta o MESMO problema, é sinal claro de que minha interpretação tá errada.
+- ❌ Não tentar de novo no mesmo trilho.
+- ✅ Parar de codar, escrever no chat: *"Minha interpretação atual é X — descreve em 2-3 frases o comportamento esperado e me corrige antes de eu refazer"*.
+- A pergunta antecipa horas de retrabalho.
+
+### f) Identidade visual = aplicar consistentemente, não cada lugar inventando
+
+Renê em v97: *"trabalhar na identidade do site"*.
+
+- Brand PRIMETOUR: **dourado** (`--brand-gold #D4A843`) como cor primária/active, **azul** secundário, semânticas (vermelho perigo, verde aprovado).
+- Pills/buttons ativos: dourado bg + `#0A1628` text (dark navy). Hover: dourado leve `rgba(212,168,67,0.06)` + border dourado.
+- ❌ Não usar azul genérico (`--brand-blue`) como cor de active em UI de produto premium — fica genérico, não combina com luxury.
+
+### g) Persistência ≠ UI funcionando
+
+Renê em "testou?": *"validação E2E inclui Firestore, não só DOM"*.
+
+- ❌ Não declarar "validado" só porque a UI mostrou o estado esperado.
+- ✅ Validar persistência: `fetchRoteiro(id)` direto do Firestore APÓS a ação, conferir campo no banco.
+- Mudança de status, auto-save, transição de pipeline — TODOS precisam ser confirmados via fetch independente.
+
+### h) Schemas legados merecem fallback explícito, não migração silenciosa
+
+Renê pedindo refator de Valores: schema `customRows[]` virou `services{aereo,hoteis,...}`.
+
+- ❌ Não migrar dado antigo automaticamente em código (risco de quebrar).
+- ✅ Renderers fazem **fallback**: se `services` vazio, usa `perPerson/perCouple/customRows` legado. Consultor refaz na UI nova ao editar.
+- ✅ Migration on-read garante shape mínimo defensivo (arrays vazios pros novos campos), mas nunca tenta interpretar dado antigo pra novo schema.
+
+### i) Real-time recalc sem rerender — preservar foco
+
+Renê em v102: *"faça atualizar em tempo real"*.
+
+- ❌ Não usar rerender completo da seção quando user digita valor — perde foco.
+- ✅ Listener no input/change que atualiza **nodes específicos** (subtotal, footer, hint) com `textContent` ou `innerHTML` parcial.
+- Pattern: `recalcXyzTotals()` lê valores atuais do DOM, computa, e seta textos sem tocar nos inputs em si.

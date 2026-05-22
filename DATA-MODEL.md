@@ -314,7 +314,7 @@ Schema canônico em `js/services/roteiros.js` → `emptyRoteiro()`. Migration on
 - `consultantId` (FK → `users.uid`) — dono primário do roteiro. **Obrigatório no create** (Firestore rule `firestore.rules:841` exige `request.resource.data.consultantId == request.auth.uid`).
 - `consultantName` — denormalizado pra evitar join no listing
 - `collaboratorIds[]` — UIDs com permissão de edição (Sprint 1 hardening v4.40.31+)
-- `status` — `draft` | `review` | `sent` | `approved` | `archived`
+- `status` — `draft` | `review` | `sent` | `approved` | `archived` (pipeline funcional via UI dropdown no header do editor desde v4.49.103; cada transição usa `updateRoteiroStatus` com audit log embutido).
 - `workflowMode` — `system` (gera tasks operacionais auto) | `offline`
 - `areaId` (FK → `areas.id`) — BU pro branding do export (PDF/PPTX/DOCX)
 - `title` — título do roteiro
@@ -329,7 +329,15 @@ Schema canônico em `js/services/roteiros.js` → `emptyRoteiro()`. Migration on
 - `days[]` — dia a dia. Cada item: `{ dayNumber, date, city, title, narrative, overnightCity, activities[], imageIds[] }`
 - `flights[]` (v4.49.91+) — voos da viagem. Cada item: `{ airline, flightNumber, originCity, destinationCity, departureDate, departureTime, arrivalDate, arrivalTime }`. **Operacional** — não é populado pela IA (agent prompt v3 instrui a deixar vazio). Renderizado em PDF (AÉREO section), PPTX (slide AÉREO), DOCX (Aéreo header) e link público (`roteiro-view.html` section #sec-aereo).
 - `hotels[]` — `{ city, hotelName, roomType, regime, checkIn, checkOut, nights, notes }`
-- `pricing{ perPerson, perCouple, currency, validUntil, disclaimer, customRows[] }`
+- `pricing` — refatorado em v4.49.101+ pra suportar valores por categoria com visibilidade granular. Shape atual:
+  - `currency`, `validUntil`, `disclaimer` (públicos, no PDF/link)
+  - `perPerson`, `perCouple`, `customRows[]` — **legado** pré-v101, preservado pra retrocompat. Renderers fazem fallback se `services` vazio.
+  - `services` (novo, v4.49.101+):
+    - 5 arrays por categoria: `aereo`, `hoteis`, `traslados`, `experiencias`, `servicosAdicionais`
+    - Cada item: `{ description, supplier, supplierVisibleToClient, value, notes, visibleToClient }`
+    - `displayMode` — `'total'` (cliente vê só o somatório dos visíveis) | `'grouped'` (cliente vê subtotais por categoria)
+    - `notesGeral` — observação interna geral
+  - **Garantia LGPD/comercial**: `supplier`, `notes`, e items com `visibleToClient=false` **NUNCA** aparecem em PDF/DOCX/PPTX/link público. Helpers compartilhados `_hasPricingContent` + `_buildServicesRows` em `js/services/roteiroGenerator.js` centralizam essa regra (v4.49.102+).
 - `costPricing{ perPerson, perCouple, currency, notes, customRows[] }` — **interno** (custo real), strip via `stripInternalFields()` antes de export pro cliente. Só visíveis com permission `roteiro_view_cost` ou master.
 - `optionals[]`, `includes[]`, `excludes[]`
 - `payment{ deposit, installments, deadline, notes }`

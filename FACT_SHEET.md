@@ -80,11 +80,14 @@ O PRIMETOUR e uma plataforma SaaS proprietaria de gestao operacional desenvolvid
 - **Rastreio de fontes** — `aiGeneration{ sources[], citations[], queries[], inputTokens, outputTokens }` registra trilha de auditoria
 - **Hoteis reais** — IA usa apenas hoteis dos programas Virtuoso/FHR/LHW (zero alucinacao garantida via system prompt)
 - **Precos protegidos** — IA nunca inventa valores, `pricing.perPerson/perCouple` ficam null
-- **Filtros listagem refeitos** (v4.49.97-98) — pills periodo dourado, filtros avancados sempre visiveis, modal date picker custom com label dinamica "DD/MM → DD/MM"
+- **Filtros listagem refeitos** (v4.49.97-99) — pills periodo dourado, filtros avancados sempre visiveis, periodo custom com inputs date inline (sem popup, auto-aplica on change)
 - **Icones SVG na listagem** (v4.49.96-97) — Heroicons + tooltip CSS dark (substituiu chars unicode confusos ✎ ⧉ ↓ ⊠ ✕)
+- **Export unificado** (v4.49.100) — todos os formatos (PDF/DOCX/PPTX/Web Link) ficam apenas na aba dedicada Preview & Export. Botão do header removido (era duplicado). Icone na listagem leva o user pra essa aba via `&section=preview` no hash.
+- **Valores por categoria** (v4.49.101-102) — 5 blocos (Aéreo/Hotéis/Traslados/Experiências/Serviços adicionais) com N items por bloco. Cada item: descrição + fornecedor + valor + notas + flags `visibleToClient`/`supplierVisibleToClient`. Toggle "Como o cliente vê" (Total único / Subtotais por categoria). Real-time recalc dos subtotais + footer (interno x visível) sem rerender (preserva foco). Helpers `_buildServicesRows` aplicados em PDF/PPTX/DOCX/link público. `supplier` e `notes` (operacionais) nunca aparecem em export.
+- **Auto-save 5s** (v4.49.103) — `markDirty` debounce 5s (era 30s) + retry silent em erro (10s, 5x). Indicador atualiza dinamicamente "Salvo há X seg/min". `saveInProgress` evita race condition entre auto-save e click manual.
+- **Status workflow funcional** (v4.49.103) — pipeline `Rascunho → Em revisão → Enviado → Aprovado → Arquivado` com dropdown no header (substituiu badge estático). Cada status tem cor própria (cinza/azul/dourado/verde/cinza). Transições via `updateRoteiroStatus` com audit log embutido. Approved triggera `maybeOfferTaskGeneration` (Sprint 4 — geração de tasks operacionais).
 - **Export multi-formato** — PDF (jspdf+autotable), PPTX (pptxgenjs), DOCX (docx 8.5)
 - **Web links publicos** com contador de visualizacoes (`roteiro-view.html` standalone, sem auth)
-- **Pipeline de vendas** (Rascunho → Em revisao → Enviado → Aprovado → Arquivado)
 - **Tarefas operacionais auto** (Sprint 4) — quando aprovado, gera tasks vinculadas via `roteiroTasks.generateOperationalTasksForRoteiro`
 - **Dashboard de KPIs** — taxa de conversao, valor medio, top destinos, evolucao mensal
 
