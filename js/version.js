@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 82,
-  build: '20260522-roteiros-ux-listagem-editor-padrao-sistema',
+  patch: 83,
+  build: '20260522-roteiros-briefing-limpo-sem-poluicao',
 };
 
 /** "1.2.0" */

@@ -6,6 +6,46 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.83+20260522-roteiros-briefing-limpo-sem-poluicao] — 2026-05-22
+
+Release **PATCH** — Briefing do roteiro limpo (Commit 2/2 do plano UX).
+
+**Antes** (v4.49.82): 3 frases redundantes no topo, placeholders longos
+parecendo manual, texto técnico no card de destinos, checklist "🔒
+Para gerar com IA, ainda falta", box "✅ Briefing pronto" com info
+técnica (Sonnet 4.5, prompt caching), botão custom `.re-ai-btn` com
+estilo próprio.
+
+**Depois**:
+
+1. **Intro** uma linha só: "Resumo do cliente e da viagem. Campos
+   com * são obrigatórios."
+2. **Ordem dos campos** reorganizada — primeiro o que DEFINE a viagem
+   (Destinos → Datas), depois o que DEFINE o cliente (Tipo,
+   Orçamento → Perfil → Interesses/Restrições), depois notas livres.
+3. **Placeholders curtos**: "casal 55-60, cultural e gastronômico"
+   em vez de parágrafo inteiro como exemplo.
+4. **Card destinos** sem texto técnico ("Os destinos vêm do banco
+   compartilhado..."). Toggle "Quero sugestão do agente" simples.
+5. **Botão "+ Cadastrar destino novo"** usa classe padrão
+   `.btn .btn-ghost btn-sm` (era `.re-add-btn--gold` custom).
+6. **Bloco IA**: botão único `.btn .btn-primary` sempre visível.
+   Quando há campos faltando, **hint discreto inline** ao lado:
+   "Falta: tipo de viagem · perfil · datas". Sem checklist
+   amarelo, sem box "✅ pronto", sem info técnica.
+7. **CSS removido**: `.re-briefing-ai--ready`, `.re-briefing-ai-msg`,
+   `.re-briefing-ai-meta`, `.re-briefing-ai-checklist`, `.re-ai-btn`
+   (+ variantes). Mantida só `.re-briefing-ai` (wrapper simples) +
+   `.re-briefing-ai-hint`.
+8. **Título da seção**: "Briefing pra geração com IA" (sem emoji
+   no h2 — o ícone da sidebar já comunica).
+9. **`btn-ghost` consistente** nas ações secundárias do card de
+   destinos.
+
+**Validação**: `node --check` ok. E2E pendente.
+
+---
+
 ## [4.49.82+20260522-roteiros-ux-listagem-editor-padrao-sistema] — 2026-05-22
 
 Release **PATCH** — UX/visual do gerador de roteiros alinhado ao
