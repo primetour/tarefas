@@ -125,15 +125,16 @@ const EXPORT_LABELS = {
  * @param {Object} cfg
  * @param {string[]} cfg.formats - ['xls', 'pdf', 'pptx', 'docx', 'csv']
  * @param {string} [cfg.action] - prefix de action (default 'export'). Vira 'export-xls' etc.
+ * @param {string} [cfg.label]  - texto do botão trigger (default 'Exportar'). v4.49.84+
  */
-export function renderExportMenu({ formats = [], action = 'export' } = {}) {
+export function renderExportMenu({ formats = [], action = 'export', label = 'Exportar' } = {}) {
   if (!formats.length) return '';
 
   return `
     <div class="uikit-export-wrap" style="position:relative;display:inline-block;">
       <button class="btn btn-secondary uikit-export-trigger" data-export-trigger="1"
         style="display:flex;align-items:center;gap:6px;padding:6px 12px;">
-        <span>↓</span><span>Exportar</span><span style="font-size:0.6em;">▾</span>
+        <span>↓</span><span>${esc(label)}</span><span style="font-size:0.6em;">▾</span>
       </button>
       <div class="uikit-export-menu" style="display:none;position:absolute;top:100%;right:0;margin-top:4px;
         background:var(--bg-card,#fff);border:1px solid var(--border,#e5e7eb);border-radius:8px;

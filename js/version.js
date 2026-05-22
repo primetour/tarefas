@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 83,
-  build: '20260522-roteiros-briefing-limpo-sem-poluicao',
+  patch: 84,
+  build: '20260522-uikit-export-menu-label-customizavel',
 };
 
 /** "1.2.0" */

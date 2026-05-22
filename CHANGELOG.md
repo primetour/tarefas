@@ -6,6 +6,28 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.84+20260522-uikit-export-menu-label-customizavel] — 2026-05-22
+
+Release **PATCH** — `uiKit.renderExportMenu` aceita `cfg.label`
+pra customizar o texto do trigger.
+
+**Antes**: trigger sempre mostrava "Exportar", mesmo passando
+`label: 'Exportar lista'` na config. O param era ignorado.
+
+**Depois**: `renderExportMenu({ formats, action, label })` — `label`
+default `'Exportar'`. Agora a listagem de roteiros mostra
+**"Exportar lista"** (deixa explícito que é a lista filtrada, não o
+roteiro individual).
+
+**Mudança em `js/components/uiKit.js`**:
+- Assinatura: `{ formats, action, label = 'Exportar' }`
+- Trigger: `<span>${esc(label)}</span>` (era hardcoded "Exportar")
+- JSDoc atualizado com novo param.
+
+**Validação**: `node --check` ok.
+
+---
+
 ## [4.49.83+20260522-roteiros-briefing-limpo-sem-poluicao] — 2026-05-22
 
 Release **PATCH** — Briefing do roteiro limpo (Commit 2/2 do plano UX).
