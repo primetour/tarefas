@@ -46,8 +46,9 @@ const SECTIONS = [
   // v4.49.86+ "Briefing" e "Cliente" fundidos em um só. O bloco
   // client.{name,email,preferences,restrictions,economicProfile,notes}
   // + travelers[] já cobre todo o briefing — não precisava de schema novo.
+  // v4.49.88+ "Viagem" (datas + destinos) absorvida em "Cliente e Briefing"
+  // — só tinha 2 campos efetivos (datas + destinos). Tudo num lugar só.
   { icon: '\u{1F464}', label: 'Cliente e Briefing' },
-  { icon: '\u{1F30D}', label: 'Viagem' },
   { icon: '\u{1F4C5}', label: 'Dia a dia' },
   { icon: '\u{1F3E8}', label: 'Hot\u00e9is' },
   { icon: '\u{1F4B0}', label: 'Valores' },
@@ -406,23 +407,22 @@ const EDITOR_CSS = `
 /* ─── Section renderers ───────────────────────────────────── */
 
 function renderSectionContent(index) {
-  // v4.49.86+ Briefing fundido com Cliente — voltou pro layout original.
+  // v4.49.88+ Viagem absorvida em Cliente e Briefing (índices decrementados).
   switch (index) {
-    case 0:  return renderClienteSection();        // "Cliente e Briefing"
-    case 1:  return renderViagemSection();
-    case 2:  return renderDiaDiaSection();
-    case 3:  return renderHoteisSection();
-    case 4:  return renderValoresSection();
-    case 5:  return renderOpcionaisSection();
-    case 6:  return renderIncluiSection();
-    case 7:  return renderPagamentoSection();
-    case 8:  return renderCancelamentoSection();
-    case 9:  return renderInfoSection();
-    case 10: return renderImagensSection();
-    case 11: return renderEmbeddedTipsSection();
-    case 12: return renderAdvancedSection();
-    case 13: return renderPreviewSection();
-    case 14: return renderAiObservationsSection();
+    case 0:  return renderClienteSection();        // "Cliente e Briefing" (inclui Viagem)
+    case 1:  return renderDiaDiaSection();
+    case 2:  return renderHoteisSection();
+    case 3:  return renderValoresSection();
+    case 4:  return renderOpcionaisSection();
+    case 5:  return renderIncluiSection();
+    case 6:  return renderPagamentoSection();
+    case 7:  return renderCancelamentoSection();
+    case 8:  return renderInfoSection();
+    case 9:  return renderImagensSection();
+    case 10: return renderEmbeddedTipsSection();
+    case 11: return renderAdvancedSection();
+    case 12: return renderPreviewSection();
+    case 13: return renderAiObservationsSection();
     default: return '';
   }
 }
@@ -939,11 +939,15 @@ function renderClienteSection() {
       <label class="re-label">Observa\u00e7\u00f5es</label>
       <textarea class="re-textarea" data-field="client.notes" rows="3" placeholder="Notas sobre o cliente...">${esc(c.notes)}</textarea>
     </div>
+
+    <!-- v4.49.88+ Datas + Destinos absorvidos em "Cliente e Briefing".
+         Antes era seção "Viagem" à parte com só 2 campos efetivos. -->
+    ${renderTravelBlock()}
   `;
 }
 
-/* ── 1: Viagem ───────────────────────────────────────────── */
-function renderViagemSection() {
+/* ── Bloco Datas + Destinos + IA (antes era seção "Viagem") ── */
+function renderTravelBlock() {
   const t = currentRoteiro.travel;
   const dests = t.destinations || [];
   const totalNights = dests.reduce((sum, d) => sum + (parseInt(d.nights) || 0), 0);
@@ -960,7 +964,7 @@ function renderViagemSection() {
   if (!dests.some(d => d.city || d.country)) missingForAi.push('destinos');
 
   return `
-    <h2 class="re-section-title">Viagem</h2>
+    <h3 class="re-subsection-title" style="margin-top:32px;padding-top:20px;border-top:1px solid var(--border-subtle);font-size:1rem;font-weight:600;color:var(--text-primary);">Datas e Destinos</h3>
     <div class="re-row">
       <div class="re-form-group">
         <label class="re-label">Data In\u00edcio</label>
@@ -986,9 +990,6 @@ function renderViagemSection() {
       <button class="btn btn-ghost btn-sm" data-action="cadastrar-novo-destino">+ Cadastrar destino novo no banco</button>
     </div>
 
-    <!-- v4.49.86+ Bot\u00e3o IA migrou pra Se\u00e7\u00e3o Viagem (final). Faz sentido aqui
-         porque \u00e9 o \u00faltimo momento antes de gerar \u2014 datas + destinos + cliente
-         j\u00e1 preenchidos. -->
     <div class="re-briefing-ai" style="margin-top:24px;">
       <button class="btn btn-primary" data-action="ai-generate-full">Gerar roteiro com IA</button>
       ${missingForAi.length ? `
@@ -1038,7 +1039,7 @@ function renderDiaDiaSection() {
       <div class="re-section-title">Dia a Dia</div>
       <div style="text-align:center;padding:30px;color:var(--text-muted);">
         <p>Nenhum dia gerado ainda.</p>
-        <p style="font-size:0.8125rem;">Preencha as datas e destinos na se\u00e7\u00e3o Viagem e clique em "Gerar dias automaticamente".</p>
+        <p style="font-size:0.8125rem;">Preencha as datas e destinos na se\u00e7\u00e3o Cliente e Briefing e clique em "Gerar dias automaticamente".</p>
       </div>
       <button class="re-add-btn" data-action="generate-days" style="margin-top:8px;">Gerar dias automaticamente</button>
       <button class="re-add-btn" data-action="add-day" style="margin-left:8px;">+ Adicionar dia manualmente</button>
@@ -2372,7 +2373,7 @@ async function maybeOfferTaskGeneration(roteiroId) {
       currentRoteiro.linkedTaskIds = fresh.linkedTaskIds || [];
       currentRoteiro.tasksGeneratedAt = fresh.tasksGeneratedAt || null;
       // Se user está na seção Avançado, re-renderiza pra mostrar a lista
-      if (activeSection === 12) rerenderCurrentSection();
+      if (activeSection === 11) rerenderCurrentSection();
     } catch (_) { /* non-blocking */ }
   } catch (err) {
     showToast('Erro ao gerar tarefas: ' + err.message, 'error');
@@ -2433,7 +2434,7 @@ function rerenderCurrentSection() {
   const content = document.getElementById('re-content-area');
   if (content) content.innerHTML = renderSectionContent(activeSection);
   // 4.43.0+ (Sprint 4) — também popula tasks list quando re-renderiza Avançado.
-  if (activeSection === 12 && Array.isArray(currentRoteiro?.linkedTaskIds) && currentRoteiro.linkedTaskIds.length) {
+  if (activeSection === 11 && Array.isArray(currentRoteiro?.linkedTaskIds) && currentRoteiro.linkedTaskIds.length) {
     queueMicrotask(() => populateLinkedTasksList(currentRoteiro.linkedTaskIds));
   }
 }
@@ -2578,7 +2579,7 @@ async function handleEditorClick(e) {
     case 'generate-days':
       currentRoteiro = collectFormData();
       generateDaysFromTravel();
-      switchSection(2);
+      switchSection(1);
       break;
 
     case 'add-day': {
@@ -2591,7 +2592,7 @@ async function handleEditorClick(e) {
         city: '', title: '', narrative: '', overnightCity: '',
         activities: [], imageIds: [],
       });
-      switchSection(2);
+      switchSection(1);
       markDirty();
       break;
     }
@@ -2600,7 +2601,7 @@ async function handleEditorClick(e) {
       currentRoteiro = collectFormData();
       currentRoteiro.days.splice(idx, 1);
       currentRoteiro.days.forEach((d, i) => d.dayNumber = i + 1);
-      switchSection(2);
+      switchSection(1);
       markDirty();
       break;
 
@@ -2641,7 +2642,7 @@ async function handleEditorClick(e) {
       if (!currentRoteiro.days[dayIdx]) break;
       if (!currentRoteiro.days[dayIdx].activities) currentRoteiro.days[dayIdx].activities = [];
       currentRoteiro.days[dayIdx].activities.push({ time: '', description: '', type: 'passeio' });
-      switchSection(2);
+      switchSection(1);
       markDirty();
       break;
     }
@@ -2653,7 +2654,7 @@ async function handleEditorClick(e) {
       if (currentRoteiro.days[dIdx]?.activities) {
         currentRoteiro.days[dIdx].activities.splice(aIdx, 1);
       }
-      switchSection(2);
+      switchSection(1);
       markDirty();
       break;
     }
@@ -2662,14 +2663,14 @@ async function handleEditorClick(e) {
     case 'add-hotel':
       currentRoteiro = collectFormData();
       currentRoteiro.hotels.push({ city: '', hotelName: '', roomType: '', regime: '', checkIn: '', checkOut: '', nights: 0 });
-      switchSection(3);
+      switchSection(2);
       markDirty();
       break;
 
     case 'remove-hotel':
       currentRoteiro = collectFormData();
       currentRoteiro.hotels.splice(idx, 1);
-      switchSection(3);
+      switchSection(2);
       markDirty();
       break;
 
@@ -2677,14 +2678,14 @@ async function handleEditorClick(e) {
     case 'add-prow':
       currentRoteiro = collectFormData();
       currentRoteiro.pricing.customRows.push({ label: '', value: '' });
-      switchSection(4);
+      switchSection(3);
       markDirty();
       break;
 
     case 'remove-prow':
       currentRoteiro = collectFormData();
       currentRoteiro.pricing.customRows.splice(idx, 1);
-      switchSection(4);
+      switchSection(3);
       markDirty();
       break;
 
@@ -2692,14 +2693,14 @@ async function handleEditorClick(e) {
     case 'add-opt':
       currentRoteiro = collectFormData();
       currentRoteiro.optionals.push({ service: '', priceAdult: null, priceChild: null, notes: '' });
-      switchSection(5);
+      switchSection(4);
       markDirty();
       break;
 
     case 'remove-opt':
       currentRoteiro = collectFormData();
       currentRoteiro.optionals.splice(idx, 1);
-      switchSection(5);
+      switchSection(4);
       markDirty();
       break;
 
@@ -2826,28 +2827,28 @@ async function handleEditorClick(e) {
     case 'add-inc':
       currentRoteiro = collectFormData();
       currentRoteiro.includes.push('');
-      switchSection(6);
+      switchSection(5);
       markDirty();
       break;
 
     case 'remove-inc':
       currentRoteiro = collectFormData();
       currentRoteiro.includes.splice(idx, 1);
-      switchSection(6);
+      switchSection(5);
       markDirty();
       break;
 
     case 'add-exc':
       currentRoteiro = collectFormData();
       currentRoteiro.excludes.push('');
-      switchSection(6);
+      switchSection(5);
       markDirty();
       break;
 
     case 'remove-exc':
       currentRoteiro = collectFormData();
       currentRoteiro.excludes.splice(idx, 1);
-      switchSection(6);
+      switchSection(5);
       markDirty();
       break;
 
@@ -2862,7 +2863,7 @@ async function handleEditorClick(e) {
           existing.add(p.trim().toLowerCase());
         }
       });
-      switchSection(6);
+      switchSection(5);
       markDirty();
       showToast('Itens padr\u00e3o adicionados (Inclui).', 'success');
       break;
@@ -2877,7 +2878,7 @@ async function handleEditorClick(e) {
           existing.add(p.trim().toLowerCase());
         }
       });
-      switchSection(6);
+      switchSection(5);
       markDirty();
       showToast('Itens padr\u00e3o adicionados (N\u00e3o Inclui).', 'success');
       break;
@@ -2887,14 +2888,14 @@ async function handleEditorClick(e) {
     case 'add-canc':
       currentRoteiro = collectFormData();
       currentRoteiro.cancellation.push({ period: '', penalty: '' });
-      switchSection(8);
+      switchSection(7);
       markDirty();
       break;
 
     case 'remove-canc':
       currentRoteiro = collectFormData();
       currentRoteiro.cancellation.splice(idx, 1);
-      switchSection(8);
+      switchSection(7);
       markDirty();
       break;
 
@@ -2904,7 +2905,7 @@ async function handleEditorClick(e) {
         const exists = currentRoteiro.cancellation.some(c => c.period === p.period);
         if (!exists) currentRoteiro.cancellation.push({ ...p });
       });
-      switchSection(8);
+      switchSection(7);
       markDirty();
       showToast('Pol\u00edtica de cancelamento padr\u00e3o adicionada.', 'success');
       break;
@@ -2913,14 +2914,14 @@ async function handleEditorClick(e) {
     case 'add-infoc':
       currentRoteiro = collectFormData();
       currentRoteiro.importantInfo.customFields.push({ label: '', value: '' });
-      switchSection(9);
+      switchSection(8);
       markDirty();
       break;
 
     case 'remove-infoc':
       currentRoteiro = collectFormData();
       currentRoteiro.importantInfo.customFields.splice(idx, 1);
-      switchSection(9);
+      switchSection(8);
       markDirty();
       break;
 
@@ -2942,7 +2943,7 @@ async function handleEditorClick(e) {
       delete currentRoteiro.images.overrides[imgKey];
       if (imgKey === 'hero') currentRoteiro.images.hero = null;
       markDirty();
-      switchSection(10);
+      switchSection(9);
       showToast('Imagem removida (volta para automática).', 'success');
       break;
     }
@@ -2964,7 +2965,7 @@ async function handleEditorClick(e) {
         const areaId = document.getElementById('re-area-select')?.value || currentRoteiro.areaId || '';
         if (!areaId) {
           showToast('Selecione uma \u00c1rea (BU) antes de exportar.', 'warning');
-          switchSection(11); // Preview & Export
+          switchSection(10); // Preview & Export
           break;
         }
         (async () => {
@@ -2989,7 +2990,7 @@ async function handleEditorClick(e) {
         const areaId = document.getElementById('re-area-select')?.value || currentRoteiro.areaId || '';
         if (!areaId) {
           showToast('Selecione uma Área (BU) antes de exportar.', 'warning');
-          switchSection(11);
+          switchSection(10);
           break;
         }
         (async () => {
@@ -3017,7 +3018,7 @@ async function handleEditorClick(e) {
         const areaId = document.getElementById('re-area-select')?.value || currentRoteiro.areaId || '';
         if (!areaId) {
           showToast('Selecione uma \u00c1rea (BU) antes de exportar.', 'warning');
-          switchSection(11);
+          switchSection(10);
           break;
         }
         (async () => {
@@ -3089,7 +3090,7 @@ async function doGenerateWebLink() {
   const areaId = document.getElementById('re-area-select')?.value || currentRoteiro.areaId || '';
   if (!areaId) {
     showToast('Selecione uma \u00c1rea (BU) antes de gerar o link.', 'warning');
-    switchSection(11);
+    switchSection(10);
     return;
   }
 

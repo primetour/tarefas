@@ -6,6 +6,33 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.88+20260522-roteiros-viagem-absorvida-em-cliente] — 2026-05-22
+
+Release **PATCH** — fundir seção **"Viagem"** dentro de **"Cliente e
+Briefing"** no editor de roteiros. Viagem só tinha 2 campos efetivos
+(datas + destinos) — não justificava aba separada.
+
+**Mudanças**:
+- `SECTIONS[]` reduzido de 15 → 14. Antes: Cliente e Briefing → Viagem
+  → Dia a dia... Agora: Cliente e Briefing → Dia a dia... A subseção
+  "Datas e Destinos" aparece no fim de Cliente e Briefing (h3 com top
+  border), seguida do botão "Gerar roteiro com IA".
+- `renderViagemSection()` renomeada pra `renderTravelBlock()` e
+  chamada inline pelo final de `renderClienteSection()`.
+- `renderSectionContent()` switch renumerado (cases 0-13).
+- Todos os `switchSection(N>=2)` decrementados em -1 para apontar pra
+  nova posição (30 ocorrências).
+- `activeSection === 12` (Avançado) → `activeSection === 11`.
+- Help text em "Dia a Dia" atualizado: "*Preencha as datas e destinos
+  na seção Viagem*" → "*...na seção Cliente e Briefing*".
+
+**Pendências relacionadas** (não cobertas nesta release):
+- Handlers de export PDF/DOCX/PPTX têm `switchSection(10)` com
+  comentário stale "// Preview & Export" — na verdade pula pra Dicas
+  anexas. Spawn task separado.
+
+---
+
 ## [4.49.87+20260522-roteiros-add-dest-rerender-fix] — 2026-05-22
 
 Release **PATCH** — fix bug pré-existente em `add-dest`, `remove-dest`,

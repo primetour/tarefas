@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 87,
-  build: '20260522-roteiros-add-dest-rerender-fix',
+  patch: 88,
+  build: '20260522-roteiros-viagem-absorvida-em-cliente',
 };
 
 /** "1.2.0" */
