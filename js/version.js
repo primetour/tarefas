@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 78,
-  build: '20260522-roteiros-briefing-layout-alinhado',
+  patch: 79,
+  build: '20260522-roteiros-imagens-auto-websearch-forcado',
 };
 
 /** "1.2.0" */

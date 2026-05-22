@@ -3881,6 +3881,15 @@ Pesquise em **Virtuoso**, **FHR (Amex)** e **LHW** antes de sugerir hotéis. Cit
     // Aplica no currentRoteiro
     _applyAiOutputToRoteiro(parsed, result, inputSnapshot);
 
+    // v4.49.79+ Auto-resolve imagens (banco interno → Unsplash → Wikipedia)
+    // pra hero + cada cidade + cada hotel do roteiro gerado.
+    // Não-bloqueante: se falhar, segue (usuário pode trocar manualmente depois).
+    try {
+      await _enrichImagesAfterAi();
+    } catch (e) {
+      console.warn('[ai-roteiro] image enrich falhou (não-bloqueante):', e?.message);
+    }
+
     // Re-render
     switchSection(activeSection);
     markDirty();
@@ -3960,6 +3969,88 @@ function _applyAiOutputToRoteiro(ai, runResult, inputSnapshot) {
     inputTokens: runResult.inputTokens || 0,
     outputTokens: runResult.outputTokens || 0,
   };
+}
+
+/* ─── v4.49.79+ Auto-resolve imagens após geração via IA ────
+ *
+ * Pra cada hero/cidade/hotel do roteiro gerado, busca imagem na
+ * cascata padrão (banco interno portal_images → Unsplash → Wikipedia)
+ * via `resolveDestinationImage` do roteiroGenerator.
+ *
+ * Reutiliza exatamente a mesma infra que o picker manual já usa, então
+ * imagens auto-resolvidas ficam consistentes com o resto do sistema.
+ *
+ * Não-bloqueante: se uma cidade falhar, segue pra próxima. Set de
+ * excludeUrls garante dedup entre slots (hero != city != hotel).
+ * ──────────────────────────────────────────────────────────── */
+async function _enrichImagesAfterAi() {
+  if (!currentRoteiro) return;
+
+  // Garante estrutura
+  if (!currentRoteiro.images) currentRoteiro.images = { hero: null, overrides: {} };
+  if (!currentRoteiro.images.overrides) currentRoteiro.images.overrides = {};
+
+  // Banco interno (portal_images) — carrega uma vez, usa pra todos os slots
+  let bank = [];
+  try { bank = await fetchImages({}); }
+  catch (e) { console.warn('[enrichImages] fetchImages falhou:', e?.message); }
+
+  const excludeUrls = new Set();
+  const overrides = currentRoteiro.images.overrides;
+
+  // 1. Hero — primeiro destino
+  const firstDest = currentRoteiro.travel?.destinations?.[0];
+  if (firstDest?.city || firstDest?.country) {
+    try {
+      const url = await resolveDestinationImage(
+        { city: firstDest.city || '', country: firstDest.country || '' },
+        null, bank, { excludeUrls },
+      );
+      if (url) {
+        currentRoteiro.images.hero = url;
+        overrides.hero = url;
+        excludeUrls.add(url);
+      }
+    } catch (e) { console.warn('[enrichImages] hero falhou:', e?.message); }
+  }
+
+  // 2. Pra cada cidade única dos destinos
+  const cities = new Map(); // slug → {city, country}
+  (currentRoteiro.travel?.destinations || []).forEach(d => {
+    if (d.city) cities.set(_normKey(d.city), { city: d.city, country: d.country || '' });
+  });
+  for (const [slug, dest] of cities) {
+    const ovKey = `city_${slug}`;
+    if (overrides[ovKey]) continue; // já tem (manual)
+    try {
+      const url = await resolveDestinationImage(dest, null, bank, { excludeUrls });
+      if (url) {
+        overrides[ovKey] = url;
+        excludeUrls.add(url);
+      }
+    } catch (e) { console.warn(`[enrichImages] city ${slug} falhou:`, e?.message); }
+  }
+
+  // 3. Pra cada hotel (usa city do hotel)
+  const hotels = currentRoteiro.hotels || [];
+  for (let i = 0; i < hotels.length; i++) {
+    const h = hotels[i];
+    const ovKey = `hotel_${i}`;
+    if (overrides[ovKey]) continue;
+    if (!h?.city && !h?.hotelName) continue;
+    try {
+      const url = await resolveDestinationImage(
+        { city: h.city || '', country: '' },
+        null, bank, { excludeUrls },
+      );
+      if (url) {
+        overrides[ovKey] = url;
+        excludeUrls.add(url);
+      }
+    } catch (e) { console.warn(`[enrichImages] hotel ${i} falhou:`, e?.message); }
+  }
+
+  console.log(`[enrichImages] ${Object.keys(overrides).length} imagens resolvidas (${excludeUrls.size} URLs únicos).`);
 }
 
 /* ─── Destroy ─────────────────────────────────────────────── */

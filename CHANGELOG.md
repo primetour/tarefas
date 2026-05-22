@@ -6,6 +6,43 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.79+20260522-roteiros-imagens-auto-websearch-forcado] — 2026-05-22
+
+Release **PATCH** — 2 melhorias na geração via IA: auto-resolve de
+imagens + web_search obrigatório.
+
+### 1. Auto-resolve imagens (task #14 Sprint C)
+
+Após `_applyAiOutputToRoteiro` (que preenche days/hotels), agora
+dispara nova função **`_enrichImagesAfterAi()`** que:
+
+- Carrega banco de imagens local (\`fetchImages({})\` da collection
+  \`portal_images\`)
+- Pra cada slot do roteiro (hero, cada cidade, cada hotel) chama
+  `resolveDestinationImage(dest, null, bank, { excludeUrls })` que
+  segue a cascata: **banco interno → Unsplash → Wikipedia**
+- Popula `currentRoteiro.images.overrides.hero` + `city_<slug>` +
+  `hotel_<i>` (mesmas keys do picker manual — então fica visível
+  na aba Imagens imediatamente, e usuário pode trocar se quiser)
+- `Set excludeUrls` garante dedup entre slots (hero ≠ city ≠ hotel)
+- Não-bloqueante: erro em 1 cidade não para o resto
+
+### 2. Web_search obrigatório (task #17)
+
+System prompt do agent `roteiros-luxo-gen` ganhou nova seção:
+
+> **"## Web search é OBRIGATÓRIO"** — instrui o modelo que cenários
+> típicos exigem busca (confirmar Virtuoso/FHR/LHW, amenities,
+> eventos sazonais, acessibilidade) e que roteiros sem ≥ 1 busca
+> são "incompletos — você perde a garantia de zero alucinação".
+
+System prompt cresceu de 9736 → 10370 chars (caching segue ativo).
+Re-seed rodado via `scripts/seed-roteiros-luxo-agent.js`.
+
+**Validação**: `node --check` ok. Agent doc no Firestore atualizado.
+
+---
+
 ## [4.49.78+20260522-roteiros-briefing-layout-alinhado] — 2026-05-22
 
 Release **PATCH** — Briefing do gerador de roteiros refeito pra
