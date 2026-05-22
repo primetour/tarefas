@@ -307,10 +307,40 @@ labels visíveis foram atualizadas.
 - `tags[]`
 
 ### `roteiros`
-- `id` (PK)
-- `userId` (FK)
-- `cliente`
-- `destinos[]`
+
+Schema canônico em `js/services/roteiros.js` → `emptyRoteiro()`. Migration on-read em `migrateRoteiroOnRead()` garante shape pra docs antigos.
+
+- `id` (PK auto)
+- `consultantId` (FK → `users.uid`) — dono primário do roteiro. **Obrigatório no create** (Firestore rule `firestore.rules:841` exige `request.resource.data.consultantId == request.auth.uid`).
+- `consultantName` — denormalizado pra evitar join no listing
+- `collaboratorIds[]` — UIDs com permissão de edição (Sprint 1 hardening v4.40.31+)
+- `status` — `draft` | `review` | `sent` | `approved` | `archived`
+- `workflowMode` — `system` (gera tasks operacionais auto) | `offline`
+- `areaId` (FK → `areas.id`) — BU pro branding do export (PDF/PPTX/DOCX)
+- `title` — título do roteiro
+- `client{ name, email, phone, type, preferences[], restrictions[], economicProfile, notes }` — bloco unificado **Cliente + Briefing** (fusão v4.49.86 — antes havia bloco `briefing` separado e redundante)
+  - `type` — `individual` | `couple` | `family` | `group`
+  - `preferences[]` — multi-pill ("Gastronomia", "Cultura", "Aventura", "Relaxamento", "Compras", "Natureza")
+  - `restrictions[]` — multi-pill ("Mobilidade reduzida", "Restrição alimentar")
+  - `economicProfile` — `standard` | `premium` | `luxury`
+- `travelers[]` — lista de viajantes (substituiu `client.adults`/`children`/`childrenAges` na v4.41.0). Cada item: `{ id, name, age, isLead, doc, notes }`. Migration on-read deriva de campos legados se ausente.
+- `travel{ startDate, endDate, nights, destinations[] }`
+  - `destinations[]` — `{ city, country, nights }`
+- `days[]` — dia a dia. Cada item: `{ dayNumber, date, city, title, narrative, overnightCity, activities[], imageIds[] }`
+- `flights[]` (v4.49.91+) — voos da viagem. Cada item: `{ airline, flightNumber, originCity, destinationCity, departureDate, departureTime, arrivalDate, arrivalTime }`. **Operacional** — não é populado pela IA (agent prompt v3 instrui a deixar vazio). Renderizado em PDF (AÉREO section), PPTX (slide AÉREO), DOCX (Aéreo header) e link público (`roteiro-view.html` section #sec-aereo).
+- `hotels[]` — `{ city, hotelName, roomType, regime, checkIn, checkOut, nights, notes }`
+- `pricing{ perPerson, perCouple, currency, validUntil, disclaimer, customRows[] }`
+- `costPricing{ perPerson, perCouple, currency, notes, customRows[] }` — **interno** (custo real), strip via `stripInternalFields()` antes de export pro cliente. Só visíveis com permission `roteiro_view_cost` ou master.
+- `optionals[]`, `includes[]`, `excludes[]`
+- `payment{ deposit, installments, deadline, notes }`
+- `cancellation[]` — `{ period, penalty }`
+- `importantInfo{ passport, visa, vaccines, climate, luggage, flights, customFields[] }` — info pro cliente (ressalvas regulatórias). NOTA: `importantInfo.flights` é **regulatório** (regras de bagagem, peso etc.), não confundir com o array `flights[]` (voos reais cadastrados).
+- `embeddedTips[]` — snapshots de dicas do Portal de Dicas (anexadas auto via `scheduleAutoAttachTipsForCountry` em v4.49.93 quando user digita country no destino).
+- `images{ hero, overrides{} }` — overrides manuais (override.hero, override.city_${normKey}, override.hotel_${idx}). Sem override, geração resolve via cascata banco → Unsplash → Wikipedia. Preview thumb em editor implementado v4.49.93.
+- `enrichedImages{ heroUrl, byCity{}, byHotel{}, usedUrls[] }` — cache resolvido pelo `enrichRoteiroImages()` quando gera link público (Sprint 6a Phase 2).
+- `aiGeneration{ enabled, sources[], citations[], queries[], aiSourcesFromAgent[], destinationSuggestions[], promptVersion, generatedAt, lastInput, consultantNotes, webSearchCount, inputTokens, outputTokens }` — trilha de auditoria da geração via agente Claude (`roteiros-luxo-gen`, Sonnet 4.5 com web_search restrito a Virtuoso/FHR/LHW).
+- `linkedTaskIds[]` + `tasksGeneratedAt` (v4.43.0+ Sprint 4) — IDs de tasks operacionais geradas a partir do roteiro aprovado.
+- `createdAt`, `createdBy`, `updatedAt`, `updatedBy`
 
 ### `landing_pages`
 - `id` (PK)

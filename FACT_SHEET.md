@@ -68,21 +68,25 @@ O PRIMETOUR e uma plataforma SaaS proprietaria de gestao operacional desenvolvid
 - **Resumo diario** automatico por email (dailySummary)
 
 ### 3.2 Roteiros de Viagem (Modulo Exclusivo)
-- **Editor completo** com 11 secoes: Cliente, Viagem, Dia a Dia, Hoteis, Valores, Opcionais, Inclui/Nao Inclui, Pagamento, Cancelamento, Informacoes Importantes, Preview & Export
-- **Criacao completa via IA** — prompt em texto livre gera roteiro comercial inteiro com narrativas imersivas
-- **Web Search integrado** — IA pesquisa hoteis e experiencias via Serper.dev em fontes de turismo de luxo
+- **Editor completo** com 14 secoes (v4.49.88+): Cliente e Briefing (Cliente + Viagem + Datas + Destinos fundidos), Dia a Dia, Aereo e Hoteis (v4.49.91+), Valores, Opcionais, Inclui/Nao Inclui, Pagamento, Cancelamento, Informacoes Importantes, Imagens, Dicas anexas, Avancado, Preview & Export, Observacoes IA
+- **Criacao completa via IA** — Sonnet 4.5 dedicado (`roteiros-luxo-gen`) com web_search nativo restrito a `virtuoso.com`, `americanexpress.com`, `lhw.com`
+- **Schema briefing unificado** (v4.49.86+) — `client.{preferences, restrictions, economicProfile, notes}` substituiu bloco `briefing` separado (-164 linhas)
+- **Voos no schema** (v4.49.91+) — `flights[]` com cia/voo/origem/destino/saida/chegada. Renderiza em PDF (AEREO), PPTX (slide), DOCX, e link publico
+- **Auto-prefill de dicas** (v4.49.93+) — ao digitar pais nos destinos, dicas do Portal correspondentes sao snapshot-adas em `embeddedTips[]`
+- **Datalist contextual** (v4.49.89+) — autocomplete de cidades filtra pelas cidades do pais digitado
+- **Imagens auto-preview** (v4.49.93+) — thumbs renderizadas via cascata banco R2 → Unsplash → Wikipedia (mesmo path do PDF)
+- **Progress overlay** (v4.49.94+) — chamada IA leva 60-120s, overlay full-screen com timer, phases rotativas e barra animada
 - **Narrativas sensoriais** — IA escreve 200+ palavras/dia com aromas, texturas, nomes reais de restaurantes
-- **Rastreio de fontes** — campo `aiSources` registra URLs consultadas pela IA (backoffice)
-- **Hoteis reais** — IA usa apenas hoteis que existem (Four Seasons, Aman, Belmond, etc.)
-- **Precos protegidos** — IA nunca inventa valores, todos os campos de preco retornam null
-- **Perfil de cliente** detalhado (tipo, preferencias, restricoes, perfil economico)
-- **Seletor de destinos** integrado ao Portal de Dicas
-- **Export PDF profissional** — layout de apresentacao comercial com auto-save
-- **Web links publicos** com contador de visualizacoes
+- **Rastreio de fontes** — `aiGeneration{ sources[], citations[], queries[], inputTokens, outputTokens }` registra trilha de auditoria
+- **Hoteis reais** — IA usa apenas hoteis dos programas Virtuoso/FHR/LHW (zero alucinacao garantida via system prompt)
+- **Precos protegidos** — IA nunca inventa valores, `pricing.perPerson/perCouple` ficam null
+- **Filtros listagem refeitos** (v4.49.97-98) — pills periodo dourado, filtros avancados sempre visiveis, modal date picker custom com label dinamica "DD/MM → DD/MM"
+- **Icones SVG na listagem** (v4.49.96-97) — Heroicons + tooltip CSS dark (substituiu chars unicode confusos ✎ ⧉ ↓ ⊠ ✕)
+- **Export multi-formato** — PDF (jspdf+autotable), PPTX (pptxgenjs), DOCX (docx 8.5)
+- **Web links publicos** com contador de visualizacoes (`roteiro-view.html` standalone, sem auth)
 - **Pipeline de vendas** (Rascunho → Em revisao → Enviado → Aprovado → Arquivado)
+- **Tarefas operacionais auto** (Sprint 4) — quando aprovado, gera tasks vinculadas via `roteiroTasks.generateOperationalTasksForRoteiro`
 - **Dashboard de KPIs** — taxa de conversao, valor medio, top destinos, evolucao mensal
-- **Fallback de provider** — se Groq excede limite, tenta Gemini automaticamente
-- **Module Hints customizaveis** — ajuste fino do prompt de geracao via UI (Prompts por Modulo)
 
 ### 3.3 Portal de Dicas (B2B Content Platform)
 - **Hub unificado** com 3 abas internas: Gerar Material, Dicas Cadastradas, Importar Dicas
