@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 76,
-  build: '20260521-roteiros-cadastro-destino-inline-bug-fix',
+  patch: 77,
+  build: '20260521-roteiros-checkbox-collect-fix',
 };
 
 /** "1.2.0" */

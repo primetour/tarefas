@@ -6,6 +6,25 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.77+20260521-roteiros-checkbox-collect-fix] — 2026-05-21
+
+Release **PATCH** — bugfix: checkboxes não persistiam.
+
+**Bug encontrado validando v4.49.76 no Chrome**: ao marcar
+checkbox "🔮 Quero que o agente sugira destinos", o estado se
+perdia no próximo re-render. Causa: `collectFormData()` lia
+`input.value` (retorna string "on" pra checkboxes) em vez de
+`input.checked` (boolean).
+
+**Fix em `collectFormData`**: nova branch específica pra
+`input.type === 'checkbox'` que lê `input.checked === true`.
+Afeta TODOS os checkboxes do editor (qualquer `[data-field]`
+com type=checkbox).
+
+**Validação**: `node --check` ok.
+
+---
+
 ## [4.49.76+20260521-roteiros-cadastro-destino-inline-bug-fix] — 2026-05-21
 
 Release **PATCH** — fixes encontrados validando v4.49.75 + cadastro

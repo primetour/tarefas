@@ -2058,7 +2058,9 @@ function collectFormData() {
   mainContainer.querySelectorAll('[data-field]').forEach(input => {
     const path = input.dataset.field;
     let v;
-    if (input.type === 'number') {
+    if (input.type === 'checkbox') {
+      v = input.checked === true;          // v4.49.76+ bugfix: era lendo input.value ("on")
+    } else if (input.type === 'number') {
       v = input.value === '' ? null : parseFloat(input.value);
     } else {
       v = input.value;
