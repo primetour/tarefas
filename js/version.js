@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 88,
-  build: '20260522-roteiros-viagem-absorvida-em-cliente',
+  patch: 89,
+  build: '20260522-roteiros-datalist-contextual-cidades',
 };
 
 /** "1.2.0" */

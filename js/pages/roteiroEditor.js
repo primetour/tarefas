@@ -985,6 +985,12 @@ function renderTravelBlock() {
     <div id="re-destinations">
       ${dests.map((d, i) => renderDestRow(d, i, dests.length)).join('')}
     </div>
+    <!-- v4.49.89+ Datalist global de países (sem duplicatas) compartilhada
+         entre todas as linhas. Cidades têm datalist por linha (re-city-list-${i})
+         filtradas pelo país desta linha. -->
+    <datalist id="re-country-list">
+      ${[...new Set(allDestinations.map(d => d.country).filter(Boolean))].sort().map(c => `<option value="${esc(c)}">`).join('')}
+    </datalist>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
       <button class="btn btn-ghost btn-sm" data-action="add-dest">+ Adicionar Destino</button>
       <button class="btn btn-ghost btn-sm" data-action="cadastrar-novo-destino">+ Cadastrar destino novo no banco</button>
@@ -1000,23 +1006,27 @@ function renderTravelBlock() {
 }
 
 function renderDestRow(d, i, total) {
-  const destOptions = allDestinations.length
-    ? allDestinations.map(dest => {
-        const label = `${dest.city || ''}, ${dest.country || ''}`.replace(/^, |, $/g, '');
-        const selected = (d.city === dest.city && d.country === dest.country) ? 'selected' : '';
-        return `<option value="${esc(dest.city||'')}|${esc(dest.country||'')}" ${selected}>${esc(label)}</option>`;
-      }).join('')
-    : '';
+  // v4.49.89+ Datalists contextuais separadas:
+  //   - re-country-list (global, no fim do bloco) lista todos os países.
+  //   - re-city-list-${i} (por linha) lista só cidades do país desta linha.
+  // Quando user muda país, handleEditorChange repopula o datalist da cidade.
+  const citiesForCountry = d.country
+    ? allDestinations.filter(dest => dest.country === d.country)
+    : allDestinations;
+  const cityOptions = citiesForCountry
+    .map(dest => `<option value="${esc(dest.city || '')}">`)
+    .join('');
 
   return `
     <div class="re-dest-row" data-dest-idx="${i}">
+      <datalist id="re-city-list-${i}">${cityOptions}</datalist>
       <div class="re-form-group" style="flex:2;">
-        <label class="re-label" style="font-size:0.7rem;">Cidade</label>
-        <input class="re-input" data-dest="city" value="${esc(d.city || '')}" placeholder="Cidade" />
+        <label class="re-label" style="font-size:0.7rem;">País</label>
+        <input class="re-input" data-dest="country" list="re-country-list" value="${esc(d.country || '')}" placeholder="País" />
       </div>
       <div class="re-form-group" style="flex:2;">
-        <label class="re-label" style="font-size:0.7rem;">Pa\u00eds</label>
-        <input class="re-input" data-dest="country" value="${esc(d.country || '')}" placeholder="Pa\u00eds" />
+        <label class="re-label" style="font-size:0.7rem;">Cidade</label>
+        <input class="re-input" data-dest="city" list="re-city-list-${i}" value="${esc(d.city || '')}" placeholder="Cidade" />
       </div>
       <div class="re-form-group" style="flex:0 0 80px;">
         <label class="re-label" style="font-size:0.7rem;">Noites</label>
@@ -3185,6 +3195,23 @@ function handleEditorChange(e) {
   // Recalc travel totals
   if (target.dataset.dest === 'nights' || target.dataset.field === 'travel.startDate') {
     recalcTravelTotals();
+  }
+
+  // v4.49.89+ Country changed → repopulate this row's city datalist with
+  // cities for the new country. Avoids re-rendering (preserves focus).
+  if (target.dataset.dest === 'country') {
+    const row = target.closest('[data-dest-idx]');
+    if (row) {
+      const idx = row.dataset.destIdx;
+      const dl = document.getElementById(`re-city-list-${idx}`);
+      if (dl) {
+        const country = target.value.trim();
+        const cities = country
+          ? allDestinations.filter(d => d.country === country)
+          : allDestinations;
+        dl.innerHTML = cities.map(d => `<option value="${esc(d.city || '')}">`).join('');
+      }
+    }
   }
 
   // Children count change

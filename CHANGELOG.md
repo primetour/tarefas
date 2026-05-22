@@ -6,6 +6,30 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.89+20260522-roteiros-datalist-contextual-cidades] — 2026-05-22
+
+Release **PATCH** — autocomplete de **cidade** agora filtra pelas
+cidades do **país** já digitado na linha. Antes, ao clicar em Cidade,
+o dropdown listava TUDO do banco junto e misturado.
+
+**Crítica do Renê** (auditoria UX): "*em destinos, vc coloca cidade,
+depois país... quando clica abre uma lista com cidade de pais toda
+confusa, sem organização*".
+
+**Como funciona agora**:
+- `re-country-list` (global, renderTravelBlock) — todos os países
+  únicos do `allDestinations`, ordenados.
+- `re-city-list-${i}` (por linha, renderDestRow) — cidades filtradas
+  pelo `d.country` daquela linha. Se país vazio, mostra todas.
+- Mudou país? `handleEditorChange` detecta `dataset.dest === 'country'`
+  e repopula o `<datalist>` correspondente in-place — sem
+  re-renderizar a row, preservando foco no campo.
+
+**Também invertida ordem**: agora é **País → Cidade** (antes Cidade
+→ País). Faz mais sentido cognitivamente — escolhe o macro primeiro.
+
+---
+
 ## [4.49.88+20260522-roteiros-viagem-absorvida-em-cliente] — 2026-05-22
 
 Release **PATCH** — fundir seção **"Viagem"** dentro de **"Cliente e
