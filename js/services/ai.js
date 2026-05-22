@@ -1238,7 +1238,8 @@ async function callAnthropic({ apiKey, model, maxTokens, systemPrompt, userPromp
   try {
     const { httpsCallable, getFunctions } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js');
     const { app } = await import('../firebase.js');
-    const callLLM = httpsCallable(getFunctions(app, 'us-central1'), 'callLLM');
+    // v4.49.81+ timeout 300s (match CF) — agente de roteiros pode demorar > 70s default
+    const callLLM = httpsCallable(getFunctions(app, 'us-central1'), 'callLLM', { timeout: 300_000 });
     const res = await callLLM({
       provider:    'anthropic',
       model,

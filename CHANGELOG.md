@@ -6,6 +6,23 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.81+20260522-httpsCallable-client-timeout-300s] — 2026-05-22
+
+Release **PATCH** — `httpsCallable` client-side ainda usava timeout
+default (70s). Mesmo após v4.49.80 (CF server-side 300s), o navegador
+cortava a chamada aos ~70s. Adicionado `{ timeout: 300_000 }` em
+ambas as chamadas:
+
+- `js/services/aiSecure.js` — função genérica `callable(name, data)`
+- `js/services/ai.js` — `callAnthropic` (fallback legacy)
+
+Agora cliente e servidor têm o mesmo limite. Agente de roteiros
+(Sonnet 4.5 + web_search forçado, geração ~150s) consegue completar.
+
+**Validação**: `node --check` ok nos 2 arquivos.
+
+---
+
 ## [4.49.80+20260522-callLLM-timeout-300s] — 2026-05-22
 
 Release **PATCH** — Cloud Function `callLLM` timeout 120s → 300s.

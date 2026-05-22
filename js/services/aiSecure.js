@@ -25,7 +25,11 @@ async function getFunctionsInstance() {
 async function callable(name, data) {
   const functions = await getFunctionsInstance();
   const { httpsCallable } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js');
-  const fn = httpsCallable(functions, name);
+  // v4.49.81+ timeout 300s (era 70s default). Agente de roteiros com
+  // web_search forçado + Sonnet 4.5 + JSON longo pode demorar 120-200s
+  // server-side. Server timeout do CF é 300s (functions/index.js callLLM),
+  // então fazemos match aqui pra evitar client-side cortar antes.
+  const fn = httpsCallable(functions, name, { timeout: 300_000 });
   try {
     const result = await fn(data);
     return result.data;

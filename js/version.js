@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 80,
-  build: '20260522-callLLM-timeout-300s',
+  patch: 81,
+  build: '20260522-httpsCallable-client-timeout-300s',
 };
 
 /** "1.2.0" */
