@@ -402,14 +402,21 @@ Renê em v102: *"faça atualizar em tempo real"*.
 - ✅ Listener no input/change que atualiza **nodes específicos** (subtotal, footer, hint) com `textContent` ou `innerHTML` parcial.
 - Pattern: `recalcXyzTotals()` lê valores atuais do DOM, computa, e seta textos sem tocar nos inputs em si.
 
-### j) Cleanup obrigatório em SPA — listeners zumbis viram memory leak
+### j) Cleanup obrigatório em SPA — **só pra listeners GLOBAIS**
 
-**Auditoria 22/05 revelou**: `aiHub.js` 50 `addEventListener`, **zero** `removeEventListener`. Idem `aiSkills.js` 37, `artsEditor.js` 50, `calendar.js` 35, `checkin.js` 36. SPA: page re-renderiza ao trocar de rota → listeners velhos continuam vivos consumindo RAM + handlers de teclado disparam em página errada.
+**Nuance importante (descoberta em auditoria v4.49.104)**: nem todo `addEventListener` precisa cleanup. Diferenciar:
 
-- ✅ Toda page que faz `addEventListener` global (window, document, body) PRECISA exportar `destroyXyz()` que remove esses listeners.
-- ✅ Salvar reference no container: `container._keyHandler = fn; document.addEventListener('keydown', fn);` — depois `removeEventListener(container._keyHandler)`.
-- ✅ Pattern correto já existe em `roteiroEditor.js`: `destroyRoteiroEditor()`. Replicar em todas pages com listeners globais.
-- ⚠️ `setInterval` / `setTimeout` longos também precisam `clearInterval/Timeout` no destroy. Audit achou 6 pages com 4+ `setTimeout` sem nenhum `clear`.
+- **Container-scoped** (`container.querySelector('btn').addEventListener(...)`): listener atrelado a DOM element. Quando container.innerHTML é resetado ao trocar de página, o elemento some + listener é GC automaticamente. **Não vaza.** É o caso dos 50 listeners de `aiHub.js`.
+- **Global** (`document.addEventListener(...)`, `window.addEventListener(...)`): listener fica na referência global. Page muda mas listener continua vivo, escutando eventos da próxima página. **Vaza + dispara em contexto errado.** Esse é o problema real.
+
+Regras:
+
+- ✅ Toda page que faz `document.addEventListener` ou `window.addEventListener` PRECISA exportar `destroyXyz()` que remove esses listeners específicos.
+- ✅ Salvar reference no container: `container._keyHandler = fn; document.addEventListener('keydown', fn);` — depois `document.removeEventListener('keydown', container._keyHandler)`.
+- ✅ Pattern correto já existe em `roteiroEditor.js`: `destroyRoteiroEditor()`. Replicar APENAS em pages com listeners em document/window.
+- ⚠️ `setInterval` / `setTimeout` longos também precisam `clearInterval/Timeout` no destroy. Audit achou 6 pages com 4+ `setTimeout` sem nenhum `clear` — investigar caso a caso (se for delay < 30s sem ref persistente, não vaza).
+
+**Antes de commitar "fix memory leak"**: confirmar via `grep -n "document.addEventListener\|window.addEventListener"` que listener é REALMENTE global. Container-scoped é falso positivo.
 
 ### k) `confirm()` e `alert()` nativos são UX de 1995
 

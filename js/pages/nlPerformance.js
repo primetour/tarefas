@@ -2834,7 +2834,7 @@ async function exportContentXlsx() {
       });
     }
     const { enriched, agg, filters } = _contentExportSnapshot();
-    if (!enriched.length) { alert('Sem dados pra exportar com os filtros atuais.'); return; }
+    if (!enriched.length) { toast.error('Sem dados pra exportar com os filtros atuais.'); return; }
 
     const wb = window.XLSX.utils.book_new();
 
@@ -2909,7 +2909,7 @@ async function exportContentXlsx() {
     window.XLSX.writeFile(wb, _exportFilename('xlsx'));
   } catch (e) {
     console.error('[contentXlsx]', e);
-    alert('Erro ao gerar Excel: ' + e.message);
+    toast.error('Erro ao gerar Excel: ' + e.message);
   }
 }
 
@@ -3187,7 +3187,7 @@ async function exportContentPptx() {
       });
     }
     const { enriched, agg, filters } = _contentExportSnapshot();
-    if (!enriched.length) { alert('Sem dados pra exportar com os filtros atuais.'); return; }
+    if (!enriched.length) { toast.error('Sem dados pra exportar com os filtros atuais.'); return; }
 
     const pptx = new window.PptxGenJS();
     pptx.layout = 'LAYOUT_WIDE'; // 13.333 × 7.5 inches
@@ -3250,7 +3250,7 @@ async function exportContentPptx() {
     await pptx.writeFile({ fileName: _exportFilename('pptx') });
   } catch (e) {
     console.error('[contentPptx]', e);
-    alert('Erro ao gerar PPT: ' + e.message);
+    toast.error('Erro ao gerar PPT: ' + e.message);
   }
 }
 
@@ -4350,7 +4350,7 @@ async function openExtractedEditor(docId) {
 
   const ref = doc(db, 'mc_performance', docId);
   const snap = await getDoc(ref);
-  if (!snap.exists()) { alert('Documento não encontrado.'); return; }
+  if (!snap.exists()) { toast.error('Documento não encontrado.'); return; }
   const data = snap.data();
   const ex = data.extracted || {};
 
@@ -4553,7 +4553,7 @@ async function openExtractedEditor(docId) {
       await loadContentTab();
     } catch (e) {
       saveBtn.disabled = false; saveBtn.textContent = '💾 Salvar';
-      alert('Falha ao salvar: ' + e.message);
+      toast.error('Falha ao salvar: ' + e.message);
     }
   });
 }

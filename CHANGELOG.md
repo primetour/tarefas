@@ -6,6 +6,49 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.104+20260522-anti-padroes-alert-cleanup-rules] — 2026-05-22
+
+Release **PATCH** — atacar 1 anti-padrão concreto + refinar regra CLAUDE.md §11.j.
+
+**1. alert() → toast em nlPerformance** (6 ocorrências):
+Renê: "ataque o anti-padrão". O mais quick win + zero risco era trocar
+`alert()` por `toast.error()` em `js/pages/nlPerformance.js` — 6 calls
+identificadas em auditoria. Estética unificada (UI já tinha
+`toast.success`/`toast.error` no mesmo arquivo) + não bloqueia main
+thread + estilizável.
+
+Linhas tocadas:
+- L2837, L3190: "Sem dados pra exportar com os filtros atuais."
+- L2912: "Erro ao gerar Excel"
+- L3253: "Erro ao gerar PPT"
+- L4353: "Documento não encontrado"
+- L4556: "Falha ao salvar"
+
+**2. Refinar §11.j em CLAUDE.md** (memory leak):
+Descoberta importante na investigação: `aiHub.js` tem 50
+`addEventListener`, **zero globais**. São todos container-scoped —
+quando page muda + container.innerHTML reseta, listeners morrem com
+os elementos. **Não vaza.**
+
+Regra refinada:
+- **Container-scoped** listeners não vazam (GC automático).
+- **Global** listeners (`document.addEventListener`,
+  `window.addEventListener`) vazam.
+- Cleanup obrigatório APENAS pros globais.
+- Falso positivo comum: pages com 50 listeners locais não precisam
+  refactor de cleanup. Investigar antes de commitar "fix memory leak".
+
+**Outros anti-padrões mapeados ainda pendentes** (próximos sprints):
+- 53 `confirm()` nativos pelo código → modal customizado
+- 86 cores hex hardcoded → variáveis CSS
+- Ícones unicode em listings (taskTypes/team/checkin/portalImages/
+  newsMonitor/contentConfig) → SVG
+- 39 refs a `pricing.perPerson/perCouple` legado → deprecation plan
+- Status workflow só em roteiros → replicar pra CSAT/requests/vacation
+  (ou componentizar em uiKit)
+
+---
+
 ## [4.49.103+20260522-roteiros-autosave-5s-status-workflow] — 2026-05-22
 
 Release **PATCH** — duas evoluções críticas no editor de roteiros.

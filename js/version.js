@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 103,
-  build: '20260522-roteiros-autosave-5s-status-workflow',
+  patch: 104,
+  build: '20260522-anti-padroes-alert-cleanup-rules',
 };
 
 /** "1.2.0" */
