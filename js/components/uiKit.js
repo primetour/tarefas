@@ -263,108 +263,14 @@ export function renderPeriodPills({ active = '30d', show, customRange } = {}) {
 }
 
 /**
- * v4.49.98+ Date range picker minimalista — modal inline, 2 inputs date.
- * Resolve com { from: Date, to: Date } ou null (cancelado).
+ * v4.49.99+ Helper pra formato ISO date (YYYY-MM-DD) — usado pelos
+ * inputs date inline. Substitui `openDateRangePicker` modal removido
+ * (user: "padrão não é popup, é campo pra preencher sem sair da página").
  */
-export function openDateRangePicker({ initialFrom, initialTo } = {}) {
-  return new Promise((resolve) => {
-    const overlay = document.createElement('div');
-    overlay.className = 'uikit-daterange-overlay';
-    overlay.innerHTML = `
-      <style>
-        .uikit-daterange-overlay {
-          position:fixed; inset:0; background:rgba(10,22,40,0.55);
-          display:flex; align-items:center; justify-content:center;
-          z-index:9999; backdrop-filter:blur(2px);
-          animation:uikit-dr-fadein 0.15s ease;
-        }
-        @keyframes uikit-dr-fadein { from { opacity:0; } to { opacity:1; } }
-        .uikit-daterange-card {
-          background:#fff; border-radius:12px; padding:24px 28px;
-          min-width:340px; max-width:420px;
-          box-shadow:0 10px 40px rgba(0,0,0,0.25);
-        }
-        .uikit-daterange-card h3 {
-          margin:0 0 16px 0; font-size:1rem; font-weight:600;
-          color:#0A1628;
-        }
-        .uikit-daterange-fields {
-          display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:18px;
-        }
-        .uikit-daterange-field { display:flex; flex-direction:column; gap:4px; }
-        .uikit-daterange-field label {
-          font-size:0.6875rem; font-weight:600; color:#6B7280;
-          text-transform:uppercase; letter-spacing:0.04em;
-        }
-        .uikit-daterange-field input {
-          padding:8px 12px; border:1px solid #e5e7eb; border-radius:6px;
-          font-size:0.875rem; font-family:inherit;
-        }
-        .uikit-daterange-field input:focus {
-          border-color:var(--brand-gold,#D4A843); outline:none;
-        }
-        .uikit-daterange-actions {
-          display:flex; gap:8px; justify-content:flex-end;
-        }
-        .uikit-daterange-actions button {
-          padding:8px 16px; border-radius:6px;
-          font-size:0.8125rem; font-weight:600; font-family:inherit;
-          cursor:pointer; border:1px solid transparent;
-          transition:all 0.12s;
-        }
-        .uikit-daterange-cancel {
-          background:transparent; border-color:#e5e7eb; color:#6B7280;
-        }
-        .uikit-daterange-cancel:hover { background:#f8fafc; color:#0A1628; }
-        .uikit-daterange-apply {
-          background:var(--brand-gold,#D4A843); color:#0A1628;
-        }
-        .uikit-daterange-apply:hover {
-          filter:brightness(1.08); box-shadow:0 4px 14px rgba(212,168,67,0.35);
-        }
-        .uikit-daterange-apply:disabled {
-          opacity:0.5; cursor:not-allowed;
-        }
-      </style>
-      <div class="uikit-daterange-card" role="dialog">
-        <h3>Selecionar período</h3>
-        <div class="uikit-daterange-fields">
-          <div class="uikit-daterange-field">
-            <label>De</label>
-            <input type="date" id="uikit-dr-from" value="${initialFrom ? toIsoDate(initialFrom) : ''}" />
-          </div>
-          <div class="uikit-daterange-field">
-            <label>Até</label>
-            <input type="date" id="uikit-dr-to" value="${initialTo ? toIsoDate(initialTo) : ''}" />
-          </div>
-        </div>
-        <div class="uikit-daterange-actions">
-          <button type="button" class="uikit-daterange-cancel">Cancelar</button>
-          <button type="button" class="uikit-daterange-apply">Aplicar</button>
-        </div>
-      </div>
-    `;
-    function toIsoDate(d) {
-      const dt = d instanceof Date ? d : new Date(d);
-      return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
-    }
-    document.body.appendChild(overlay);
-    const fromEl = overlay.querySelector('#uikit-dr-from');
-    const toEl = overlay.querySelector('#uikit-dr-to');
-    const cancelBtn = overlay.querySelector('.uikit-daterange-cancel');
-    const applyBtn = overlay.querySelector('.uikit-daterange-apply');
-    const cleanup = (result) => { overlay.remove(); resolve(result); };
-    cancelBtn.onclick = () => cleanup(null);
-    applyBtn.onclick = () => {
-      if (!fromEl.value || !toEl.value) return;
-      const from = new Date(fromEl.value + 'T00:00:00');
-      const to = new Date(toEl.value + 'T23:59:59');
-      if (from > to) { applyBtn.style.background = '#EF4444'; setTimeout(() => applyBtn.style.background = '', 800); return; }
-      cleanup({ from, to });
-    };
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) cleanup(null); });
-    setTimeout(() => fromEl.focus(), 50);
-  });
+export function toIsoDate(d) {
+  if (!d) return '';
+  const dt = d instanceof Date ? d : new Date(d);
+  return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
 }
 
 /**

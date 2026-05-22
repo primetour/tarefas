@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 98,
-  build: '20260522-roteiros-filtros-visiveis-periodo-custom',
+  patch: 99,
+  build: '20260522-roteiros-periodo-custom-inline',
 };
 
 /** "1.2.0" */

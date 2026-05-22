@@ -6,6 +6,36 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.99+20260522-roteiros-periodo-custom-inline] — 2026-05-22
+
+Release **PATCH** — Período custom passa de modal para inputs inline.
+
+**Crítica do Renê**: "tem que clicar 2x pra sair do popup do botão
+período... o padrão não é popup... e sim criar um campo pra preencher
+sem sair da página."
+
+**Razão**: estava certo. Listagens de filtros não usam popup pra range
+de data — esse é padrão de wizard ou modal de form. Aqui basta inputs
+inline que aparecem quando "Período…" está ativo, e fecham quando user
+seleciona outro pill.
+
+**Mudanças**:
+- `openDateRangePicker` modal removido do uiKit. Helper `toIsoDate`
+  exportado pra formatar Date → "YYYY-MM-DD" pros inputs.
+- Em `roteiros.js`: callback do `wirePeriodPills` agora é síncrono —
+  setar `periodKey='custom'` + defaults (30 dias atrás → hoje) + re-render.
+- Quando `periodKey === 'custom'`, render mostra **bloco inline**
+  embaixo dos pills com 2 `<input type="date">` (De / Até) num card gold
+  leve (`rgba(212,168,67,0.06)`).
+- Novo listener `container.addEventListener('change')` detecta mudança
+  em qualquer dos 2 inputs, valida `from ≤ to`, atualiza periodFrom/To
+  e re-renderiza. Sem botão "Aplicar" — auto-aplica on-change.
+- Validação visual: se from > to, border vermelho 800ms.
+- Sair do custom: clicar em qualquer outro pill (7d/30d/90d/12m/Tudo).
+  Inputs somem do DOM no re-render.
+
+---
+
 ## [4.49.98+20260522-roteiros-filtros-visiveis-periodo-custom] — 2026-05-22
 
 Release **PATCH** — auditoria contextual completa da listagem de roteiros

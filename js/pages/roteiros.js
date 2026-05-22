@@ -9,7 +9,7 @@ const showToast = (msg, type = 'info') => toast[type]?.(msg) ?? toast.info(msg);
 import { fetchRoteiros, deleteRoteiro, duplicateRoteiro, updateRoteiroStatus, generateRoteiroFromPrompt } from '../services/roteiros.js';
 import { fetchAreas } from '../services/portal.js';
 import { createDoc, loadJsPdf, COL, txt, withExportGuard } from '../components/pdfKit.js';
-import { renderPageHeader, renderFilterBar, wireUiKitMenus, wirePeriodPills, PERIOD_PRESETS, openDateRangePicker } from '../components/uiKit.js';
+import { renderPageHeader, renderFilterBar, wireUiKitMenus, wirePeriodPills, PERIOD_PRESETS, toIsoDate } from '../components/uiKit.js';
 
 /* ─── Helpers ─────────────────────────────────────────────── */
 const esc = s => s ? String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') : '';
@@ -221,6 +221,34 @@ export async function renderRoteiros(container) {
         border:1px solid rgba(59,130,246,0.2); margin-left:6px; vertical-align:middle;
       }
 
+      /* v4.49.99+ Inputs date inline — aparece quando "Período…" ativo.
+         Substituiu modal popup (user: "campo pra preencher sem sair da página"). */
+      .rt-period-custom {
+        display:flex; gap:12px; align-items:center; flex-wrap:wrap;
+        margin-top:8px; padding:10px 12px;
+        background:rgba(212,168,67,0.06);
+        border:1px solid rgba(212,168,67,0.30);
+        border-radius:8px;
+      }
+      .rt-period-custom-field {
+        display:flex; align-items:center; gap:8px;
+        font-size:0.6875rem; font-weight:600; color:var(--text-muted);
+        text-transform:uppercase; letter-spacing:0.04em;
+      }
+      .rt-period-custom-field input[type="date"] {
+        padding:5px 10px;
+        font-size:0.8125rem; font-family:inherit; font-weight:500;
+        text-transform:none; letter-spacing:normal;
+        color:var(--text-primary);
+        border:1px solid var(--border, #e5e7eb); border-radius:6px;
+        background:#fff;
+        transition:border-color 0.12s;
+      }
+      .rt-period-custom-field input[type="date"]:focus,
+      .rt-period-custom-field input[type="date"]:hover {
+        border-color:var(--brand-gold, #D4A843); outline:none;
+      }
+
       /* v4.49.98+ Filtros sempre visíveis (Renê: "default visível", CLAUDE.md §10).
          Wrapper inline, label "FILTROS" uppercase tracked (gêmeo do "PERÍODO"). */
       .rt-advanced-filters {
@@ -417,9 +445,21 @@ export async function renderRoteiros(container) {
         metaText: '',
         paginationHTML: '',
       })}
-      <!-- v4.49.98+ Filtros avançados SEMPRE visíveis (Renê 22/05/2026: §10
-           "default visível"). Sem details collapse. Label "FILTROS" uppercase
-           alinhado ao "PERÍODO" — identidade consistente. -->
+      <!-- v4.49.99+ Inputs date inline (sem popup) — só aparecem quando
+           periodKey==='custom'. User: "padrão não é popup, é campo pra
+           preencher sem sair da página". -->
+      ${periodKey === 'custom' ? `
+        <div class="rt-period-custom">
+          <label class="rt-period-custom-field">
+            <span>De</span>
+            <input type="date" data-period-input="from" value="${esc(toIsoDate(periodFrom))}" />
+          </label>
+          <label class="rt-period-custom-field">
+            <span>Até</span>
+            <input type="date" data-period-input="to" value="${esc(toIsoDate(periodTo))}" />
+          </label>
+        </div>
+      ` : ''}
       <div class="rt-advanced-filters">
         <span class="rt-advanced-label">Filtros</span>
         <div class="rt-advanced-body">
@@ -802,28 +842,44 @@ export async function renderRoteiros(container) {
   });
 
   // Period pills wire (uiKit)
-  wirePeriodPills(container, async (key, range) => {
+  wirePeriodPills(container, (key, range) => {
     if (key === 'custom') {
-      // v4.49.98+ abre date picker; se cancelar, mantém estado anterior
-      const result = await openDateRangePicker({
-        initialFrom: periodFrom || new Date(Date.now() - 30 * 86400000),
-        initialTo: periodTo || new Date(),
-      });
-      if (!result) {
-        // Cancelado — re-renderiza filtros pra restaurar pill anterior
-        renderFilters();
-        return;
-      }
+      // v4.49.99+ Sem modal — só sinaliza custom e re-renderiza pra
+      // mostrar inputs inline. Default 30 dias atrás → hoje se vazio.
       periodKey = 'custom';
-      periodFrom = result.from;
-      periodTo = result.to;
+      if (!periodFrom) periodFrom = new Date(Date.now() - 30 * 86400000);
+      if (!periodTo) periodTo = new Date();
     } else {
       periodKey = key;
       periodFrom = range.from;
       periodTo = range.to;
     }
     currentPage = 1;
-    renderFilters();   // re-render pra atualizar label dinâmica do custom
+    renderFilters();   // re-render pra atualizar label dinâmica + mostrar/esconder inputs custom
+    renderTable();
+  });
+
+  // v4.49.99+ Handler dos inputs date inline (aparecem só quando periodKey === 'custom')
+  container.addEventListener('change', (e) => {
+    const fromEl = e.target.closest('[data-period-input="from"]');
+    const toEl = e.target.closest('[data-period-input="to"]');
+    if (!fromEl && !toEl) return;
+    const fromInput = container.querySelector('[data-period-input="from"]');
+    const toInput = container.querySelector('[data-period-input="to"]');
+    if (!fromInput?.value || !toInput?.value) return;
+    const from = new Date(fromInput.value + 'T00:00:00');
+    const to = new Date(toInput.value + 'T23:59:59');
+    if (from > to) {
+      // Visual feedback de erro — vermelho leve por 800ms
+      (fromEl || toEl).style.borderColor = '#EF4444';
+      setTimeout(() => { if (fromEl) fromEl.style.borderColor = ''; if (toEl) toEl.style.borderColor = ''; }, 800);
+      return;
+    }
+    periodFrom = from;
+    periodTo = to;
+    periodKey = 'custom';
+    currentPage = 1;
+    renderFilters();   // atualiza label do pill
     renderTable();
   });
 
