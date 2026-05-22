@@ -6,6 +6,29 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.92+20260522-roteiros-aereo-no-link-publico] — 2026-05-22
+
+Release **PATCH** — adiciona seção **Aéreo** no `roteiro-view.html`
+(link público sem auth que o consultor compartilha com o cliente).
+
+**Contexto**: o cliente final vê o roteiro pelo link público, não
+pelo PDF/PPTX/DOCX. Sem este passo, voos cadastrados no editor
+**não apareciam pro cliente** no canal mais usado.
+
+**Mudanças** (`roteiro-view.html`):
+- CSS `.flights-table` — tabela limpa estilo revista (header gold-line,
+  borders sutis, mobile responsive com `data-label`).
+- Render extrai `flights = Array.isArray(r.flights) ? r.flights : []`.
+- Nav item `Aéreo` adicionado **antes** de Hotéis quando `flights.length > 0`.
+- Section `#sec-aereo` com tabela 4 colunas: Cia/Voo, Rota, Saída
+  (hora + data), Chegada (hora + data). Mobile: cards verticais.
+- `fmtDate` reutilizado (helper existente, formato "segunda-feira, 15
+  de junho de 2026") — não criou helper novo.
+
+**Outros exports** (PDF/DOCX/PPTX) já cobertos em v4.49.91.
+
+---
+
 ## [4.49.91+20260522-roteiros-aereo-hoteis-flights-array] — 2026-05-22
 
 Release **PATCH** — seção **"Hotéis"** renomeada para **"Aéreo e

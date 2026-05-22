@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 91,
-  build: '20260522-roteiros-aereo-hoteis-flights-array',
+  patch: 92,
+  build: '20260522-roteiros-aereo-no-link-publico',
 };
 
 /** "1.2.0" */

@@ -265,6 +265,38 @@ h2.serif, h3.serif, h4.serif { font-family: var(--area-font-headline, 'Poppins')
   background: linear-gradient(to top, rgba(0,0,0,.6) 0%, rgba(0,0,0,0) 60%);
 }
 
+/* ── Flights (v4.49.91+) — tabela limpa, sem foto ── */
+.flights-table {
+  width: 100%; border-collapse: collapse; margin-top: 32px;
+  font-size: 0.9375rem; background: var(--white); border-radius: 8px; overflow: hidden;
+  box-shadow: 0 2px 12px rgba(0,0,0,.04);
+}
+.flights-table thead th {
+  background: var(--bg-soft, #f8f6f1); color: var(--text-secondary, #555);
+  padding: 14px 16px; text-align: left;
+  font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+  border-bottom: 2px solid var(--brand-gold, #c9a961);
+}
+.flights-table tbody td {
+  padding: 14px 16px; border-bottom: 1px solid rgba(0,0,0,.05);
+  vertical-align: middle;
+}
+.flights-table tbody tr:last-child td { border-bottom: none; }
+.flights-table .flight-route { font-weight: 600; color: var(--text-primary, #1a1a1a); }
+.flights-table .flight-airline-num {
+  display: flex; flex-direction: column; gap: 2px;
+}
+.flights-table .flight-airline-num .airline { font-weight: 600; color: var(--text-primary, #1a1a1a); }
+.flights-table .flight-airline-num .num { font-size: 0.8125rem; color: var(--text-muted, #888); }
+.flights-table .flight-date { font-size: 0.8125rem; color: var(--text-muted, #888); }
+.flights-table .flight-time { font-weight: 600; color: var(--text-primary, #1a1a1a); }
+@media (max-width: 700px) {
+  .flights-table thead { display: none; }
+  .flights-table tbody tr { display: block; padding: 16px; border-bottom: 1px solid rgba(0,0,0,.05); }
+  .flights-table tbody td { display: flex; justify-content: space-between; padding: 4px 0; border: none; }
+  .flights-table tbody td::before { content: attr(data-label); font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; }
+}
+
 /* ── Hotels (4.47.0+ Sprint 6a — visual estilo revista, foto + cards) ── */
 .hotels-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 24px; margin-top: 40px; }
 .hotel-card-rich {
@@ -673,6 +705,7 @@ function showErr(container, title, msg) {
 /* ── Main Render ── */
 function render(container, r, area) {
   const days = r.days || r.dias || [];
+  const flights = Array.isArray(r.flights) ? r.flights : []; // v4.49.91+
   const hotels = r.hotels || r.hoteis || [];
   const pricing = r.pricing || r.precos || {};
   const optionals = r.optionals || r.opcionais || [];
@@ -720,6 +753,7 @@ function render(container, r, area) {
   // 4.47.0+ (Sprint 6a) — labels com acentos corretos (antes eram ASCII).
   if (days.length) navItems.push({ id: 'roteiro', label: 'Roteiro' });
   if (hasMapData) navItems.push({ id: 'mapa', label: 'Mapa' });
+  if (flights.length) navItems.push({ id: 'aereo', label: 'Aéreo' });
   if (hotels.length) navItems.push({ id: 'hoteis', label: 'Hotéis' });
   if (pricing.value || pricing.valor) navItems.push({ id: 'valores', label: 'Valores' });
   if (optionals.length) navItems.push({ id: 'opcionais', label: 'Opcionais' });
@@ -820,6 +854,49 @@ function render(container, r, area) {
         <div id="roteiro-map" class="roteiro-map-wrap">
           <div class="roteiro-map-placeholder">Carregando mapa...</div>
         </div>
+      </section>` : ''}
+
+      <!-- v4.49.91+ Aéreo: tabela limpa antes de Hospedagem -->
+      ${flights.length ? `
+      <section class="section" id="sec-aereo">
+        <span class="section-overline">Aéreo</span>
+        <h2 class="section-title serif">Voos</h2>
+        <table class="flights-table">
+          <thead><tr>
+            <th>Cia / Voo</th>
+            <th>Rota</th>
+            <th>Saída</th>
+            <th>Chegada</th>
+          </tr></thead>
+          <tbody>
+            ${flights.map(f => {
+              const airline = f.airline || '';
+              const num = f.flightNumber || '';
+              const route = [f.originCity || '', f.destinationCity || ''].filter(Boolean).join(' → ');
+              const depDate = f.departureDate ? fmtDate(f.departureDate) : '';
+              const depTime = f.departureTime || '';
+              const arrDate = f.arrivalDate ? fmtDate(f.arrivalDate) : '';
+              const arrTime = f.arrivalTime || '';
+              return `<tr>
+                <td data-label="Cia / Voo">
+                  <div class="flight-airline-num">
+                    ${airline ? `<span class="airline">${esc(airline)}</span>` : ''}
+                    ${num ? `<span class="num">${esc(num)}</span>` : ''}
+                  </div>
+                </td>
+                <td data-label="Rota" class="flight-route">${esc(route)}</td>
+                <td data-label="Saída">
+                  ${depTime ? `<div class="flight-time">${esc(depTime)}</div>` : ''}
+                  ${depDate ? `<div class="flight-date">${esc(depDate)}</div>` : ''}
+                </td>
+                <td data-label="Chegada">
+                  ${arrTime ? `<div class="flight-time">${esc(arrTime)}</div>` : ''}
+                  ${arrDate ? `<div class="flight-date">${esc(arrDate)}</div>` : ''}
+                </td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
       </section>` : ''}
 
       <!-- 4.47.0+ (Sprint 6a Phase 2b) — Hotéis: cards visuais com foto + nome + dl
