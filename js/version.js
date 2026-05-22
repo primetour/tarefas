@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 86,
-  build: '20260522-cliente-briefing-fundidos-schema-real',
+  patch: 87,
+  build: '20260522-roteiros-add-dest-rerender-fix',
 };
 
 /** "1.2.0" */

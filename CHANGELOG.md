@@ -6,6 +6,31 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.87+20260522-roteiros-add-dest-rerender-fix] — 2026-05-22
+
+Release **PATCH** — fix bug pré-existente em `add-dest`, `remove-dest`,
+`move-dest-up`, `move-dest-down` na seção **Viagem** do editor de
+roteiros. Os botões não persistiam a alteração.
+
+**Causa raiz**: handlers chamavam `switchSection(1)`, que executa
+`collectFormData()` ANTES do re-render — sobrescrevendo o
+`push/splice/swap` in-memory com o estado do DOM antigo (sem o destino
+recém-adicionado).
+
+**Fix**: trocados por `rerenderCurrentSection()`, que apenas re-renderiza
+a seção atual sem re-coletar o DOM. Mesma fix aplicada em `v4.49.85`
+para `add-brief-dest`/`remove-brief-dest` — agora estendida pros 4
+handlers análogos da seção Viagem.
+
+**Detecção**: bug encontrado durante E2E de `v4.49.86` no Chrome MCP
+quando o roteiro fundido foi testado com `Adicionar Destino` → `destCount:0`
+após o click. Trace mostrou `switchSection` zerando o array recém-pushado.
+
+**Arquivos**:
+- `js/pages/roteiroEditor.js` — 4 handlers atualizados (linhas ~2543-2573).
+
+---
+
 ## [4.49.86+20260522-cliente-briefing-fundidos-schema-real] — 2026-05-22
 
 Release **PATCH** — fusão de "Briefing" e "Cliente" em uma seção

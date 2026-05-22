@@ -2536,17 +2536,21 @@ async function handleEditorClick(e) {
       break;
 
     /* ── Destinations ─────────────────────────────────────── */
+    // v4.49.87+ Os 4 handlers usavam switchSection(1) — que re-coleta o DOM
+    // ANTES do re-render, sobrescrevendo o push/splice/swap in-memory. Bug
+    // pré-existente. Trocado por rerenderCurrentSection() (comentado no
+    // próprio código desde sempre).
     case 'add-dest':
       currentRoteiro = collectFormData();
       currentRoteiro.travel.destinations.push({ city: '', country: '', nights: 1 });
-      switchSection(1);
+      rerenderCurrentSection();
       markDirty();
       break;
 
     case 'remove-dest':
       currentRoteiro = collectFormData();
       currentRoteiro.travel.destinations.splice(idx, 1);
-      switchSection(1);
+      rerenderCurrentSection();
       markDirty();
       break;
 
@@ -2556,7 +2560,7 @@ async function handleEditorClick(e) {
         const dArr = currentRoteiro.travel.destinations;
         [dArr[idx - 1], dArr[idx]] = [dArr[idx], dArr[idx - 1]];
       }
-      switchSection(1);
+      rerenderCurrentSection();
       markDirty();
       break;
 
@@ -2566,7 +2570,7 @@ async function handleEditorClick(e) {
       if (idx < destsDown.length - 1) {
         [destsDown[idx], destsDown[idx + 1]] = [destsDown[idx + 1], destsDown[idx]];
       }
-      switchSection(1);
+      rerenderCurrentSection();
       markDirty();
       break;
 
