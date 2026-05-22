@@ -47,6 +47,8 @@ export async function callLLMSecure({
   agentId = null, agentName = null, agentDailyCapUsd = 5,
   module = 'general', source = 'cloud-function',
   attachments = [], webSearch = false,
+  // v4.49.74+ web_search restrito por domínio + max_uses configurável
+  allowedDomains = null, webSearchMaxUses = 3,
 }) {
   const result = await callable('callLLM', {
     provider, model, systemPrompt, userMessage, history,
@@ -55,6 +57,9 @@ export async function callLLMSecure({
     module, source,
     // 4.35.23+: vision (image blocks) + web_search tool nativo (Anthropic)
     attachments, webSearch,
+    // v4.49.74+ Restringe web_search a domínios curados (Virtuoso/FHR/LHW pro
+    // agente de roteiros de luxo). max_uses default 3, configurável.
+    allowedDomains, webSearchMaxUses,
   });
   return { ...result, secured: true };
 }

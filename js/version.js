@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 73,
-  build: '20260521-portal-import-docx-ext-dropdown-hier',
+  patch: 74,
+  build: '20260521-roteiros-ai-agent-luxo-virtuoso-fhr-lhw',
 };
 
 /** "1.2.0" */

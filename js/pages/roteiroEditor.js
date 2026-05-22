@@ -57,6 +57,7 @@ const SECTIONS = [
   { icon: '\u{1F4A1}', label: 'Dicas anexas' },  // 4.42.0+ Sprint 3 \u2014 embed do Portal de Dicas
   { icon: '\u2699',    label: 'Avan\u00e7ado' },        // 4.41.0+ Sprint 2 \u2014 colaboradores, workflow, custo
   { icon: '\u{1F4C4}', label: 'Preview & Export' },
+  { icon: '\u2728',    label: 'Observa\u00e7\u00f5es IA' },  // v4.49.74+ fontes consultadas + notas internas
 ];
 
 /* ─── Preferences & Restrictions options ──────────────────── */
@@ -324,8 +325,147 @@ function renderSectionContent(index) {
     case 11: return renderEmbeddedTipsSection();  // 4.42.0+ Sprint 3
     case 12: return renderAdvancedSection();      // 4.41.0+ Sprint 2
     case 13: return renderPreviewSection();
+    case 14: return renderAiObservationsSection(); // v4.49.74+ Observações IA
     default: return '';
   }
+}
+
+/* ── 14: Observações IA (v4.49.74+) ───────────────────────
+ *
+ * Aba interna pra registrar a "trilha de auditoria" da geração via IA:
+ *   - fontes consultadas (URLs do web_search)
+ *   - queries usadas pelo agente
+ *   - notas livres do consultor sobre essa geração
+ *
+ * NÃO incluso no PDF/PPT exportado pro cliente. Visível a qualquer
+ * consultor logado.
+ * ─────────────────────────────────────────────────────────── */
+function renderAiObservationsSection() {
+  const ai = currentRoteiro?.aiGeneration || {};
+  const hasGenerated = !!ai.enabled;
+  const sources = Array.isArray(ai.sources) ? ai.sources : [];
+  const citations = Array.isArray(ai.citations) ? ai.citations : [];
+  const queries = Array.isArray(ai.queries) ? ai.queries : [];
+  const agentSources = Array.isArray(ai.aiSourcesFromAgent) ? ai.aiSourcesFromAgent : [];
+
+  if (!hasGenerated) {
+    return `
+      <div class="re-section">
+        <div class="re-section-header">
+          <h2 class="re-section-title">✨ Observações IA</h2>
+        </div>
+        <div style="padding:32px;text-align:center;color:var(--text-muted);
+          background:var(--bg-surface);border:1px dashed var(--border-subtle);border-radius:8px;">
+          <div style="font-size:2rem;margin-bottom:8px;">🔮</div>
+          <div style="font-weight:600;margin-bottom:6px;">Nenhuma geração via IA registrada nesse roteiro.</div>
+          <div style="font-size:0.875rem;">
+            Clique em <strong>✨ Gerar com IA</strong> no topo pra criar o roteiro automaticamente
+            consultando Virtuoso, FHR e LHW. As fontes consultadas aparecerão aqui pra double-check.
+          </div>
+        </div>
+      </div>`;
+  }
+
+  const formatDate = iso => {
+    try { return new Date(iso).toLocaleString('pt-BR'); }
+    catch { return iso || '—'; }
+  };
+
+  return `
+    <div class="re-section">
+      <div class="re-section-header">
+        <h2 class="re-section-title">✨ Observações IA</h2>
+        <span style="font-size:0.75rem;color:var(--text-muted);">não exportado no PDF/PPT</span>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:16px;
+        padding:14px;background:var(--bg-surface);border-radius:8px;font-size:0.8125rem;">
+        <div><strong>Gerado em:</strong><br>${esc(formatDate(ai.generatedAt))}</div>
+        <div><strong>Versão do prompt:</strong><br>${esc(ai.promptVersion || '—')}</div>
+        <div><strong>Consultas web:</strong><br>${ai.webSearchCount || 0}</div>
+        <div><strong>Tokens (in/out):</strong><br>${ai.inputTokens || 0} / ${ai.outputTokens || 0}</div>
+      </div>
+
+      <div class="re-field" style="margin-bottom:16px;">
+        <label style="font-weight:600;">📝 Notas do consultor sobre essa geração</label>
+        <textarea data-field="aiGeneration.consultantNotes" rows="4"
+          placeholder="Comentários livres do consultor: o que foi ajustado, ressalvas, próximos passos…"
+          style="width:100%;resize:vertical;">${esc(ai.consultantNotes || '')}</textarea>
+      </div>
+
+      ${sources.length ? `
+        <div style="margin-bottom:16px;">
+          <h3 style="font-size:0.9375rem;font-weight:700;margin-bottom:8px;color:var(--text-secondary);">
+            🔗 Fontes consultadas pelo agente (web_search)
+          </h3>
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            ${sources.map(s => `
+              <a href="${esc(s.url)}" target="_blank" rel="noopener noreferrer"
+                style="display:block;padding:8px 12px;background:var(--bg-surface);
+                  border:1px solid var(--border-subtle);border-radius:6px;
+                  font-size:0.8125rem;color:var(--brand-gold);text-decoration:none;">
+                <strong>${esc(s.title || s.url)}</strong>
+                <br><span style="color:var(--text-muted);font-size:0.75rem;">${esc(s.url)}</span>
+              </a>
+            `).join('')}
+          </div>
+        </div>
+      ` : ''}
+
+      ${citations.length ? `
+        <div style="margin-bottom:16px;">
+          <h3 style="font-size:0.9375rem;font-weight:700;margin-bottom:8px;color:var(--text-secondary);">
+            💬 Citações inline (links de fato usados no texto gerado)
+          </h3>
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            ${citations.slice(0, 20).map(c => `
+              <div style="padding:8px 12px;background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:6px;font-size:0.8125rem;">
+                <a href="${esc(c.url)}" target="_blank" rel="noopener noreferrer" style="color:var(--brand-gold);font-weight:600;">${esc(c.title || c.url)}</a>
+                ${c.citedText ? `<div style="color:var(--text-muted);margin-top:4px;font-style:italic;">"${esc(c.citedText.slice(0, 200))}${c.citedText.length > 200 ? '…' : ''}"</div>` : ''}
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      ` : ''}
+
+      ${agentSources.length ? `
+        <div style="margin-bottom:16px;">
+          <h3 style="font-size:0.9375rem;font-weight:700;margin-bottom:8px;color:var(--text-secondary);">
+            📚 Fontes referenciadas pelo agente no JSON
+          </h3>
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            ${agentSources.map(s => `
+              <div style="padding:8px 12px;background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:6px;font-size:0.8125rem;">
+                <a href="${esc(s.url)}" target="_blank" rel="noopener noreferrer" style="color:var(--brand-gold);font-weight:600;">${esc(s.title || s.url)}</a>
+                ${s.context ? `<div style="color:var(--text-muted);margin-top:4px;">${esc(s.context)}</div>` : ''}
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      ` : ''}
+
+      ${queries.length ? `
+        <details style="margin-bottom:16px;">
+          <summary style="cursor:pointer;font-size:0.875rem;font-weight:600;color:var(--text-secondary);">
+            🔍 Termos de busca usados (${queries.length})
+          </summary>
+          <ul style="margin:8px 0 0;padding-left:20px;font-size:0.8125rem;color:var(--text-muted);">
+            ${queries.map(q => `<li>${esc(q)}</li>`).join('')}
+          </ul>
+        </details>
+      ` : ''}
+
+      ${ai.lastInput ? `
+        <details style="margin-bottom:8px;">
+          <summary style="cursor:pointer;font-size:0.875rem;font-weight:600;color:var(--text-secondary);">
+            🛠 Input enviado ao agente (debug)
+          </summary>
+          <pre style="margin-top:8px;padding:12px;background:var(--bg-surface);
+            border:1px solid var(--border-subtle);border-radius:6px;font-size:0.75rem;
+            overflow-x:auto;white-space:pre-wrap;">${esc(ai.lastInput)}</pre>
+        </details>
+      ` : ''}
+    </div>`;
 }
 
 /* ── 11: Dicas anexas (4.42.0+ Sprint 3) ──────────────────
@@ -2338,8 +2478,15 @@ async function handleEditorClick(e) {
       break;
 
     case 'ai-day':
-      showToast('Gera\u00e7\u00e3o com IA dispon\u00edvel em breve.', 'info');
+      showToast('Gera\u00e7\u00e3o por dia: use "\u2728 Gerar com IA" no topo pra gerar o roteiro completo.', 'info');
       break;
+
+    case 'ai-generate-full': {
+      // v4.49.74+ Dispara o agente roteiros-luxo-gen
+      currentRoteiro = collectFormData();
+      await aiGenerateFullRoteiro();
+      break;
+    }
 
     case 'add-activity': {
       const dayIdx = parseInt(target.dataset.day);
@@ -3087,6 +3234,7 @@ export async function renderRoteiroEditor(container) {
           <span class="re-header-title">${esc(pageTitle)}</span>
           <span class="status-badge">${esc(statusLabel)}</span>
           <span class="re-autosave" id="re-autosave-status">${roteiroId ? 'Carregado' : (isAiGenerated ? 'Gerado por IA — n\u00e3o salvo' : 'Novo roteiro')}</span>
+          <button class="re-add-btn" data-action="ai-generate-full" style="margin-top:0;padding:8px 16px;background:linear-gradient(135deg,#7c3aed 0%,#a855f7 100%);color:#fff;border:none;font-weight:600;" title="Gera roteiro completo via IA (Sonnet 4.5 + Virtuoso/FHR/LHW)">✨ Gerar com IA</button>
           <button class="re-add-btn" data-action="save" style="margin-top:0;font-weight:700;padding:8px 20px;">Salvar</button>
           <button class="re-add-btn" data-action="export-pdf" style="margin-top:0;padding:8px 16px;">Exportar PDF</button>
         </div>
@@ -3139,6 +3287,179 @@ export async function renderRoteiroEditor(container) {
         <button class="re-add-btn" onclick="location.hash='#roteiros'" style="margin-top:16px;">Voltar</button>
       </div>`;
   }
+}
+
+/* ─── v4.49.74+ Geração de roteiro com IA ────────────────────
+ * Aciona o agente `roteiros-luxo-gen` (Sonnet 4.5, web_search restrito
+ * a virtuoso.com/americanexpress.com/lhw.com).
+ *
+ * Fluxo:
+ *   1. Coleta contexto do form (destinos, datas, viajantes, observações)
+ *   2. Monta userMessage estruturada
+ *   3. Chama runAgent('roteiros-luxo-gen', userMessage)
+ *   4. Parse JSON do response
+ *   5. Preenche fields do roteiro (title, days[], hotels[], includes/excludes)
+ *   6. Grava sources/queries em currentRoteiro.aiGeneration
+ *   7. Re-renderiza editor
+ * ──────────────────────────────────────────────────────────── */
+async function aiGenerateFullRoteiro() {
+  if (!currentRoteiro) currentRoteiro = collectFormData();
+
+  // Pré-flight checks
+  const travel = currentRoteiro.travel || {};
+  const destinations = Array.isArray(travel.destinations) ? travel.destinations.filter(d => d.city || d.country) : [];
+  if (destinations.length === 0) {
+    showToast('Adicione pelo menos um destino (cidade ou país) antes de gerar.', 'error');
+    return;
+  }
+  if (!travel.startDate || !travel.endDate) {
+    showToast('Preencha as datas de início e fim da viagem.', 'error');
+    return;
+  }
+
+  // Confirmação se o roteiro já tem conteúdo
+  const hasContent = (currentRoteiro.days?.length > 0 && currentRoteiro.days.some(d => d.title || d.narrative || (d.activities || []).length > 0))
+    || (currentRoteiro.hotels?.length > 0)
+    || currentRoteiro.title;
+  if (hasContent) {
+    const ok = confirm('Este roteiro já tem conteúdo preenchido. Gerar com IA vai SUBSTITUIR esses dados. Continuar?');
+    if (!ok) return;
+  }
+
+  // Loader visual
+  const btn = document.querySelector('[data-action="ai-generate-full"]');
+  const originalText = btn?.textContent;
+  if (btn) { btn.disabled = true; btn.textContent = '🔮 Pesquisando + gerando…'; btn.style.opacity = '0.7'; }
+  showToast('Iniciando geração — pode levar 30-60s (web search + redação).', 'info');
+
+  try {
+    // Monta contexto pra IA
+    const travelers = Array.isArray(currentRoteiro.travelers) ? currentRoteiro.travelers : [];
+    const travelerLines = travelers
+      .filter(t => t.name)
+      .map(t => `- ${t.name}${t.age ? ` (${t.age} anos)` : ''}${t.isLead ? ' [líder do grupo]' : ''}${t.notes ? ` — ${t.notes}` : ''}`)
+      .join('\n');
+
+    const destLines = destinations
+      .map(d => `- ${[d.city, d.country].filter(Boolean).join(', ')}: ${d.nights || 1} noite${(d.nights || 1) > 1 ? 's' : ''}`)
+      .join('\n');
+
+    const userMessage = `Crie um roteiro de luxo PRIMETOUR seguindo todas as diretrizes do system prompt.
+
+**Dados da viagem:**
+- Período: ${travel.startDate} a ${travel.endDate}
+- Total de noites: ${travel.nights || destinations.reduce((s, d) => s + (d.nights || 0), 0)}
+
+**Destinos solicitados (cidade · noites):**
+${destLines}
+
+**Viajantes (${travelers.length || 'não especificado'}):**
+${travelerLines || '(não especificado — assuma 2 adultos, perfil alto padrão 50+)'}
+
+${currentRoteiro.notes ? `**Observações do consultor:**\n${currentRoteiro.notes}\n` : ''}
+${currentRoteiro.aiPrompt ? `**Briefing do cliente:**\n${currentRoteiro.aiPrompt}\n` : ''}
+
+**Pesquise nos sites confiáveis (Virtuoso, FHR via Amex, LHW)** antes de sugerir hotéis. Cite as fontes em \`sources_consulted\`. Retorne APENAS o JSON estruturado, sem markdown fences nem texto extra.`;
+
+    // Dispara o agente
+    const { runAgent } = await import('../services/agents.js');
+    const inputSnapshot = userMessage.slice(0, 2000); // pra debug em aiGeneration.lastInput
+    const result = await runAgent('roteiros-luxo-gen', userMessage, {});
+
+    // Parse JSON do output
+    let parsed;
+    try {
+      // Strip markdown fence se vier
+      const cleaned = String(result.text || '').replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
+      // Recorta do primeiro { ao último }
+      const start = cleaned.indexOf('{');
+      const end = cleaned.lastIndexOf('}');
+      if (start < 0 || end < 0) throw new Error('JSON não detectado na resposta');
+      parsed = JSON.parse(cleaned.slice(start, end + 1));
+    } catch (parseErr) {
+      console.error('[ai-roteiro] Parse JSON falhou:', parseErr, '\nRaw:', result.text?.slice(0, 500));
+      showToast('IA retornou resposta inválida. Detalhes no console.', 'error');
+      return;
+    }
+
+    // Aplica no currentRoteiro
+    _applyAiOutputToRoteiro(parsed, result, inputSnapshot);
+
+    // Re-render
+    switchSection(activeSection);
+    markDirty();
+    showToast(`✨ Roteiro gerado! ${parsed.days?.length || 0} dia(s), ${result.webSearchCount || 0} consulta(s) web. Revise antes de salvar.`, 'success');
+  } catch (e) {
+    console.error('[ai-roteiro] Erro:', e);
+    showToast('Falha na geração: ' + (e?.message || 'erro desconhecido'), 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = originalText; btn.style.opacity = ''; }
+  }
+}
+
+function _applyAiOutputToRoteiro(ai, runResult, inputSnapshot) {
+  // Título
+  if (ai.title) currentRoteiro.title = ai.title;
+  if (ai.narrative_overview) currentRoteiro.narrative = ai.narrative_overview;
+
+  // Destinos — preserva nights existentes se IA não trouxe
+  if (Array.isArray(ai.destinations) && ai.destinations.length) {
+    currentRoteiro.travel.destinations = ai.destinations.map(d => ({
+      city: d.city || '', country: d.country || '', nights: parseInt(d.nights) || 1,
+    }));
+  }
+
+  // Dias
+  if (Array.isArray(ai.days)) {
+    currentRoteiro.days = ai.days.map((d, i) => ({
+      dayNumber: d.day_number || (i + 1),
+      date: d.date || '',
+      city: d.city || '',
+      title: d.title || '',
+      narrative: d.narrative || '',
+      overnightCity: d.overnight_city || d.city || '',
+      activities: Array.isArray(d.activities) ? d.activities.map(a => ({
+        time: a.time || '',
+        description: [a.name, a.description, a.insider_tip ? `💡 ${a.insider_tip}` : ''].filter(Boolean).join(' — '),
+        type: 'passeio',
+      })) : [],
+      imageIds: [],
+    }));
+  }
+
+  // Hotéis
+  if (Array.isArray(ai.hotels)) {
+    currentRoteiro.hotels = ai.hotels.map(h => ({
+      city: h.city || '',
+      hotelName: h.hotel_name || '',
+      roomType: h.room_type || '',
+      regime: h.regime || '',
+      checkIn: '',
+      checkOut: '',
+      nights: parseInt(h.nights) || 1,
+      notes: [h.program ? `[${h.program}]` : '', h.rationale || ''].filter(Boolean).join(' '),
+    }));
+  }
+
+  // Inclusos / Não inclusos
+  if (Array.isArray(ai.includes)) currentRoteiro.includes = ai.includes.slice();
+  if (Array.isArray(ai.excludes)) currentRoteiro.excludes = ai.excludes.slice();
+
+  // Observações internas — fontes consultadas
+  currentRoteiro.aiGeneration = {
+    enabled: true,
+    sources: Array.isArray(runResult.webSearchResults) ? runResult.webSearchResults : [],
+    citations: Array.isArray(runResult.citations) ? runResult.citations : [],
+    queries: Array.isArray(runResult.webSearchQueries) ? runResult.webSearchQueries : [],
+    aiSourcesFromAgent: Array.isArray(ai.sources_consulted) ? ai.sources_consulted : [],
+    promptVersion: 'roteiros-luxo-gen-v1',
+    generatedAt: new Date().toISOString(),
+    lastInput: inputSnapshot || '',
+    consultantNotes: (ai.consultant_notes || '') + (currentRoteiro.aiGeneration?.consultantNotes ? `\n\n--- Anteriores ---\n${currentRoteiro.aiGeneration.consultantNotes}` : ''),
+    webSearchCount: runResult.webSearchCount || 0,
+    inputTokens: runResult.inputTokens || 0,
+    outputTokens: runResult.outputTokens || 0,
+  };
 }
 
 /* ─── Destroy ─────────────────────────────────────────────── */

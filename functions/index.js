@@ -236,6 +236,10 @@ export const callLLM = onCall({
     // 4.35.23+ multimodal + web search
     attachments = [],
     webSearch = false,
+    // v4.49.74+ web search restrito por dominio (Virtuoso, FHR, LHW, etc.)
+    allowedDomains = null,
+    // v4.49.74+ override do max_uses (default 3, agente luxo precisa mais)
+    webSearchMaxUses = 3,
   } = data;
 
   if (!userMessage || typeof userMessage !== 'string') {
@@ -264,7 +268,7 @@ export const callLLM = onCall({
   // ── Chama o provider ──
   let result;
   try {
-    if (provider === 'anthropic') result = await callAnthropic(apiKey, { model, systemPrompt, userMessage, history, maxTokens, temperature, attachments, webSearch });
+    if (provider === 'anthropic') result = await callAnthropic(apiKey, { model, systemPrompt, userMessage, history, maxTokens, temperature, attachments, webSearch, allowedDomains, webSearchMaxUses });
     else if (provider === 'openai') result = await callOpenAI(apiKey, { model, systemPrompt, userMessage, history, maxTokens, temperature });
     else if (provider === 'gemini') result = await callGemini(apiKey, { model, systemPrompt, userMessage, history, maxTokens, temperature });
     else if (provider === 'groq')   result = await callGroq(apiKey, { model, systemPrompt, userMessage, history, maxTokens, temperature });
@@ -320,7 +324,7 @@ export const callLLM = onCall({
 });
 
 /* ─── Provider callers (sem ai.js exposure) ──────────────── */
-async function callAnthropic(apiKey, { model, systemPrompt, userMessage, history, maxTokens, temperature, attachments, webSearch }) {
+async function callAnthropic(apiKey, { model, systemPrompt, userMessage, history, maxTokens, temperature, attachments, webSearch, allowedDomains = null, webSearchMaxUses = 3 }) {
   // 4.35.23+ MULTIMODAL (vision): se `attachments` é array de imagens
   // (data URLs ou {type:'image', source:{type:'base64', media_type, data}}),
   // monta o content com tipos misturados.
@@ -359,8 +363,19 @@ async function callAnthropic(apiKey, { model, systemPrompt, userMessage, history
   // 4.35.23+ Web search nativo do Anthropic (server-side tool).
   // Quando habilitado, o modelo decide quando fazer busca + cita fontes.
   // Custos: $10 por 1000 buscas (a partir do Claude 3.5 Sonnet).
+  // v4.49.74+ allowed_domains restringe a domínios específicos (curadoria do
+  // agente, p.ex.: virtuoso.com / americanexpress.com / lhw.com pro agente
+  // de roteiros de luxo). max_uses configurável (default 3, luxo precisa 5+).
   const tools = webSearch
-    ? [{ type: 'web_search_20250305', name: 'web_search', max_uses: 3 }]
+    ? [(() => {
+        const t = { type: 'web_search_20250305', name: 'web_search', max_uses: Math.max(1, Math.min(10, webSearchMaxUses)) };
+        if (Array.isArray(allowedDomains) && allowedDomains.length > 0) {
+          t.allowed_domains = allowedDomains
+            .map(d => String(d || '').trim().replace(/^https?:\/\//, '').replace(/\/.*$/, ''))
+            .filter(Boolean);
+        }
+        return t;
+      })()]
     : undefined;
 
   const reqBody = {
@@ -382,6 +397,27 @@ async function callAnthropic(apiKey, { model, systemPrompt, userMessage, history
   // Extrair texto de TODOS os blocos type=text (web_search retorna múltiplos blocos)
   const textBlocks = (d.content || []).filter(b => b.type === 'text').map(b => b.text || '');
   const webSearches = (d.content || []).filter(b => b.type === 'server_tool_use' && b.name === 'web_search');
+
+  // v4.49.74+ Extrai citações de web_search pra retornar as fontes consultadas
+  // ao client (gerador de roteiros precisa pra registrar em "observações").
+  //
+  // Estrutura conforme docs Anthropic:
+  //   server_tool_use      : a query que foi feita
+  //   web_search_tool_result: { content: [{ type:'web_search_result', url, title, page_age, encrypted_content }] }
+  //   text                 : pode conter citations[] com {url, title, cited_text}
+  const searchQueries = webSearches.map(b => b?.input?.query || '').filter(Boolean);
+  const searchResults = (d.content || [])
+    .filter(b => b.type === 'web_search_tool_result')
+    .flatMap(b => Array.isArray(b.content) ? b.content : [])
+    .filter(r => r?.type === 'web_search_result')
+    .map(r => ({ url: r.url, title: r.title || '', pageAge: r.page_age || '' }));
+  // Citações inline em blocos de texto (links que o modelo de fato citou)
+  const citations = (d.content || [])
+    .filter(b => b.type === 'text' && Array.isArray(b.citations))
+    .flatMap(b => b.citations)
+    .filter(c => c && c.url)
+    .map(c => ({ url: c.url, title: c.title || '', citedText: c.cited_text || '' }));
+
   return {
     text: textBlocks.join('\n'),
     model: d.model,
@@ -390,6 +426,9 @@ async function callAnthropic(apiKey, { model, systemPrompt, userMessage, history
     cacheCreationTokens:   d.usage?.cache_creation_input_tokens || 0,
     cacheReadTokens:       d.usage?.cache_read_input_tokens || 0,
     webSearchCount:        webSearches.length,
+    webSearchQueries:      searchQueries,
+    webSearchResults:      searchResults,
+    citations,
   };
 }
 async function callOpenAI(apiKey, { model, systemPrompt, userMessage, history, maxTokens, temperature }) {

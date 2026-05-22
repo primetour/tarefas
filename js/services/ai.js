@@ -937,7 +937,11 @@ export async function runSkill(skillId, context = {}) {
   const defaults  = PROVIDER_DEFAULTS[provider] || PROVIDER_DEFAULTS.gemini;
   const model     = skill.model || config?.defaultModel || defaults.model;
   const maxTokens = skill.maxTokens || config?.defaultMaxTokens || defaults.maxTokens;
-  const webSearch = skill.webSearch === true;
+  const webSearch = skill.webSearch === true || skill.allowWebSearch === true;
+  // v4.49.74+ allowedDomains do agente (skill.allowedSites pra Anthropic web_search)
+  const allowedDomains = Array.isArray(skill.allowedSites) && skill.allowedSites.length
+    ? skill.allowedSites : null;
+  const webSearchMaxUses = Math.max(1, Math.min(10, skill.webSearchMaxUses || 3));
 
   let result;
   switch (provider) {
@@ -954,7 +958,12 @@ export async function runSkill(skillId, context = {}) {
       result = await callAzure({ config, apiKey, model, maxTokens, systemPrompt, userPrompt, temperature: skill.temperature });
       break;
     default:
-      result = await callAnthropic({ apiKey, model, maxTokens, systemPrompt, userPrompt, temperature: skill.temperature, webSearch, attachments: skill.attachments });
+      result = await callAnthropic({
+        apiKey, model, maxTokens, systemPrompt, userPrompt,
+        temperature: skill.temperature,
+        webSearch, allowedDomains, webSearchMaxUses,
+        attachments: skill.attachments,
+      });
   }
 
   // ── LGPD: restaurar PII na resposta ──
@@ -1225,7 +1234,7 @@ export async function chatWithAI(userMessage, context = {}, opts = {}) {
  * Agora: chama Cloud Function callLLM, que resolve a key do Secret Manager.
  * Rate limits e caps de custo são aplicados server-side.
  */
-async function callAnthropic({ apiKey, model, maxTokens, systemPrompt, userPrompt, temperature, attachments = [], webSearch = false }) {
+async function callAnthropic({ apiKey, model, maxTokens, systemPrompt, userPrompt, temperature, attachments = [], webSearch = false, allowedDomains = null, webSearchMaxUses = 3 }) {
   try {
     const { httpsCallable, getFunctions } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js');
     const { app } = await import('../firebase.js');
@@ -1237,15 +1246,22 @@ async function callAnthropic({ apiKey, model, maxTokens, systemPrompt, userPromp
       userMessage: userPrompt,
       maxTokens,
       temperature,
-      attachments,  // 4.35.23+ imagens (vision)
-      webSearch,    // 4.35.23+ web_search tool nativo
+      attachments,        // 4.35.23+ imagens (vision)
+      webSearch,          // 4.35.23+ web_search tool nativo
+      allowedDomains,     // v4.49.74+ restringe busca aos sites confiáveis
+      webSearchMaxUses,   // v4.49.74+ luxo precisa 5+
     });
     const data = res.data || {};
     return {
-      text:         data.text || '',
-      model:        data.model || model,
-      inputTokens:  data.inputTokens  || 0,
-      outputTokens: data.outputTokens || 0,
+      text:              data.text || '',
+      model:             data.model || model,
+      inputTokens:       data.inputTokens  || 0,
+      outputTokens:      data.outputTokens || 0,
+      // v4.49.74+ expor citações pra registrar em "observações da consulta"
+      webSearchCount:    data.webSearchCount || 0,
+      webSearchQueries:  data.webSearchQueries || [],
+      webSearchResults:  data.webSearchResults || [],
+      citations:         data.citations || [],
     };
   } catch (e) {
     // Cloud Function retorna HttpsError com code; converte pra mensagem amigável

@@ -237,6 +237,34 @@ export function emptyRoteiro() {
       hero: null,
       overrides: {},
     },
+
+    /* v4.49.74+ Geração com IA — observações internas do consultor.
+     *
+     * Não exposto no PDF/PPT exportado pro cliente. Visível apenas no
+     * editor pra qualquer consultor logado.
+     *
+     * Quando o botão "✨ Gerar roteiro com IA" é acionado, esse bloco
+     * é preenchido com:
+     *   - sources: URLs consultadas pelo web_search do agente
+     *     (Virtuoso, FHR, LHW). Permite double-check posterior.
+     *   - queries: termos buscados pelo agente
+     *   - promptVersion: versão do system prompt (pra rastrear regressões)
+     *   - generatedAt: timestamp ISO
+     *   - lastInput: contexto que foi enviado pro agente (debug)
+     *   - consultantNotes: texto livre do consultor (editável, persiste)
+     */
+    aiGeneration: {
+      enabled: false,
+      sources: [],            // [{ url, title, context }]
+      queries: [],            // ["luxury hotels in Casablanca virtuoso", ...]
+      promptVersion: '',      // 'roteiros-luxo-gen-v1'
+      generatedAt: '',        // ISO timestamp
+      lastInput: '',          // JSON.stringify do contexto enviado
+      consultantNotes: '',    // texto livre, editável pelo consultor
+      webSearchCount: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+    },
   };
 }
 

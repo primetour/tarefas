@@ -1592,9 +1592,13 @@ export async function runAgent(agentId, userInput, context = {}) {
       // attachments vem do contexto (UI envia base64 OU image block já formado)
       attachments: Array.isArray(context.attachments) ? context.attachments : [],
       // webSearch nativo só quando provider suportar (Anthropic/Gemini) E
-      // o agente tiver allowWebSearch=true. Sem `allowedSites` ainda no native
-      // tool — Anthropic não suporta domain whitelist no web_search_20250305.
+      // o agente tiver allowWebSearch=true.
+      // v4.49.74+ Anthropic web_search_20250305 agora aceita allowed_domains
+      // (whitelist) — passamos agent.allowedSites pra restringir busca.
       webSearch: agent.allowWebSearch === true && (agent.provider === 'anthropic' || agent.provider === 'gemini'),
+      allowedDomains: (agent.provider === 'anthropic' && Array.isArray(agent.allowedSites) && agent.allowedSites.length)
+        ? agent.allowedSites : null,
+      webSearchMaxUses: Math.max(1, Math.min(10, agent.webSearchMaxUses || 3)),
     });
   } catch (e) {
     // Fallback ao chatWithAI legacy

@@ -6,6 +6,69 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.74+20260521-roteiros-ai-agent-luxo-virtuoso-fhr-lhw] — 2026-05-21
+
+Release **MINOR-importante** — Agente de IA pra geração de roteiros
+de luxo (Claude Sonnet 4.5 + web_search restrito Virtuoso/FHR/LHW).
+
+**Contexto** (Renê): "estruturar o agente de IA via API Claude para
+gerar roteiros... especialista em viagens de alto padrão... hotéis
+Virtuoso e FHR... em hipótese alguma pode inventar dados... campo
+de observações da consulta exibindo fontes consultadas".
+
+**Fase 1 entregue**:
+
+1. **Backend — Cloud Function `callLLM` estendida**:
+   - Aceita `allowedDomains[]` no web_search (whitelist do Anthropic
+     `web_search_20250305`). Antes só passava `max_uses`.
+   - `webSearchMaxUses` configurável (default 3, agente luxo usa 5).
+   - Response expandido pra retornar `webSearchQueries`, `webSearchResults`
+     (URL+title+page_age), e `citations` (links de fato citados no texto).
+   - Propaga em `js/services/ai.js`, `aiSecure.js`, `agents.js`.
+
+2. **Agent `roteiros-luxo-gen`** criado no Firestore `ai_agents`:
+   - `model: claude-sonnet-4-5` (Sonnet 4.5, latest 2025-09).
+   - `systemPrompt` extenso (~7500 chars → prompt caching ephemeral
+     ativo, cache hit paga ~10% do input).
+   - `allowedSites: ['virtuoso.com','americanexpress.com','lhw.com']`.
+   - `outputFormat: 'json'` com schema completo (title, narrative_overview,
+     destinations[], days[], hotels[] com `program` field, includes/excludes,
+     consultant_notes, sources_consulted).
+   - Diretrizes anti-alucinação explícitas; tom requintado mas acolhedor;
+     lógica de logística (jet lag, sazonalidade, agrupamento geográfico).
+   - Visível pra admin/master/manager/consultor.
+   - Limites: 8k max_tokens, temp 0.5, cap $10/dia, timeout 90s.
+   - Seed em `scripts/seed-roteiros-luxo-agent.js` (ADC ou env vars).
+
+3. **Schema do roteiro** estendido (`js/services/roteiros.js:emptyRoteiro`):
+   - Novo bloco `aiGeneration{enabled, sources[], queries[], citations[],
+     promptVersion, generatedAt, lastInput, consultantNotes, webSearchCount,
+     inputTokens, outputTokens}`.
+   - Não exposto no PDF/PPT exportado.
+
+4. **Editor de roteiros** (`js/pages/roteiroEditor.js`):
+   - Botão **"✨ Gerar com IA"** no topo (gradient roxo), ao lado de Salvar.
+   - Handler `aiGenerateFullRoteiro()`: collectFormData → monta userMessage
+     → `runAgent('roteiros-luxo-gen')` → parse JSON → preenche days[],
+     hotels[], includes/excludes, narrativa, sources em `aiGeneration`.
+   - Confirma antes de sobrescrever conteúdo existente.
+   - Loader visual durante geração (30-60s típico).
+   - Nova aba **"✨ Observações IA"** (índice 14): fontes consultadas
+     (URLs clicáveis), citações inline, queries, notas editáveis do
+     consultor, debug do input enviado. **Não vai pro PDF/PPT**.
+
+**Validação**: `node --check` ok em 6 arquivos. Cloud Function
+deployada. Seed do agent rodado no Firestore. E2E real do botão
+pendente (precisa user logado pra testar).
+
+**Próximas fases** (pra commits futuros):
+- Knowledge base de roteiros pré-prontos (offline) pra alimentar o agente.
+- Tool use loop pra consulta iterativa em base interna.
+- Streaming da resposta (UX).
+- Few-shot examples com roteiros aprovados de produção.
+
+---
+
 ## [4.49.73+20260521-portal-import-docx-ext-dropdown-hier] — 2026-05-21
 
 Release **PATCH** — 2 fixes encontrados validando o fluxo de
