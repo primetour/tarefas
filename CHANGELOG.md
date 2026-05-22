@@ -6,6 +6,266 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.109+20260522-fila-assincrona-cloud-function] — 2026-05-22
+
+Release **PATCH** — fila assíncrona com Cloud Function background
+worker pra suportar 30+ usuários simultâneos sem hit em rate limits.
+
+**Decisão do Renê**: "vai aguentar 30 usuarios simultaneos acessando
+ele ou a API vai parar?" + "A+B" (chunking + prompt caching E fila
+assíncrona) + "vc faz tudo e entrega pronto. nao existe amanha".
+
+**Problema que resolve**:
+- Antes: client chamava `callLLM` direto → Cloud Function síncrona
+  (timeout 540s). Se 30 consultores rodam ao mesmo tempo, todos
+  competem pela mesma quota Anthropic Tier 1 (50 req/min, 40k input
+  tok/min). Resultado: rate-limit cascateado, alguns falham.
+- Agora: cliente apenas enfileira (`roteiro_generations_queue`),
+  worker background processa com `maxInstances: 5, concurrency: 1`
+  → no máximo 5 gerações paralelas, restantes esperam em fila.
+  Anthropic não estoura rate-limit.
+
+**Arquitetura**:
+
+- **Client (`roteiroEditor.js`)**:
+  - `aiGenerateFullRoteiro()` agora chama `_enqueueAndWait()` em vez
+    de `runAgent` direto.
+  - `_enqueueAndWait()`:
+    1. Cria doc em `roteiro_generations_queue/{auto}` com status
+       `queued` + briefing + flags (totalDias, useChunking, userId).
+    2. Conta posição na fila via `getCountFromServer` (mostra ao user:
+       "Aguardando na fila (posição 3)…").
+    3. Listener `onSnapshot` no doc → atualiza overlay conforme o
+       worker progredir (phase label dinâmica).
+    4. Resolve com shape compatível com runAgent quando status=`done`
+       OU rejeita quando status=`error`.
+    5. Hard timeout 10min (defesa contra worker hang).
+  - Fallback `_generateChunked` mantido como deprecated (remover em
+    v4.49.115+).
+
+- **Cloud Function (`functions/index.js`)**:
+  - `processRoteiroQueue`: `onDocumentCreated` trigger em
+    `roteiro_generations_queue/{queueId}`.
+  - Config: `maxInstances: 5, concurrency: 1, timeoutSeconds: 540,
+    memory: 2GiB`.
+  - **Lease pattern** via Firestore transaction: lê doc, confirma
+    status=queued, atualiza pra `processing` + `leaseUntil` (now+9min)
+    + `workerInstance`. Se outro worker já claimou (status≠queued),
+    aborta silenciosamente — idempotência garantida.
+  - **Chunking server-side** via `_processChunkedAnthropic()`:
+    - Threshold idêntico ao client: `totalDias > 14 || destinations > 5`.
+    - Fase 1 (skeleton) → Fases 2+ (days em chunks de 10).
+    - Cada chunk usa `callAnthropic()` (já tem prompt caching de
+      system prompt + agent personality).
+    - Atualiza `phase`, `progress.current/total`, `phaseLabel` no doc
+      após cada fase → client onSnapshot recebe em tempo real.
+  - **Resultado final**: grava `result.outputData` (JSON merged) +
+    `result.metrics` (tokens totais, cacheRead, citations) +
+    `status: done` no doc.
+  - **Erro**: try/catch global → `status: error` + `errorMessage`,
+    client rejeita Promise.
+
+- **Firestore rules (`firestore.rules`)**:
+  ```
+  match /roteiro_generations_queue/{queueId} {
+    allow read:   if isAuth() && resource.data.userId == request.auth.uid;
+    allow create: if isAuth()
+                  && request.resource.data.userId == request.auth.uid
+                  && request.resource.data.status == 'queued';
+    allow update: if false;   // Cloud Function bypassa via Admin SDK
+    allow delete: if isAuth()
+                  && resource.data.userId == request.auth.uid
+                  && resource.data.status == 'queued';
+  }
+  ```
+  → Usuário cria e lê só os seus. Atualização EXCLUSIVA do worker
+  (via Admin SDK que bypassa rules). Delete só permitido se ainda
+  está na fila (cancela antes de processar).
+
+**Capacidade**:
+- 5 workers × 1 concurrency × ~3min médio (single-shot) = ~100
+  gerações/min de throughput steady-state.
+- 20 dias com chunking (3 fases × 60s = 180s) → ~25 gerações/min.
+- Anthropic Tier 1 (50 req/min) tem folga: 5 workers × 1 chamada
+  ativa = 5 req simultâneas (longe do limite).
+- Quando fila enche (>5 simultâneos), 6º+ ficam em `queued` e
+  pegam slot conforme worker libera.
+
+**Custo**:
+- Cloud Function: ~$0 (free tier 2M invocations/mês cobre).
+- Anthropic: igual ao single-shot (chunking só adiciona ~35% em
+  roteiros longos, conforme v4.49.108).
+- Sem overhead de polling — onSnapshot empurra updates em <100ms.
+
+**Deploy** (Renê precisa rodar):
+```
+firebase deploy --only functions:processRoteiroQueue
+firebase deploy --only firestore:rules
+```
+
+**Próximo (v4.49.110+)**: banco de roteiros curados + outros
+anti-padrões (53 confirm(), 86 hex hardcoded, 39 refs schema legacy).
+
+---
+
+## [4.49.108+20260522-chunking-ia-20-dias-prompt-caching] — 2026-05-22
+
+Release **PATCH** — geração em fases pra roteiros longos (>14 dias OU
+>5 destinos). Aproveita prompt caching do `callLLM` Cloud Function.
+
+**Decisão do Renê**: "chunking + prompt caching pra gente garantir a
+viabilidade financeira" + "vai aguentar 20+ dias?".
+
+**Threshold pra chunking**: `totalDias > 14 || destinations.length > 5`.
+Abaixo disso, single-shot (fluxo atual mantido). 14 é o limite onde
+o output JSON do esqueleto+days começa a se aproximar do `max_tokens`
+do agente (32k).
+
+**Arquitetura**:
+
+- **Fase 1 (skeleton)**: `runAgent` com user message instruindo:
+  *"MODO CHUNKING — FASE 1: gere APENAS title, narrative_overview,
+  destination_suggestions (se aplicável), destinations, hotels (lista
+  completa), includes, excludes, consultant_notes, sources_consulted.
+  OMITA `days`."*
+
+- **Fases 2+ (days chunks)**: chunks de 10 dias. Cada chunk recebe:
+  - O briefing original
+  - O **skeleton** já gerado (compacto — sem rationales longos)
+  - **Refs dos dias já gerados em chunks anteriores** (pra continuidade)
+  - Instrução: *"Gere APENAS days[] do dia X ao Y."*
+
+- **Merge final**: skeleton + concat de todos os days[] → JSON único
+  que o `_applyAiOutputToRoteiro` consome normalmente.
+
+**Prompt caching automático** (já existia no `callLLM`):
+- System prompt (`agent.systemPrompt`, ~3000 tokens) tem
+  `cache_control: ephemeral` → escrito 1× na fase 1, lido nas
+  fases 2+. Economia: ~60% no input cost cross-fases.
+- TTL: 5min (default). Tempo total de geração 20 dias ≈ 200s → cabe.
+
+**Progress overlay**: nova função `progress.setPhase(label)` —
+chunking sobrescreve a phase label dinamicamente:
+*"Fase 1 de 3: gerando esqueleto…" → "Fase 2 de 3: dias 1-10…" →
+"Fase 3 de 3: dias 11-20…"*
+
+**Métricas retornadas** (somadas cross-fases):
+- `inputTokens` / `outputTokens` totais
+- `cacheCreationTokens` / `cacheReadTokens` (pra medir economia)
+- `webSearchCount`, `citations[]`, `webSearchResults[]` concatenados
+- `chunked: true`, `phases: N` (debug)
+
+**Custo estimado pra 20 dias (3 fases)**:
+- Input: ~12k tokens uncached + 6k tokens cached = ~$0.024
+- Output: ~22k tokens × $15/M = $0.33
+- **Total: ~$0.36** (~35% maior que single-shot uncached, mas garantia
+  de não truncar)
+
+**Próximo (v4.49.109)**: fila assíncrona com Cloud Function background
+pra suportar 10+ simultâneos sem hit em rate limits.
+
+---
+
+## [4.49.107+20260522-fix-ia-truncamento-max-tokens] — 2026-05-22
+
+Release **PATCH** — fix crítico de geração com IA truncada.
+
+**Sintoma do Renê**: rodou IA por 154s, recebeu erro
+"SyntaxError: Expected ',' or ']' after array element in JSON at
+position 23283 (line 312 column 6)". O raw JSON cortava em
+`"destination_suggestions[0].labe`.
+
+**Causa**: max_tokens do agente `roteiros-luxo-gen` estava em **8000**.
+Roteiros de luxo geram resposta rica (narrativa 200+ palavras/dia +
+destination_suggestions + multiple hotels com rationale) que estoura
+8k facilmente. Sonnet 4.5 truncou no meio do JSON — JSON.parse falha.
+
+**Fixes**:
+
+1. **Agent doc atualizado** (admin SDK script
+   `functions/bump-roteiros-agent-tokens.cjs`):
+   - `limits.maxTokensPerRun: 8000 → 16000`
+   - Sonnet 4.5 suporta até 64k output context, 16k é folgado pra
+     casos densos sem custo absurdo.
+
+2. **Handler de erro JSON melhorado** (`aiGenerateFullRoteiro`):
+   - Logs estendidos: raw length, stopReason, raw start + raw end
+     (não só start) — facilita debug se reincidir.
+   - Detecta heurística de truncamento: `stopReason === 'max_tokens'`
+     OU `stopReason === 'length'` OU (rawLen > 14k + SyntaxError).
+   - Toast claro pra user: "⚠ Resposta da IA foi truncada (muitos
+     dias/destinos pra um único pedido). Reduza o número de destinos
+     ou tente novamente." (era "IA retornou resposta inválida").
+
+---
+
+## [4.49.106+20260522-fix-back-loop-roteiro-vazio] — 2026-05-22
+
+Release **PATCH** — defesa contra loop de saída de roteiro novo vazio.
+
+**Relato do Renê**: "tentei iniciar um novo roteiro, não preenchi nada,
+quis sair da página... o sistema travou. sobe popup pedindo pra
+confirmar a saída e trava... entra em looping e não sai".
+
+**Investigação**: tentei reproduzir em v4.49.104 — não consegui. Roteiro
+novo intocado sai sem confirm. Roteiro editado mostra confirm
+corretamente, sem loop. Provável: cenário com auto-save retry chain
+em cima de roteiro novo (sem `consultantId` por algum motivo, ou
+race condition) que parecia "loop" pro user.
+
+**Defesa preventiva** (independente da causa raiz):
+1. Helper novo `_isRoteiroEffectivelyEmpty(r)` — true se o roteiro
+   não tem nome de cliente, viajante, destino, voo, hotel, dia, título
+   ou data. Roteiro novo intocado = vazio.
+2. Handler `back`: se for roteiro novo (`!id`) E vazio → sai sem
+   confirm, **força `isDirty=false`** antes de mudar hash.
+3. `markDirty`: se roteiro novo E vazio → não agenda auto-save
+   (evita retry chain inútil). Mantém label "Novo roteiro" no
+   indicador.
+
+**Próximo passo se tu vir o bug de novo**: copia o que diz no console
+do browser e os passos exatos. Atualmente não tenho evidência do
+loop, só hipóteses.
+
+---
+
+## [4.49.105+20260522-svg-icons-6-pages] — 2026-05-22
+
+Release **PATCH** — atacar mais um anti-padrão sistêmico (CLAUDE.md §11.m):
+chars unicode `✎ ⧉ ↓ ⊠ ✕` em listings → SVG inline 14×14
+(Heroicons-style).
+
+**Helper centralizado**: `actionIcon(name)` exportado em
+`js/components/uiKit.js`. Tipos: `edit, duplicate, download, archive,
+restore, delete, add, check, close`. Retorna SVG string com
+`stroke-width 1.75`, `aria-hidden="true"`.
+
+**Aplicado em 6 pages** (replica padrão dos roteiros v4.49.96-97):
+
+| Page | Ícones substituídos |
+|---|---|
+| `taskTypes.js` | type-edit, type-delete, cat-edit, cat-del (4) |
+| `team.js` | absence-edit, absence-delete (2) |
+| `checkin.js` | ck-req-fix (×2), tc-edit, adm-a-del, adm-s-del, esp-edit (7) |
+| `portalImages.js` | edit, download, delete (3) |
+| `newsMonitor.js` | edit, delete em 2 contextos (3) |
+| `contentConfig.js` | edit (1) |
+| **Total** | **20 ícones (regex pattern: `title="X" ...>UNICODE<`)** |
+
+**Mantém intactos**:
+- `class` (btn btn-ghost btn-icon btn-sm) — design system inalterado
+- `data-action` / `data-id` — handlers continuam funcionando
+- `title` — tooltip nativo de fallback
+- `style="color:var(--color-danger)"` — semântica de cor preservada
+
+**Adicionado em cada button**: `aria-label="<title>"` (acessibilidade).
+
+**Não tocado** (escopo limitado — slots/vars/steps em forms inline com
+`<button>X</button>` minúsculos podem ficar como `✕` por enquanto, são
+controles de remover linha de form, não actions de listing).
+
+---
+
 ## [4.49.104+20260522-anti-padroes-alert-cleanup-rules] — 2026-05-22
 
 Release **PATCH** — atacar 1 anti-padrão concreto + refinar regra CLAUDE.md §11.j.

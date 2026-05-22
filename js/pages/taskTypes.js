@@ -6,6 +6,7 @@
 import { store }  from '../store.js';
 import { toast }  from '../components/toast.js';
 import { modal }  from '../components/modal.js';
+import { actionIcon } from '../components/uiKit.js';
 import {
   fetchTaskTypes, createTaskType, updateTaskType, deleteTaskType, getTaskType,
 } from '../services/taskTypes.js';
@@ -139,9 +140,9 @@ function renderTypeCard(t, canEdit) {
               overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(t.description)}</div>`:''}
           </div>
           ${canEdit ? `<div style="display:flex;gap:4px;">
-            <button class="btn btn-ghost btn-icon btn-sm type-edit-btn" data-id="${t.id}" title="Editar">✎</button>
+            <button class="btn btn-ghost btn-icon btn-sm type-edit-btn" data-id="${t.id}" title="Editar" aria-label="Editar">${actionIcon('edit')}</button>
             ${!t.isSystem?`<button class="btn btn-ghost btn-icon btn-sm type-delete-btn" data-id="${t.id}"
-              style="color:var(--color-danger);" title="Excluir">✕</button>`:''}
+              style="color:var(--color-danger);" title="Excluir" aria-label="Excluir">${actionIcon('delete')}</button>`:''}
           </div>` : ''}
         </div>
         ${variations.length ? `
@@ -990,8 +991,8 @@ function openCategoriesModal() {
             <span style="font-size:0.875rem;flex:1;">${esc(c.name)}</span>
             ${c.sector?`<span style="font-size:0.6875rem;padding:1px 6px;border-radius:var(--radius-full);
               background:var(--bg-elevated);color:var(--text-muted);">${esc(c.sector)}</span>`:''}
-            <button class="btn btn-ghost btn-icon btn-sm cat-edit" data-id="${c.id}" title="Editar">✎</button>
-            <button class="btn btn-ghost btn-icon btn-sm cat-del" data-id="${c.id}" style="color:var(--color-danger);" title="Excluir">✕</button>
+            <button class="btn btn-ghost btn-icon btn-sm cat-edit" data-id="${c.id}" title="Editar" aria-label="Editar">${actionIcon('edit')}</button>
+            <button class="btn btn-ghost btn-icon btn-sm cat-del" data-id="${c.id}" style="color:var(--color-danger);" title="Excluir" aria-label="Excluir">${actionIcon('delete')}</button>
           </div>`).join('')}
     </div>`;
 

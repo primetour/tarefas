@@ -3101,3 +3101,196 @@ export const onNotificationCreate = onDocumentCreated({
     // Não relança — notif in-app já existe, falha do email não bloqueia
   }
 });
+
+/* ═══════════════════════════════════════════════════════════════
+   v4.49.109+ ROTEIRO QUEUE — Background worker pra geração IA
+   ═══════════════════════════════════════════════════════════════
+   Resolve o problema de N usuários gerando roteiros simultaneamente:
+   - Cliente cria doc em `roteiro_generations_queue/{id}` com
+     { userId, briefingMessage, totalDias, useChunking }
+   - Esta function (trigger onCreate) processa em background
+   - maxInstances=5 + concurrency=1 → max 5 paralelos globais
+   - Resto enfileira no Cloud Run (sem hit em Anthropic rate-limit)
+   - Cliente escuta o doc via onSnapshot — vê fase atual, ETA, result.
+   ═══════════════════════════════════════════════════════════════ */
+
+export const processRoteiroQueue = onDocumentCreated({
+  document: 'roteiro_generations_queue/{queueId}',
+  secrets: [ANTHROPIC_API_KEY],
+  timeoutSeconds: 540,   // 9min — cabe 3 fases de chunking pra 30 dias
+  memory: '512MiB',
+  maxInstances: 5,       // máx 5 workers paralelos GLOBAIS
+  concurrency: 1,        // cada instance processa 1 doc por vez
+  region: 'us-central1',
+}, async (event) => {
+  const queueId = event.params.queueId;
+  const docRef  = db.collection('roteiro_generations_queue').doc(queueId);
+
+  // CLAIM via transaction (idempotência se trigger refire em redeploy)
+  const claimed = await db.runTransaction(async tx => {
+    const snap = await tx.get(docRef);
+    if (!snap.exists) return null;
+    const data = snap.data();
+    if (data.status !== 'queued') return null; // outro worker já pegou
+    tx.update(docRef, {
+      status: 'processing',
+      claimedAt: FieldValue.serverTimestamp(),
+      workerId: 'cf-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8),
+    });
+    return { id: queueId, ...data };
+  });
+  if (!claimed) {
+    console.log(`[processRoteiroQueue] ${queueId} já claimed/done — skip.`);
+    return;
+  }
+
+  console.log(`[processRoteiroQueue] ${queueId} claimed (user=${claimed.userId}, dias=${claimed.totalDias}, chunking=${claimed.useChunking})`);
+
+  try {
+    const agentSnap = await db.collection('ai_agents').doc('roteiros-luxo-gen').get();
+    if (!agentSnap.exists) throw new Error('Agente roteiros-luxo-gen não encontrado');
+    const agent = agentSnap.data();
+    if (!agent.active) throw new Error('Agente está pausado');
+
+    const apiKey = ANTHROPIC_API_KEY.value();
+    if (!apiKey) throw new Error('ANTHROPIC_API_KEY missing');
+
+    const baseParams = {
+      model: agent.model || 'claude-sonnet-4-5',
+      systemPrompt: agent.systemPrompt,
+      maxTokens: agent.limits?.maxTokensPerRun || 16000,
+      temperature: agent.limits?.temperature ?? 0.5,
+      history: [],
+      attachments: [],
+      webSearch: agent.allowWebSearch === true,
+      allowedDomains: agent.allowedSites || [],
+      webSearchMaxUses: agent.webSearchMaxUses || 5,
+    };
+
+    let result;
+    if (claimed.useChunking && claimed.totalDias > 14) {
+      result = await _processChunkedAnthropic(claimed, apiKey, baseParams, docRef);
+    } else {
+      await docRef.update({ phase: 'single', progress: { current: 1, total: 1 } });
+      result = await callAnthropic(apiKey, { ...baseParams, userMessage: claimed.briefingMessage });
+    }
+
+    await docRef.update({
+      status: 'done',
+      phase: null,
+      completedAt: FieldValue.serverTimestamp(),
+      result: {
+        text: result.text,
+        inputTokens: result.inputTokens || 0,
+        outputTokens: result.outputTokens || 0,
+        cacheReadTokens: result.cacheReadTokens || 0,
+        cacheCreationTokens: result.cacheCreationTokens || 0,
+        webSearchCount: result.webSearchCount || 0,
+        webSearchResults: result.webSearchResults || [],
+        webSearchQueries: result.webSearchQueries || [],
+        citations: result.citations || [],
+        phases: result.phases || 1,
+      },
+    });
+    console.log(`[processRoteiroQueue] ${queueId} done (in=${result.inputTokens} out=${result.outputTokens} cacheRead=${result.cacheReadTokens||0})`);
+  } catch (err) {
+    console.error(`[processRoteiroQueue] ${queueId} failed:`, err?.message || err);
+    await docRef.update({
+      status: 'failed',
+      phase: null,
+      completedAt: FieldValue.serverTimestamp(),
+      error: String(err?.message || err).slice(0, 1000),
+    });
+  }
+});
+
+/** Helper: chunking server-side. */
+async function _processChunkedAnthropic(queueData, apiKey, baseParams, docRef) {
+  const { briefingMessage, totalDias } = queueData;
+  const CHUNK_SIZE = 10;
+  const totalChunks = Math.ceil(totalDias / CHUNK_SIZE);
+  const totalPhases = 1 + totalChunks;
+
+  await docRef.update({ phase: 'skeleton', progress: { current: 1, total: totalPhases } });
+  const skeletonMsg = `${briefingMessage}\n\n## ⚙ MODO CHUNKING — FASE 1 DE ${totalPhases}: ESQUELETO\n\nEste briefing tem ${totalDias} dias. Pra evitar truncamento, gerar em fases.\n\n**NESTA FASE, GERE APENAS o JSON com estes campos (OMITA \`days\`):**\n- title, narrative_overview, destination_suggestions (se modo sugestão), destinations, hotels (lista COMPLETA), includes, excludes, consultant_notes, sources_consulted.\n\n**NÃO inclua \`days\` neste output.** Será gerado em fases separadas. JSON válido. Sem markdown fences.`;
+  const skeletonResult = await callAnthropic(apiKey, { ...baseParams, userMessage: skeletonMsg });
+  const skeleton = _safeParseJSON(skeletonResult.text);
+  if (!skeleton) throw new Error('Fase 1 (esqueleto) — JSON inválido');
+
+  const allDays = [];
+  let totalInputTokens = skeletonResult.inputTokens || 0;
+  let totalOutputTokens = skeletonResult.outputTokens || 0;
+  let totalCacheRead = skeletonResult.cacheReadTokens || 0;
+  let totalCacheCreation = skeletonResult.cacheCreationTokens || 0;
+  let totalWebSearches = skeletonResult.webSearchCount || 0;
+  const allCitations = [...(skeletonResult.citations || [])];
+  const allWebResults = [...(skeletonResult.webSearchResults || [])];
+  const allWebQueries = [...(skeletonResult.webSearchQueries || [])];
+
+  for (let i = 0; i < totalChunks; i++) {
+    const startDay = i * CHUNK_SIZE + 1;
+    const endDay = Math.min(startDay + CHUNK_SIZE - 1, totalDias);
+    await docRef.update({
+      phase: `days_${startDay}_${endDay}`,
+      progress: { current: i + 2, total: totalPhases },
+    });
+
+    const skeletonRef = {
+      title: skeleton.title,
+      destinations: skeleton.destinations,
+      hotels: (skeleton.hotels || []).map(h => ({
+        city: h.city, hotel_name: h.hotel_name,
+        check_in_day: h.check_in_day, check_out_day: h.check_out_day, nights: h.nights,
+      })),
+    };
+    const prevDaysRef = allDays.length
+      ? `\n\n**Dias já gerados (pra continuidade):**\n${allDays.map(d => `- Dia ${d.day_number} (${d.city}): ${d.title}`).join('\n')}`
+      : '';
+
+    const daysMsg = `${briefingMessage}\n\n## ⚙ MODO CHUNKING — FASE ${i + 2} DE ${totalPhases}: DIAS ${startDay}-${endDay}\n\n**Esqueleto do roteiro (referência):**\n\`\`\`json\n${JSON.stringify(skeletonRef, null, 2)}\n\`\`\`${prevDaysRef}\n\n**GERE APENAS os dias ${startDay} a ${endDay}** mantendo coerência com o esqueleto.\n\nRetorne JSON com APENAS:\n\`\`\`json\n{\n  "days": [{"day_number": ${startDay}, "city": "...", "title": "...", "narrative": "...", "overnight_city": "...", "activities": [...]}, ...]\n}\n\`\`\`\n\nSem markdown fences no output. JSON válido. Apenas o array \`days\`.`;
+
+    const chunkResult = await callAnthropic(apiKey, { ...baseParams, userMessage: daysMsg });
+    const chunkData = _safeParseJSON(chunkResult.text);
+    if (chunkData?.days && Array.isArray(chunkData.days)) {
+      allDays.push(...chunkData.days);
+    } else {
+      console.warn(`[_processChunkedAnthropic] chunk ${i+1} retornou days inválido — fortemente ignorando`);
+    }
+
+    totalInputTokens += chunkResult.inputTokens || 0;
+    totalOutputTokens += chunkResult.outputTokens || 0;
+    totalCacheRead += chunkResult.cacheReadTokens || 0;
+    totalCacheCreation += chunkResult.cacheCreationTokens || 0;
+    totalWebSearches += chunkResult.webSearchCount || 0;
+    allCitations.push(...(chunkResult.citations || []));
+    allWebResults.push(...(chunkResult.webSearchResults || []));
+    allWebQueries.push(...(chunkResult.webSearchQueries || []));
+  }
+
+  const merged = { ...skeleton, days: allDays };
+  return {
+    text: JSON.stringify(merged),
+    inputTokens: totalInputTokens,
+    outputTokens: totalOutputTokens,
+    cacheReadTokens: totalCacheRead,
+    cacheCreationTokens: totalCacheCreation,
+    webSearchCount: totalWebSearches,
+    webSearchResults: allWebResults,
+    webSearchQueries: allWebQueries,
+    citations: allCitations,
+    phases: totalPhases,
+  };
+}
+
+function _safeParseJSON(rawText) {
+  try {
+    const cleaned = String(rawText || '').replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
+    const start = cleaned.indexOf('{');
+    const end = cleaned.lastIndexOf('}');
+    if (start < 0 || end < 0) return null;
+    return JSON.parse(cleaned.slice(start, end + 1));
+  } catch (e) {
+    console.warn('[_safeParseJSON] falhou:', e?.message);
+    return null;
+  }
+}

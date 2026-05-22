@@ -263,6 +263,33 @@ export function renderPeriodPills({ active = '30d', show, customRange } = {}) {
 }
 
 /**
+ * v4.49.105+ SVG icons pros botões de ação em listings (Editar, Duplicar,
+ * Exportar, Arquivar, Restaurar, Excluir). Substitui chars unicode confusos
+ * (✎ ⧉ ↓ ⊠ ✕). Inline 14x14 Heroicons-style. Usar inside `<button>` existente.
+ *
+ * Uso:
+ *   `<button class="btn btn-ghost btn-icon btn-sm" data-action="edit"
+ *      title="Editar" aria-label="Editar">${actionIcon('edit')}</button>`
+ *
+ * Tipos: 'edit' | 'duplicate' | 'download' | 'archive' | 'restore' | 'delete' | 'add' | 'check' | 'close'
+ */
+export function actionIcon(name) {
+  const paths = {
+    edit:      '<path d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z"/><path d="M19.5 13.5l-3 3M5 21h14"/>',
+    duplicate: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 012-2h10"/>',
+    download:  '<path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14"/>',
+    archive:   '<rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a2 2 0 002 2h10a2 2 0 002-2V8"/><path d="M10 12h4"/>',
+    restore:   '<path d="M3 12a9 9 0 109-9 9.75 9.75 0 00-6.74 2.74L3 8"/><path d="M3 3v5h5"/>',
+    delete:    '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13a2 2 0 002 2h6a2 2 0 002-2l1-13M9 7V5a2 2 0 012-2h2a2 2 0 012 2v2"/>',
+    add:       '<path d="M12 5v14M5 12h14"/>',
+    check:     '<path d="M5 13l4 4L19 7"/>',
+    close:     '<path d="M6 6l12 12M18 6L6 18"/>',
+  };
+  const inner = paths[name] || paths.edit;
+  return `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inner}</svg>`;
+}
+
+/**
  * v4.49.99+ Helper pra formato ISO date (YYYY-MM-DD) — usado pelos
  * inputs date inline. Substitui `openDateRangePicker` modal removido
  * (user: "padrão não é popup, é campo pra preencher sem sair da página").

@@ -139,8 +139,8 @@ function renderTab() {
               </div>
             </div>
             <div style="display:flex;flex-direction:column;gap:4px;">
-              <button class="btn btn-ghost btn-sm cc-cfg-edit" data-id="${esc(it.id)}" title="Editar"
-                style="font-size:0.75rem;">✎</button>
+              <button class="btn btn-ghost btn-sm cc-cfg-edit" data-id="${esc(it.id)}" title="Editar" aria-label="Editar"
+                style="font-size:0.75rem;"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z"/><path d="M19.5 13.5l-3 3M5 21h14"/></svg></button>
               ${store.isMaster() ? `
                 <button class="btn btn-ghost btn-sm cc-cfg-del" data-id="${esc(it.id)}" title="Excluir (master)"
                   style="font-size:0.75rem;color:var(--color-danger);">🗑</button>

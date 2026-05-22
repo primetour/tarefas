@@ -2808,10 +2808,34 @@ async function maybeOfferTaskGeneration(roteiroId) {
   }
 }
 
+/**
+ * v4.49.106+ Detecta se roteiro novo está "efetivamente vazio".
+ * Usado pelo handler 'back' pra evitar confirm desnecessário quando user
+ * tenta sair de roteiro novo intocado.
+ */
+function _isRoteiroEffectivelyEmpty(r) {
+  if (!r) return true;
+  const hasClient = (r.client?.name || r.client?.email || r.client?.phone || r.client?.notes || '').trim();
+  const hasTravelers = (r.travelers || []).some(t => t?.name?.trim());
+  const hasDests = (r.travel?.destinations || []).some(d => d?.city || d?.country);
+  const hasFlights = (r.flights || []).some(f => f?.airline || f?.flightNumber || f?.originCity);
+  const hasHotels = (r.hotels || []).some(h => h?.hotelName || h?.city);
+  const hasDays = (r.days || []).some(d => d?.title || d?.narrative);
+  const hasTitle = (r.title || '').trim();
+  const hasDates = (r.travel?.startDate || r.travel?.endDate);
+  return !hasClient && !hasTravelers && !hasDests && !hasFlights && !hasHotels && !hasDays && !hasTitle && !hasDates;
+}
+
 /* ─── Mark dirty & auto-save ──────────────────────────────── */
 function markDirty() {
   // v4.49.103+ Auto-save em 5s (era 30s) + retry silent em erro
+  // v4.49.106+ Pula auto-save quando roteiro novo está vazio (não há
+  // dado a salvar; evita retry chain inútil que pode parecer "loop").
   isDirty = true;
+  if (!currentRoteiro?.id && _isRoteiroEffectivelyEmpty(collectFormData())) {
+    _setAutoSaveStatus('Novo roteiro');
+    return;
+  }
   _setAutoSaveStatus('Alterações não salvas');
   clearTimeout(autoSaveTimer);
   autoSaveTimer = setTimeout(() => {
@@ -3063,16 +3087,22 @@ async function handleEditorClick(e) {
       break;
     }
 
-    case 'back':
-      if (isDirty) {
+    case 'back': {
+      // v4.49.106+ Defesa: roteiro NOVO (sem ID) com conte\u00fado vazio sai sem
+      // confirm, mesmo se isDirty foi marcado (focus/blur incidental). User
+      // reportou loop/popup chato saindo de roteiro novo intocado.
+      const isNewAndEmpty = !currentRoteiro?.id && _isRoteiroEffectivelyEmpty(currentRoteiro);
+      if (isDirty && !isNewAndEmpty) {
         if (confirm('Voc\u00ea tem altera\u00e7\u00f5es n\u00e3o salvas. Deseja sair sem salvar?')) {
           isDirty = false;
           location.hash = '#roteiros';
         }
       } else {
+        isDirty = false;
         location.hash = '#roteiros';
       }
       break;
+    }
 
     /* ── Destinations ─────────────────────────────────────── */
     // v4.49.87+ Os 4 handlers usavam switchSection(1) — que re-coleta o DOM
@@ -4335,12 +4365,29 @@ Lembre-se da logística inteligente: agrupar destinos próximos, respeitar pacin
 
 Pesquise em **Virtuoso**, **FHR (Amex)** e **LHW** antes de sugerir hotéis. Cite as fontes em \`sources_consulted\`. Retorne APENAS o JSON estruturado, sem markdown fences nem texto extra antes/depois.`;
 
-    // Dispara o agente
-    const { runAgent } = await import('../services/agents.js');
-    const inputSnapshot = userMessage.slice(0, 2000); // pra debug em aiGeneration.lastInput
-    const result = await runAgent('roteiros-luxo-gen', userMessage, {});
+    // v4.49.109+ FILA ASSÍNCRONA: cliente cria doc em queue, Cloud Function
+    // `processRoteiroQueue` processa em background (max 5 paralelos globais).
+    // Cliente escuta via onSnapshot, vê fase atual + result quando done.
+    // Chunking + prompt caching agora server-side (consistente entre todos
+    // os users + zero risco de aba fechar interromper a geração).
+    const inputSnapshot = userMessage.slice(0, 2000);
+    const totalDias = travel.startDate && travel.endDate
+      ? Math.max(1, Math.round((new Date(travel.endDate) - new Date(travel.startDate)) / 86400000) + 1)
+      : (destinations.reduce((s, d) => s + (d.nights || 0), 0) || 7);
+    const useChunking = totalDias > 14 || destinations.length > 5;
+
+    const result = await _enqueueAndWait({
+      userId: store.get('currentUser')?.uid,
+      userDisplayName: store.get('currentUser')?.displayName || store.get('currentUser')?.name || '',
+      briefingMessage: userMessage,
+      totalDias,
+      useChunking,
+      progress,
+    });
 
     // Parse JSON do output
+    // v4.49.107+ Tratamento robusto de truncamento (max_tokens estourado):
+    // detecta SyntaxError do JSON.parse e mostra mensagem clara.
     let parsed;
     try {
       // Strip markdown fence se vier
@@ -4351,8 +4398,20 @@ Pesquise em **Virtuoso**, **FHR (Amex)** e **LHW** antes de sugerir hotéis. Cit
       if (start < 0 || end < 0) throw new Error('JSON não detectado na resposta');
       parsed = JSON.parse(cleaned.slice(start, end + 1));
     } catch (parseErr) {
-      console.error('[ai-roteiro] Parse JSON falhou:', parseErr, '\nRaw:', result.text?.slice(0, 500));
-      showToast('IA retornou resposta inválida. Detalhes no console.', 'error');
+      const rawLen = (result.text || '').length;
+      const stopReason = result.stopReason || result.stop_reason || '';
+      console.error('[ai-roteiro] Parse JSON falhou:', parseErr,
+        '\nRaw length:', rawLen,
+        '\nStopReason:', stopReason,
+        '\nRaw start:', result.text?.slice(0, 500),
+        '\nRaw end:', result.text?.slice(-500));
+      // Heurística de truncamento: stopReason 'max_tokens' OU resposta > 14kchars + SyntaxError
+      const isTruncated = stopReason === 'max_tokens' || stopReason === 'length' || (rawLen > 14000 && parseErr instanceof SyntaxError);
+      if (isTruncated) {
+        showToast('⚠ Resposta da IA foi truncada (muitos dias/destinos pra um único pedido). Reduza o número de destinos ou tente novamente.', 'error');
+      } else {
+        showToast('IA retornou resposta inválida. Detalhes no console.', 'error');
+      }
       return;
     }
 
@@ -4498,12 +4557,272 @@ function _showAiProgress() {
   if (phaseEl0) phaseEl0.textContent = phases[0].label;
 
   return {
+    /** v4.49.108+ Permite ao chunking sobrescrever a phase label em fase corrente. */
+    setPhase(label) {
+      const phaseEl = document.getElementById('re-ai-phase');
+      if (phaseEl) {
+        phaseEl.style.opacity = '0';
+        setTimeout(() => { phaseEl.textContent = label; phaseEl.style.opacity = '1'; }, 200);
+      }
+      // Pausa o auto-rotate por tempo enquanto está em chunking explícito
+      phaseIdx = phases.length; // força ficar na última (sentinel pra não regridir)
+    },
     close() {
       clearInterval(tick);
       overlay.style.animation = 're-ai-fadein 0.2s reverse';
       setTimeout(() => overlay.remove(), 180);
     },
   };
+}
+
+/**
+ * v4.49.109+ Cria doc na fila de geração + aguarda Cloud Function processar
+ * via onSnapshot. Resolve com result shape compatível com runAgent (text,
+ * tokens, citations, etc.).
+ *
+ * Vantagens vs runAgent direto:
+ * - Cloud Function ProcessRoteiroQueue tem maxInstances=5 + concurrency=1 →
+ *   max 5 gerações paralelas globais. Outros users ficam enfileirados sem
+ *   hit em rate-limit Anthropic.
+ * - Chunking server-side: lógica única, não duplicada.
+ * - Geração continua mesmo se user fechar a aba (Cloud Function termina,
+ *   user vê result ao reabrir).
+ */
+async function _enqueueAndWait({ userId, userDisplayName, briefingMessage, totalDias, useChunking, progress }) {
+  if (!userId) throw new Error('Usuário não autenticado');
+
+  const [{ db }, { collection, addDoc, doc, onSnapshot, deleteDoc, serverTimestamp, query, where, getDocs }] = await Promise.all([
+    import('../firebase.js'),
+    import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js'),
+  ]);
+
+  // 1. Cria doc na fila
+  const queueRef = await addDoc(collection(db, 'roteiro_generations_queue'), {
+    userId,
+    userDisplayName,
+    briefingMessage,
+    totalDias,
+    useChunking,
+    status: 'queued',
+    createdAt: serverTimestamp(),
+    claimedAt: null,
+    completedAt: null,
+    phase: null,
+    progress: null,
+    workerId: null,
+    result: null,
+    error: null,
+  });
+
+  // 2. Conta posição na fila (quantos queued antes deste)
+  try {
+    const queuedSnap = await getDocs(query(
+      collection(db, 'roteiro_generations_queue'),
+      where('status', '==', 'queued')
+    ));
+    // Position = quantos têm createdAt menor que o nosso (aprox — Firestore não dá order < self facilmente)
+    // Estimativa: contar todos queued antes do nosso ID. Como serverTimestamp ainda não veio, usar count direto.
+    const ahead = Math.max(0, queuedSnap.size - 1);
+    if (ahead > 0 && progress?.setPhase) {
+      progress.setPhase(`Posição ${ahead + 1} na fila · aguardando…`);
+    }
+  } catch (e) { /* não bloqueia */ }
+
+  // 3. onSnapshot — escuta updates do doc
+  return new Promise((resolve, reject) => {
+    let unsubscribe = null;
+    const timeoutMs = 10 * 60 * 1000; // 10min hard timeout
+    const timeoutHandle = setTimeout(() => {
+      try { unsubscribe?.(); } catch {}
+      reject(new Error('Timeout aguardando geração (10min). A fila pode estar sobrecarregada.'));
+    }, timeoutMs);
+
+    unsubscribe = onSnapshot(doc(db, 'roteiro_generations_queue', queueRef.id), (snap) => {
+      if (!snap.exists()) {
+        clearTimeout(timeoutHandle);
+        try { unsubscribe?.(); } catch {}
+        reject(new Error('Doc da fila desapareceu'));
+        return;
+      }
+      const data = snap.data();
+      // Atualiza UI conforme phase
+      if (data.status === 'processing' && data.phase && progress?.setPhase) {
+        if (data.phase === 'skeleton') {
+          progress.setPhase(`Fase ${data.progress?.current || 1} de ${data.progress?.total || '?'}: estrutura inicial…`);
+        } else if (data.phase.startsWith('days_')) {
+          const m = data.phase.match(/days_(\d+)_(\d+)/);
+          if (m) {
+            progress.setPhase(`Fase ${data.progress?.current || '?'} de ${data.progress?.total || '?'}: dias ${m[1]}-${m[2]}…`);
+          }
+        } else if (data.phase === 'single') {
+          progress.setPhase('Gerando roteiro…');
+        }
+      }
+      if (data.status === 'done') {
+        clearTimeout(timeoutHandle);
+        try { unsubscribe?.(); } catch {}
+        resolve({
+          text: data.result?.text || '',
+          inputTokens: data.result?.inputTokens || 0,
+          outputTokens: data.result?.outputTokens || 0,
+          cacheReadTokens: data.result?.cacheReadTokens || 0,
+          cacheCreationTokens: data.result?.cacheCreationTokens || 0,
+          webSearchCount: data.result?.webSearchCount || 0,
+          webSearchResults: data.result?.webSearchResults || [],
+          webSearchQueries: data.result?.webSearchQueries || [],
+          citations: data.result?.citations || [],
+          phases: data.result?.phases || 1,
+          queueId: queueRef.id,
+        });
+      } else if (data.status === 'failed') {
+        clearTimeout(timeoutHandle);
+        try { unsubscribe?.(); } catch {}
+        reject(new Error(data.error || 'Geração falhou'));
+      }
+    }, (err) => {
+      clearTimeout(timeoutHandle);
+      reject(err);
+    });
+  });
+}
+
+/**
+ * v4.49.108+ DEPRECATED em v4.49.109 (movido pra Cloud Function).
+ * Mantido temporariamente como fallback se Cloud Function não estiver deployada.
+ */
+async function _generateChunked(briefingMsg, totalDias, runAgent, progress) {
+  const CHUNK_SIZE = 10;
+  const totalChunks = Math.ceil(totalDias / CHUNK_SIZE);
+  const totalPhases = 1 + totalChunks; // 1 skeleton + N day chunks
+
+  if (progress?.setPhase) progress.setPhase(`Fase 1 de ${totalPhases}: gerando esqueleto…`);
+
+  // PHASE 1 — Skeleton (sem days)
+  const skeletonMsg = `${briefingMsg}
+
+## ⚙ MODO CHUNKING — FASE 1 DE ${totalPhases}: ESQUELETO
+
+Este briefing tem ${totalDias} dias / ${'pode ter'} múltiplos destinos. Pra evitar truncamento, vou gerar em fases.
+
+**NESTA FASE, GERE APENAS o JSON com estes campos (OMITA \`days\`):**
+- title
+- narrative_overview
+- destination_suggestions (se modo sugestão)
+- destinations
+- hotels (lista COMPLETA — todos os hotéis do roteiro)
+- includes
+- excludes
+- consultant_notes
+- sources_consulted
+
+**NÃO inclua \`days\` neste output.** Será gerado em fases separadas.
+
+Retorne JSON válido com fechamento \`}\` correto. Sem markdown fences.`;
+
+  const skeletonResult = await runAgent('roteiros-luxo-gen', skeletonMsg, {});
+  const skeleton = _parseJSONSafe(skeletonResult.text);
+  if (!skeleton) throw new Error('Fase 1 (esqueleto) falhou — JSON inválido.');
+
+  // PHASE 2+ — Days chunks
+  const allDays = [];
+  let totalInputTokens = skeletonResult.inputTokens || 0;
+  let totalOutputTokens = skeletonResult.outputTokens || 0;
+  let totalCacheRead = skeletonResult.cacheReadTokens || 0;
+  let totalCacheCreation = skeletonResult.cacheCreationTokens || 0;
+  let totalWebSearches = skeletonResult.webSearchCount || 0;
+  const allCitations = [...(skeletonResult.citations || [])];
+  const allWebResults = [...(skeletonResult.webSearchResults || [])];
+  const allWebQueries = [...(skeletonResult.webSearchQueries || [])];
+
+  for (let chunkIdx = 0; chunkIdx < totalChunks; chunkIdx++) {
+    const startDay = chunkIdx * CHUNK_SIZE + 1;
+    const endDay = Math.min(startDay + CHUNK_SIZE - 1, totalDias);
+
+    if (progress?.setPhase) {
+      progress.setPhase(`Fase ${chunkIdx + 2} de ${totalPhases}: dias ${startDay}-${endDay}…`);
+    }
+
+    // Skeleton compacto (sem hotels.rationale longos) pra reduzir input tokens
+    const skeletonRef = {
+      title: skeleton.title,
+      destinations: skeleton.destinations,
+      hotels: (skeleton.hotels || []).map(h => ({
+        city: h.city, hotel_name: h.hotel_name, check_in_day: h.check_in_day, check_out_day: h.check_out_day, nights: h.nights,
+      })),
+    };
+    const prevDaysRef = allDays.length
+      ? `\n\n**Dias já gerados (pra continuidade):**\n${allDays.map(d => `- Dia ${d.day_number} (${d.city}): ${d.title}`).join('\n')}`
+      : '';
+
+    const daysMsg = `${briefingMsg}
+
+## ⚙ MODO CHUNKING — FASE ${chunkIdx + 2} DE ${totalPhases}: DIAS ${startDay}-${endDay}
+
+**Esqueleto do roteiro (referência):**
+\`\`\`json
+${JSON.stringify(skeletonRef, null, 2)}
+\`\`\`${prevDaysRef}
+
+**NESTA FASE, GERE APENAS os dias ${startDay} a ${endDay}** mantendo coerência com o esqueleto.
+
+Retorne JSON com APENAS:
+\`\`\`json
+{
+  "days": [
+    { "day_number": ${startDay}, "city": "...", "title": "...", "narrative": "...", "overnight_city": "...", "activities": [...] },
+    ...
+  ]
+}
+\`\`\`
+
+Sem markdown fences no output final. JSON válido. Apenas o array \`days\`.`;
+
+    const chunkResult = await runAgent('roteiros-luxo-gen', daysMsg, {});
+    const chunkData = _parseJSONSafe(chunkResult.text);
+    if (chunkData?.days && Array.isArray(chunkData.days)) {
+      allDays.push(...chunkData.days);
+    } else {
+      console.warn(`[chunking] phase ${chunkIdx + 2} retornou days vazio ou inválido`);
+    }
+
+    totalInputTokens += chunkResult.inputTokens || 0;
+    totalOutputTokens += chunkResult.outputTokens || 0;
+    totalCacheRead += chunkResult.cacheReadTokens || 0;
+    totalCacheCreation += chunkResult.cacheCreationTokens || 0;
+    totalWebSearches += chunkResult.webSearchCount || 0;
+    allCitations.push(...(chunkResult.citations || []));
+    allWebResults.push(...(chunkResult.webSearchResults || []));
+    allWebQueries.push(...(chunkResult.webSearchQueries || []));
+  }
+
+  // Merge final
+  const merged = { ...skeleton, days: allDays };
+  return {
+    text: JSON.stringify(merged),
+    model: skeletonResult.model,
+    inputTokens: totalInputTokens,
+    outputTokens: totalOutputTokens,
+    cacheCreationTokens: totalCacheCreation,
+    cacheReadTokens: totalCacheRead,
+    webSearchCount: totalWebSearches,
+    webSearchQueries: allWebQueries,
+    webSearchResults: allWebResults,
+    citations: allCitations,
+    chunked: true,
+    phases: totalPhases,
+  };
+}
+
+function _parseJSONSafe(rawText) {
+  try {
+    const cleaned = String(rawText || '').replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
+    const start = cleaned.indexOf('{');
+    const end = cleaned.lastIndexOf('}');
+    if (start < 0 || end < 0) return null;
+    return JSON.parse(cleaned.slice(start, end + 1));
+  } catch {
+    return null;
+  }
 }
 
 function _applyAiOutputToRoteiro(ai, runResult, inputSnapshot) {

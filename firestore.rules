@@ -854,6 +854,21 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // v4.49.109+ Fila de geração de roteiros via IA — Cloud Function
+    // `processRoteiroQueue` (Admin SDK) processa em background, max 5
+    // paralelos globais. Client cria + lê próprios docs; updates só via
+    // Cloud Function (bypassa rules).
+    match /roteiro_generations_queue/{queueId} {
+      allow read:   if isAuth() && resource.data.userId == request.auth.uid;
+      allow create: if isAuth()
+                    && request.resource.data.userId == request.auth.uid
+                    && request.resource.data.status == 'queued';
+      allow update: if false;   // Cloud Function bypassa via Admin SDK
+      allow delete: if isAuth()
+                    && resource.data.userId == request.auth.uid
+                    && resource.data.status == 'queued';
+    }
+
     match /roteiro_web_links/{token} {
       allow read:   if true;   // public — link holder can read
       allow create: if isAuth();

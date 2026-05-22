@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 104,
-  build: '20260522-anti-padroes-alert-cleanup-rules',
+  patch: 109,
+  build: '20260522-fila-assincrona-cloud-function',
 };
 
 /** "1.2.0" */

@@ -444,8 +444,8 @@ function renderList() {
                   data-id="${esc(item.id)}"
                   style="font-size:0.75rem;color:var(--brand-gold);">✎</button>
                 <button class="btn btn-ghost btn-sm news-del"
-                  data-id="${esc(item.id)}" data-title="${esc(item.title)}"
-                  style="font-size:0.75rem;color:#EF4444;">✕</button>
+                  data-id="${esc(item.id)}" data-title="${esc(item.title)}" aria-label="${esc(item.title)}"
+                  style="font-size:0.75rem;color:#EF4444;"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13a2 2 0 002 2h6a2 2 0 002-2l1-13M9 7V5a2 2 0 012-2h2a2 2 0 012 2v2"/></svg></button>
               </div>
             </td>
           </tr>`;
@@ -954,8 +954,8 @@ function renderClipList() {
               <button class="btn btn-ghost btn-sm clip-edit" data-id="${esc(item.id)}"
                 style="font-size:0.75rem;color:var(--brand-gold);">✎</button>
               <button class="btn btn-ghost btn-sm clip-del" data-id="${esc(item.id)}"
-                data-title="${esc(item.title)}"
-                style="font-size:0.75rem;color:#EF4444;">✕</button>
+                data-title="${esc(item.title)}" aria-label="${esc(item.title)}"
+                style="font-size:0.75rem;color:#EF4444;"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13a2 2 0 002 2h6a2 2 0 002-2l1-13M9 7V5a2 2 0 012-2h2a2 2 0 012 2v2"/></svg></button>
             </div>
           </div>
         </div>`;
@@ -1832,7 +1832,7 @@ async function showBrandManager() {
               <span style="flex:1;font-weight:${b.isOwn ? '700' : '500'};color:var(--text-primary);">
                 ${b.isOwn ? '★ ' : ''}${esc(b.name)}
               </span>
-              ${!b.isOwn ? `<button class="btn btn-ghost btn-sm" data-act="bm-del" data-id="${esc(b.id)}" data-name="${esc(b.name)}" title="Remover">✕</button>` : ''}
+              ${!b.isOwn ? `<button class="btn btn-ghost btn-sm" data-act="bm-del" data-id="${esc(b.id)}" data-name="${esc(b.name)}" title="Remover" aria-label="Remover"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13a2 2 0 002 2h6a2 2 0 002-2l1-13M9 7V5a2 2 0 012-2h2a2 2 0 012 2v2"/></svg></button>` : ''}
             </div>
           `).join('')}
         </div>

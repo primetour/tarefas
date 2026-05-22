@@ -810,7 +810,7 @@ function renderClockHistory(recent) {
           <td>${fmtDate(r.date)}</td>
           <td colspan="4" style="font-style:italic;color:#F59E0B;">⚠ Optou por não registrar</td>
           <td>—</td>
-          <td><button class="btn btn-ghost btn-sm ck-req-fix" data-date="${r.date}" title="Solicitar correção">✎</button></td>
+          <td><button class="btn btn-ghost btn-sm ck-req-fix" data-date="${r.date}" title="Solicitar correção" aria-label="Solicitar correção"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z"/><path d="M19.5 13.5l-3 3M5 21h14"/></svg></button></td>
         </tr>`;
       }
       const incomplete = !(r.in && r.out);
@@ -821,7 +821,7 @@ function renderClockHistory(recent) {
         <td>${fmtTS(r.lunchIn)}</td>
         <td>${fmtTS(r.out)}</td>
         <td><strong>${calcWorkedHours(r).toFixed(2)}h</strong>${incomplete?' <span title="Incompleto" style="color:#F59E0B;">⚠</span>':''}</td>
-        <td><button class="btn btn-ghost btn-sm ck-req-fix" data-date="${r.date}" title="Solicitar correção">✎</button></td>
+        <td><button class="btn btn-ghost btn-sm ck-req-fix" data-date="${r.date}" title="Solicitar correção" aria-label="Solicitar correção"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z"/><path d="M19.5 13.5l-3 3M5 21h14"/></svg></button></td>
       </tr>`;
     }).join('')}</tbody>
   </table>`;
@@ -1192,11 +1192,11 @@ function renderDetailRows(records, lunchMinutes, fmtMins) {
     return `<tr><td colspan="10" style="text-align:center;padding:24px;color:var(--text-muted);">Sem registros.</td></tr>`;
   }
   const actionBtns = (id) => `
-    <button class="btn btn-ghost btn-sm tc-edit"   data-id="${id}" title="Editar registro">✎</button>
+    <button class="btn btn-ghost btn-sm tc-edit"   data-id="${id}" title="Editar registro" aria-label="Editar registro"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z"/><path d="M19.5 13.5l-3 3M5 21h14"/></svg></button>
     <button class="btn btn-ghost btn-sm tc-delete" data-id="${id}" title="Excluir registro" style="color:#EF4444;">🗑</button>
   `;
   return sorted.map(r => {
-    const manual = r.manual ? ' <span title="Registro manual/corrigido" style="color:#A78BFA;">✎</span>' : '';
+    const manual = r.manual ? ' <span title="Registro manual/corrigido" aria-label="Registro manual/corrigido" style="color:#A78BFA;"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z"/><path d="M19.5 13.5l-3 3M5 21h14"/></svg></span>' : '';
     if (r.declined && !r.in) {
       return `<tr style="opacity:0.55;">
         <td>${fmtDate(r.date)}</td>
@@ -1303,7 +1303,7 @@ async function renderAdminTab(container) {
                 <td style="text-align:right;width:80px;font-weight:600;color:var(--brand-gold);">
                   ${(a.baias || 0) * 2 * (a.assentosPorFileira || 0)}
                 </td>
-                <td><button class="btn btn-ghost btn-icon btn-sm adm-a-del" data-i="${i}" title="Excluir">✕</button></td>
+                <td><button class="btn btn-ghost btn-icon btn-sm adm-a-del" data-i="${i}" title="Excluir" aria-label="Excluir"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13a2 2 0 002 2h6a2 2 0 002-2l1-13M9 7V5a2 2 0 012-2h2a2 2 0 012 2v2"/></svg></button></td>
               </tr>`).join('')}
             </tbody>
           </table>
@@ -1369,7 +1369,7 @@ async function renderAdminTab(container) {
                     </div>
                     <input type="hidden" class="adm-s-dias" data-i="${i}" value="${esc(s.dias)}" />
                   </td>
-                  <td><button class="btn btn-ghost btn-icon btn-sm adm-s-del" data-i="${i}" title="Excluir">✕</button></td>
+                  <td><button class="btn btn-ghost btn-icon btn-sm adm-s-del" data-i="${i}" title="Excluir" aria-label="Excluir"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13a2 2 0 002 2h6a2 2 0 002-2l1-13M9 7V5a2 2 0 012-2h2a2 2 0 012 2v2"/></svg></button></td>
                 </tr>`;
               }).join('')}
             </tbody>
@@ -1798,7 +1798,7 @@ function openEspelhoPontoModal({ uid, user, fromISO, toISO }) {
               </td>
               <td>${statusBadge(row.status)}</td>
               <td style="text-align:right;">
-                ${r ? `<button class="btn btn-ghost btn-sm esp-edit" data-id="${r.id}" title="Editar">✎</button>` : ''}
+                ${r ? `<button class="btn btn-ghost btn-sm esp-edit" data-id="${r.id}" title="Editar" aria-label="Editar"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z"/><path d="M19.5 13.5l-3 3M5 21h14"/></svg></button>` : ''}
                 ${!r && !row.isWeekend ? `<button class="btn btn-ghost btn-sm esp-create" data-date="${row.date}" title="Lançar manualmente">+</button>` : ''}
               </td>
             </tr>`;

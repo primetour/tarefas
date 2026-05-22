@@ -7,6 +7,7 @@ import { store }  from '../store.js';
 import { userAvatarInner } from '../components/userAvatar.js';
 import { toast }  from '../components/toast.js';
 import { modal }  from '../components/modal.js';
+import { actionIcon } from '../components/uiKit.js';
 import {
   createAbsence, updateAbsence, deleteAbsence,
   fetchUserAbsences, fetchAllAbsences,
@@ -304,8 +305,8 @@ function absenceTable(absences, uid, showActions) {
         <td style="color:var(--text-muted);">${durationLabel}</td>
         <td style="color:var(--text-muted);font-size:0.8125rem;">${esc(a.note||'—')}</td>
         ${showActions && canEdit ? `<td class="col-actions"><div class="actions-group">
-          <button class="btn btn-ghost btn-icon btn-sm absence-edit-btn" data-id="${a.id}" title="Editar">✎</button>
-          <button class="btn btn-ghost btn-icon btn-sm absence-delete-btn" data-id="${a.id}" title="Excluir" style="color:var(--color-danger);">✕</button>
+          <button class="btn btn-ghost btn-icon btn-sm absence-edit-btn" data-id="${a.id}" title="Editar" aria-label="Editar">${actionIcon('edit')}</button>
+          <button class="btn btn-ghost btn-icon btn-sm absence-delete-btn" data-id="${a.id}" title="Excluir" aria-label="Excluir" style="color:var(--color-danger);">${actionIcon('delete')}</button>
         </div></td>` : showActions ? '<td></td>' : ''}
       </tr>`;
     }).join('')}</tbody>
