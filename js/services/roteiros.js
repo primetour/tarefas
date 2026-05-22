@@ -199,13 +199,26 @@ export function emptyRoteiro() {
 
     hotels: [],
 
+    /* v4.49.101+ Novo schema de valores por categoria com supplier + visibilidade.
+     * Cada item: { description, supplier, supplierVisibleToClient, value, notes, visibleToClient }
+     * displayMode: 'total' (cliente vê só somatório) | 'grouped' (subtotais por categoria)
+     * perPerson/perCouple/customRows mantidos como legado pra retrocompat. */
     pricing: {
       perPerson: null,
       perCouple: null,
       currency: 'USD',
       validUntil: '',
       disclaimer: 'Este roteiro é uma sugestão e pode ser totalmente adequado para atender às suas expectativas. Os valores expressam apenas uma cotação e serão fixados somente no ato da confirmação de reservas.',
-      customRows: [],
+      customRows: [],                 // legado v4.49.100-
+      services: {                     // v4.49.101+
+        aereo: [],
+        hoteis: [],
+        traslados: [],
+        experiencias: [],
+        servicosAdicionais: [],
+        displayMode: 'total',         // 'total' | 'grouped'
+        notesGeral: '',
+      },
     },
 
     optionals: [],
@@ -411,6 +424,27 @@ function migrateRoteiroOnRead(doc) {
 
   // v4.49.91+ flights[] (novo). Defensivo pra roteiros antigos.
   if (!Array.isArray(out.flights)) out.flights = [];
+
+  // v4.49.101+ pricing.services (novo schema com 5 categorias + supplier + visibility).
+  // Roteiros antigos só tinham perPerson/perCouple/customRows. Não migra
+  // automaticamente — consultor refaz na nova estrutura ao abrir.
+  if (out.pricing && typeof out.pricing === 'object') {
+    if (!out.pricing.services || typeof out.pricing.services !== 'object') {
+      out.pricing.services = {
+        aereo: [], hoteis: [], traslados: [], experiencias: [], servicosAdicionais: [],
+        displayMode: 'total', notesGeral: '',
+      };
+    } else {
+      const s = out.pricing.services;
+      if (!Array.isArray(s.aereo))              s.aereo = [];
+      if (!Array.isArray(s.hoteis))             s.hoteis = [];
+      if (!Array.isArray(s.traslados))          s.traslados = [];
+      if (!Array.isArray(s.experiencias))       s.experiencias = [];
+      if (!Array.isArray(s.servicosAdicionais)) s.servicosAdicionais = [];
+      if (s.displayMode !== 'grouped')          s.displayMode = 'total';
+      if (typeof s.notesGeral !== 'string')     s.notesGeral = '';
+    }
+  }
 
   return out;
 }

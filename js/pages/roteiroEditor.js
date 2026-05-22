@@ -368,6 +368,83 @@ const EDITOR_CSS = `
   margin-top: 8px; font-size: 0.75rem;
   color: var(--text-muted); line-height: 1.5;
 }
+/* v4.49.101+ Valores por categoria */
+.re-valores-cat {
+  margin-top: 24px;
+  padding: 16px;
+  background: var(--bg-card, #1a1a2e);
+  border: 1px solid var(--border-subtle, #333);
+  border-radius: 10px;
+}
+.re-valores-cat-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 12px;
+}
+.re-valores-cat-title {
+  margin: 0; font-size: 0.9375rem; font-weight: 600;
+  color: var(--text-primary);
+}
+.re-valores-cat-subtotal {
+  display: inline-flex; align-items: center; gap: 10px;
+  font-size: 0.875rem; font-weight: 700;
+  color: var(--brand-gold, #D4A843);
+}
+.re-valores-cat-count {
+  padding: 2px 8px; border-radius: 999px;
+  background: var(--bg-surface, #222);
+  font-size: 0.6875rem; font-weight: 600;
+  color: var(--text-muted);
+}
+.re-valores-table { width: 100%; }
+.re-valores-table input[data-svc="value"] { font-variant-numeric: tabular-nums; font-weight: 600; }
+.re-valores-empty {
+  padding: 14px; text-align: center; color: var(--text-muted);
+  font-size: 0.8125rem; background: var(--bg-soft);
+  border: 1px solid var(--border-subtle, #333); border-radius: 6px;
+}
+.re-valores-footer {
+  margin-top: 24px; padding: 16px 20px;
+  background: linear-gradient(180deg, rgba(212,168,67,0.06), rgba(212,168,67,0.02));
+  border: 1px solid rgba(212,168,67,0.30);
+  border-radius: 10px;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+  align-items: center;
+}
+.re-valores-footer-label {
+  display: block;
+  font-size: 0.6875rem; font-weight: 600; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px;
+}
+.re-valores-footer-value {
+  font-size: 1.125rem; font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+.re-valores-footer-value.gold { color: var(--brand-gold, #D4A843); }
+.re-valores-footer-hint {
+  grid-column: 1 / -1;
+  padding-top: 8px; border-top: 1px solid rgba(212,168,67,0.20);
+  font-size: 0.75rem; color: var(--text-muted);
+}
+
+/* Pill radio (toggle entre Total único / Subtotais por categoria) */
+.re-pill-radio {
+  display: inline-flex; align-items: center;
+  padding: 6px 14px; border-radius: 999px;
+  border: 1px solid var(--border-default, #e5e7eb);
+  font-size: 0.75rem; font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer; transition: all 0.12s;
+  user-select: none;
+}
+.re-pill-radio:hover { border-color: var(--brand-gold, #D4A843); color: var(--text-primary); }
+.re-pill-radio.active {
+  background: var(--brand-gold, #D4A843);
+  border-color: var(--brand-gold, #D4A843);
+  color: #0A1628;
+}
+.re-pill-radio input[type="radio"] { display: none; }
+
 .re-add-btn--gold {
   color: var(--brand-gold, #D4A843);
   border-color: var(--brand-gold, #D4A843);
@@ -1199,51 +1276,165 @@ function renderHotelRow(h, i) {
 }
 
 /* ── 4: Valores ──────────────────────────────────────────── */
+/* v4.49.101+ Valores por categoria (5 blocos: A\u00e9reo / Hot\u00e9is / Traslados /
+ * Experi\u00eancias / Servi\u00e7os adicionais). Cada item: descri\u00e7\u00e3o, fornecedor
+ * (visibilidade opt-in), valor, notas internas, flag de vis\u00edvel ao cliente.
+ * displayMode controla o que o cliente v\u00ea: 'total' (somat\u00f3rio s\u00f3) ou
+ * 'grouped' (subtotais por categoria). */
+const VALORES_CATEGORIAS = [
+  { key: 'aereo',              label: 'A\u00e9reo',                 icon: '\u2708' },
+  { key: 'hoteis',             label: 'Hot\u00e9is',                icon: '\ud83c\udfe8' },
+  { key: 'traslados',          label: 'Traslados',             icon: '\ud83d\ude90' },
+  { key: 'experiencias',       label: 'Experi\u00eancias',          icon: '\u2728' },
+  { key: 'servicosAdicionais', label: 'Servi\u00e7os adicionais',   icon: '\u2795' },
+];
+
+function _fmtBRL(n, currency) {
+  const v = parseFloat(n);
+  if (!isFinite(v)) return '\u2014';
+  try {
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: currency || 'BRL' }).format(v);
+  } catch {
+    return `${currency || ''} ${v.toFixed(2)}`;
+  }
+}
+
+function _subtotalCat(items) {
+  return (items || []).reduce((sum, it) => sum + (parseFloat(it.value) || 0), 0);
+}
+
 function renderValoresSection() {
-  const p = currentRoteiro.pricing;
-  const rows = p.customRows || [];
+  const p = currentRoteiro.pricing || {};
+  const s = p.services || {};
+  const currency = p.currency || 'BRL';
+  const displayMode = s.displayMode === 'grouped' ? 'grouped' : 'total';
+
+  // Totais
+  let totalInterno = 0, totalCliente = 0;
+  VALORES_CATEGORIAS.forEach(cat => {
+    const items = s[cat.key] || [];
+    items.forEach(it => {
+      const v = parseFloat(it.value) || 0;
+      totalInterno += v;
+      if (it.visibleToClient !== false) totalCliente += v;
+    });
+  });
+
   return `
-    <div class="re-section-title">Valores</div>
+    <h2 class="re-section-title">Valores</h2>
+    <p class="re-briefing-intro">Detalhe os valores por categoria. Marque cada item como vis\u00edvel ou n\u00e3o pro cliente. O export final respeita as escolhas.</p>
+
+    <!-- Configura\u00e7\u00e3o geral -->
     <div class="re-row">
       <div class="re-form-group">
-        <label class="re-label">Valor por Pessoa</label>
-        <input class="re-input" type="number" step="0.01" data-field="pricing.perPerson" value="${p.perPerson || ''}" placeholder="0.00" />
-      </div>
-      <div class="re-form-group">
-        <label class="re-label">Valor por Casal</label>
-        <input class="re-input" type="number" step="0.01" data-field="pricing.perCouple" value="${p.perCouple || ''}" placeholder="0.00" />
-      </div>
-      <div class="re-form-group">
         <label class="re-label">Moeda</label>
-        <select class="re-select" data-field="pricing.currency">
-          <option value="BRL" ${p.currency==='BRL'?'selected':''}>BRL</option>
-          <option value="USD" ${p.currency==='USD'?'selected':''}>USD</option>
-          <option value="EUR" ${p.currency==='EUR'?'selected':''}>EUR</option>
+        <select class="re-select" data-field="pricing.currency" style="max-width:120px;">
+          <option value="BRL" ${currency==='BRL'?'selected':''}>BRL</option>
+          <option value="USD" ${currency==='USD'?'selected':''}>USD</option>
+          <option value="EUR" ${currency==='EUR'?'selected':''}>EUR</option>
         </select>
       </div>
+      <div class="re-form-group">
+        <label class="re-label">Validade da proposta</label>
+        <input class="re-input" type="date" data-field="pricing.validUntil" value="${p.validUntil || ''}" style="max-width:200px;" />
+      </div>
+      <div class="re-form-group" style="flex:1;min-width:280px;">
+        <label class="re-label">Como o cliente v\u00ea os valores</label>
+        <div style="display:flex;gap:6px;align-items:center;">
+          <label class="re-pill-radio ${displayMode==='total' ? 'active' : ''}">
+            <input type="radio" name="pricing-display-mode" value="total" ${displayMode==='total'?'checked':''} data-svc-field="displayMode" />
+            <span>Total \u00fanico</span>
+          </label>
+          <label class="re-pill-radio ${displayMode==='grouped' ? 'active' : ''}">
+            <input type="radio" name="pricing-display-mode" value="grouped" ${displayMode==='grouped'?'checked':''} data-svc-field="displayMode" />
+            <span>Subtotais por categoria</span>
+          </label>
+        </div>
+      </div>
     </div>
+
+    <!-- 5 blocos por categoria -->
+    ${VALORES_CATEGORIAS.map(cat => _renderValoresCategoria(cat, s[cat.key] || [], currency)).join('')}
+
+    <!-- Observa\u00e7\u00f5es gerais -->
+    <div class="re-form-group" style="margin-top:24px;">
+      <label class="re-label">Observa\u00e7\u00f5es gerais (internas)</label>
+      <textarea class="re-textarea" data-svc-field="notesGeral" rows="2" placeholder="Anota\u00e7\u00f5es operacionais sobre a precifica\u00e7\u00e3o...">${esc(s.notesGeral || '')}</textarea>
+    </div>
+
     <div class="re-form-group">
-      <label class="re-label">Validade</label>
-      <input class="re-input" type="date" data-field="pricing.validUntil" value="${p.validUntil || ''}" style="max-width:250px;" />
+      <label class="re-label">Disclaimer (aparece no PDF/link p\u00fablico)</label>
+      <textarea class="re-textarea" data-field="pricing.disclaimer" rows="2">${esc(p.disclaimer || '')}</textarea>
     </div>
-    <div class="re-form-group">
-      <label class="re-label">Disclaimer</label>
-      <textarea class="re-textarea" data-field="pricing.disclaimer" rows="3">${esc(p.disclaimer || '')}</textarea>
+
+    <!-- Footer: totais comparados -->
+    <div class="re-valores-footer">
+      <div>
+        <span class="re-valores-footer-label">Total interno</span>
+        <span class="re-valores-footer-value">${esc(_fmtBRL(totalInterno, currency))}</span>
+      </div>
+      <div>
+        <span class="re-valores-footer-label">Vis\u00edvel ao cliente</span>
+        <span class="re-valores-footer-value gold">${esc(_fmtBRL(totalCliente, currency))}</span>
+      </div>
+      <div class="re-valores-footer-hint">
+        ${displayMode === 'total'
+          ? '<em>Cliente v\u00ea apenas o total \u00fanico acima.</em>'
+          : '<em>Cliente v\u00ea os subtotais por categoria.</em>'}
+      </div>
     </div>
-    <label class="re-label">Valores Adicionais</label>
-    <table class="re-dyn-table">
-      <thead><tr><th>Descri\u00e7\u00e3o</th><th>Valor</th><th></th></tr></thead>
-      <tbody id="re-pricing-rows">
-        ${rows.map((r, i) => `
-          <tr data-prow-idx="${i}">
-            <td><input data-prow="label" value="${esc(r.label || '')}" placeholder="Descri\u00e7\u00e3o" /></td>
-            <td><input data-prow="value" value="${esc(r.value || '')}" placeholder="Valor" /></td>
-            <td><button class="re-remove-btn" data-action="remove-prow" data-idx="${i}">\u2715</button></td>
-          </tr>
-        `).join('')}
-      </tbody>
-    </table>
-    <button class="re-add-btn" data-action="add-prow">+ Adicionar Linha</button>
+  `;
+}
+
+function _renderValoresCategoria(cat, items, currency) {
+  const subtotal = _subtotalCat(items);
+  const visibleCount = items.filter(it => it.visibleToClient !== false).length;
+  return `
+    <div class="re-valores-cat" data-svc-cat="${cat.key}">
+      <div class="re-valores-cat-header">
+        <h3 class="re-valores-cat-title">${cat.icon} ${esc(cat.label)}</h3>
+        <span class="re-valores-cat-subtotal">${esc(_fmtBRL(subtotal, currency))}
+          ${items.length ? `<span class="re-valores-cat-count">${visibleCount}/${items.length} vis\u00edvel${items.length !== 1 ? 'is' : ''}</span>` : ''}
+        </span>
+      </div>
+      ${items.length ? `
+        <table class="re-dyn-table re-valores-table">
+          <thead>
+            <tr>
+              <th style="width:30%;">Descri\u00e7\u00e3o</th>
+              <th style="width:22%;">Fornecedor</th>
+              <th style="width:14%;">Valor</th>
+              <th style="width:24%;">Notas (internas)</th>
+              <th style="width:10%;text-align:center;">Cliente v\u00ea</th>
+              <th style="width:36px;"></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${items.map((it, i) => `
+              <tr data-svc-item="${cat.key}" data-svc-idx="${i}">
+                <td><input class="re-input" data-svc="description" value="${esc(it.description || '')}" placeholder="Ex: ${esc(cat.label.toLowerCase())}" /></td>
+                <td>
+                  <input class="re-input" data-svc="supplier" value="${esc(it.supplier || '')}" placeholder="Fornecedor" style="margin-bottom:4px;" />
+                  <label style="display:flex;align-items:center;gap:4px;font-size:0.6875rem;color:var(--text-muted);">
+                    <input type="checkbox" data-svc="supplierVisibleToClient" ${it.supplierVisibleToClient ? 'checked' : ''} />
+                    cliente v\u00ea
+                  </label>
+                </td>
+                <td><input class="re-input" type="number" step="0.01" data-svc="value" value="${esc(String(it.value ?? ''))}" placeholder="0,00" style="text-align:right;" /></td>
+                <td><input class="re-input" data-svc="notes" value="${esc(it.notes || '')}" placeholder="\u2014" /></td>
+                <td style="text-align:center;">
+                  <input type="checkbox" data-svc="visibleToClient" ${it.visibleToClient !== false ? 'checked' : ''} style="width:16px;height:16px;cursor:pointer;" title="${it.visibleToClient !== false ? 'Cliente v\u00ea este item no detalhamento' : 'Item interno \u2014 cliente N\u00c3O v\u00ea'}" />
+                </td>
+                <td><button class="re-remove-btn" data-action="remove-svc" data-svc-cat="${cat.key}" data-idx="${i}" title="Remover">\u2715</button></td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      ` : `
+        <div class="re-valores-empty">Nenhum item de ${esc(cat.label.toLowerCase())} cadastrado.</div>
+      `}
+      <button class="re-add-btn" data-action="add-svc" data-svc-cat="${cat.key}" style="margin-top:8px;">+ Adicionar ${esc(cat.label.toLowerCase())}</button>
+    </div>
   `;
 }
 
@@ -2187,7 +2378,7 @@ function collectFormData() {
     data.hotels = hotels;
   }
 
-  // Pricing custom rows
+  // Pricing custom rows (legado)
   const prows = [];
   mainContainer.querySelectorAll('[data-prow-idx]').forEach(row => {
     prows.push({
@@ -2196,6 +2387,38 @@ function collectFormData() {
     });
   });
   if (mainContainer.querySelector('#re-pricing-rows')) data.pricing.customRows = prows;
+
+  // v4.49.101+ Pricing services (5 categorias com supplier + visibility)
+  const svcRows = mainContainer.querySelectorAll('[data-svc-item]');
+  if (svcRows.length || mainContainer.querySelector('[data-svc-cat]')) {
+    if (!data.pricing.services) {
+      data.pricing.services = {
+        aereo: [], hoteis: [], traslados: [], experiencias: [], servicosAdicionais: [],
+        displayMode: 'total', notesGeral: '',
+      };
+    }
+    // Reset arrays e re-popula da UI
+    ['aereo','hoteis','traslados','experiencias','servicosAdicionais'].forEach(cat => {
+      data.pricing.services[cat] = [];
+    });
+    svcRows.forEach(row => {
+      const cat = row.dataset.svcItem;
+      if (!data.pricing.services[cat]) return;
+      data.pricing.services[cat].push({
+        description: row.querySelector('[data-svc="description"]')?.value?.trim() || '',
+        supplier:    row.querySelector('[data-svc="supplier"]')?.value?.trim() || '',
+        supplierVisibleToClient: !!row.querySelector('[data-svc="supplierVisibleToClient"]')?.checked,
+        value:       row.querySelector('[data-svc="value"]')?.value || '',
+        notes:       row.querySelector('[data-svc="notes"]')?.value?.trim() || '',
+        visibleToClient: !!row.querySelector('[data-svc="visibleToClient"]')?.checked,
+      });
+    });
+    // displayMode + notesGeral via data-svc-field
+    const modeRadio = mainContainer.querySelector('[data-svc-field="displayMode"]:checked');
+    if (modeRadio) data.pricing.services.displayMode = modeRadio.value === 'grouped' ? 'grouped' : 'total';
+    const notesEl = mainContainer.querySelector('[data-svc-field="notesGeral"]');
+    if (notesEl) data.pricing.services.notesGeral = notesEl.value || '';
+  }
 
   // Optionals
   const optionals = [];
@@ -2854,7 +3077,7 @@ async function handleEditorClick(e) {
       markDirty();
       break;
 
-    /* ── Pricing rows ─────────────────────────────────────── */
+    /* ── Pricing rows (legado v4.49.100-, mantido pra retrocompat) ── */
     case 'add-prow':
       currentRoteiro = collectFormData();
       currentRoteiro.pricing.customRows.push({ label: '', value: '' });
@@ -2868,6 +3091,30 @@ async function handleEditorClick(e) {
       rerenderCurrentSection();
       markDirty();
       break;
+
+    /* ── Pricing services (v4.49.101+ novo schema por categoria) ── */
+    case 'add-svc': {
+      currentRoteiro = collectFormData();
+      const cat = target.dataset.svcCat;
+      if (!cat || !currentRoteiro.pricing?.services?.[cat]) break;
+      currentRoteiro.pricing.services[cat].push({
+        description: '', supplier: '', supplierVisibleToClient: false,
+        value: '', notes: '', visibleToClient: true,
+      });
+      rerenderCurrentSection();
+      markDirty();
+      break;
+    }
+
+    case 'remove-svc': {
+      currentRoteiro = collectFormData();
+      const cat = target.dataset.svcCat;
+      if (!cat || !Array.isArray(currentRoteiro.pricing?.services?.[cat])) break;
+      currentRoteiro.pricing.services[cat].splice(idx, 1);
+      rerenderCurrentSection();
+      markDirty();
+      break;
+    }
 
     /* ── Optionals ────────────────────────────────────────── */
     case 'add-opt':

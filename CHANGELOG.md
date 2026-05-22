@@ -6,6 +6,62 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.101+20260522-roteiros-valores-categorias-supplier] — 2026-05-22
+
+Release **PATCH** — refator completo da aba **Valores** no editor.
+
+**Pedido do Renê**: "Vamos separar valor por serviço, sempre com a
+possibilidade de acrescentar N vezes o mesmo item: Aéreo, Hotéis,
+Serviços (traslados, ingressos, experiências). Ter campo para
+adicionar o fornecedor de cada serviço + observações. O consultor
+escolhe se quer que o cliente veja o valor total ou parcial."
+
+**Schema novo** (`pricing.services` em `js/services/roteiros.js`):
+```
+pricing.services = {
+  aereo: [],
+  hoteis: [],
+  traslados: [],
+  experiencias: [],
+  servicosAdicionais: [],
+  displayMode: 'total' | 'grouped',
+  notesGeral: '',
+}
+```
+Cada item: `{ description, supplier, supplierVisibleToClient, value,
+notes, visibleToClient }`.
+
+**Migration on-read** (`migrateRoteiroOnRead`): roteiros antigos sem
+`pricing.services` recebem o shape vazio defensivo. `perPerson`,
+`perCouple`, `customRows` permanecem como legado (sem conversão
+automática — consultor refaz no novo schema quando abrir).
+
+**UI da aba Valores**:
+- Header: Moeda · Validade · **Toggle "Como o cliente vê os valores"**
+  (Total único / Subtotais por categoria, pill-radio dourado).
+- 5 blocos colapsados visualmente — cada um com:
+  - Header com ícone + subtotal dourado + contador "N/M visíveis"
+  - Tabela: Descrição · Fornecedor (+ checkbox "cliente vê") · Valor
+    · Notas internas · Checkbox "Cliente vê" · botão remover
+  - Botão `+ Adicionar [categoria]`
+  - Empty state quando vazio
+- Observações gerais (internas) + Disclaimer (público) em textareas.
+- **Footer com 2 totais lado a lado**:
+  - Total interno (soma absoluta)
+  - Visível ao cliente (soma só dos items com `visibleToClient`)
+  - Hint dinâmica: "Cliente vê apenas o total único" OU
+    "Cliente vê os subtotais por categoria".
+
+**Handlers**: `add-svc` + `remove-svc` (usam `data-svc-cat` no target).
+`collectFormData` lê todos os items via `[data-svc-item]` + popula
+`pricing.services[cat]`. `displayMode` via radio inputs.
+
+**Próximo (v4.49.102)**: respeitar o novo schema em todos os exports
+(PDF, DOCX, PPTX, link público). Por enquanto exports usam o schema
+antigo. Esta release valida só a UI.
+
+---
+
 ## [4.49.100+20260522-roteiros-export-unificado-preview-tab] — 2026-05-22
 
 Release **PATCH** — unificação do conceito de export.
