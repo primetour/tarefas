@@ -215,7 +215,39 @@ Se um cenário for inviável de simular automaticamente (ex: drag-drop, upload d
 
 ---
 
-## 7. Anti-padrões visuais (NÃO FAZER)
+## 7. PARAR e RACIOCINAR antes de implementar feature nova
+
+**Este é o aprendizado mais caro até agora.** Renê me disse: *"não é melhor vc parar, pensar, raciocinar, buscar a excelência e executar com maestria? horas jogadas fora do meu trabalho de ficar corrigindo miudeza com vc"*.
+
+Eu venho fazendo:
+- Inventando estruturas de dados sem checar o schema existente
+- Criando listas hardcoded (TIPOS_VIAGEM, ORCAMENTO_FAIXAS) sem perguntar
+- Empilhando campos novos quando os existentes (client.preferences, client.restrictions, client.economicProfile) já cobririam
+- Duplicando responsabilidades (Briefing vs Cliente, Interesses vs Perfil)
+- Fazendo decisões UX arbitrárias (accordion fechado, campos sem label, datalist global em vez de contextual)
+
+### Checklist OBRIGATÓRIO antes de codar feature/seção/campo novo:
+
+1. **Schema** — abrir `emptyRoteiro()` / `js/services/<modulo>.js`. Existe campo equivalente já? Se sim, USAR ESSE.
+2. **Sobreposição de responsabilidade** — esse campo novo conflita com algum existente? (Ex: "tipo de viagem" + "interesses" + "preferências" = redundante)
+3. **Lista hardcoded** — estou criando array de opções no código (tipos, status, faixas)? **Errado**: cria entry no Firestore (`<modulo>_meta_<x>`) com CRUD via Settings, mesmo padrão de `portal_platforms`/`portal_types` que o Calendário usa.
+4. **Jornada do usuário** — esse campo faz sentido NESSE momento do fluxo? Ou estou pedindo dado cedo demais? (Ex: "quero sugestão" antes do perfil)
+5. **UX defaults** — accordion fechado, campos opcionais escondidos, clique-a-mais. Tudo isso exige justificativa. Default = visível.
+6. **Datalist/autocomplete** — É **CONTEXTUAL**? Filtra pelo campo relacionado? (Ex: cidades filtradas pelo país)
+7. **Labels e consistência** — todos os campos da mesma seção têm o mesmo padrão de label?
+
+### Quando criar feature nova com dúvida:
+
+- **NÃO codar** sem antes apresentar a proposta com schema + UX em ~5 linhas
+- **NÃO inventar lista** sem perguntar se ela deveria ser editável
+- **NÃO duplicar campo** que parece "novo" sem revisar todos os existentes
+- **PERGUNTAR** quando há ambiguidade — uma pergunta agora poupa um refactor depois
+
+### Sinal de alerta: se você está a ponto de criar um arquivo/seção novo e nenhum dos arquivos-modelo do sistema tem algo parecido, **PARE**. Quase certo que você está reinventando algo que já existe.
+
+---
+
+## 8. Anti-padrões visuais (NÃO FAZER)
 
 - ❌ Dizer "testado" sem ter realmente aberto o Chrome
 - ❌ Fazer commit sem bumpar versão + cache-bust
@@ -228,7 +260,7 @@ Se um cenário for inviável de simular automaticamente (ex: drag-drop, upload d
 
 ---
 
-## 8. Checklist mental antes de dizer "feito"
+## 9. Checklist mental antes de dizer "feito"
 
 ```
 [ ] Versão bumpada (js/version.js + index.html cache-bust)
