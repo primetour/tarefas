@@ -1,6 +1,8 @@
 # Sistema de Horas de Desenvolvimento
 
-> **Última atualização:** v4.49.47 (20/05/2026, madrugada) · 107 dias de calendário · ~790h 13min approved · ~R$ 118.531,50 · 7h 23min/dia médio · 182 releases + 17 phases (199 entradas aprovadas)
+> **Última atualização:** v4.49.90 (22/05/2026) · 109 dias de calendário · ~794h 22min approved · ~R$ 119.154 · 7h 17min/dia médio · 187 releases + 17 phases (204 entradas aprovadas)
+>
+> _Sprint 22/05/2026 — Roteiros UX_: 5 releases (4.49.86 → 4.49.90) — **+4,15h / +R$ 622,50**. Foco em UX do Gerador de Roteiros após auditoria do Renê: (1) Briefing absorvido em Cliente (schema cleanup, -164 linhas), (2) fix add-dest/move/remove (bug pré-existente do switchSection sobrescrevendo array), (3) Viagem absorvida em Cliente e Briefing (15→14 seções, 30 switchSection renumerados), (4) datalist contextual cidades-por-país (city-list-${i} filtrado por country), (5) hotfix self-inflicted (`${i}` em comentário HTML dentro de template literal).
 >
 > _Auto-meta 20/05/2026_: 2 releases de documentação — **v4.49.46** (backfill CHANGELOG + dev_hours do sprint, +1,38h / R$ 207) e **v4.49.47** (double-check do CHANGELOG com 6 verificações + 1 fix de precisão, +0,65h / R$ 97,50).
 >
