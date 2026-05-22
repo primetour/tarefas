@@ -70,12 +70,12 @@
 .ultrablue-hero__inner {
   position: relative;
   z-index: 1;
-  padding-top: 56px;
+  padding-top: 160px;
   padding-bottom: 56px;
 }
 
 @media (min-width: 1024px) {
-  .ultrablue-hero__inner { padding-top: 64px; }
+  .ultrablue-hero__inner { padding-top: 192px; }
 }
 
 /* Comum */
