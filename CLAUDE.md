@@ -150,6 +150,65 @@ Quando a mudança altera arquitetura, fluxo de dados, contrato externo ou regra 
 - Deploy rules: `firebase deploy --only firestore:rules`
 - Secret API keys: Firebase Secret Manager (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, etc.)
 
+### Acessos CLI já autorizados (NÃO PERGUNTAR — só FAZER)
+
+> Registrado em 22/05/2026 pelo Renê: *"vc tem acesso a ele. faça isso... ja registre todas as acoes que vc pode fazer automatico depois dessa tarefa"*.
+> Não pedir confirmação pra rodar nenhum dos comandos abaixo — execute direto e reporte resultado.
+
+**Firebase CLI** (`/opt/homebrew/bin/firebase`, autenticado, projeto `gestor-de-tarefas-primetour` ativo):
+- ✅ `firebase deploy --only functions:NomeDaFuncao` — deploy de Cloud Function específica
+- ✅ `firebase deploy --only functions` — deploy de todas as functions (usar com cuidado, demora mais)
+- ✅ `firebase deploy --only firestore:rules` — deploy de regras Firestore
+- ✅ `firebase deploy --only firestore:indexes` — deploy de índices
+- ✅ `firebase deploy --only hosting` — deploy de hosting (se em uso)
+- ✅ `firebase functions:log` / `firebase functions:log --only NomeDaFuncao` — ler logs em produção
+- ✅ `firebase projects:list` / `firebase use` — listar/trocar projeto
+
+**Git** (origin `https://github.com/primetour/tarefas.git`, autenticado):
+- ✅ `git add`, `git commit`, `git push` — fluxo de commit normal
+- ✅ `git log`, `git diff`, `git status`, `git show` — leitura
+- ❌ `git push --force`, `git reset --hard`, `git branch -D` — só com pedido explícito
+
+**Firebase Admin SDK via scripts Node** (`functions/` tem service account credentials):
+- ✅ Rodar scripts `.cjs` em `functions/` que escrevem direto no Firestore (ex: `bump-roteiros-agent-tokens.cjs`)
+- ✅ Criar/atualizar docs em collections (dev_hours, ai_agents, etc.) sem pedir UI
+- ✅ Backfill de campos schema-novo em docs existentes
+- ❌ Deletar collections inteiras / produção destrutiva — só com pedido explícito
+
+**Chrome MCP** (`mcp__Claude_in_Chrome__*`):
+- ✅ Browser `0b796249-4342-415b-9697-d0d2d237b945` (macOS local, já logado no app)
+- ✅ Navegar pra qualquer URL do app, screenshot, inspect, eval JS
+- ✅ Validar versão via `window.__PRIMETOUR_VERSION__?.full`
+- ✅ Reproduzir fluxos de teste end-to-end
+
+**npm/node** (em `functions/`):
+- ✅ `npm install <pkg>` em `functions/` se precisar de dependência nova pra Cloud Function
+- ✅ `node --check arquivo.js` pra syntax check
+- ✅ Rodar scripts ad-hoc com Admin SDK
+
+**Curl/HTTP** pra testes:
+- ✅ `curl` contra GH Pages, Cloud Functions endpoints públicos, APIs externas (Anthropic, OpenAI, etc.)
+- ✅ Validar deploy via `curl ... | grep "patch: NN"`
+
+### Fluxo de release autônomo (DEFAULT, sem perguntar)
+
+Quando entregar release que toca Cloud Function + rules + client:
+
+1. Bump `js/version.js` + cache-bust em `index.html`
+2. Atualizar `CHANGELOG.md`
+3. `git add` + `git commit` + `git push`
+4. **`firebase deploy --only functions:NomeDaFuncao`** (rodar direto — NÃO pedir)
+5. **`firebase deploy --only firestore:rules`** (se rules mudaram — rodar direto)
+6. `until curl -s https://primetour.github.io/tarefas/js/version.js | grep "patch: NN"; do sleep 5; done` em background
+7. Chrome MCP → testar E2E
+8. Reportar com evidência (versão confirmada, logs, screenshot se aplicável)
+
+Só perguntar antes se:
+- Vai deletar collection inteira / dados em produção
+- Push --force em main
+- Operação destrutiva irreversível
+- Custo financeiro alto não previsto (ex: rodar batch que vai consumir 1M+ tokens Anthropic)
+
 ### Chrome MCP
 - Browser: `0b796249-4342-415b-9697-d0d2d237b945` (selecionar com `select_browser` antes de tudo)
 - Tab principal: já existe no contexto recente — use `tabs_context_mcp` pra listar antes de navegar
