@@ -6,6 +6,33 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.95+20260522-roteiros-fix-consultantid-save] — 2026-05-22
+
+Release **PATCH** — **HOTFIX CRÍTICO**. Bug pré-existente impedia salvar
+roteiros novos.
+
+**Sintoma** (Renê): "não consegui salvar o seu teste".
+
+**Causa raiz**: em `roteiroEditor.js` (4 ocorrências), código fazia
+`store.get('user')?.uid` — mas o key canônico do store é `currentUser`,
+não `user`. Resultado: `consultantId` ficava string vazia. Firestore
+rule em `firestore.rules:841` exige
+\`request.resource.data.consultantId == request.auth.uid\` no create.
+String vazia ≠ uid do auth → **permission-denied** silencioso.
+
+**Detecção**: Renê tentou salvar manualmente o roteiro gerado pelo
+agente Claude no MCP test. Investiguei via `saveRoteiro` direto no
+console → `FirebaseError: Missing or insufficient permissions`.
+
+**Fix**: 4 lugares migrados de `store.get('user')` → `store.get('currentUser')`.
+
+**Quando foi introduzido?** Bug provavelmente pré-existente desde a
+criação do editor de roteiros — só não bateu antes porque ninguém tinha
+testado o fluxo "novo roteiro → salvar de fato". Os roteiros existentes
+no banco devem ter sido criados via outro path (importação? script?).
+
+---
+
 ## [4.49.94+20260522-roteiros-dashed-solid-progress-ui] — 2026-05-22
 
 Release **PATCH** — 2 melhorias UX no editor:

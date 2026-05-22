@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 94,
-  build: '20260522-roteiros-dashed-solid-progress-ui',
+  patch: 95,
+  build: '20260522-roteiros-fix-consultantid-save',
 };
 
 /** "1.2.0" */

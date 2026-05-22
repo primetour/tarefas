@@ -3483,15 +3483,18 @@ export async function renderRoteiroEditor(container) {
       // Roteiro gerado pela IA
       currentRoteiro = aiData;
       currentRoteiro.status = 'draft';
-      currentRoteiro.consultantId = store.get('user')?.uid || '';
-      currentRoteiro.consultantName = store.get('user')?.displayName || '';
+      // v4.49.95+ bugfix: era store.get('user') (key inexistente) → consultantId
+      // ficava string vazia → Firestore rule "create exige consultantId==auth.uid"
+      // rejeitava com permission-denied. Key correto: 'currentUser'.
+      currentRoteiro.consultantId = store.get('currentUser')?.uid || '';
+      currentRoteiro.consultantName = store.get('currentUser')?.displayName || store.get('currentUser')?.name || '';
     } else {
       currentRoteiro = {
         status: 'draft',
         title: '',
         areaId: '',
-        consultantId: store.get('user')?.uid,
-        consultantName: store.get('user')?.displayName || '',
+        consultantId: store.get('currentUser')?.uid || '',
+        consultantName: store.get('currentUser')?.displayName || store.get('currentUser')?.name || '',
         client: {
           name: '', email: '', phone: '', type: 'individual',
           adults: 2, children: 0, childrenAges: [],
