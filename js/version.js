@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 97,
-  build: '20260522-roteiros-fix-icones-overflow-filtros',
+  patch: 98,
+  build: '20260522-roteiros-filtros-visiveis-periodo-custom',
 };
 
 /** "1.2.0" */

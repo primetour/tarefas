@@ -6,6 +6,43 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.98+20260522-roteiros-filtros-visiveis-periodo-custom] — 2026-05-22
+
+Release **PATCH** — auditoria contextual completa da listagem de roteiros
+(Renê: *"vc corrige a coluna de ícones e não corrige a coluna de período…
+percebe como é cansativo vc fazer as coisas sem olhar o contexto ao redor?"*).
+
+**Nova regra permanente**: CLAUDE.md §10 e ~/.claude/CLAUDE.md §6 —
+"olhar o TODO". Antes de declarar feito, percorrer header → filtros →
+tabela → ações → empty state. Se algo "ainda está OK mas eu tocaria
+se estivesse fazendo do zero" → **corrigir no mesmo patch**.
+
+**Audit completo** (3 fixes em 1 patch):
+
+(1) **Overflow coluna Período** (regressão herdada do v96):
+TD da coluna Período NÃO tinha `class="ellipsis"`. Texto longo
+("09 de nov. de 2026 — 13 de nov. de 2026") transbordava 160px e
+invadia Consultor. Mesma omissão nas colunas Consultor e Atualizado
+(text curto, mas igual sujeito a overflow). Todas as 3 TDs agora têm
+`class="ellipsis"` + `title` atributo (hover mostra full content).
+
+(2) **Filtros avançados sempre visíveis** (Renê item 4):
+`<details>` removido. Filtros ficam inline com label "FILTROS"
+uppercase tracked (gêmeo do "PERÍODO"). Selects pill-shaped
+(border-radius 999) em vez de quadrados — alinha aos pills de status
+e período. Botão "Limpar" pill também. Sem mais cliques pra acessar.
+
+(3) **Período custom funcional + label dinâmica** (Renê item 3):
+- `openDateRangePicker()` novo helper em uiKit — modal inline com
+  2 inputs date (De/Até), aplicar/cancelar, validação from ≤ to.
+- `wirePeriodPills` callback async em roteiros.js — quando key=='custom'
+  abre o picker. Cancela → renderFilters() restaura visual.
+- `renderPeriodPills` aceita prop `customRange`; quando ativo + range
+  setado, label do pill vira **"DD/MM → DD/MM"** (ex: "12/06 → 22/06")
+  em vez de continuar "Período…".
+
+---
+
 ## [4.49.97+20260522-roteiros-fix-icones-overflow-filtros] — 2026-05-22
 
 Release **PATCH** — 3 ajustes na listagem do Gerador de Roteiros.

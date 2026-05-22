@@ -281,3 +281,42 @@ Eu venho fazendo:
 ```
 
 Se algum item falhar, **diga ao Renê o que ficou pendente** — honestidade > falsa confiança.
+
+---
+
+## 10. SEMPRE olhar o todo — atenção aos detalhes ao redor
+
+**Aprendizado caro do dia 22/05/2026** (Renê: *"vc corrige a coluna de ícones e não corrige a coluna de período... percebe como é cansativo vc fazer as coisas sem olhar o contexto ao redor?"*).
+
+Quando o user reporta **um problema visual ou de UX**, ele está apontando o **sintoma mais visível**, NÃO o escopo do trabalho. Se mexi num componente, eu sou responsável pelo **componente inteiro** — não só pela linha que toquei.
+
+### Auditoria contextual OBRIGATÓRIA antes de declarar "feito":
+
+Toda vez que tocar em UMA célula/coluna/botão/filtro/seção, **ANTES de commitar**, percorrer mentalmente:
+
+1. **Coluna ao lado** — se mudei coluna A, conferir colunas A-1 e A+1 (alinhamento, larguras, ellipsis). Tabela `table-layout:fixed` precisa de `td.ellipsis` por TD, não basta no `th`.
+2. **Hover state irmão** — se mudei hover de um botão, conferir hover dos botões adjacentes (consistência).
+3. **Filtros relacionados** — se mexi num filtro (período), conferir o conjunto (status, busca, avançados) — eles precisam visualmente conversar.
+4. **Estados de empty/erro** — se mudei o estado preenchido, ver como o vazio e o erro renderizam.
+5. **Responsivo** — se mudei desktop, conferir mobile (`@media` rules).
+6. **Outras páginas que usam o mesmo componente** — uiKit, btn, helpers compartilhados. Editar `renderPeriodPills` no uiKit afeta todas as listagens.
+
+### Anti-padrões a NÃO repetir:
+
+- ❌ Corrigir ícones de uma coluna sem auditar overflow das colunas vizinhas.
+- ❌ Mudar estilo de um pill (período) sem checar os pills adjacentes (status, paginação).
+- ❌ Adicionar nova classe CSS sem verificar se já existe equivalente no design system.
+- ❌ Bumpar `min-width` de uma coluna sem revisar se o total bate com `min-width` da table.
+- ❌ Mexer em `<th style="width:...">` sem verificar se o `<td>` correspondente tem ellipsis/overflow tratado.
+- ❌ Fazer commit logo após o fix sem **abrir a página inteira no MCP** e olhar visual.
+
+### Auditoria mínima por release tocando UI:
+
+Antes do commit final:
+
+1. Screenshot da página inteira na resolução padrão.
+2. Em voz alta, percorrer: **header → filtros → tabela → ações → empty state**.
+3. Para cada item, perguntar: *"isso ainda está OK depois da minha mudança?"*
+4. Se algo "ainda está OK mas eu tocaria se estivesse fazendo do zero" — **corrigir no mesmo patch**, não num futuro.
+
+Princípio mestre: **o usuário paga uma vez pelo trabalho. Se eu deixo 3 detalhes "pra depois", ele vai ter que voltar 3 vezes me pedindo. Toda visita extra ao mesmo arquivo é falha de excelência.**

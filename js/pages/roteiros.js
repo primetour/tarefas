@@ -9,7 +9,7 @@ const showToast = (msg, type = 'info') => toast[type]?.(msg) ?? toast.info(msg);
 import { fetchRoteiros, deleteRoteiro, duplicateRoteiro, updateRoteiroStatus, generateRoteiroFromPrompt } from '../services/roteiros.js';
 import { fetchAreas } from '../services/portal.js';
 import { createDoc, loadJsPdf, COL, txt, withExportGuard } from '../components/pdfKit.js';
-import { renderPageHeader, renderFilterBar, wireUiKitMenus, wirePeriodPills, PERIOD_PRESETS } from '../components/uiKit.js';
+import { renderPageHeader, renderFilterBar, wireUiKitMenus, wirePeriodPills, PERIOD_PRESETS, openDateRangePicker } from '../components/uiKit.js';
 
 /* ─── Helpers ─────────────────────────────────────────────── */
 const esc = s => s ? String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') : '';
@@ -221,66 +221,49 @@ export async function renderRoteiros(container) {
         border:1px solid rgba(59,130,246,0.2); margin-left:6px; vertical-align:middle;
       }
 
-      /* v4.49.97+ Filtros avançados — summary com ícone + chevron + badge */
-      .rt-advanced-filters { list-style:none; }
-      .rt-advanced-filters > summary { list-style:none; }
-      .rt-advanced-filters > summary::-webkit-details-marker { display:none; }
-      .rt-advanced-summary {
-        display:inline-flex; align-items:center; gap:8px;
-        padding:6px 12px; border-radius:8px;
-        background:var(--bg-surface, #f8fafc);
-        border:1px solid var(--border, #e5e7eb);
-        font-size:0.8125rem; font-weight:500;
-        color:var(--text-secondary);
-        cursor:pointer; user-select:none;
-        transition:all 0.12s;
+      /* v4.49.98+ Filtros sempre visíveis (Renê: "default visível", CLAUDE.md §10).
+         Wrapper inline, label "FILTROS" uppercase tracked (gêmeo do "PERÍODO"). */
+      .rt-advanced-filters {
+        display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+        margin-top:8px; margin-bottom:14px;
       }
-      .rt-advanced-summary:hover {
-        border-color:var(--brand-gold, #D4A843);
-        color:var(--text-primary);
-      }
-      .rt-advanced-filters[open] .rt-advanced-summary {
-        background:rgba(212,168,67,0.06);
-        border-color:rgba(212,168,67,0.30);
-        color:var(--brand-gold, #D4A843);
-      }
-      .rt-advanced-chevron {
-        transition:transform 0.18s; opacity:0.7;
-      }
-      .rt-advanced-filters[open] .rt-advanced-chevron { transform:rotate(180deg); }
-      .rt-advanced-badge {
-        display:inline-flex; align-items:center; padding:1px 8px;
-        border-radius:999px; background:var(--brand-gold, #D4A843); color:#0A1628;
-        font-size:0.6875rem; font-weight:700; letter-spacing:0.01em;
+      .rt-advanced-label {
+        font-size:0.6875rem; font-weight:600; color:var(--text-muted);
+        text-transform:uppercase; letter-spacing:0.06em;
       }
       .rt-advanced-body {
-        display:flex; gap:8px; flex-wrap:wrap;
-        margin-top:10px; padding:12px;
-        background:var(--bg-surface, #fafbfc);
-        border:1px solid var(--border, #e5e7eb);
-        border-radius:8px;
-        align-items:center;
+        display:flex; gap:8px; flex-wrap:wrap; align-items:center;
       }
       .rt-advanced-select {
-        height:34px; padding:0 12px;
-        font-size:0.8125rem; font-family:inherit;
-        min-width:160px; max-width:240px;
-        border:1px solid var(--border, #e5e7eb); border-radius:6px;
+        height:32px; padding:0 12px;
+        font-size:0.75rem; font-family:inherit;
+        min-width:150px; max-width:200px;
+        border:1px solid var(--border, #e5e7eb); border-radius:999px;
         background:#fff; color:var(--text-primary);
         cursor:pointer; transition:border-color 0.12s;
       }
       .rt-advanced-select:hover, .rt-advanced-select:focus {
         border-color:var(--brand-gold, #D4A843); outline:none;
       }
+      .rt-advanced-select:not([value=""]):not(:invalid) {
+        /* selecionado: leve destaque */
+        border-color:rgba(212,168,67,0.4);
+      }
+      .rt-advanced-badge {
+        display:inline-flex; align-items:center; padding:3px 9px;
+        border-radius:999px; background:var(--brand-gold, #D4A843); color:#0A1628;
+        font-size:0.6875rem; font-weight:700; letter-spacing:0.01em;
+      }
       .rt-advanced-clear {
-        padding:6px 12px; border-radius:6px;
+        padding:5px 12px; border-radius:999px;
         background:transparent; border:1px solid var(--border, #e5e7eb);
-        font-size:0.75rem; font-weight:500; font-family:inherit;
+        font-size:0.6875rem; font-weight:600; font-family:inherit;
         color:var(--text-muted); cursor:pointer; transition:all 0.12s;
-        margin-left:auto;
+        line-height:1;
       }
       .rt-advanced-clear:hover {
         border-color:#EF4444; color:#EF4444;
+        background:rgba(239,68,68,0.05);
       }
 
       /* Paginação */
@@ -430,22 +413,15 @@ export async function renderRoteiros(container) {
         activeStatus,
         search: { id: 'rt-search', placeholder: 'Buscar cliente, título ou destino...', value: searchTerm },
         selects: [],
-        periodPills: { active: periodKey },
+        periodPills: { active: periodKey, customRange: periodKey === 'custom' ? { from: periodFrom, to: periodTo } : null },
         metaText: '',
         paginationHTML: '',
       })}
-      <!-- v4.49.97+ Filtros avançados — botão claro com chevron + badge de ativos.
-           Antes era um <summary> discreto com seta tracejada — Renê reclamou
-           3x que filtros precisavam revisão. -->
-      <details ${advancedActive ? 'open' : ''} class="rt-advanced-filters" style="margin-top:8px;margin-bottom:14px;">
-        <summary class="rt-advanced-summary">
-          <svg class="rt-advanced-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M7 12h10M11 18h2"/></svg>
-          <span>Filtros avançados</span>
-          ${advancedActive ? `<span class="rt-advanced-badge">${
-            [selectedAreaId, selectedDestino, selectedClientType, selectedConsultant].filter(Boolean).length
-          } ativo${[selectedAreaId, selectedDestino, selectedClientType, selectedConsultant].filter(Boolean).length > 1 ? 's' : ''}</span>` : ''}
-          <svg class="rt-advanced-chevron" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-        </summary>
+      <!-- v4.49.98+ Filtros avançados SEMPRE visíveis (Renê 22/05/2026: §10
+           "default visível"). Sem details collapse. Label "FILTROS" uppercase
+           alinhado ao "PERÍODO" — identidade consistente. -->
+      <div class="rt-advanced-filters">
+        <span class="rt-advanced-label">Filtros</span>
         <div class="rt-advanced-body">
           ${advancedSelects.map(s => `
             <select id="${esc(s.id)}" class="rt-advanced-select">
@@ -455,9 +431,14 @@ export async function renderRoteiros(container) {
               `).join('')}
             </select>
           `).join('')}
-          ${advancedActive ? `<button type="button" class="rt-advanced-clear" data-action="clear-advanced">Limpar filtros</button>` : ''}
+          ${advancedActive ? `
+            <span class="rt-advanced-badge">${
+              [selectedAreaId, selectedDestino, selectedClientType, selectedConsultant].filter(Boolean).length
+            } ativo${[selectedAreaId, selectedDestino, selectedClientType, selectedConsultant].filter(Boolean).length > 1 ? 's' : ''}</span>
+            <button type="button" class="rt-advanced-clear" data-action="clear-advanced">Limpar</button>
+          ` : ''}
         </div>
-      </details>
+      </div>
     `;
   }
 
@@ -612,9 +593,9 @@ export async function renderRoteiros(container) {
             <span class="rt-client-badge">${esc(clientTypeLabel(clientType))}</span>
           </td>
           <td class="dest-cell ellipsis" title="${esc(dests)}">${esc(dests)}</td>
-          <td style="white-space:nowrap;font-size:0.75rem;color:var(--text-muted);">${esc(period)}</td>
-          <td class="ellipsis" style="font-size:0.8125rem;">${esc(r.consultantName || '—')}</td>
-          <td class="muted" style="white-space:nowrap;">${esc(timeAgo(r.updatedAt))}</td>
+          <td class="ellipsis" title="${esc(period)}" style="font-size:0.75rem;color:var(--text-muted);">${esc(period)}</td>
+          <td class="ellipsis" title="${esc(r.consultantName || '—')}" style="font-size:0.8125rem;">${esc(r.consultantName || '—')}</td>
+          <td class="muted ellipsis" title="${esc(timeAgo(r.updatedAt))}">${esc(timeAgo(r.updatedAt))}</td>
           <td>
             <div class="rt-actions">
               <button data-action="edit" data-id="${idEsc}" data-tip="Editar" aria-label="Editar">
@@ -821,11 +802,28 @@ export async function renderRoteiros(container) {
   });
 
   // Period pills wire (uiKit)
-  wirePeriodPills(container, (key, range) => {
-    periodKey = key;
-    periodFrom = range.from;
-    periodTo = range.to;
+  wirePeriodPills(container, async (key, range) => {
+    if (key === 'custom') {
+      // v4.49.98+ abre date picker; se cancelar, mantém estado anterior
+      const result = await openDateRangePicker({
+        initialFrom: periodFrom || new Date(Date.now() - 30 * 86400000),
+        initialTo: periodTo || new Date(),
+      });
+      if (!result) {
+        // Cancelado — re-renderiza filtros pra restaurar pill anterior
+        renderFilters();
+        return;
+      }
+      periodKey = 'custom';
+      periodFrom = result.from;
+      periodTo = result.to;
+    } else {
+      periodKey = key;
+      periodFrom = range.from;
+      periodTo = range.to;
+    }
     currentPage = 1;
+    renderFilters();   // re-render pra atualizar label dinâmica do custom
     renderTable();
   });
 
