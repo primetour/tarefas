@@ -17,7 +17,7 @@
  *   // result === { url, name, placeName, country, city, assetCategory, tags }
  *
  * Uso típico:
- *   import { openImagePicker } from '/btg/shared/btg-image-picker.js';
+ *   import { openImagePicker } from 'shared/btg-image-picker.js';
  *   const img = await openImagePicker();
  *   if (img) store.set('imagem_url', img.url);
  */

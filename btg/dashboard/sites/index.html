@@ -1,11 +1,12 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
+  <script>document.write('<base href="'+location.pathname.replace(/\/btg\/.*/,'/btg/')+'">')</script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex, nofollow" />
   <title>Sites — Gestor Primetour</title>
-  <link rel="stylesheet" href="/btg/shared/btg-base.css" />
+  <link rel="stylesheet" href="shared/btg-base.css" />
   <style>
     body {
       background: #f5f6f8;
@@ -201,14 +202,14 @@
 
     <div class="section-label">Atalhos do módulo BTG</div>
     <div class="lib">
-      <span class="lib__chip"><a href="/btg/dashboard/ofertas/">Todas as ofertas</a></span>
-      <span class="lib__chip"><a href="/btg/dashboard/nova-oferta/">Nova oferta</a></span>
-      <span class="lib__chip"><a href="/btg/dashboard/import/">Importar oferta</a></span>
+      <span class="lib__chip"><a href="dashboard/ofertas/">Todas as ofertas</a></span>
+      <span class="lib__chip"><a href="dashboard/nova-oferta/">Nova oferta</a></span>
+      <span class="lib__chip"><a href="dashboard/import/">Importar oferta</a></span>
     </div>
   </div>
 
   <script type="module">
-    import { listSites, createSite } from '/btg/shared/btg-sites-service.js';
+    import { listSites, createSite } from './shared/btg-sites-service.js';
 
     const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) =>
       ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -228,8 +229,8 @@
             <span class="site-card__status">Publicado</span>
           </div>
           <div class="site-card__actions">
-            <a class="btn btn--primary" href="/btg/dashboard/sites/editor.html?site=${encodeURIComponent(s.id)}">Abrir editor</a>
-            <a class="btn" href="/btg/${esc(s.brand)}/" target="_blank" rel="noopener">Ver site</a>
+            <a class="btn btn--primary" href="dashboard/sites/editor.html?site=${encodeURIComponent(s.id)}">Abrir editor</a>
+            <a class="btn" href="${esc(s.brand)}/" target="_blank" rel="noopener">Ver site</a>
           </div>
         </div>
       `).join('') + `
@@ -245,7 +246,7 @@
         const brand = (prompt('Marca (partners, ultrablue ou operadora):', 'partners') || 'partners')
           .trim().toLowerCase();
         const site = createSite({ name: name.trim(), brand: BAR[brand] ? brand : 'partners' });
-        location.href = '/btg/dashboard/sites/editor.html?site=' + encodeURIComponent(site.id);
+        location.href = 'dashboard/sites/editor.html?site=' + encodeURIComponent(site.id);
       });
     }
 

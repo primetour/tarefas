@@ -1,16 +1,17 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
+  <script>document.write('<base href="'+location.pathname.replace(/\/btg\/.*/,'/btg/')+'">')</script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex, nofollow" />
   <title>Concierge Partners — Cartão Partners BTG Pactual</title>
 
-  <link rel="stylesheet" href="/btg/shared/btg-base.css" />
-  <link rel="stylesheet" href="/btg/shared/btg-header.css" />
-  <link rel="stylesheet" href="/btg/shared/btg-footer.css" />
-  <link rel="stylesheet" href="/btg/shared/btg-components.css" />
-  <link rel="stylesheet" href="/btg/shared/btg-tabs-section.css" />
+  <link rel="stylesheet" href="shared/btg-base.css" />
+  <link rel="stylesheet" href="shared/btg-header.css" />
+  <link rel="stylesheet" href="shared/btg-footer.css" />
+  <link rel="stylesheet" href="shared/btg-components.css" />
+  <link rel="stylesheet" href="shared/btg-tabs-section.css" />
   <link rel="stylesheet" href="./concierge.css" />
 </head>
 <body>
@@ -18,11 +19,11 @@
 
   <!-- ════════ HERO ════════ -->
   <section class="concierge-hero">
-    <img src="/btg/assets/partners/partners_concierge_hero.jpg" alt="Concierge Partners" class="concierge-hero__img concierge-hero__img--desktop" />
-    <img src="/btg/assets/partners/partners_concierge_hero_mobile.jpg" alt="Concierge Partners" class="concierge-hero__img concierge-hero__img--mobile" />
+    <img src="assets/partners/partners_concierge_hero.jpg" alt="Concierge Partners" class="concierge-hero__img concierge-hero__img--desktop" />
+    <img src="assets/partners/partners_concierge_hero_mobile.jpg" alt="Concierge Partners" class="concierge-hero__img concierge-hero__img--mobile" />
     <div class="concierge-hero__overlay"></div>
     <div class="btg-container concierge-hero__inner">
-      <a href="/btg/partners/" class="concierge-hero__back">← voltar</a>
+      <a href="partners/" class="concierge-hero__back">← voltar</a>
       <p class="concierge-hero__eyebrow">Concierge Partners</p>
       <h1 class="concierge-hero__title">Facilitando o extraordinário</h1>
       <p class="concierge-hero__desc">
@@ -62,11 +63,11 @@
   <div id="footer"></div>
 
   <script type="module">
-    import { renderBtgHeader } from '/btg/shared/btg-header.js';
-    import { renderBtgFooter } from '/btg/shared/btg-footer.js';
-    import { createOfertaCard, createClosingCta } from '/btg/shared/btg-components.js';
-    import { renderTabsSection } from '/btg/shared/btg-tabs-section.js';
-    import { getConciergeTabs } from '/btg/shared/btg-concierge-tabs-data.js';
+    import { renderBtgHeader } from './shared/btg-header.js';
+    import { renderBtgFooter } from './shared/btg-footer.js';
+    import { createOfertaCard, createClosingCta } from './shared/btg-components.js';
+    import { renderTabsSection } from './shared/btg-tabs-section.js';
+    import { getConciergeTabs } from './shared/btg-concierge-tabs-data.js';
 
     renderBtgHeader(document.getElementById('header'), 'partners');
     renderBtgFooter(document.getElementById('footer'), 'partners');
@@ -90,7 +91,7 @@
     const ofertas = [
       {
         id: '1', slug: 'jantar-michelin-paris',
-        imagem: '/btg/assets/parceiros/four-seasons-george-v.jpg',
+        imagem: 'assets/parceiros/four-seasons-george-v.jpg',
         destino: 'PARIS', titulo: 'Jantar privativo — restaurante 3 estrelas Michelin',
         descricao: 'Mesa reservada com 30 dias de antecedência, menu degustação assinado.',
         sobConsulta: true,

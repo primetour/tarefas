@@ -40,24 +40,24 @@ const NAV_PARTNERS_ULTRABLUE = [
 ];
 
 const NAV_OPERADORA = [
-  { label: 'Feriados e Datas Especiais', href: '/btg/operadora/viagens/feriados/' },
-  { label: 'Destinos', href: '/btg/operadora/viagens/destinos/' },
-  { label: 'Hospedagem', href: '/btg/operadora/viagens/hospedagem/' },
-  { label: 'Aéreo & Transfers', href: '/btg/operadora/viagens/aereo-transfers/' },
-  { label: 'Cruzeiros', href: '/btg/operadora/cruzeiros/' },
+  { label: 'Feriados e Datas Especiais', href: 'operadora/viagens/feriados/' },
+  { label: 'Destinos', href: 'operadora/viagens/destinos/' },
+  { label: 'Hospedagem', href: 'operadora/viagens/hospedagem/' },
+  { label: 'Aéreo & Transfers', href: 'operadora/viagens/aereo-transfers/' },
+  { label: 'Cruzeiros', href: 'operadora/cruzeiros/' },
 ];
 
 const BRAND_CONFIG = {
   partners: {
-    homeHref: '/btg/partners/',
-    logoSrc: '/btg/assets/partners/btgpactual_logo.svg',
+    homeHref: 'partners/',
+    logoSrc: 'assets/partners/btgpactual_logo.svg',
     logoAlt: 'BTG Pactual',
     logoClass: 'btg-logo',
     nav: NAV_PARTNERS_ULTRABLUE.map((i) =>
-      i.href === '/viagens' ? { ...i, href: '/btg/partners/viagens/' }
-      : i.href === '/cruzeiros' ? { ...i, href: '/btg/partners/cruzeiros/' }
-      : i.href === '/concierge' ? { ...i, href: '/btg/partners/concierge/' }
-      : i.href === '/beneficios-e-servicos' ? { ...i, href: '/btg/partners/beneficios-e-servicos/' }
+      i.href === '/viagens' ? { ...i, href: 'partners/viagens/' }
+      : i.href === '/cruzeiros' ? { ...i, href: 'partners/cruzeiros/' }
+      : i.href === '/concierge' ? { ...i, href: 'partners/concierge/' }
+      : i.href === '/beneficios-e-servicos' ? { ...i, href: 'partners/beneficios-e-servicos/' }
       : i,
     ),
     conciergeUrl:
@@ -66,15 +66,15 @@ const BRAND_CONFIG = {
     cssClass: 'btg-header-partners',
   },
   ultrablue: {
-    homeHref: '/btg/ultrablue/',
-    logoSrc: '/btg/assets/ultrablue/ultrablue_logo.svg',
+    homeHref: 'ultrablue/',
+    logoSrc: 'assets/ultrablue/ultrablue_logo.svg',
     logoAlt: 'Cartão Ultrablue BTG Pactual',
     logoClass: 'btg-logo btg-logo--ultrablue',
     nav: NAV_PARTNERS_ULTRABLUE.map((i) =>
-      i.href === '/viagens' ? { ...i, href: '/btg/ultrablue/viagens/' }
-      : i.href === '/cruzeiros' ? { ...i, href: '/btg/ultrablue/cruzeiros/' }
-      : i.href === '/concierge' ? { ...i, href: '/btg/ultrablue/concierge/' }
-      : i.href === '/beneficios-e-servicos' ? { ...i, href: '/btg/ultrablue/beneficios-e-servicos/' }
+      i.href === '/viagens' ? { ...i, href: 'ultrablue/viagens/' }
+      : i.href === '/cruzeiros' ? { ...i, href: 'ultrablue/cruzeiros/' }
+      : i.href === '/concierge' ? { ...i, href: 'ultrablue/concierge/' }
+      : i.href === '/beneficios-e-servicos' ? { ...i, href: 'ultrablue/beneficios-e-servicos/' }
       : i,
     ),
     conciergeUrl:
@@ -83,8 +83,8 @@ const BRAND_CONFIG = {
     cssClass: 'btg-header-ultrablue',
   },
   operadora: {
-    homeHref: '/btg/operadora/',
-    logoSrc: '/btg/assets/operadora/logo_primetour.png',
+    homeHref: 'operadora/',
+    logoSrc: 'assets/operadora/logo_primetour.png',
     logoAlt: 'Primetour Viagens & Experiências',
     logoClass: 'btg-logo btg-logo--operadora',
     nav: NAV_OPERADORA,

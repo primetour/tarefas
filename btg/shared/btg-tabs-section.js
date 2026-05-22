@@ -14,7 +14,7 @@
  *     tabs: [
  *       { id: 'gastronomia', label: 'Gastronomia', heading: 'Sabores incomparáveis...',
  *         bullets: [{ icon: 'utensils', label: 'Reservas em casas premiadas' }, ...],
- *         imageUrl: '/btg/assets/concierge/gastronomia.jpg'
+ *         imageUrl: 'assets/concierge/gastronomia.jpg'
  *       },
  *       ...
  *     ],

@@ -1,15 +1,16 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
+  <script>document.write('<base href="'+location.pathname.replace(/\/btg\/.*/,'/btg/')+'">')</script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex, nofollow" />
   <title>Oferta — Operadora Primetour</title>
-  <link rel="stylesheet" href="/btg/shared/btg-base.css" />
-  <link rel="stylesheet" href="/btg/shared/btg-header.css" />
-  <link rel="stylesheet" href="/btg/shared/btg-footer.css" />
-  <link rel="stylesheet" href="/btg/shared/btg-components.css" />
-  <link rel="stylesheet" href="/btg/shared/btg-oferta-detalhe.css" />
+  <link rel="stylesheet" href="shared/btg-base.css" />
+  <link rel="stylesheet" href="shared/btg-header.css" />
+  <link rel="stylesheet" href="shared/btg-footer.css" />
+  <link rel="stylesheet" href="shared/btg-components.css" />
+  <link rel="stylesheet" href="shared/btg-oferta-detalhe.css" />
 </head>
 <body>
   <div id="app">
@@ -18,7 +19,7 @@
     </div>
   </div>
   <script type="module">
-    import { renderOfertaDetalheDynamic } from '/btg/shared/btg-oferta-detalhe.js';
+    import { renderOfertaDetalheDynamic } from './shared/btg-oferta-detalhe.js';
     renderOfertaDetalheDynamic('operadora');
   </script>
 </body>

@@ -1,26 +1,27 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
+  <script>document.write('<base href="'+location.pathname.replace(/\/btg\/.*/,'/btg/')+'">')</script>
   <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex, nofollow" />
   <title>Destinos — Cartão Partners BTG Pactual</title>
-  <link rel="stylesheet" href="/btg/shared/btg-base.css" />
-  <link rel="stylesheet" href="/btg/shared/btg-header.css" />
-  <link rel="stylesheet" href="/btg/shared/btg-footer.css" />
-  <link rel="stylesheet" href="/btg/shared/btg-components.css" />
-  <link rel="stylesheet" href="/btg/shared/btg-category-page.css" />
+  <link rel="stylesheet" href="shared/btg-base.css" />
+  <link rel="stylesheet" href="shared/btg-header.css" />
+  <link rel="stylesheet" href="shared/btg-footer.css" />
+  <link rel="stylesheet" href="shared/btg-components.css" />
+  <link rel="stylesheet" href="shared/btg-category-page.css" />
 </head>
 <body>
   <div id="app"></div>
   <script type="module">
-    import { renderCategoryPage } from '/btg/shared/btg-category-page.js';
+    import { renderCategoryPage } from './shared/btg-category-page.js';
     renderCategoryPage({
       brand: 'partners', tipoOferta: 'Destino',
       title: 'Um mundo de possibilidades',
       description: 'Paisagens, culturas e experiências que transformam a forma de viver cada viagem.',
-      backHref: '/btg/partners/',
-      heroImage: '/btg/assets/parceiros/amanyangyun-shanghai.jpg',
-      heroImageMobile: '/btg/assets/parceiros/amanyangyun-shanghai.jpg',
+      backHref: 'partners/',
+      heroImage: 'assets/parceiros/amanyangyun-shanghai.jpg',
+      heroImageMobile: 'assets/parceiros/amanyangyun-shanghai.jpg',
       closingTitle: 'Vamos planejar seu próximo destino',
       closingCtaUrl: 'https://wa.me/551148621680',
       ofertasMock: [],

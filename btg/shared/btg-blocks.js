@@ -20,10 +20,10 @@ const lines = (s) => String(s ?? '').split(/\n+/).map((x) => x.trim()).filter(Bo
 
 /* Mock de ofertas pro preview do bloco "Grid de ofertas". */
 const MOCK_OFERTAS = [
-  { id: 'm1', slug: '#', imagem: '/btg/assets/parceiros/four-seasons-george-v.jpg', destino: 'Paris', titulo: 'Four Seasons George V', descricao: 'Hospedagem icônica no coração de Paris.', preco: '8900', moeda: 'R$', parcelamento: '10', contextoPreco: 'Por pessoa', ofertaEspecial: 'EXCLUSIVO' },
-  { id: 'm2', slug: '#', imagem: '/btg/assets/parceiros/amanyangyun-shanghai.jpg', destino: 'Shanghai', titulo: 'Amanyangyun', descricao: 'Retiro de luxo entre árvores centenárias.', preco: '12400', moeda: 'R$', parcelamento: '10', contextoPreco: 'Por pessoa' },
-  { id: 'm3', slug: '#', imagem: '/btg/assets/parceiros/mandarin-oriental-bangkok.jpg', destino: 'Bangkok', titulo: 'Mandarin Oriental', descricao: 'Hospitalidade lendária à beira do rio.', preco: '6200', moeda: 'R$', parcelamento: '10', contextoPreco: 'Por pessoa' },
-  { id: 'm4', slug: '#', imagem: '/btg/assets/parceiros/st-regis-maldives.jpg', destino: 'Maldivas', titulo: 'The St. Regis Maldives', descricao: 'Vilas sobre as águas cristalinas.', sobConsulta: true, ofertaEspecial: 'ALL-INCLUSIVE' },
+  { id: 'm1', slug: '#', imagem: 'assets/parceiros/four-seasons-george-v.jpg', destino: 'Paris', titulo: 'Four Seasons George V', descricao: 'Hospedagem icônica no coração de Paris.', preco: '8900', moeda: 'R$', parcelamento: '10', contextoPreco: 'Por pessoa', ofertaEspecial: 'EXCLUSIVO' },
+  { id: 'm2', slug: '#', imagem: 'assets/parceiros/amanyangyun-shanghai.jpg', destino: 'Shanghai', titulo: 'Amanyangyun', descricao: 'Retiro de luxo entre árvores centenárias.', preco: '12400', moeda: 'R$', parcelamento: '10', contextoPreco: 'Por pessoa' },
+  { id: 'm3', slug: '#', imagem: 'assets/parceiros/mandarin-oriental-bangkok.jpg', destino: 'Bangkok', titulo: 'Mandarin Oriental', descricao: 'Hospitalidade lendária à beira do rio.', preco: '6200', moeda: 'R$', parcelamento: '10', contextoPreco: 'Por pessoa' },
+  { id: 'm4', slug: '#', imagem: 'assets/parceiros/st-regis-maldives.jpg', destino: 'Maldivas', titulo: 'The St. Regis Maldives', descricao: 'Vilas sobre as águas cristalinas.', sobConsulta: true, ofertaEspecial: 'ALL-INCLUSIVE' },
 ];
 
 /* ─── Renders fiéis por tipo de bloco ─────────────────────── */
@@ -177,11 +177,11 @@ export function renderBlock(type, data, brand) {
  * renderiza idêntico ao site publicado.
  */
 export const SITE_CSS = [
-  '/btg/shared/btg-base.css',
-  '/btg/shared/btg-header.css',
-  '/btg/shared/btg-footer.css',
-  '/btg/shared/btg-components.css',
-  '/btg/operadora/operadora.css',
-  '/btg/partners/partners.css',
-  '/btg/ultrablue/ultrablue.css',
+  'shared/btg-base.css',
+  'shared/btg-header.css',
+  'shared/btg-footer.css',
+  'shared/btg-components.css',
+  'operadora/operadora.css',
+  'partners/partners.css',
+  'ultrablue/ultrablue.css',
 ];

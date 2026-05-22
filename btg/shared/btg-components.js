@@ -72,7 +72,7 @@ export function createOfertaCard(oferta, brand) {
   const precoStr = oferta.preco
     ? `${PARCELAS_LABEL(oferta.parcelamento)}${moedaLabel} ${precoFmt}`
     : 'Consulte';
-  const detalheHref = `/btg/${brand}/oferta.html?slug=${esc(oferta.slug)}`;
+  const detalheHref = `${brand}/oferta.html?slug=${esc(oferta.slug)}`;
 
   return `
     <article class="oferta-card">

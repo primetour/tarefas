@@ -1,11 +1,12 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
+  <script>document.write('<base href="'+location.pathname.replace(/\/btg\/.*/,'/btg/')+'">')</script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex, nofollow" />
   <title>Ofertas — BTG / Primetour</title>
-  <link rel="stylesheet" href="/btg/shared/btg-base.css" />
+  <link rel="stylesheet" href="shared/btg-base.css" />
   <style>
     body {
       background: #f5f6f8;
@@ -217,8 +218,8 @@
         <div class="head__sub">Lista, filtros e ações sobre as ofertas cadastradas.</div>
       </div>
       <div class="actions">
-        <a href="/btg/dashboard/import/" class="btn btn--ghost">⬆️ Importar</a>
-        <a href="/btg/dashboard/nova-oferta/" class="btn">+ Nova oferta</a>
+        <a href="dashboard/import/" class="btn btn--ghost">⬆️ Importar</a>
+        <a href="dashboard/nova-oferta/" class="btn">+ Nova oferta</a>
       </div>
     </div>
 
@@ -277,8 +278,8 @@
   </div>
 
   <script type="module">
-    import { listOfertas, archiveOferta, restoreOferta } from '/btg/shared/btg-ofertas-service.js';
-    import { createContentRequest } from '/btg/shared/btg-requests-service.js';
+    import { listOfertas, archiveOferta, restoreOferta } from './shared/btg-ofertas-service.js';
+    import { createContentRequest } from './shared/btg-requests-service.js';
 
     const searchEl = document.getElementById('search');
     const brandEl  = document.getElementById('filter-brand');
@@ -355,7 +356,7 @@
                 <td>${statusBadge(o.status)}</td>
                 <td>${formatDate(o.createdAt)}</td>
                 <td>
-                  <a href="/btg/dashboard/ofertas/editar/?id=${esc(o.id)}" class="btn btn--ghost btn--small">Editar</a>
+                  <a href="dashboard/ofertas/editar/?id=${esc(o.id)}" class="btn btn--ghost btn--small">Editar</a>
                   ${o.status === 'archived'
                     ? `<button class="btn btn--ghost btn--small" data-action="restore" data-id="${esc(o.id)}">Restaurar</button>`
                     : `<button class="btn btn--danger btn--small" data-action="archive" data-id="${esc(o.id)}">Arquivar</button>`}

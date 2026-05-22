@@ -8,16 +8,16 @@
 
 const CONCIERGE_TAB_IMAGES = {
   partners: {
-    gastronomia: '/btg/assets/concierge/partners_gastronomia.jpg',
-    'eventos-esportes': '/btg/assets/concierge/partners_eventos.jpg',
-    'shopping-gifts': '/btg/assets/concierge/partners_shopping.jpg',
-    'lifestyle-moda': '/btg/assets/concierge/partners_lifestyle.jpg',
+    gastronomia: 'assets/concierge/partners_gastronomia.jpg',
+    'eventos-esportes': 'assets/concierge/partners_eventos.jpg',
+    'shopping-gifts': 'assets/concierge/partners_shopping.jpg',
+    'lifestyle-moda': 'assets/concierge/partners_lifestyle.jpg',
   },
   ultrablue: {
-    gastronomia: '/btg/assets/concierge/ultrablue_gastronomia.jpg',
-    'eventos-esportes': '/btg/assets/concierge/ultrablue_eventos.jpg',
-    'shopping-gifts': '/btg/assets/concierge/ultrablue_shopping.jpg',
-    'lifestyle-moda': '/btg/assets/concierge/ultrablue_lifestyle.jpg',
+    gastronomia: 'assets/concierge/ultrablue_gastronomia.jpg',
+    'eventos-esportes': 'assets/concierge/ultrablue_eventos.jpg',
+    'shopping-gifts': 'assets/concierge/ultrablue_shopping.jpg',
+    'lifestyle-moda': 'assets/concierge/ultrablue_lifestyle.jpg',
   },
 };
 

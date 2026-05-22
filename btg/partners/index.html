@@ -1,15 +1,16 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
+  <script>document.write('<base href="'+location.pathname.replace(/\/btg\/.*/,'/btg/')+'">')</script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex, nofollow" />
   <title>Cartão Partners BTG Pactual</title>
 
-  <link rel="stylesheet" href="/btg/shared/btg-base.css" />
-  <link rel="stylesheet" href="/btg/shared/btg-header.css" />
-  <link rel="stylesheet" href="/btg/shared/btg-footer.css" />
-  <link rel="stylesheet" href="/btg/shared/btg-components.css" />
+  <link rel="stylesheet" href="shared/btg-base.css" />
+  <link rel="stylesheet" href="shared/btg-header.css" />
+  <link rel="stylesheet" href="shared/btg-footer.css" />
+  <link rel="stylesheet" href="shared/btg-components.css" />
   <link rel="stylesheet" href="./partners.css" />
 </head>
 <body>
@@ -18,7 +19,7 @@
   <!-- ════════ HERO MOBILE ════════ -->
   <section class="partners-hero partners-hero--mobile">
     <div class="partners-hero__mobile-wrap">
-      <img src="/btg/assets/partners/hero_mobile-partners.jpg" alt="Resort à beira-mar ao entardecer" class="partners-hero__img" />
+      <img src="assets/partners/hero_mobile-partners.jpg" alt="Resort à beira-mar ao entardecer" class="partners-hero__img" />
     </div>
     <div class="partners-hero__mobile-content">
       <p class="partners-hero__eyebrow">Cartão Partners BTG Pactual</p>
@@ -38,7 +39,7 @@
 
   <!-- ════════ HERO DESKTOP ════════ -->
   <section class="partners-hero partners-hero--desktop">
-    <img src="/btg/assets/partners/banner_desk_partners.png" alt="Resort à beira-mar ao entardecer" class="partners-hero__img" />
+    <img src="assets/partners/banner_desk_partners.png" alt="Resort à beira-mar ao entardecer" class="partners-hero__img" />
     <div class="partners-hero__overlay"></div>
     <div class="btg-container partners-hero__inner">
       <div>
@@ -71,7 +72,7 @@
   <section class="partners-curated">
     <div class="btg-container">
       <div class="partners-curated__head">
-        <a href="/btg/partners/viagens/" class="partners-curated__see-all">
+        <a href="partners/viagens/" class="partners-curated__see-all">
           Ver todas as viagens
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
         </a>
@@ -96,7 +97,7 @@
       <p class="partners-why__subtitle">Vá mais longe em tudo o que imaginar, com a máxima sofisticação que um cartão pode oferecer.</p>
       <div class="partners-why__layout">
         <div class="partners-why__media">
-          <img src="/btg/assets/partners/porque-viajar.png" alt="Vantagens do Cartão Partners" loading="lazy" />
+          <img src="assets/partners/porque-viajar.png" alt="Vantagens do Cartão Partners" loading="lazy" />
         </div>
         <ul class="partners-why__features" id="why-features"></ul>
       </div>
@@ -113,11 +114,11 @@
   <div id="footer"></div>
 
   <script type="module">
-    import { renderBtgHeader } from '/btg/shared/btg-header.js';
-    import { renderBtgFooter } from '/btg/shared/btg-footer.js';
-    import { createOfertaCard, createClosingCta, createParceirosHoteis } from '/btg/shared/btg-components.js';
-    import { icon } from '/btg/shared/btg-icons.js';
-    import { listOfertas, normalizeForCard } from '/btg/shared/btg-ofertas-service.js';
+    import { renderBtgHeader } from './shared/btg-header.js';
+    import { renderBtgFooter } from './shared/btg-footer.js';
+    import { createOfertaCard, createClosingCta, createParceirosHoteis } from './shared/btg-components.js';
+    import { icon } from './shared/btg-icons.js';
+    import { listOfertas, normalizeForCard } from './shared/btg-ofertas-service.js';
 
     // Header + footer
     renderBtgHeader(document.getElementById('header'), 'partners');
@@ -127,7 +128,7 @@
     const MOCK = [
       {
         id: '1', slug: 'reveillon-pedras-do-patacho',
-        imagem: '/btg/assets/parceiros/four-seasons-george-v.jpg',
+        imagem: 'assets/parceiros/four-seasons-george-v.jpg',
         destino: 'Alagoas', titulo: 'Réveillon Pedras do Patacho',
         descricao: 'Resort à beira-mar com experiências privativas para a família.',
         preco: '4460', moeda: 'R$', parcelamento: '6',
@@ -136,7 +137,7 @@
       },
       {
         id: '2', slug: 'toscana-vinicolas',
-        imagem: '/btg/assets/parceiros/amanyangyun-shanghai.jpg',
+        imagem: 'assets/parceiros/amanyangyun-shanghai.jpg',
         destino: 'Toscana, Itália', titulo: '10 dias na Toscana — vinícolas e villas',
         descricao: 'Roteiro privativo entre vinícolas premiadas e villas históricas.',
         preco: '32500', moeda: 'R$', parcelamento: '10',
@@ -144,7 +145,7 @@
       },
       {
         id: '3', slug: 'mediterraneo-7-noites',
-        imagem: '/btg/assets/parceiros/mandarin-oriental-bangkok.jpg',
+        imagem: 'assets/parceiros/mandarin-oriental-bangkok.jpg',
         destino: 'Mediterrâneo', titulo: 'Cruzeiro Mediterrâneo — 7 noites',
         descricao: 'Embarque em Barcelona, escalas em Cannes, Roma, Florença.',
         preco: '18900', moeda: 'R$', parcelamento: '10',
@@ -152,7 +153,7 @@
       },
       {
         id: '4', slug: 'tap-sp-paris-executiva',
-        imagem: '/btg/assets/parceiros/rosewood-mansion.jpg',
+        imagem: 'assets/parceiros/rosewood-mansion.jpg',
         destino: 'SP → Paris', titulo: 'TAP Air São Paulo → Paris',
         descricao: 'Classe executiva com acesso ao lounge e prioridade no embarque.',
         sobConsulta: true,
@@ -223,12 +224,12 @@
 
     // Parceiros hotéis
     const hoteisPartners = [
-      { rede: 'Four Seasons', nome: 'Hotel George V, Paris', imagem: '/btg/assets/parceiros/four-seasons-george-v.jpg' },
-      { rede: 'Aman', nome: 'Amanyangyun, Shanghai', imagem: '/btg/assets/parceiros/amanyangyun-shanghai.jpg' },
-      { rede: 'Mandarin Oriental', nome: 'Mandarin Oriental, Bangkok', imagem: '/btg/assets/parceiros/mandarin-oriental-bangkok.jpg' },
-      { rede: 'Six Senses', nome: 'Six Senses Bhutan', imagem: '/btg/assets/parceiros/six-senses-bhutan.jpg' },
-      { rede: 'St. Regis', nome: 'The St. Regis Maldives', imagem: '/btg/assets/parceiros/st-regis-maldives.jpg' },
-      { rede: 'Rosewood', nome: 'Rosewood Mansion on Turtle Creek', imagem: '/btg/assets/parceiros/rosewood-mansion.jpg' },
+      { rede: 'Four Seasons', nome: 'Hotel George V, Paris', imagem: 'assets/parceiros/four-seasons-george-v.jpg' },
+      { rede: 'Aman', nome: 'Amanyangyun, Shanghai', imagem: 'assets/parceiros/amanyangyun-shanghai.jpg' },
+      { rede: 'Mandarin Oriental', nome: 'Mandarin Oriental, Bangkok', imagem: 'assets/parceiros/mandarin-oriental-bangkok.jpg' },
+      { rede: 'Six Senses', nome: 'Six Senses Bhutan', imagem: 'assets/parceiros/six-senses-bhutan.jpg' },
+      { rede: 'St. Regis', nome: 'The St. Regis Maldives', imagem: 'assets/parceiros/st-regis-maldives.jpg' },
+      { rede: 'Rosewood', nome: 'Rosewood Mansion on Turtle Creek', imagem: 'assets/parceiros/rosewood-mansion.jpg' },
     ];
     document.getElementById('parceiros').innerHTML = createParceirosHoteis({
       title: 'Os melhores parceiros do mundo, à sua disposição',

@@ -1,15 +1,16 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
+  <script>document.write('<base href="'+location.pathname.replace(/\/btg\/.*/,'/btg/')+'">')</script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex, nofollow" />
   <title>Operadora Primetour — Viagens & Experiências</title>
 
-  <link rel="stylesheet" href="/btg/shared/btg-base.css" />
-  <link rel="stylesheet" href="/btg/shared/btg-header.css" />
-  <link rel="stylesheet" href="/btg/shared/btg-footer.css" />
-  <link rel="stylesheet" href="/btg/shared/btg-components.css" />
+  <link rel="stylesheet" href="shared/btg-base.css" />
+  <link rel="stylesheet" href="shared/btg-header.css" />
+  <link rel="stylesheet" href="shared/btg-footer.css" />
+  <link rel="stylesheet" href="shared/btg-components.css" />
   <link rel="stylesheet" href="./operadora.css" />
 </head>
 <body data-brand="operadora">
@@ -19,8 +20,8 @@
   <section class="operadora-hero">
     <video
       class="operadora-hero__video"
-      src="/btg/assets/operadora/hero_operadora.mp4"
-      poster="/btg/assets/operadora/hero_operadora.jpg"
+      src="assets/operadora/hero_operadora.mp4"
+      poster="assets/operadora/hero_operadora.jpg"
       autoplay muted loop playsinline preload="metadata"
       aria-hidden="true"
     ></video>
@@ -68,7 +69,7 @@
         <div class="operadora-cat-col">
           <div class="operadora-cat-banner">
             <div class="operadora-cat-banner__media">
-              <img src="/btg/assets/operadora/experience.jpg"
+              <img src="assets/operadora/experience.jpg"
                 alt="Viagens e Experiências"
                 class="operadora-cat-banner__img" loading="lazy" />
             </div>
@@ -78,13 +79,13 @@
             </div>
           </div>
           <div class="operadora-cat-links">
-            <a href="/btg/operadora/viagens/feriados/" class="operadora-cat-link">
+            <a href="operadora/viagens/feriados/" class="operadora-cat-link">
               <span>Feriados e Datas Especiais</span><span aria-hidden="true">→</span>
             </a>
-            <a href="/btg/operadora/viagens/destinos/" class="operadora-cat-link">
+            <a href="operadora/viagens/destinos/" class="operadora-cat-link">
               <span>Destinos</span><span aria-hidden="true">→</span>
             </a>
-            <a href="/btg/operadora/viagens/hospedagem/" class="operadora-cat-link">
+            <a href="operadora/viagens/hospedagem/" class="operadora-cat-link">
               <span>Hospedagem</span><span aria-hidden="true">→</span>
             </a>
           </div>
@@ -94,7 +95,7 @@
         <div class="operadora-cat-col">
           <div class="operadora-cat-banner">
             <div class="operadora-cat-banner__media">
-              <img src="/btg/assets/operadora/program.jpg"
+              <img src="assets/operadora/program.jpg"
                 alt="Do embarque ao destino"
                 class="operadora-cat-banner__img" loading="lazy" />
             </div>
@@ -104,10 +105,10 @@
             </div>
           </div>
           <div class="operadora-cat-links">
-            <a href="/btg/operadora/viagens/aereo-transfers/" class="operadora-cat-link">
+            <a href="operadora/viagens/aereo-transfers/" class="operadora-cat-link">
               <span>Aéreo &amp; Transfers</span><span aria-hidden="true">→</span>
             </a>
-            <a href="/btg/operadora/cruzeiros/" class="operadora-cat-link">
+            <a href="operadora/cruzeiros/" class="operadora-cat-link">
               <span>Cruzeiros</span><span aria-hidden="true">→</span>
             </a>
           </div>
@@ -122,10 +123,10 @@
   <div id="footer"></div>
 
   <script type="module">
-    import { renderBtgHeader } from '/btg/shared/btg-header.js';
-    import { renderBtgFooter } from '/btg/shared/btg-footer.js';
-    import { createOfertaCard, createClosingCta } from '/btg/shared/btg-components.js';
-    import { listOfertas, normalizeForCard } from '/btg/shared/btg-ofertas-service.js';
+    import { renderBtgHeader } from './shared/btg-header.js';
+    import { renderBtgFooter } from './shared/btg-footer.js';
+    import { createOfertaCard, createClosingCta } from './shared/btg-components.js';
+    import { listOfertas, normalizeForCard } from './shared/btg-ofertas-service.js';
 
     renderBtgHeader(document.getElementById('header'), 'operadora');
     renderBtgFooter(document.getElementById('footer'), 'operadora');
@@ -133,7 +134,7 @@
     const MOCK = [
       {
         id: '1', slug: 'reveillon-pedras-do-patacho',
-        imagem: '/btg/assets/parceiros/four-seasons-george-v.jpg',
+        imagem: 'assets/parceiros/four-seasons-george-v.jpg',
         destino: 'Alagoas', titulo: 'Réveillon Pedras do Patacho',
         descricao: 'Resort à beira-mar com experiências privativas para a família.',
         preco: '4460', moeda: 'R$', parcelamento: '6',
@@ -142,7 +143,7 @@
       },
       {
         id: '2', slug: 'patagonia-luxury',
-        imagem: '/btg/assets/parceiros/amanyangyun-shanghai.jpg',
+        imagem: 'assets/parceiros/amanyangyun-shanghai.jpg',
         destino: 'Patagônia', titulo: 'Patagônia — expedição privativa',
         descricao: 'Sete dias entre glaciares, lodges remotos e trilhas exclusivas.',
         preco: '42500', moeda: 'R$', parcelamento: '10',

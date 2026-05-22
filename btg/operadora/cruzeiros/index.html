@@ -1,20 +1,21 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
+  <script>document.write('<base href="'+location.pathname.replace(/\/btg\/.*/,'/btg/')+'">')</script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex, nofollow" />
   <title>Cruzeiros — Operadora Primetour</title>
-  <link rel="stylesheet" href="/btg/shared/btg-base.css" />
-  <link rel="stylesheet" href="/btg/shared/btg-header.css" />
-  <link rel="stylesheet" href="/btg/shared/btg-footer.css" />
-  <link rel="stylesheet" href="/btg/shared/btg-components.css" />
-  <link rel="stylesheet" href="/btg/shared/btg-category-page.css" />
+  <link rel="stylesheet" href="shared/btg-base.css" />
+  <link rel="stylesheet" href="shared/btg-header.css" />
+  <link rel="stylesheet" href="shared/btg-footer.css" />
+  <link rel="stylesheet" href="shared/btg-components.css" />
+  <link rel="stylesheet" href="shared/btg-category-page.css" />
 </head>
 <body data-brand="operadora">
   <div id="app"></div>
   <script type="module">
-    import { renderCategoryPage } from '/btg/shared/btg-category-page.js';
+    import { renderCategoryPage } from './shared/btg-category-page.js';
 
     renderCategoryPage({
       brand: 'operadora',
@@ -22,7 +23,7 @@
       tipoOferta: 'Cruzeiro',
       title: 'Navegações que revelam o mundo sob outra perspectiva',
       description: 'Curadoria especializada de cruzeiros fluviais e marítimos, com roteiros selecionados e experiências que vão além dos itinerários tradicionais.',
-      backHref: '/btg/operadora/',
+      backHref: 'operadora/',
       closingTitle: 'A próxima oportunidade para surpreender seu cliente começa aqui',
       closingDescription: 'Conte com nossos especialistas para construir a melhor solução para cada viagem.',
       closingCtaLabel: 'Falar com nosso especialista',

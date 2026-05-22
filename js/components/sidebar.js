@@ -72,7 +72,7 @@ const NAV_GROUPS = [
       { route: 'portal-images',    icon: 'portal-images',    label: 'Banco de Imagens',       perm: 'portal_images_manage', altPerm: 'portal_manage' },
       { route: 'landing-pages',    icon: 'landing-pages',    label: 'Landing Pages',          perm: 'portal_manage'  },
       { route: 'cms',              icon: 'cms',              label: 'CMS / Site',             perm: 'portal_manage'  },
-      { route: 'sites-btg',        icon: 'cms',              label: 'Sites',                  perm: 'portal_manage', href: '/btg/dashboard/sites/' },
+      { route: 'sites-btg',        icon: 'cms',              label: 'Sites',                  perm: 'portal_manage', href: 'btg/dashboard/sites/' },
       { route: 'arts-editor',      icon: 'arts-editor',      label: 'Editor de Artes',        perm: 'portal_manage'  },
       // 4.49.12+ Luxury Travel: gated por luxury_travel_manage (antes sempre visível)
       { route: 'luxury-travel',    icon: 'luxury-travel',    label: 'Revista Luxury Travel',  perm: 'luxury_travel_manage' },
@@ -392,10 +392,13 @@ export class Sidebar {
       });
     });
 
-    // Nav items (com data-href) — link pra área estática (módulo BTG/Sites)
+    // Nav items (com data-href) — link pra área estática (módulo BTG/Sites).
+    // O href é relativo; resolve a partir do diretório do Gestor, então
+    // funciona tanto na raiz quanto sob um prefixo (ex.: /tarefas/).
     this.el.querySelectorAll('.nav-item[data-href]').forEach(item => {
       item.addEventListener('click', () => {
-        window.location.href = item.dataset.href;
+        const baseDir = location.pathname.replace(/[^/]*$/, '');
+        window.location.href = baseDir + item.dataset.href;
       });
     });
 

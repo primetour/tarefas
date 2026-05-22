@@ -1,24 +1,25 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
+  <script>document.write('<base href="'+location.pathname.replace(/\/btg\/.*/,'/btg/')+'">')</script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex, nofollow" />
   <title>Benefícios e Serviços — Cartão Ultrablue BTG Pactual</title>
 
-  <link rel="stylesheet" href="/btg/shared/btg-base.css" />
-  <link rel="stylesheet" href="/btg/shared/btg-header.css" />
-  <link rel="stylesheet" href="/btg/shared/btg-footer.css" />
-  <link rel="stylesheet" href="/btg/shared/btg-components.css" />
-  <link rel="stylesheet" href="/btg/shared/btg-tabs-section.css" />
-  <link rel="stylesheet" href="/btg/partners/beneficios-e-servicos/beneficios.css" />
+  <link rel="stylesheet" href="shared/btg-base.css" />
+  <link rel="stylesheet" href="shared/btg-header.css" />
+  <link rel="stylesheet" href="shared/btg-footer.css" />
+  <link rel="stylesheet" href="shared/btg-components.css" />
+  <link rel="stylesheet" href="shared/btg-tabs-section.css" />
+  <link rel="stylesheet" href="partners/beneficios-e-servicos/beneficios.css" />
 </head>
 <body>
   <div id="header"></div>
 
   <section class="beneficios-hero">
     <div class="btg-container beneficios-hero__inner">
-      <a href="/btg/ultrablue/" class="btg-back">← voltar</a>
+      <a href="ultrablue/" class="btg-back">← voltar</a>
       <div class="beneficios-hero__grid">
         <div>
           <h1 class="beneficios-hero__title" style="color:var(--ultrablue-navy);">Benefícios do Cartão Ultrablue</h1>
@@ -27,7 +28,7 @@
           </p>
         </div>
         <div class="beneficios-hero__card">
-          <img src="/btg/assets/ultrablue/card_ultrablue.png" alt="Cartão Ultrablue BTG Pactual" />
+          <img src="assets/ultrablue/card_ultrablue.png" alt="Cartão Ultrablue BTG Pactual" />
         </div>
       </div>
     </div>
@@ -55,7 +56,7 @@
         <a href="https://image.viagens.ultrabtgpactual.tur.br/lib/fe2c1174736405787d1575/m/1/c8001cce-9aaa-4d69-90f8-07425b5afbb2.pdf"
           target="_blank" rel="noopener noreferrer" class="exp-card-pdf">
           <div class="exp-card-pdf-media">
-            <img src="/btg/assets/ultrablue/ultrablue_conheca_mais_cover.jpg"
+            <img src="assets/ultrablue/ultrablue_conheca_mais_cover.jpg"
               alt="Capa Programa de viagens Ultrablue" loading="lazy" />
           </div>
           <div class="exp-card-pdf-body">
@@ -73,11 +74,11 @@
   <div id="footer"></div>
 
   <script type="module">
-    import { renderBtgHeader } from '/btg/shared/btg-header.js';
-    import { renderBtgFooter } from '/btg/shared/btg-footer.js';
-    import { createClosingCta } from '/btg/shared/btg-components.js';
-    import { renderTabsSection } from '/btg/shared/btg-tabs-section.js';
-    import { ULTRABLUE_BENEFICIOS_TABS } from '/btg/shared/btg-beneficios-tabs-data.js';
+    import { renderBtgHeader } from './shared/btg-header.js';
+    import { renderBtgFooter } from './shared/btg-footer.js';
+    import { createClosingCta } from './shared/btg-components.js';
+    import { renderTabsSection } from './shared/btg-tabs-section.js';
+    import { ULTRABLUE_BENEFICIOS_TABS } from './shared/btg-beneficios-tabs-data.js';
 
     renderBtgHeader(document.getElementById('header'), 'ultrablue');
     renderBtgFooter(document.getElementById('footer'), 'ultrablue');

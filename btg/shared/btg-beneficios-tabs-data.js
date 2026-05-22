@@ -15,7 +15,7 @@ export const PARTNERS_BENEFICIOS_TABS = [
       { icon: 'sparkles', label: 'Early check-in & late check-out' },
       { icon: 'gift', label: 'Welcome drink e mimos personalizados' },
     ],
-    imageUrl: '/btg/assets/concierge/banner_concierge.png',
+    imageUrl: 'assets/concierge/banner_concierge.png',
   },
   {
     id: 'pontuacao',
@@ -26,7 +26,7 @@ export const PARTNERS_BENEFICIOS_TABS = [
       { icon: 'coins', label: '7 pontos a cada US$ 1 em compras internacionais' },
       { icon: 'sparkles', label: 'Pontos válidos em programas de fidelidade premium' },
     ],
-    imageUrl: '/btg/assets/concierge/banner_mobile-concierge.png',
+    imageUrl: 'assets/concierge/banner_mobile-concierge.png',
   },
   {
     id: 'seguro',
@@ -37,7 +37,7 @@ export const PARTNERS_BENEFICIOS_TABS = [
       { icon: 'plane', label: 'Cobertura completa em viagens internacionais' },
       { icon: 'star', label: 'Atendimento 24h em qualquer destino' },
     ],
-    imageUrl: '/btg/assets/concierge/banner_concierge.png',
+    imageUrl: 'assets/concierge/banner_concierge.png',
   },
   {
     id: 'terminal',
@@ -49,7 +49,7 @@ export const PARTNERS_BENEFICIOS_TABS = [
       { icon: 'shield-check', label: 'Despacho prioritário de bagagens' },
       { icon: 'crown', label: 'Concierge exclusivo no terminal' },
     ],
-    imageUrl: '/btg/assets/concierge/banner_mobile-concierge.png',
+    imageUrl: 'assets/concierge/banner_mobile-concierge.png',
   },
   {
     id: 'salas-vip',
@@ -60,7 +60,7 @@ export const PARTNERS_BENEFICIOS_TABS = [
       { icon: 'gift', label: 'Bebidas, Wi-Fi e snacks inclusos' },
       { icon: 'users', label: 'Até 12 convidados por ano' },
     ],
-    imageUrl: '/btg/assets/concierge/banner_concierge.png',
+    imageUrl: 'assets/concierge/banner_concierge.png',
   },
 ];
 
@@ -76,7 +76,7 @@ export const ULTRABLUE_BENEFICIOS_TABS = [
       { icon: 'sparkles', label: 'Aplicação automática no extrato' },
       { icon: 'star', label: 'Benefício exclusivo Ultrablue' },
     ],
-    imageUrl: '/btg/assets/concierge/banner_mobile-concierge.png',
+    imageUrl: 'assets/concierge/banner_mobile-concierge.png',
   },
   PARTNERS_BENEFICIOS_TABS[2], // Seguro
   PARTNERS_BENEFICIOS_TABS[3], // Terminal

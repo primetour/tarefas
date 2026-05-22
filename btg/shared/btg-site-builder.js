@@ -7,7 +7,7 @@
  * site publicado. O que você monta aqui é o que vai pro ar.
  *
  * Uso:
- *   import { mountSiteEditor } from '/btg/shared/btg-site-builder.js';
+ *   import { mountSiteEditor } from 'shared/btg-site-builder.js';
  *   mountSiteEditor(document.getElementById('root'), { siteId });
  */
 
@@ -99,7 +99,7 @@ const BLOCK_BY_TYPE = Object.fromEntries(BLOCK_LIBRARY.map((b) => [b.type, b]));
 export function mountSiteEditor(root, { siteId }) {
   const original = getSite(siteId);
   if (!original) {
-    root.innerHTML = `<div class="sb-error">Site não encontrado. <a href="/btg/dashboard/sites/">← voltar</a></div>`;
+    root.innerHTML = `<div class="sb-error">Site não encontrado. <a href="dashboard/sites/">← voltar</a></div>`;
     return;
   }
 
@@ -115,7 +115,7 @@ export function mountSiteEditor(root, { siteId }) {
 
   root.innerHTML = `
     <div class="sb-topbar">
-      <a class="sb-back" href="/btg/dashboard/sites/">← Sites</a>
+      <a class="sb-back" href="dashboard/sites/">← Sites</a>
       <input class="sb-name" id="sb-name" value="${esc(state.site.name)}" aria-label="Nome do site" />
       <span class="sb-brand sb-brand--${esc(state.site.brand)}">${esc(state.site.brand)}</span>
       <span class="sb-status" id="sb-status"></span>
@@ -184,13 +184,16 @@ export function mountSiteEditor(root, { siteId }) {
 
   // ─── Preview (iframe com CSS real) ───
   function buildPreviewDoc() {
+    // <base> garante que o CSS/assets reais do site (caminhos relativos)
+    // resolvam certo no iframe — na raiz do domínio ou sob /tarefas/.
+    const btgRoot = location.pathname.replace(/\/btg\/.*/, '/btg/');
     const css = SITE_CSS.map((h) => `<link rel="stylesheet" href="${h}" />`).join('');
     const body = state.site.blocks.length === 0
       ? `<div style="padding:80px 24px;text-align:center;color:#9ca3af;font-family:sans-serif;">Página vazia — adicione blocos na coluna da esquerda.</div>`
       : state.site.blocks.map((b) =>
           `<div data-sb-block="${b.id}" class="sb-fr-block${b.id === state.selectedId ? ' is-sel' : ''}">${renderBlock(b.type, b.data, state.site.brand)}</div>`
         ).join('');
-    return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8" />${css}
+    return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8" /><base href="${btgRoot}" />${css}
       <style>
         body { margin: 0; }
         .sb-fr-block { position: relative; cursor: pointer; }

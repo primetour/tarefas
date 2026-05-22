@@ -1,11 +1,12 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
+  <script>document.write('<base href="'+location.pathname.replace(/\/btg\/.*/,'/btg/')+'">')</script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex, nofollow" />
   <title>Importar oferta — BTG / Primetour</title>
-  <link rel="stylesheet" href="/btg/shared/btg-base.css" />
+  <link rel="stylesheet" href="shared/btg-base.css" />
   <style>
     body { background: #f5f6f8; min-height: 100vh; }
     .import-wrap {
@@ -137,8 +138,8 @@
   </div>
 
   <script type="module">
-    import { parseFile } from '/btg/shared/btg-importer.js';
-    import { saveOferta } from '/btg/shared/btg-ofertas-service.js';
+    import { parseFile } from './shared/btg-importer.js';
+    import { saveOferta } from './shared/btg-ofertas-service.js';
 
     const dz = document.getElementById('dz');
     const fileInput = document.getElementById('file-input');
@@ -256,7 +257,7 @@
         setStatus(
           `✓ Oferta criada: <strong>${escapeHtml(currentValues.nome_da_oferta || result.id)}</strong> ` +
           `(slug: <code>${escapeHtml(result.slug)}</code>, source: ${result.source}). ` +
-          `<a href="/btg/dashboard/import/" style="color:#065f46;text-decoration:underline">Importar outra</a>`,
+          `<a href="dashboard/import/" style="color:#065f46;text-decoration:underline">Importar outra</a>`,
           'ok',
         );
         currentValues = null;

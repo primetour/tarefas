@@ -85,7 +85,7 @@ export async function renderOfertaDetalheDynamic(brand) {
 
   renderOfertaDetalhe({
     brand,
-    backHref: `/btg/${brand}/`,
+    backHref: `${brand}/`,
     whatsappUrl: `https://wa.me/${whatsapp}?text=` +
       encodeURIComponent(`Olá! Tenho interesse na oferta: ${adapted.titulo}`),
     oferta: adapted,

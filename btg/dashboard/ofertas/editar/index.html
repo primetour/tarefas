@@ -1,19 +1,20 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
+  <script>document.write('<base href="'+location.pathname.replace(/\/btg\/.*/,'/btg/')+'">')</script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex, nofollow" />
   <title>Editar oferta — BTG / Primetour</title>
-  <link rel="stylesheet" href="/btg/shared/btg-base.css" />
-  <link rel="stylesheet" href="/btg/shared/form/form.css" />
-  <link rel="stylesheet" href="/btg/shared/btg-image-picker.css" />
-  <link rel="stylesheet" href="/btg/shared/btg-ai.css" />
+  <link rel="stylesheet" href="shared/btg-base.css" />
+  <link rel="stylesheet" href="shared/form/form.css" />
+  <link rel="stylesheet" href="shared/btg-image-picker.css" />
+  <link rel="stylesheet" href="shared/btg-ai.css" />
 </head>
 <body>
   <div id="root"></div>
   <script type="module">
-    import { mount } from '/btg/dashboard/_shared/form-app.js';
+    import { mount } from './dashboard/_shared/form-app.js';
     const params = new URLSearchParams(location.search);
     mount({ mode: 'edit', ofertaId: params.get('id') });
   </script>

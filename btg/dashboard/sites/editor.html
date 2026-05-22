@@ -1,17 +1,18 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
+  <script>document.write('<base href="'+location.pathname.replace(/\/btg\/.*/,'/btg/')+'">')</script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex, nofollow" />
   <title>Editor de Site — Gestor Primetour</title>
-  <link rel="stylesheet" href="/btg/shared/btg-base.css" />
-  <link rel="stylesheet" href="/btg/shared/btg-site-builder.css" />
+  <link rel="stylesheet" href="shared/btg-base.css" />
+  <link rel="stylesheet" href="shared/btg-site-builder.css" />
 </head>
 <body class="sb-body-host">
   <div id="root"></div>
   <script type="module">
-    import { mountSiteEditor } from '/btg/shared/btg-site-builder.js';
+    import { mountSiteEditor } from './shared/btg-site-builder.js';
     const siteId = new URLSearchParams(location.search).get('site');
     mountSiteEditor(document.getElementById('root'), { siteId });
   </script>

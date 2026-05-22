@@ -1,28 +1,29 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
+  <script>document.write('<base href="'+location.pathname.replace(/\/btg\/.*/,'/btg/')+'">')</script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex, nofollow" />
   <title>Réveillon Pedras do Patacho — Cartão Partners BTG Pactual</title>
-  <link rel="stylesheet" href="/btg/shared/btg-base.css" />
-  <link rel="stylesheet" href="/btg/shared/btg-header.css" />
-  <link rel="stylesheet" href="/btg/shared/btg-footer.css" />
-  <link rel="stylesheet" href="/btg/shared/btg-components.css" />
-  <link rel="stylesheet" href="/btg/shared/btg-oferta-detalhe.css" />
+  <link rel="stylesheet" href="shared/btg-base.css" />
+  <link rel="stylesheet" href="shared/btg-header.css" />
+  <link rel="stylesheet" href="shared/btg-footer.css" />
+  <link rel="stylesheet" href="shared/btg-components.css" />
+  <link rel="stylesheet" href="shared/btg-oferta-detalhe.css" />
 </head>
 <body>
   <div id="app"></div>
   <script type="module">
-    import { renderOfertaDetalhe } from '/btg/shared/btg-oferta-detalhe.js';
+    import { renderOfertaDetalhe } from './shared/btg-oferta-detalhe.js';
 
     renderOfertaDetalhe({
       brand: 'partners',
-      backHref: '/btg/partners/viagens/feriados/',
+      backHref: 'partners/viagens/feriados/',
       whatsappUrl: 'https://wa.me/551148621680?text=' + encodeURIComponent('Olá! Tenho interesse na oferta: Réveillon Pedras do Patacho'),
       oferta: {
         slug: 'reveillon-pedras-do-patacho',
-        imagem: '/btg/assets/parceiros/four-seasons-george-v.jpg',
+        imagem: 'assets/parceiros/four-seasons-george-v.jpg',
         destino: 'ALAGOAS',
         titulo: 'Réveillon Pedras do Patacho',
         descricao: 'Resort à beira-mar com experiências privativas e jantares assinados pela chef da casa. Cinco noites para receber o ano novo entre coqueirais e areia branca.',

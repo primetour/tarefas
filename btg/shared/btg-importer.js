@@ -11,7 +11,7 @@
  * - Retorna `Promise<{ values, detected, warnings }>` em ambos os formatos.
  *
  * Uso:
- *   import { parseFile } from '/btg/shared/btg-importer.js';
+ *   import { parseFile } from 'shared/btg-importer.js';
  *   const { values, detected, warnings } = await parseFile(file);
  *   // values é um objeto parcial pronto pra saveOferta(values)
  */

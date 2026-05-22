@@ -29,7 +29,7 @@ function seedSites() {
         { id: uid('b'), type: 'hero', data: {
           eyebrow: '', titulo: 'Operadora',
           subtitulo: 'Novidades e oportunidades selecionadas pelo time de especialistas da PRIMETOUR',
-          imagem: '/btg/assets/operadora/hero_operadora.jpg' } },
+          imagem: 'assets/operadora/hero_operadora.jpg' } },
         { id: uid('b'), type: 'intro', data: {
           titulo: 'A curadoria PRIMETOUR, disponível para o seu cliente',
           texto: 'Roteiros, hotéis, cruzeiros e experiências selecionados por especialistas, com benefícios exclusivos e suporte dedicado.' } },
@@ -53,7 +53,7 @@ function seedSites() {
         { id: uid('b'), type: 'hero', data: {
           eyebrow: 'Cartão Partners BTG Pactual', titulo: 'O mundo, do seu jeito',
           subtitulo: 'Roteiros personalizados e experiências cuidadosamente selecionadas para cada jornada.',
-          imagem: '/btg/assets/partners/banner_desk_partners.png' } },
+          imagem: 'assets/partners/banner_desk_partners.png' } },
         { id: uid('b'), type: 'intro', data: {
           titulo: 'Suas viagens ainda mais inesquecíveis',
           texto: 'Com o Partners, você conta com uma curadoria dedicada para criar roteiros personalizados, reservas estratégicas e experiências alinhadas ao seu estilo de vida.' } },
@@ -61,7 +61,7 @@ function seedSites() {
         { id: uid('b'), type: 'vantagens', data: {
           titulo: 'Cada detalhe, planejado',
           subtitulo: 'O que cuidamos pra você, do briefing à viagem.',
-          imagem: '/btg/assets/partners/porque-viajar.png',
+          imagem: 'assets/partners/porque-viajar.png',
           itens: 'Roteiros sob medida\nHospedagens selecionadas\nPassagens aéreas\nTrens e cruzeiros de luxo' } },
         { id: uid('b'), type: 'closing', data: {
           titulo: 'Um mundo de possibilidades, à sua disposição',
@@ -79,7 +79,7 @@ function seedSites() {
         { id: uid('b'), type: 'hero', data: {
           eyebrow: 'Cartão Ultrablue BTG Pactual', titulo: 'Uma jornada desenhada ao seu estilo',
           subtitulo: 'Porque viajar vai além do destino.',
-          imagem: '/btg/assets/ultrablue/hero_ultrablue.jpg' } },
+          imagem: 'assets/ultrablue/hero_ultrablue.jpg' } },
         { id: uid('b'), type: 'intro', data: {
           titulo: 'Suas viagens ainda mais inesquecíveis',
           texto: 'Com o Ultrablue, você conta com uma curadoria dedicada para criar roteiros personalizados, reservas estratégicas e experiências alinhadas ao seu estilo de vida.' } },
@@ -87,7 +87,7 @@ function seedSites() {
         { id: uid('b'), type: 'vantagens', data: {
           titulo: 'Vantagens para aproveitar mais em cada destino',
           subtitulo: 'Vá mais longe em tudo o que imaginar.',
-          imagem: '/btg/assets/ultrablue/why_ultrablue.jpg',
+          imagem: 'assets/ultrablue/why_ultrablue.jpg',
           itens: 'Hotéis parceiros\nPontuação acelerada\nCashback\nSeguro viagem\nTerminal BTG Pactual\nSalas VIP LoungeKey' } },
         { id: uid('b'), type: 'closing', data: {
           titulo: 'Um mundo de possibilidades, à sua disposição',

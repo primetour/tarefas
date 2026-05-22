@@ -22,18 +22,18 @@ function isStaging() {
 /* Amostra pro staging — imagens reais já versionadas no repo BTG.
  * Em produção a busca real (Unsplash) substitui isto. */
 const MOCK_PHOTOS = [
-  '/btg/assets/parceiros/four-seasons-bora-bora.jpg',
-  '/btg/assets/parceiros/st-regis-maldives.jpg',
-  '/btg/assets/parceiros/four-seasons-george-v.jpg',
-  '/btg/assets/parceiros/amanyangyun-shanghai.jpg',
-  '/btg/assets/parceiros/mandarin-oriental-bangkok.jpg',
-  '/btg/assets/parceiros/mandarin-oriental-tokyo.jpg',
-  '/btg/assets/parceiros/six-senses-bhutan.jpg',
-  '/btg/assets/parceiros/six-senses-ibiza.jpg',
-  '/btg/assets/parceiros/st-regis-venice.jpg',
-  '/btg/assets/parceiros/amangiri-utah.jpg',
-  '/btg/assets/parceiros/rosewood-mansion.jpg',
-  '/btg/assets/parceiros/rosewood-sand-hill.jpg',
+  'assets/parceiros/four-seasons-bora-bora.jpg',
+  'assets/parceiros/st-regis-maldives.jpg',
+  'assets/parceiros/four-seasons-george-v.jpg',
+  'assets/parceiros/amanyangyun-shanghai.jpg',
+  'assets/parceiros/mandarin-oriental-bangkok.jpg',
+  'assets/parceiros/mandarin-oriental-tokyo.jpg',
+  'assets/parceiros/six-senses-bhutan.jpg',
+  'assets/parceiros/six-senses-ibiza.jpg',
+  'assets/parceiros/st-regis-venice.jpg',
+  'assets/parceiros/amangiri-utah.jpg',
+  'assets/parceiros/rosewood-mansion.jpg',
+  'assets/parceiros/rosewood-sand-hill.jpg',
 ].map((url) => ({ url, author: 'Amostra — staging' }));
 
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));

@@ -1,16 +1,17 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
+  <script>document.write('<base href="'+location.pathname.replace(/\/btg\/.*/,'/btg/')+'">')</script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex, nofollow" />
   <title>Viagens — Cartão Ultrablue BTG Pactual</title>
   <meta name="description" content="Feriados, destinos curados, hospedagens selecionadas e mobilidade — tudo desenhado para clientes Ultrablue." />
-  <link rel="stylesheet" href="/btg/shared/btg-base.css" />
-  <link rel="stylesheet" href="/btg/shared/btg-header.css" />
-  <link rel="stylesheet" href="/btg/shared/btg-footer.css" />
-  <link rel="stylesheet" href="/btg/shared/btg-components.css" />
-  <link rel="stylesheet" href="/btg/shared/btg-viagens-hub.css" />
+  <link rel="stylesheet" href="shared/btg-base.css" />
+  <link rel="stylesheet" href="shared/btg-header.css" />
+  <link rel="stylesheet" href="shared/btg-footer.css" />
+  <link rel="stylesheet" href="shared/btg-components.css" />
+  <link rel="stylesheet" href="shared/btg-viagens-hub.css" />
 </head>
 <body data-brand="ultrablue">
   <div id="header"></div>
@@ -26,7 +27,7 @@
   </section>
 
   <main>
-    <section class="viagens-hub-section" data-tipo="Feriado" data-href="/btg/ultrablue/viagens/feriados/">
+    <section class="viagens-hub-section" data-tipo="Feriado" data-href="ultrablue/viagens/feriados/">
       <div class="viagens-hub-section__inner">
         <div class="viagens-hub-section__head">
           <div>
@@ -34,13 +35,13 @@
             <h2 class="viagens-hub-section__title">Para sair da rotina</h2>
           </div>
           <p class="viagens-hub-section__desc">Aproveite as principais datas do calendário para viver experiências memoráveis em destinos cuidadosamente selecionados.</p>
-          <a href="/btg/ultrablue/viagens/feriados/" class="viagens-hub-section__see-all">Ver todas →</a>
+          <a href="ultrablue/viagens/feriados/" class="viagens-hub-section__see-all">Ver todas →</a>
         </div>
         <div class="ofertas-grid" id="hub-feriado"></div>
       </div>
     </section>
 
-    <section class="viagens-hub-section" data-tipo="Destino" data-href="/btg/ultrablue/viagens/destinos/">
+    <section class="viagens-hub-section" data-tipo="Destino" data-href="ultrablue/viagens/destinos/">
       <div class="viagens-hub-section__inner">
         <div class="viagens-hub-section__head">
           <div>
@@ -48,13 +49,13 @@
             <h2 class="viagens-hub-section__title">Destinos que inspiram</h2>
           </div>
           <p class="viagens-hub-section__desc">De paisagens icônicas a descobertas surpreendentes, encontre inspiração para sua próxima viagem.</p>
-          <a href="/btg/ultrablue/viagens/destinos/" class="viagens-hub-section__see-all">Ver todos →</a>
+          <a href="ultrablue/viagens/destinos/" class="viagens-hub-section__see-all">Ver todos →</a>
         </div>
         <div class="ofertas-grid" id="hub-destino"></div>
       </div>
     </section>
 
-    <section class="viagens-hub-section" data-tipo="Hospedagem" data-href="/btg/ultrablue/viagens/hospedagem/">
+    <section class="viagens-hub-section" data-tipo="Hospedagem" data-href="ultrablue/viagens/hospedagem/">
       <div class="viagens-hub-section__inner">
         <div class="viagens-hub-section__head">
           <div>
@@ -62,13 +63,13 @@
             <h2 class="viagens-hub-section__title">Endereços para descobrir</h2>
           </div>
           <p class="viagens-hub-section__desc">Uma seleção de hotéis e resorts para diferentes estilos de viagens com benefícios exclusivos para clientes Ultrablue.</p>
-          <a href="/btg/ultrablue/viagens/hospedagem/" class="viagens-hub-section__see-all">Ver todas →</a>
+          <a href="ultrablue/viagens/hospedagem/" class="viagens-hub-section__see-all">Ver todas →</a>
         </div>
         <div class="ofertas-grid" id="hub-hospedagem"></div>
       </div>
     </section>
 
-    <section class="viagens-hub-section" data-tipo="Aéreo & Transfers" data-href="/btg/ultrablue/viagens/aereo-transfers/">
+    <section class="viagens-hub-section" data-tipo="Aéreo & Transfers" data-href="ultrablue/viagens/aereo-transfers/">
       <div class="viagens-hub-section__inner">
         <div class="viagens-hub-section__head">
           <div>
@@ -76,7 +77,7 @@
             <h2 class="viagens-hub-section__title">Do embarque ao destino</h2>
           </div>
           <p class="viagens-hub-section__desc">Soluções de mobilidade para tornar seus deslocamentos mais simples e convenientes.</p>
-          <a href="/btg/ultrablue/viagens/aereo-transfers/" class="viagens-hub-section__see-all">Ver todas →</a>
+          <a href="ultrablue/viagens/aereo-transfers/" class="viagens-hub-section__see-all">Ver todas →</a>
         </div>
         <div class="ofertas-grid" id="hub-aereo"></div>
       </div>
@@ -87,10 +88,10 @@
   <div id="footer"></div>
 
   <script type="module">
-    import { renderBtgHeader } from '/btg/shared/btg-header.js';
-    import { renderBtgFooter } from '/btg/shared/btg-footer.js';
-    import { createOfertaCard, createClosingCta } from '/btg/shared/btg-components.js';
-    import { listOfertas, normalizeForCard } from '/btg/shared/btg-ofertas-service.js';
+    import { renderBtgHeader } from './shared/btg-header.js';
+    import { renderBtgFooter } from './shared/btg-footer.js';
+    import { createOfertaCard, createClosingCta } from './shared/btg-components.js';
+    import { listOfertas, normalizeForCard } from './shared/btg-ofertas-service.js';
 
     renderBtgHeader(document.getElementById('header'), 'ultrablue');
     renderBtgFooter(document.getElementById('footer'), 'ultrablue');

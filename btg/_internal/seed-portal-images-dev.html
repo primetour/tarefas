@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
+  <script>document.write('<base href="'+location.pathname.replace(/\/btg\/.*/,'/btg/')+'">')</script>
   <meta charset="UTF-8" />
   <title>Seed — portal_images_dev (staging)</title>
   <style>
@@ -37,7 +38,7 @@
     import {
       getFirestore, collection, getDocs, query, where, addDoc, serverTimestamp
     } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
-    import { btgFirebaseConfig, isBtgConfigReady } from '../shared/btg-config.js';
+    import { btgFirebaseConfig, isBtgConfigReady } from './shared/btg-config.js';
 
     const logEl = document.getElementById('log');
     const btn = document.getElementById('run');
@@ -50,8 +51,10 @@
       logEl.scrollTop = logEl.scrollHeight;
     }
 
-    // Base URL fica derivada de onde o HTML está rodando — local ou staging.
-    const BASE_URL = `${location.origin}/btg/assets/parceiros`;
+    // Base URL fica derivada de onde o HTML está rodando — funciona na raiz
+    // do domínio (staging) e sob um prefixo como /tarefas/ (produção).
+    const BTG_ROOT = location.pathname.replace(/\/btg\/.*/, '/btg/');
+    const BASE_URL = `${location.origin}${BTG_ROOT}assets/parceiros`;
 
     const IMAGES = [
       { file: 'amangiri-utah.jpg',            name: 'Amangiri',                placeName: 'Amangiri Resort',           city: 'Utah',         country: 'Estados Unidos',     continent: 'america-do-norte', tags: ['hotel', 'resort', 'deserto', 'aman'] },

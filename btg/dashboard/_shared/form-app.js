@@ -8,19 +8,19 @@
  *     pra /btg/dashboard/ofertas/ após salvar.
  *
  * Uso:
- *   import { mount } from '/btg/dashboard/_shared/form-app.js';
+ *   import { mount } from 'dashboard/_shared/form-app.js';
  *   mount({ mode: 'create' });
  *   // ou
  *   mount({ mode: 'edit', ofertaId: 'abc123' });
  */
 
-import { createFormStore, defaultFormValues } from '/btg/shared/form/form-store.js';
-import { renderTipoSelector } from '/btg/shared/form/tipo-selector.js';
-import { renderStepShell, renderStepFields, setStepMessage } from '/btg/shared/form/step-shell.js';
-import { renderLivePreview } from '/btg/shared/form/live-preview.js';
-import { bindFormEvents } from '/btg/shared/form/form-inputs.js';
-import { getStepsForType, getQuestionsForStep } from '/btg/shared/form/form-steps.js';
-import { saveOferta, updateOferta, getOfertaById, getOfertasSource } from '/btg/shared/btg-ofertas-service.js';
+import { createFormStore, defaultFormValues } from '../../shared/form/form-store.js';
+import { renderTipoSelector } from '../../shared/form/tipo-selector.js';
+import { renderStepShell, renderStepFields, setStepMessage } from '../../shared/form/step-shell.js';
+import { renderLivePreview } from '../../shared/form/live-preview.js';
+import { bindFormEvents } from '../../shared/form/form-inputs.js';
+import { getStepsForType, getQuestionsForStep } from '../../shared/form/form-steps.js';
+import { saveOferta, updateOferta, getOfertaById, getOfertasSource } from '../../shared/btg-ofertas-service.js';
 
 export function mount(opts = {}) {
   const mode = opts.mode || 'create';
@@ -160,7 +160,7 @@ export function mount(opts = {}) {
   function resetTipo() {
     if (mode === 'edit') {
       if (confirm('Voltar pra lista? Mudanças não salvas serão perdidas.')) {
-        location.href = '/btg/dashboard/ofertas/';
+        location.href = 'dashboard/ofertas/';
       }
       return;
     }
@@ -220,7 +220,7 @@ export function mount(opts = {}) {
   }
 
   function importFile() {
-    location.href = '/btg/dashboard/import/';
+    location.href = 'dashboard/import/';
   }
 
   async function publicar() {
@@ -244,7 +244,7 @@ export function mount(opts = {}) {
       if (mode === 'create' && TIPO_KEY) localStorage.removeItem(TIPO_KEY);
       setTimeout(() => {
         if (mode === 'edit') {
-          location.href = '/btg/dashboard/ofertas/';
+          location.href = 'dashboard/ofertas/';
         } else {
           state.tipo = null;
           state.currentStepIdx = 0;
@@ -266,7 +266,7 @@ export function mount(opts = {}) {
       <div style="max-width:600px;margin:80px auto;padding:24px;text-align:center;font-family:-apple-system,system-ui,sans-serif;">
         <h2 style="color:#b91c1c;font-size:18px;margin:0 0 12px">Erro</h2>
         <p style="color:#4b5563;font-size:14px">${msg}</p>
-        <a href="/btg/dashboard/ofertas/" style="display:inline-block;margin-top:16px;color:#05132a;text-decoration:underline;font-size:13px">← Voltar pra lista de ofertas</a>
+        <a href="dashboard/ofertas/" style="display:inline-block;margin-top:16px;color:#05132a;text-decoration:underline;font-size:13px">← Voltar pra lista de ofertas</a>
       </div>
     `;
   }

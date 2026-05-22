@@ -1,15 +1,16 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
+  <script>document.write('<base href="'+location.pathname.replace(/\/btg\/.*/,'/btg/')+'">')</script>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex, nofollow" />
   <title>Cartão Ultrablue BTG Pactual</title>
 
-  <link rel="stylesheet" href="/btg/shared/btg-base.css" />
-  <link rel="stylesheet" href="/btg/shared/btg-header.css" />
-  <link rel="stylesheet" href="/btg/shared/btg-footer.css" />
-  <link rel="stylesheet" href="/btg/shared/btg-components.css" />
+  <link rel="stylesheet" href="shared/btg-base.css" />
+  <link rel="stylesheet" href="shared/btg-header.css" />
+  <link rel="stylesheet" href="shared/btg-footer.css" />
+  <link rel="stylesheet" href="shared/btg-components.css" />
   <link rel="stylesheet" href="./ultrablue.css" />
 </head>
 <body>
@@ -18,7 +19,7 @@
   <!-- ════════ HERO MOBILE ════════ -->
   <section class="ultrablue-hero ultrablue-hero--mobile">
     <div class="ultrablue-hero__mobile-wrap">
-      <img src="/btg/assets/ultrablue/hero_ultrablue_mobile.jpg" alt="Cartão Ultrablue BTG Pactual" class="ultrablue-hero__img" />
+      <img src="assets/ultrablue/hero_ultrablue_mobile.jpg" alt="Cartão Ultrablue BTG Pactual" class="ultrablue-hero__img" />
     </div>
     <div class="ultrablue-hero__mobile-content">
       <p class="ultrablue-hero__eyebrow">Cartão Ultrablue BTG Pactual</p>
@@ -33,7 +34,7 @@
 
   <!-- ════════ HERO DESKTOP ════════ -->
   <section class="ultrablue-hero ultrablue-hero--desktop">
-    <img src="/btg/assets/ultrablue/hero_ultrablue.jpg" alt="Cartão Ultrablue BTG Pactual" class="ultrablue-hero__img" />
+    <img src="assets/ultrablue/hero_ultrablue.jpg" alt="Cartão Ultrablue BTG Pactual" class="ultrablue-hero__img" />
     <div class="btg-container ultrablue-hero__inner">
       <p class="ultrablue-hero__eyebrow">Cartão Ultrablue BTG Pactual</p>
       <h1 class="ultrablue-hero__title">
@@ -60,7 +61,7 @@
   <section class="ultrablue-curated">
     <div class="btg-container">
       <div class="ultrablue-curated__head">
-        <a href="/btg/ultrablue/viagens/" class="ultrablue-curated__see-all">
+        <a href="ultrablue/viagens/" class="ultrablue-curated__see-all">
           Ver todas as viagens
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
         </a>
@@ -85,7 +86,7 @@
       <p class="ultrablue-why__subtitle">Vá mais longe em tudo o que imaginar, com a máxima sofisticação que um cartão pode oferecer.</p>
       <div class="ultrablue-why__layout">
         <div class="ultrablue-why__media">
-          <img src="/btg/assets/ultrablue/why_ultrablue.jpg" alt="Vantagens do Cartão Ultrablue" loading="lazy" />
+          <img src="assets/ultrablue/why_ultrablue.jpg" alt="Vantagens do Cartão Ultrablue" loading="lazy" />
         </div>
         <ul class="ultrablue-why__features" id="why-features"></ul>
       </div>
@@ -101,11 +102,11 @@
   <div id="footer"></div>
 
   <script type="module">
-    import { renderBtgHeader } from '/btg/shared/btg-header.js';
-    import { renderBtgFooter } from '/btg/shared/btg-footer.js';
-    import { createOfertaCard, createClosingCta, createParceirosHoteis } from '/btg/shared/btg-components.js';
-    import { icon } from '/btg/shared/btg-icons.js';
-    import { listOfertas, normalizeForCard } from '/btg/shared/btg-ofertas-service.js';
+    import { renderBtgHeader } from './shared/btg-header.js';
+    import { renderBtgFooter } from './shared/btg-footer.js';
+    import { createOfertaCard, createClosingCta, createParceirosHoteis } from './shared/btg-components.js';
+    import { icon } from './shared/btg-icons.js';
+    import { listOfertas, normalizeForCard } from './shared/btg-ofertas-service.js';
 
     renderBtgHeader(document.getElementById('header'), 'ultrablue');
     renderBtgFooter(document.getElementById('footer'), 'ultrablue');
@@ -113,7 +114,7 @@
     const MOCK = [
       {
         id: '1', slug: 'reveillon-pedras-do-patacho',
-        imagem: '/btg/assets/parceiros/four-seasons-bora-bora.jpg',
+        imagem: 'assets/parceiros/four-seasons-bora-bora.jpg',
         destino: 'Alagoas', titulo: 'Réveillon Pedras do Patacho',
         descricao: 'Resort à beira-mar com experiências privativas para a família.',
         preco: '4460', moeda: 'R$', parcelamento: '6',
@@ -122,7 +123,7 @@
       },
       {
         id: '2', slug: 'bora-bora-honeymoon',
-        imagem: '/btg/assets/parceiros/amangiri-utah.jpg',
+        imagem: 'assets/parceiros/amangiri-utah.jpg',
         destino: 'Bora Bora', titulo: 'Bora Bora — overwater bungalow',
         descricao: 'Sete noites em bungalow privativo, com jantares românticos.',
         preco: '52000', moeda: 'R$', parcelamento: '10',
@@ -130,14 +131,14 @@
       },
       {
         id: '3', slug: 'mediterraneo-luxury',
-        imagem: '/btg/assets/parceiros/mandarin-oriental-tokyo.jpg',
+        imagem: 'assets/parceiros/mandarin-oriental-tokyo.jpg',
         destino: 'Mediterrâneo', titulo: 'Cruzeiro Mediterrâneo de luxo',
         descricao: 'Embarque em Veneza com escalas em Capri, Sorrento e Mykonos.',
         sobConsulta: true,
       },
       {
         id: '4', slug: 'aman-tokyo',
-        imagem: '/btg/assets/parceiros/six-senses-ibiza.jpg',
+        imagem: 'assets/parceiros/six-senses-ibiza.jpg',
         destino: 'Tóquio', titulo: 'Aman Tokyo — primavera no Japão',
         descricao: 'Hospedagem em suíte premium com vista para o Imperial Garden.',
         preco: '38900', moeda: 'R$', parcelamento: '10',
@@ -205,12 +206,12 @@
       `).join('');
 
     const hoteisUltrablue = [
-      { rede: 'Four Seasons', nome: 'Four Seasons Bora Bora', imagem: '/btg/assets/parceiros/four-seasons-bora-bora.jpg' },
-      { rede: 'Aman', nome: 'Amangiri, Utah', imagem: '/btg/assets/parceiros/amangiri-utah.jpg' },
-      { rede: 'Mandarin Oriental', nome: 'Mandarin Oriental, Tóquio', imagem: '/btg/assets/parceiros/mandarin-oriental-tokyo.jpg' },
-      { rede: 'Six Senses', nome: 'Six Senses Ibiza', imagem: '/btg/assets/parceiros/six-senses-ibiza.jpg' },
-      { rede: 'St. Regis', nome: 'The St. Regis Veneza', imagem: '/btg/assets/parceiros/st-regis-venice.jpg' },
-      { rede: 'Rosewood', nome: 'Rosewood Sand Hill, Califórnia', imagem: '/btg/assets/parceiros/rosewood-sand-hill.jpg' },
+      { rede: 'Four Seasons', nome: 'Four Seasons Bora Bora', imagem: 'assets/parceiros/four-seasons-bora-bora.jpg' },
+      { rede: 'Aman', nome: 'Amangiri, Utah', imagem: 'assets/parceiros/amangiri-utah.jpg' },
+      { rede: 'Mandarin Oriental', nome: 'Mandarin Oriental, Tóquio', imagem: 'assets/parceiros/mandarin-oriental-tokyo.jpg' },
+      { rede: 'Six Senses', nome: 'Six Senses Ibiza', imagem: 'assets/parceiros/six-senses-ibiza.jpg' },
+      { rede: 'St. Regis', nome: 'The St. Regis Veneza', imagem: 'assets/parceiros/st-regis-venice.jpg' },
+      { rede: 'Rosewood', nome: 'Rosewood Sand Hill, Califórnia', imagem: 'assets/parceiros/rosewood-sand-hill.jpg' },
     ];
     document.getElementById('parceiros').innerHTML = createParceirosHoteis({
       title: 'Parceiros globais selecionados',

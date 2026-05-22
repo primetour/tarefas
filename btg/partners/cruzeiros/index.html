@@ -1,26 +1,27 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
+  <script>document.write('<base href="'+location.pathname.replace(/\/btg\/.*/,'/btg/')+'">')</script>
   <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="robots" content="noindex, nofollow" />
   <title>Cruzeiros — Cartão Partners BTG Pactual</title>
-  <link rel="stylesheet" href="/btg/shared/btg-base.css" />
-  <link rel="stylesheet" href="/btg/shared/btg-header.css" />
-  <link rel="stylesheet" href="/btg/shared/btg-footer.css" />
-  <link rel="stylesheet" href="/btg/shared/btg-components.css" />
-  <link rel="stylesheet" href="/btg/shared/btg-category-page.css" />
+  <link rel="stylesheet" href="shared/btg-base.css" />
+  <link rel="stylesheet" href="shared/btg-header.css" />
+  <link rel="stylesheet" href="shared/btg-footer.css" />
+  <link rel="stylesheet" href="shared/btg-components.css" />
+  <link rel="stylesheet" href="shared/btg-category-page.css" />
 </head>
 <body>
   <div id="app"></div>
   <script type="module">
-    import { renderCategoryPage } from '/btg/shared/btg-category-page.js';
+    import { renderCategoryPage } from './shared/btg-category-page.js';
     renderCategoryPage({
       brand: 'partners', tipoOferta: 'Cruzeiro',
       title: 'A bordo das melhores travessias',
       description: 'Curadoria especializada para navegar pelos destinos mais desejados do mundo',
-      backHref: '/btg/partners/',
-      heroImage: '/btg/assets/parceiros/st-regis-maldives.jpg',
-      heroImageMobile: '/btg/assets/parceiros/st-regis-maldives.jpg',
+      backHref: 'partners/',
+      heroImage: 'assets/parceiros/st-regis-maldives.jpg',
+      heroImageMobile: 'assets/parceiros/st-regis-maldives.jpg',
       closingTitle: 'Vamos embarcar?',
       closingCtaUrl: 'https://wa.me/551148621680',
       ofertasMock: [],
