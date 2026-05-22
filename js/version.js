@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 85,
-  build: '20260522-roteiros-destinos-3-bugs-fix',
+  patch: 86,
+  build: '20260522-cliente-briefing-fundidos-schema-real',
 };
 
 /** "1.2.0" */

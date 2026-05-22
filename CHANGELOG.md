@@ -6,6 +6,66 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.86+20260522-cliente-briefing-fundidos-schema-real] — 2026-05-22
+
+Release **PATCH** — fusão de "Briefing" e "Cliente" em uma seção
+única **"Cliente e Briefing"**. Remove redundância de schema.
+
+**Contexto** (Renê): "*pq vc colocou ele [briefing] antes de cliente?
+não é melhor os dois módulos se fundirem?... perfil dos viajantes
+não conflita com tipo de viagem?... interesses não é melhor
+concentrar isso também em perfil do viajante? pra que separar?*"
+
+**Aprendizado** documentado no CLAUDE.md §7 (commit `9fc533f`):
+ANTES de criar feature/seção/campo novo, VERIFICAR o schema
+existente. Foi o que faltou em todo o ciclo do Briefing.
+
+**Schema (`emptyRoteiro` em `js/services/roteiros.js`)**:
+- **Removido** bloco `briefing{tipoViagem, perfilViajantes,
+  interesses, restricoes, orcamentoFaixa, contextoLivre,
+  querSugestaoDestino}` inteiro.
+- Mantido `client.*` que **sempre existiu** e cobre tudo:
+  - `client.preferences[]` (multi-pill) = "interesses"
+  - `client.restrictions[]` (multi-pill) = "restrições"
+  - `client.economicProfile` (select Standard/Premium/Luxury) =
+    "faixa de orçamento"
+  - `client.notes` (textarea) = "perfil/contexto livre"
+  - `travelers[]` = viajantes
+
+**Editor (`js/pages/roteiroEditor.js`)**:
+- SECTIONS array reduzido: Seção 0 **"Cliente e Briefing"** (era
+  Briefing+Cliente), Viagem=1, Dia a dia=2…
+- `renderBriefingSection()` **deletado** (164 linhas).
+- Constantes `TIPOS_VIAGEM` e `ORCAMENTO_FAIXAS` hardcoded com
+  emoji **removidas** — Renê reclamou que listas foram inventadas
+  sem CRUD ou aprovação.
+- `renderClienteSection()` ganha título "Cliente e Briefing" +
+  intro: *"Quem é o cliente, viajantes, preferências e restrições.
+  O agente de IA usa este bloco como briefing."*
+- `renderViagemSection()` ganha botão **"Gerar com IA"** no final
+  (depois de destinos+datas) + atalho **"+ Cadastrar destino novo
+  no banco"**. Antes o botão estava no Briefing — fazia sentido
+  porque o briefing era a entrada, mas agora a entrada é Cliente.
+- `aiGenerateFullRoteiro()` reescrito: lê de `client.{name, type,
+  economicProfile, preferences, restrictions, notes}` + `travelers`
+  em vez do extinto `briefing.*`. Validação mínima: cliente OU
+  viajantes (qualquer um) + datas. Se sem destinos, modo sugestão
+  automático (sem toggle "quero sugestão").
+- Handlers `go-briefing`, `add-brief-dest`, `remove-brief-dest`
+  **removidos** — destinos agora editam direto na Viagem via
+  `add-dest`/`remove-dest` existentes.
+- Defensive defaults `currentRoteiro.briefing = ...` removidos.
+
+**Aprendizado lateral**: o sistema já tinha tudo. Eu criei
+duplicidade inútil no Sprint A. 5 commits de patches (v4.49.75-85)
+gastos pra ajustar o que não devia ter sido criado. Esse é
+exatamente o tipo de erro que o §7 do CLAUDE.md previne.
+
+**Validação**: `node --check` ok nos 2 arquivos. E2E pendente
+(usuário valida após hard refresh).
+
+---
+
 ## [4.49.85+20260522-roteiros-destinos-3-bugs-fix] — 2026-05-22
 
 Release **PATCH** — 3 bugs reportados pelo Renê no fluxo de
