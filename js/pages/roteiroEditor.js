@@ -1394,7 +1394,7 @@ function _renderValoresCategoria(cat, items, currency) {
       <div class="re-valores-cat-header">
         <h3 class="re-valores-cat-title">${cat.icon} ${esc(cat.label)}</h3>
         <span class="re-valores-cat-subtotal">${esc(_fmtBRL(subtotal, currency))}
-          ${items.length ? `<span class="re-valores-cat-count">${visibleCount}/${items.length} vis\u00edvel${items.length !== 1 ? 'is' : ''}</span>` : ''}
+          ${items.length ? `<span class="re-valores-cat-count">${visibleCount}/${items.length} ${items.length === 1 ? 'vis\u00edvel' : 'vis\u00edveis'}</span>` : ''}
         </span>
       </div>
       ${items.length ? `
