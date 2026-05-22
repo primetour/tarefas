@@ -796,7 +796,7 @@ export async function generateRoteiroPDF(roteiro, area = null) {
   }
 
   /* ─── PRICING ────────────────────────────────────────────── */
-  if (roteiro.pricing && (roteiro.pricing.perPerson || roteiro.pricing.perCouple || roteiro.pricing.customRows?.length)) {
+  if (roteiro.pricing && _hasPricingContent(roteiro.pricing)) {
     buildPricingSection(doc, roteiro, primary, secondary);
   }
 
@@ -1412,32 +1412,82 @@ async function buildHotelsSection(doc, roteiro, primary, secondary, byHotel = {}
 }
 
 /* ─── Pricing ─────────────────────────────────────────────── */
+/* v4.49.102+ Helpers do novo schema pricing.services (5 categorias) \u2500\u2500\u2500 */
+const VALORES_CAT_LABELS = {
+  aereo: 'A\u00E9reo',
+  hoteis: 'Hot\u00E9is',
+  traslados: 'Traslados',
+  experiencias: 'Experi\u00EAncias',
+  servicosAdicionais: 'Servi\u00E7os adicionais',
+};
+
+function _hasPricingContent(pricing) {
+  if (!pricing) return false;
+  if (pricing.perPerson || pricing.perCouple) return true;
+  if (pricing.customRows?.length) return true;
+  // Novo schema: tem algum item vis\u00EDvel em alguma categoria?
+  const s = pricing.services;
+  if (s) {
+    for (const cat of Object.keys(VALORES_CAT_LABELS)) {
+      if ((s[cat] || []).some(it => it.visibleToClient !== false)) return true;
+    }
+  }
+  return false;
+}
+
+/** Computa rows do PDF respeitando displayMode + visibleToClient.
+ * `displayMode='total'` \u2192 ["Investimento total", "R$ X"]
+ * `displayMode='grouped'` \u2192 ["A\u00E9reo", "R$ X"], ["Hot\u00E9is", "R$ Y"]... apenas
+ *   categorias que t\u00EAm pelo menos 1 item vis\u00EDvel ao cliente. */
+function _buildServicesRows(pricing) {
+  const currency = pricing.currency || 'USD';
+  const s = pricing.services;
+  if (!s) return [];
+  const mode = s.displayMode === 'grouped' ? 'grouped' : 'total';
+  const rows = [];
+  if (mode === 'total') {
+    let totalVisible = 0;
+    Object.keys(VALORES_CAT_LABELS).forEach(cat => {
+      (s[cat] || []).forEach(it => {
+        if (it.visibleToClient !== false) totalVisible += parseFloat(it.value) || 0;
+      });
+    });
+    if (totalVisible > 0) rows.push(['Investimento total', formatCurrency(totalVisible, currency)]);
+  } else {
+    Object.keys(VALORES_CAT_LABELS).forEach(cat => {
+      const items = (s[cat] || []).filter(it => it.visibleToClient !== false);
+      const subtotal = items.reduce((sum, it) => sum + (parseFloat(it.value) || 0), 0);
+      if (subtotal > 0) rows.push([VALORES_CAT_LABELS[cat], formatCurrency(subtotal, currency)]);
+    });
+  }
+  return rows;
+}
+
 function buildPricingSection(doc, roteiro, primary, secondary) {
   const [pr, pg, pb] = hexToRgb(primary);
   const [sr, sg, sb] = hexToRgb(secondary);
   const pricing = roteiro.pricing;
   const currency = pricing.currency || 'USD';
 
-  // 4.49.22+ Constr\u00F3i rows ANTES de renderizar o t\u00EDtulo \u2014 se vazias,
-  // sai cedo. Antes o t\u00EDtulo "VALORES" era escrito antes do .length check
-  // e ficava t\u00EDtulo solto quando custom row tinha label sem value.
   const rows = [];
-  if (pricing.perPerson) {
-    rows.push(['Valor por pessoa', formatCurrency(pricing.perPerson, currency)]);
-  }
-  if (pricing.perCouple) {
-    rows.push(['Valor por casal', formatCurrency(pricing.perCouple, currency)]);
+  // v4.49.102+ Novo schema: services priorit\u00E1rio. Se vazio, fallback pro legado.
+  const serviceRows = _buildServicesRows(pricing);
+  if (serviceRows.length) {
+    rows.push(...serviceRows);
+  } else {
+    // Legado (perPerson, perCouple, customRows)
+    if (pricing.perPerson) rows.push(['Valor por pessoa', formatCurrency(pricing.perPerson, currency)]);
+    if (pricing.perCouple) rows.push(['Valor por casal', formatCurrency(pricing.perCouple, currency)]);
+    if (pricing.customRows?.length) {
+      for (const cr of pricing.customRows) {
+        if (cr.label && cr.value) rows.push([cr.label, cr.value]);
+      }
+    }
   }
   if (pricing.validUntil) {
     rows.push(['Validade da cota\u00E7\u00E3o', fmtDateFull(pricing.validUntil)]);
   }
-  if (pricing.customRows?.length) {
-    for (const cr of pricing.customRows) {
-      // 4.49.22+ Exige label E value \u2014 antes label sem value virava row \u00F3rf\u00E3
-      if (cr.label && cr.value) rows.push([cr.label, cr.value]);
-    }
-  }
-  if (!rows.length) return;   // \u2190 sem dado, sem se\u00E7\u00E3o (4.49.22+)
+  if (!rows.length) return;
 
   let y = (doc.lastAutoTable?.finalY || 0) + 15;
   if (!y || y > PAGE_H - 80) {
@@ -2192,8 +2242,8 @@ export async function generateRoteiroPPTX(roteiro, area = null) {
     hSlide.addTable(rows, { x: 0.5, y: tableY, w: W - 1, fontSize: 9, border: { pt: 0.5, color: 'CCCCCC' }, colW: [1.8, 2.5, 2, 1.5, 1] });
   }
 
-  // ─── Pricing slide ─────────────────────────────────────────
-  if (roteiro.pricing?.perPerson || roteiro.pricing?.perCouple) {
+  // ─── Pricing slide (v4.49.102+ schema services com displayMode) ──
+  if (_hasPricingContent(roteiro.pricing)) {
     const pSlide = pptx.addSlide();
     pSlide.background = { color: 'FFFFFF' };
     pSlide.addShape(pptx.ShapeType.rect, { x: 0, y: 0, w: W, h: 0.6, fill: { color: secondary } });
@@ -2201,13 +2251,25 @@ export async function generateRoteiroPPTX(roteiro, area = null) {
 
     let yP = 1;
     const cur = roteiro.pricing.currency || 'USD';
-    if (roteiro.pricing.perCouple) {
-      pSlide.addText(`DUPLO: ${formatCurrency(roteiro.pricing.perCouple, cur)}`, { x: 1, y: yP, w: 8, h: 0.5, fontSize: 20, bold: true, color: secondary });
-      yP += 0.6;
-    }
-    if (roteiro.pricing.perPerson) {
-      pSlide.addText(`POR PESSOA: ${formatCurrency(roteiro.pricing.perPerson, cur)}`, { x: 1, y: yP, w: 8, h: 0.5, fontSize: 20, bold: true, color: secondary });
-      yP += 0.6;
+    const serviceRows = _buildServicesRows(roteiro.pricing);
+    if (serviceRows.length) {
+      // Novo schema — uma linha por categoria (ou total único)
+      serviceRows.forEach(([label, value]) => {
+        pSlide.addText(`${label.toUpperCase()}: ${value}`, {
+          x: 1, y: yP, w: 8, h: 0.5, fontSize: 18, bold: true, color: secondary,
+        });
+        yP += 0.55;
+      });
+    } else {
+      // Legado
+      if (roteiro.pricing.perCouple) {
+        pSlide.addText(`DUPLO: ${formatCurrency(roteiro.pricing.perCouple, cur)}`, { x: 1, y: yP, w: 8, h: 0.5, fontSize: 20, bold: true, color: secondary });
+        yP += 0.6;
+      }
+      if (roteiro.pricing.perPerson) {
+        pSlide.addText(`POR PESSOA: ${formatCurrency(roteiro.pricing.perPerson, cur)}`, { x: 1, y: yP, w: 8, h: 0.5, fontSize: 20, bold: true, color: secondary });
+        yP += 0.6;
+      }
     }
     if (roteiro.pricing.disclaimer) {
       pSlide.addText(roteiro.pricing.disclaimer, { x: 1, y: yP + 0.3, w: 8, h: 2, fontSize: 8, color: '888888', italic: true, wrap: true });
@@ -2719,16 +2781,22 @@ export async function generateRoteiroDOCX(roteiro, area = null) {
     children.push(p([])); // spacer
   }
 
-  /* ── Valores ──────────────────────────────────────────── */
+  /* ── Valores (v4.49.102+ schema services com displayMode) ── */
   const pricing = roteiro.pricing || {};
-  if (pricing.perPerson || pricing.perCouple || (pricing.customRows || []).length) {
+  if (_hasPricingContent(pricing)) {
     children.push(hdr('Valores'));
-    const cur = pricing.currency || 'USD';
-    if (pricing.perCouple)  children.push(body(`Por casal: ${formatCurrency(pricing.perCouple, cur)}`));
-    if (pricing.perPerson)  children.push(body(`Por pessoa: ${formatCurrency(pricing.perPerson, cur)}`));
-    (pricing.customRows || []).forEach(r => {
-      if (r.label || r.value) children.push(body(`${r.label || ''}${r.label && r.value ? ': ' : ''}${r.value || ''}`));
-    });
+    const serviceRows = _buildServicesRows(pricing);
+    if (serviceRows.length) {
+      serviceRows.forEach(([label, value]) => children.push(body(`${label}: ${value}`)));
+    } else {
+      // Legado
+      const cur = pricing.currency || 'USD';
+      if (pricing.perCouple)  children.push(body(`Por casal: ${formatCurrency(pricing.perCouple, cur)}`));
+      if (pricing.perPerson)  children.push(body(`Por pessoa: ${formatCurrency(pricing.perPerson, cur)}`));
+      (pricing.customRows || []).forEach(r => {
+        if (r.label || r.value) children.push(body(`${r.label || ''}${r.label && r.value ? ': ' : ''}${r.value || ''}`));
+      });
+    }
     if (pricing.disclaimer) {
       children.push(p([tr(pricing.disclaimer, { italics: true, size: 18, color: mutedHex })], { spacing: { before: 200, after: 100 } }));
     }

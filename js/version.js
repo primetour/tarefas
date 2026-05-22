@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 101,
-  build: '20260522-roteiros-valores-categorias-supplier',
+  patch: 102,
+  build: '20260522-roteiros-valores-realtime-exports',
 };
 
 /** "1.2.0" */

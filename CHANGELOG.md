@@ -6,6 +6,49 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.102+20260522-roteiros-valores-realtime-exports] — 2026-05-22
+
+Release **PATCH** — duas evoluções da seção Valores (v4.49.101):
+
+**1. Atualização em tempo real** (Renê: "faça atualizar em tempo real"):
+- Nova função `recalcValoresTotals()` hookada em `handleEditorChange`.
+- Listener detecta mudança em `[data-svc]`, `[data-svc-field]` ou
+  `data-field="pricing.currency"` → recalcula subtotais por categoria
+  + footer (interno × visível) + hint dinâmica + visual do pill-radio.
+- **Sem rerender** — apenas atualiza nodes específicos do DOM, então
+  **não perde foco do input** que o consultor está editando.
+
+**2. Exports respeitando o novo schema** (4 renderers):
+
+Helpers compartilhados em `js/services/roteiroGenerator.js`:
+- `VALORES_CAT_LABELS` — mapa categoria → label PT-BR.
+- `_hasPricingContent(pricing)` — true se há perPerson/perCouple/customRows
+  legado OU services com pelo menos 1 item visível.
+- `_buildServicesRows(pricing)` — retorna `[[label, formatted_value], ...]`
+  respeitando `displayMode`:
+  - `total` → `[['Investimento total', 'R$ X']]`
+  - `grouped` → `[['Aéreo', 'R$ X'], ['Hotéis', 'R$ Y']...]` apenas
+    categorias com pelo menos 1 item `visibleToClient=true`.
+
+Aplicado em:
+- **PDF** (`buildPricingSection`) — rows do autoTable. Fallback pro legado
+  se services vazio.
+- **PPTX** (slide Pricing) — uma linha por categoria (ou total único)
+  em fontSize 18, cor secondary.
+- **DOCX** (Valores block) — parágrafos `body(label: value)`. Idem fallback.
+- **Web Link** (`roteiro-view.html`) — `_pricingRows` IIFE no init. Quando
+  1 linha (total único): mantém visual `.price-display` (big number).
+  Quando >1 linha (grouped): nova `<table class="pricing-table">` com
+  subtotais por categoria + linha "Total" dourada. CSS responsive
+  (`max-width:560px`, mobile padding reduzido). Fallback pro schema
+  legado (`pricing.value/valor`) preservado.
+
+**Garantia LGPD/comercial**: `supplier` e `notes` (campos operacionais
+internos) **nunca aparecem em nenhum dos 4 exports**. O cliente final
+vê apenas o totals/subtotals que o consultor marcou como visíveis.
+
+---
+
 ## [4.49.101+20260522-roteiros-valores-categorias-supplier] — 2026-05-22
 
 Release **PATCH** — refator completo da aba **Valores** no editor.

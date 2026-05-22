@@ -3614,6 +3614,13 @@ function handleEditorChange(e) {
     recalcTravelTotals();
   }
 
+  // v4.49.102+ Recalc Valores em tempo real (subtotais por categoria + footer)
+  // ao mudar valor / visibilidade / displayMode / moeda. Sem rerender — preserva
+  // foco do input. Listener escuta input + change events.
+  if (target.dataset.svc || target.dataset.svcField || target.dataset.field === 'pricing.currency') {
+    recalcValoresTotals();
+  }
+
   // v4.49.89+ Country changed → repopulate this row's city datalist with
   // cities for the new country. Avoids re-rendering (preserves focus).
   if (target.dataset.dest === 'country') {
@@ -3651,6 +3658,59 @@ function handleEditorChange(e) {
       agesRow.innerHTML = html;
     }
   }
+}
+
+/**
+ * v4.49.102+ Recalcula subtotais por categoria + footer (total interno x
+ * visível ao cliente) sem rerender — preserva foco no input que o user
+ * está editando.
+ */
+function recalcValoresTotals() {
+  const root = document.getElementById('re-content-area');
+  if (!root) return;
+  const currencyEl = root.querySelector('[data-field="pricing.currency"]');
+  const currency = currencyEl?.value || 'BRL';
+
+  let totalInterno = 0, totalCliente = 0;
+  ['aereo','hoteis','traslados','experiencias','servicosAdicionais'].forEach(cat => {
+    const rows = root.querySelectorAll(`[data-svc-item="${cat}"]`);
+    let subtotal = 0, visibleCount = 0;
+    rows.forEach(row => {
+      const value = parseFloat(row.querySelector('[data-svc="value"]')?.value) || 0;
+      const visible = !!row.querySelector('[data-svc="visibleToClient"]')?.checked;
+      subtotal += value;
+      if (visible) {
+        visibleCount++;
+        totalCliente += value;
+      }
+    });
+    totalInterno += subtotal;
+    // Atualiza header da categoria: "R$ X,XX  N/M visível(eis)"
+    const catEl = root.querySelector(`[data-svc-cat="${cat}"] .re-valores-cat-subtotal`);
+    if (catEl) {
+      catEl.innerHTML = `${esc(_fmtBRL(subtotal, currency))}${
+        rows.length ? `<span class="re-valores-cat-count">${visibleCount}/${rows.length} ${rows.length === 1 ? 'visível' : 'visíveis'}</span>` : ''
+      }`;
+    }
+  });
+  // Footer
+  const valEls = root.querySelectorAll('.re-valores-footer-value');
+  if (valEls[0]) valEls[0].textContent = _fmtBRL(totalInterno, currency);
+  if (valEls[1]) valEls[1].textContent = _fmtBRL(totalCliente, currency);
+  // Hint dinâmica (depende do displayMode)
+  const modeRadio = root.querySelector('[data-svc-field="displayMode"]:checked');
+  const mode = modeRadio?.value === 'grouped' ? 'grouped' : 'total';
+  const hintEl = root.querySelector('.re-valores-footer-hint');
+  if (hintEl) {
+    hintEl.innerHTML = mode === 'total'
+      ? '<em>Cliente vê apenas o total único acima.</em>'
+      : '<em>Cliente vê os subtotais por categoria.</em>';
+  }
+  // Pill-radio visual: classe active no <label> wrapper
+  root.querySelectorAll('.re-pill-radio').forEach(lbl => {
+    const radio = lbl.querySelector('input[type="radio"]');
+    lbl.classList.toggle('active', !!radio?.checked);
+  });
 }
 
 function recalcTravelTotals() {
