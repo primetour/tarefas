@@ -26,7 +26,7 @@ import { icon } from './btg-icons.js';
  */
 
 const VIAGENS_CHILDREN = [
-  { label: 'Feriados', href: '/viagens/feriados' },
+  { label: 'Feriados e Datas Especiais', href: '/viagens/feriados' },
   { label: 'Destinos', href: '/viagens/destinos' },
   { label: 'Hospedagem', href: '/viagens/hospedagem' },
   { label: 'Aéreo & Transfers', href: '/viagens/aereo-transfers' },
