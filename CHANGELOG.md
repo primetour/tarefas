@@ -6,6 +6,48 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.103+20260522-roteiros-autosave-5s-status-workflow] — 2026-05-22
+
+Release **PATCH** — duas evoluções críticas no editor de roteiros.
+
+**Crítica do Renê**: "os estágios rascunho, em revisão, enviado,
+aprovado, arquivado estão sem função, né? precisa organizar isso. E
+mais: roteiro tem de ser salvo automaticamente como rascunho a cada X
+sec, pra não corrermos o risco do consultor reclamar que algum
+problema fez ele perder o trabalho de preenchimento".
+
+**1. Auto-save 5s (era 30s) com retry**:
+- `markDirty()` agora debounce 5s (era 30s) e chama `handleSave({ silent: true })`.
+- `handleSave` aceita `{ silent }` — auto-save não dispara toast.
+- Em erro: re-agenda retry em 10s (até 5 tentativas), indicador
+  mostra "Erro ao salvar (tentativa N)".
+- `_startAutoSaveTick()` atualiza o indicador a cada 5s:
+  "Salvando…" → "Salvo agora" → "Salvo há 12 seg" → "Salvo há 3 min".
+- `saveInProgress` flag bloqueia race condition entre auto-save e
+  manual click "Salvar".
+
+**2. Status workflow funcional** (pipeline já existia, agora tem UI):
+- Dropdown no header substitui o `<span class="status-badge">` estático.
+- `STATUS_DEFS` map: cada status tem label PT-BR + cor + dot:
+  - 🔘 Rascunho (cinza)
+  - 🔵 Em revisão (azul)
+  - 🟡 Enviado (dourado)
+  - 🟢 Aprovado (verde)
+  - 🔘 Arquivado (cinza)
+- Pill-button com dot colorido + label + chevron. Click abre menu
+  com as 4 transições disponíveis (não mostra o status atual).
+- `handleStatusChange(newStatus)`:
+  - Confirma `approved` (alerta sobre task generation) e `archived`.
+  - Salva edições pendentes via `handleSave({ silent: true })` antes.
+  - `updateRoteiroStatus(id, status)` (audit log embutido em
+    `js/services/roteiros.js`).
+  - Re-render in-place do dropdown (sem rerender da seção).
+  - Trigger Sprint 4: `maybeOfferTaskGeneration` se virou approved.
+- Click-outside fecha o menu (listener global registrado no init,
+  cleanup em destroy).
+
+---
+
 ## [4.49.102+20260522-roteiros-valores-realtime-exports] — 2026-05-22
 
 Release **PATCH** — duas evoluções da seção Valores (v4.49.101):

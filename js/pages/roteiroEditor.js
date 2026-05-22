@@ -6,7 +6,7 @@
 import { store }  from '../store.js';
 import { toast } from '../components/toast.js';
 const showToast = (msg, type = 'info') => toast[type]?.(msg) ?? toast.info(msg);
-import { fetchRoteiro, saveRoteiro, snapshotTipForEmbed, isEmbeddedTipStale, createWebLink } from '../services/roteiros.js';
+import { fetchRoteiro, saveRoteiro, snapshotTipForEmbed, isEmbeddedTipStale, createWebLink, updateRoteiroStatus } from '../services/roteiros.js';
 import { generateRoteiroForExport, resolveDestinationImage } from '../services/roteiroGenerator.js';
 import { fetchDestinations, fetchAreas, fetchImages, fetchTips, saveDestination, CONTINENTS } from '../services/portal.js';
 import { detectBankContext, showBankGuardModal } from '../services/bankClientGuard.js';
@@ -368,6 +368,44 @@ const EDITOR_CSS = `
   margin-top: 8px; font-size: 0.75rem;
   color: var(--text-muted); line-height: 1.5;
 }
+/* v4.49.103+ Status dropdown no header do editor */
+.re-status-dropdown { position: relative; }
+.re-status-trigger {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 10px; border-radius: 999px;
+  background: var(--bg-surface, #f8fafc);
+  border: 1px solid var(--border, #e5e7eb);
+  cursor: pointer; font-family: inherit;
+  font-size: 0.75rem; font-weight: 600; line-height: 1;
+  transition: all 0.12s;
+}
+.re-status-trigger:hover {
+  border-color: var(--brand-gold, #D4A843);
+  background: rgba(212,168,67,0.06);
+}
+.re-status-dot {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+}
+.re-status-chevron {
+  font-size: 0.625rem; color: var(--text-muted); margin-left: 2px;
+}
+.re-status-menu {
+  position: absolute; top: calc(100% + 4px); left: 0; z-index: 100;
+  min-width: 160px; padding: 4px;
+  background: var(--bg-elevated, #fff);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+}
+.re-status-option {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; padding: 6px 10px; border-radius: 5px;
+  background: transparent; border: none; cursor: pointer;
+  font-size: 0.8125rem; color: var(--text-primary); font-family: inherit;
+  text-align: left; transition: background 0.1s;
+}
+.re-status-option:hover { background: rgba(212,168,67,0.08); }
+
 /* v4.49.101+ Valores por categoria */
 .re-valores-cat {
   margin-top: 24px;
@@ -2580,24 +2618,97 @@ function sanitizeForSave(data) {
   return out;
 }
 
-/* ─── Save logic ──────────────────────────────────────────── */
-async function handleSave() {
-  try {
-    // 4.43.0+ (Sprint 4) — captura status PRÉVIO pra detectar transição
-    // pra 'approved' depois do save (trigger de geração de tarefas).
-    const prevStatus = currentRoteiro?.status;
+/* ─── Status workflow (v4.49.103+) ────────────────────────────
+ * Pipeline: draft → review → sent → approved → archived
+ * Dropdown no header. Cada transição usa updateRoteiroStatus (audit log
+ * built-in). Approved dispara maybeOfferTaskGeneration. */
+const STATUS_DEFS = {
+  draft:    { label: 'Rascunho',   color: '#6B7280', dot: '#9CA3AF' },
+  review:   { label: 'Em revisão', color: '#3B82F6', dot: '#3B82F6' },
+  sent:     { label: 'Enviado',    color: '#D4A843', dot: '#D4A843' },
+  approved: { label: 'Aprovado',   color: '#10B981', dot: '#10B981' },
+  archived: { label: 'Arquivado',  color: '#6B7280', dot: '#9CA3AF' },
+};
 
+function _renderStatusDropdown(currentStatus) {
+  const cur = STATUS_DEFS[currentStatus] || STATUS_DEFS.draft;
+  const targets = ['draft','review','sent','approved','archived'].filter(s => s !== currentStatus);
+  return `
+    <div class="re-status-dropdown" id="re-status-dropdown">
+      <button class="re-status-trigger" type="button" data-action="toggle-status-menu" title="Mudar status do roteiro">
+        <span class="re-status-dot" style="background:${cur.dot};"></span>
+        <span style="color:${cur.color};font-weight:600;">${esc(cur.label)}</span>
+        <span class="re-status-chevron">▾</span>
+      </button>
+      <div class="re-status-menu" id="re-status-menu" style="display:none;">
+        ${targets.map(s => {
+          const def = STATUS_DEFS[s];
+          return `<button type="button" class="re-status-option" data-action="set-status" data-status="${s}">
+            <span class="re-status-dot" style="background:${def.dot};"></span>
+            <span>${esc(def.label)}</span>
+          </button>`;
+        }).join('')}
+      </div>
+    </div>
+  `;
+}
+
+/* v4.49.103+ Aplica mudança de status — salva primeiro (pra persistir
+ * edições pendentes), depois updateRoteiroStatus (audit log embutido),
+ * em seguida re-render do header pra refletir o novo status. Approved
+ * dispara maybeOfferTaskGeneration (Sprint 4). */
+async function handleStatusChange(newStatus) {
+  // Fecha o menu
+  const menu = document.getElementById('re-status-menu');
+  if (menu) menu.style.display = 'none';
+
+  // Confirmações pra estados terminais
+  if (newStatus === 'approved' && !confirm('Marcar como Aprovado? Isso pode disparar geração automática de tarefas operacionais.')) return;
+  if (newStatus === 'archived' && !confirm('Arquivar este roteiro? Ele continua acessível mas sai dos filtros padrão.')) return;
+
+  // Salva pending changes antes de mudar status
+  if (isDirty) await handleSave({ silent: true });
+
+  const prevStatus = currentRoteiro.status;
+  await updateRoteiroStatus(currentRoteiro.id, newStatus);
+  currentRoteiro.status = newStatus;
+  showToast(`Status alterado: ${STATUS_DEFS[prevStatus]?.label || prevStatus} → ${STATUS_DEFS[newStatus].label}`, 'success');
+
+  // Re-render do header (substitui o status dropdown)
+  const dropdownEl = document.getElementById('re-status-dropdown');
+  if (dropdownEl) {
+    const tmp = document.createElement('div');
+    tmp.innerHTML = _renderStatusDropdown(newStatus);
+    dropdownEl.replaceWith(tmp.firstElementChild);
+  }
+
+  // Trigger pra approved (Sprint 4)
+  if (newStatus === 'approved' && prevStatus !== 'approved' && currentRoteiro.workflowMode !== 'offline' && !currentRoteiro.tasksGeneratedAt) {
+    maybeOfferTaskGeneration(currentRoteiro.id);
+  }
+}
+
+/* ─── Save logic ──────────────────────────────────────────── */
+// v4.49.103+ Track last successful save pra mostrar "Salvo há X seg"
+let lastSaveTs = 0;
+let autoSaveRetries = 0;
+let saveInProgress = false;
+
+async function handleSave({ silent = false } = {}) {
+  if (saveInProgress) return;   // Evita race condition entre auto-save e manual
+  saveInProgress = true;
+  try {
+    const prevStatus = currentRoteiro?.status;
     currentRoteiro = collectFormData();
-    // 4.40.31+ Sanitização centralizada (B04-B07).
     const sanitized = sanitizeForSave(currentRoteiro);
 
-    const indicator = document.getElementById('re-autosave-status');
-    if (indicator) indicator.textContent = 'Salvando...';
+    _setAutoSaveStatus('Salvando…');
 
     const newId = await saveRoteiro(currentRoteiro.id || null, sanitized);
     isDirty = false;
+    autoSaveRetries = 0;
+    lastSaveTs = Date.now();
 
-    // Sincroniza o estado em memória com o que foi salvo (pra dirty tracking)
     currentRoteiro = sanitized;
 
     if (!currentRoteiro.id && newId) {
@@ -2606,12 +2717,10 @@ async function handleSave() {
       history.replaceState(null, '', hash);
     }
 
-    if (indicator) indicator.textContent = 'Salvo';
-    showToast('Roteiro salvo com sucesso!', 'success');
+    _setAutoSaveStatus('Salvo agora');
+    if (!silent) showToast('Roteiro salvo com sucesso!', 'success');
 
-    // 4.43.0+ (Sprint 4) — TRIGGER: se status virou 'approved' agora E
-    // workflowMode='system' E ainda não tem tasks geradas, oferece gerar.
-    // Roda DEPOIS do save (não bloqueia) e DEPOIS do toast de sucesso.
+    // 4.43.0+ TRIGGER pra 'approved'
     if (
       sanitized.status === 'approved' &&
       prevStatus !== 'approved' &&
@@ -2622,10 +2731,40 @@ async function handleSave() {
       maybeOfferTaskGeneration(currentRoteiro.id);
     }
   } catch (err) {
-    const indicator = document.getElementById('re-autosave-status');
-    if (indicator) indicator.textContent = 'Erro ao salvar';
-    showToast('Erro ao salvar: ' + err.message, 'error');
+    autoSaveRetries++;
+    _setAutoSaveStatus(`Erro ao salvar${autoSaveRetries > 1 ? ` (tentativa ${autoSaveRetries})` : ''}`);
+    if (!silent) showToast('Erro ao salvar: ' + err.message, 'error');
+    else console.warn('[auto-save] falhou:', err?.message || err);
+    // Re-agenda retry em 10s
+    if (autoSaveRetries < 5) {
+      clearTimeout(autoSaveTimer);
+      autoSaveTimer = setTimeout(() => { if (isDirty) handleSave({ silent: true }); }, 10000);
+    }
+    throw err;
+  } finally {
+    saveInProgress = false;
   }
+}
+
+/** v4.49.103+ Atualiza o indicador "Salvo há X seg" dinamicamente.
+ *  Roda a cada 5s pra manter texto atualizado. */
+function _setAutoSaveStatus(text) {
+  const el = document.getElementById('re-autosave-status');
+  if (el) el.textContent = text;
+}
+// Tick que atualiza "Salvo há X seg" sem requerer save
+let _autoSaveTickInterval = null;
+function _startAutoSaveTick() {
+  if (_autoSaveTickInterval) clearInterval(_autoSaveTickInterval);
+  _autoSaveTickInterval = setInterval(() => {
+    if (isDirty || !lastSaveTs) return;
+    const secs = Math.round((Date.now() - lastSaveTs) / 1000);
+    const txt = secs < 5 ? 'Salvo agora'
+              : secs < 60 ? `Salvo há ${secs} seg`
+              : secs < 3600 ? `Salvo há ${Math.round(secs / 60)} min`
+              : 'Salvo há mais de 1h';
+    _setAutoSaveStatus(txt);
+  }, 5000);
 }
 
 /**
@@ -2671,13 +2810,13 @@ async function maybeOfferTaskGeneration(roteiroId) {
 
 /* ─── Mark dirty & auto-save ──────────────────────────────── */
 function markDirty() {
+  // v4.49.103+ Auto-save em 5s (era 30s) + retry silent em erro
   isDirty = true;
-  const indicator = document.getElementById('re-autosave-status');
-  if (indicator) indicator.textContent = 'Altera\u00e7\u00f5es n\u00e3o salvas';
+  _setAutoSaveStatus('Alterações não salvas');
   clearTimeout(autoSaveTimer);
   autoSaveTimer = setTimeout(() => {
-    if (isDirty) handleSave();
-  }, 30000);
+    if (isDirty && !saveInProgress) handleSave({ silent: true }).catch(() => {/* loga em handleSave */});
+  }, 5000);
 }
 
 /* ─── Switch active section ───────────────────────────────── */
@@ -2903,6 +3042,26 @@ async function handleEditorClick(e) {
     case 'save':
       handleSave();
       break;
+
+    /* ── Status dropdown (v4.49.103+) ──────────────────────── */
+    case 'toggle-status-menu': {
+      const menu = document.getElementById('re-status-menu');
+      if (menu) menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+      break;
+    }
+
+    case 'set-status': {
+      const newStatus = target.dataset.status;
+      if (!newStatus || !STATUS_DEFS[newStatus]) break;
+      if (!currentRoteiro.id) {
+        showToast('Salve o roteiro pelo menos uma vez antes de mudar status.', 'warning');
+        break;
+      }
+      handleStatusChange(newStatus).catch(err => {
+        showToast('Erro ao mudar status: ' + (err?.message || err), 'error');
+      });
+      break;
+    }
 
     case 'back':
       if (isDirty) {
@@ -3894,11 +4053,8 @@ export async function renderRoteiroEditor(container) {
         <div class="page-header" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px;">
           <button class="btn btn-ghost btn-sm" data-action="back">\u2190 Voltar</button>
           <h1 class="page-title" style="margin:0;font-size:1.25rem;font-weight:700;">${esc(pageTitle)}</h1>
-          <span class="status-badge">${esc(statusLabel)}</span>
+          ${_renderStatusDropdown(statusLabel)}
           <span id="re-autosave-status" style="font-size:0.75rem;color:var(--text-muted);">${roteiroId ? '' : (isAiGenerated ? 'Gerado por IA — n\u00e3o salvo' : 'Novo roteiro')}</span>
-          <!-- v4.49.100+ "Exportar PDF" removido do header (Renê: "conceito
-               sujo — tem botão no topo E aba completa Preview & Export").
-               Manter só na aba dedicada (todos os formatos lá). -->
           <button class="btn btn-primary btn-sm" data-action="save">Salvar</button>
         </div>
 
@@ -3950,6 +4106,19 @@ export async function renderRoteiroEditor(container) {
       activeSection = 0;
     }
     isDirty = false;
+    // v4.49.103+ start auto-save status tick (updates "Salvo há X seg")
+    lastSaveTs = Date.now();
+    _startAutoSaveTick();
+
+    // v4.49.103+ Click-outside fecha o menu de status
+    const closeStatusOnOutside = (e) => {
+      const dd = document.getElementById('re-status-dropdown');
+      const menu = document.getElementById('re-status-menu');
+      if (!dd || !menu || menu.style.display === 'none') return;
+      if (!dd.contains(e.target)) menu.style.display = 'none';
+    };
+    document.addEventListener('click', closeStatusOnOutside);
+    container._closeStatusOnOutside = closeStatusOnOutside;
 
   } catch (err) {
     container.innerHTML = `
@@ -4492,6 +4661,8 @@ async function _enrichImagesAfterAi() {
 export function destroyRoteiroEditor() {
   clearTimeout(autoSaveTimer);
   autoSaveTimer = null;
+  // v4.49.103+ stop auto-save tick
+  if (_autoSaveTickInterval) { clearInterval(_autoSaveTickInterval); _autoSaveTickInterval = null; }
 
   // Clean up event listeners
   const container = document.getElementById('re-editor-root')?.parentElement;
@@ -4508,6 +4679,9 @@ export function destroyRoteiroEditor() {
     }
     if (container._styleEl) {
       container._styleEl.remove();
+    }
+    if (container._closeStatusOnOutside) {
+      document.removeEventListener('click', container._closeStatusOnOutside);
     }
   }
 
