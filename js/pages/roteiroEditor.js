@@ -3605,15 +3605,14 @@ export async function renderRoteiroEditor(container) {
         ` : ''}
 
         <!-- Header -->
-        <div class="re-header">
-          <button class="re-add-btn" data-action="back" style="margin-top:0;padding:6px 14px;font-size:0.8125rem;">\u2190 Voltar</button>
-          <span class="re-header-title">${esc(pageTitle)}</span>
+        <div class="page-header" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px;">
+          <button class="btn btn-ghost btn-sm" data-action="back">\u2190 Voltar</button>
+          <h1 class="page-title" style="margin:0;font-size:1.25rem;font-weight:700;">${esc(pageTitle)}</h1>
           <span class="status-badge">${esc(statusLabel)}</span>
-          <span class="re-autosave" id="re-autosave-status">${roteiroId ? 'Carregado' : (isAiGenerated ? 'Gerado por IA — n\u00e3o salvo' : 'Novo roteiro')}</span>
+          <span id="re-autosave-status" style="font-size:0.75rem;color:var(--text-muted);">${roteiroId ? '' : (isAiGenerated ? 'Gerado por IA — n\u00e3o salvo' : 'Novo roteiro')}</span>
           <!-- v4.49.75+ Botão IA movido pra aba Briefing (Seção 0). Atalho aqui só pra navegar pra lá. -->
-          <button class="re-add-btn" data-action="go-briefing" style="margin-top:0;padding:8px 16px;background:linear-gradient(135deg,#7c3aed 0%,#a855f7 100%);color:#fff;border:none;font-weight:600;" title="Abre a aba Briefing onde está o botão de geração com IA">✨ IA</button>
-          <button class="re-add-btn" data-action="save" style="margin-top:0;font-weight:700;padding:8px 20px;">Salvar</button>
-          <button class="re-add-btn" data-action="export-pdf" style="margin-top:0;padding:8px 16px;">Exportar PDF</button>
+          <button class="btn btn-secondary btn-sm" data-action="export-pdf">Exportar PDF</button>
+          <button class="btn btn-primary btn-sm" data-action="save">Salvar</button>
         </div>
 
         <!-- Two-column layout -->

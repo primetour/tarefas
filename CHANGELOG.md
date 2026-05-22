@@ -6,6 +6,64 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.49.82+20260522-roteiros-ux-listagem-editor-padrao-sistema] — 2026-05-22
+
+Release **PATCH** — UX/visual do gerador de roteiros alinhado ao
+padrão do sistema (Commit 1 do plano UX).
+
+**Contexto** (Renê auditando): "se não fica parecendo que tem vários
+sistemas em um só".
+
+### Listagem (`js/pages/roteiros.js`)
+
+- **Removido** botão "Criar com IA" do header — era redundante com
+  "+Novo Roteiro" (ambos abriam editor). Geração via IA agora vive
+  exclusivamente dentro da Seção 0 Briefing.
+- Handler `ai-create` mantido como backward-compat (redireciona pro
+  fluxo novo).
+- Botão **"Exportar"** renomeado pra **"Exportar lista"** — deixa
+  explícito que é a lista filtrada (export individual de roteiro
+  fica no editor).
+- **Filtros avançados colapsáveis**: Status pills + search + period
+  continuam sempre visíveis (essenciais). Selects de Área/Destino/
+  TipoCliente/Consultor vão pra `<details>` com summary "Filtros
+  avançados" (open quando há filtro ativo, fechado caso contrário).
+  Reduz poluição inicial.
+
+### Editor header (`js/pages/roteiroEditor.js`)
+
+- Substituído `<div class="re-header">` por **`<div class="page-header">`**
+  (igual ao resto do sistema).
+- Botões agora usam classes padrão: **`.btn .btn-ghost btn-sm`** pra
+  Voltar, **`.btn .btn-secondary btn-sm`** pra Exportar PDF,
+  **`.btn .btn-primary btn-sm`** pra Salvar. Antes eram todos
+  `.re-add-btn` com border tracejada.
+- **Removido botão "✨ IA"** do header (era duplicado — geração via
+  IA já vive dentro do Briefing). Cor gradient roxo
+  `linear-gradient(#7c3aed → #a855f7)` apagada.
+- `re-header-title` (custom) virou **`<h1 class="page-title">`**.
+- `re-autosave-status` agora discreto (font-size 0.75rem, var(--text-muted));
+  fica VAZIO quando carregado (antes mostrava "Carregado" sempre).
+
+### Regra documentada no CLAUDE.md
+
+Após audit detalhado dos erros (commit `a936bbe`), nova seção §4 do
+projeto + §2 user-level: **"SEMPRE respeitar o padrão visual do
+sistema existente"**. Procedimento obrigatório antes de criar UI:
+auditar 2-3 páginas-modelo, identificar classes/vars, reusar uiKit.
+Anti-padrões listados (gradient, dashed, RGBA hardcoded, classes
+custom, emoji-only labels, placeholders parecendo manual,
+mensagens técnicas pra usuário).
+
+**Próximo (Commit 2)**: limpar a Seção Briefing — remover intro
+redundante, encurtar placeholders, remover checklist "🔒 falta",
+mover info técnica pra Observações IA.
+
+**Validação**: `node --check` ok nos 2 arquivos. E2E pendente
+(usuário valida visualmente com hard refresh).
+
+---
+
 ## [4.49.81+20260522-httpsCallable-client-timeout-300s] — 2026-05-22
 
 Release **PATCH** — `httpsCallable` client-side ainda usava timeout

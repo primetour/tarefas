@@ -99,11 +99,13 @@ export async function renderRoteiros(container) {
       title: 'Gerador de Roteiros',
       subtitle: 'Crie e gerencie roteiros personalizados para seus clientes',
       primary: canCreate ? { label: '+ Novo Roteiro', action: 'new-roteiro' } : null,
-      secondary: canCreate ? [
-        { label: 'Criar com IA', icon: '◈', action: 'ai-create',
-          title: 'Criar roteiro completo via IA a partir de uma descrição em texto livre' },
-      ] : [],
-      export: { formats: ['xls', 'pdf'], action: 'export-list' },
+      // v4.49.82+ Removido botão "Criar com IA" duplicado — a geração via IA
+      // agora vive dentro do briefing do roteiro (Seção 0). O fluxo certo é
+      // "+ Novo Roteiro" → preenche briefing → gera IA dentro do editor.
+      secondary: [],
+      // v4.49.82+ Renomeado pra "Exportar lista" — deixa explícito que é a
+      // lista filtrada, não o roteiro individual (que é exportado dentro do editor).
+      export: { formats: ['xls', 'pdf'], action: 'export-list', label: 'Exportar lista' },
     })}
 
     <div id="rt-filters-mount"></div>
@@ -316,24 +318,47 @@ export async function renderRoteiros(container) {
       { value: 'archived', label: 'Arquivado' },
     ];
 
-    const selects = [
+    const advancedSelects = [
       { id: 'rt-area',        label: '— Todas áreas —',     options: areaOptions,        value: selectedAreaId },
       { id: 'rt-destino',     label: '— Todos destinos —',  options: destOptions,        value: selectedDestino },
       { id: 'rt-clienttype',  label: '— Todo tipo —',        options: clientTypeOptions,  value: selectedClientType },
     ];
     if (consultantOptions.length) {
-      selects.push({ id: 'rt-consultant', label: '— Todos consultores —', options: consultantOptions, value: selectedConsultant });
+      advancedSelects.push({ id: 'rt-consultant', label: '— Todos consultores —', options: consultantOptions, value: selectedConsultant });
     }
 
-    mount.innerHTML = renderFilterBar({
-      statusPills,
-      activeStatus,
-      search: { id: 'rt-search', placeholder: 'Buscar cliente, título ou destino...', value: searchTerm },
-      selects,
-      periodPills: { active: periodKey },
-      metaText: '',  // populated pelo renderTable
-      paginationHTML: '',
-    });
+    // v4.49.82+ Filtros essenciais (search + status + período) sempre visíveis.
+    // Filtros avançados (área/destino/tipo/consultor) vão pra <details> colapsável.
+    // Reduz a poluição inicial — só aparece quando user explicitamente quer.
+    const advancedActive = !!(selectedAreaId || selectedDestino || selectedClientType || selectedConsultant);
+
+    mount.innerHTML = `
+      ${renderFilterBar({
+        statusPills,
+        activeStatus,
+        search: { id: 'rt-search', placeholder: 'Buscar cliente, título ou destino...', value: searchTerm },
+        selects: [],
+        periodPills: { active: periodKey },
+        metaText: '',
+        paginationHTML: '',
+      })}
+      <details ${advancedActive ? 'open' : ''} class="rt-advanced-filters" style="margin-top:6px;margin-bottom:12px;">
+        <summary style="cursor:pointer;font-size:0.8125rem;color:var(--text-muted);user-select:none;padding:4px 0;">
+          Filtros avançados${advancedActive ? ` <span style="color:var(--brand-blue,#3B82F6);font-weight:600;">(ativos)</span>` : ''}
+        </summary>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;align-items:center;">
+          ${advancedSelects.map(s => `
+            <select id="${esc(s.id)}" class="filter-select"
+              style="height:34px;font-size:0.8125rem;min-width:160px;max-width:220px;">
+              <option value="">${esc(s.label || '— Filtrar —')}</option>
+              ${(s.options || []).map(o => `
+                <option value="${esc(o.value)}" ${o.value === s.value ? 'selected' : ''}>${esc(o.label)}</option>
+              `).join('')}
+            </select>
+          `).join('')}
+        </div>
+      </details>
+    `;
   }
 
   /* Filtros + ordenação aplicados */
@@ -542,8 +567,11 @@ export async function renderRoteiros(container) {
       return;
     }
 
+    // v4.49.82+ "Criar com IA" removido da listagem (duplicava "+Novo Roteiro").
+    // O caminho oficial agora é: + Novo Roteiro → Briefing → Gerar com IA dentro do editor.
     if (action === 'ai-create') {
-      openAiCreateModal(container);
+      // Backward-compat: se algum link antigo chamar, redireciona pro fluxo novo
+      location.hash = '#roteiro-editor';
       return;
     }
 

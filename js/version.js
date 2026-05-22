@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 49,
-  patch: 81,
-  build: '20260522-httpsCallable-client-timeout-300s',
+  patch: 82,
+  build: '20260522-roteiros-ux-listagem-editor-padrao-sistema',
 };
 
 /** "1.2.0" */
