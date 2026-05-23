@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 50,
-  patch: 4,
-  build: '20260522-sidebar-cleanup',
+  patch: 5,
+  build: '20260523-fix-autotable-guard',
 };
 
 /** "1.2.0" */

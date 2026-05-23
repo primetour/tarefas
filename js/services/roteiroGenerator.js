@@ -31,9 +31,18 @@ function loadScript(src) {
 }
 
 async function loadJsPDF() {
-  if (window.jspdf) return window.jspdf;
-  await loadScript('https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js');
-  await loadScript('https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.3/dist/jspdf.plugin.autotable.min.js');
+  // v4.50.5+ guard granular: jspdf E autoTable, separadamente.
+  // Antes: `if (window.jspdf) return` voltava cedo demais quando pdfKit.js
+  // (usado pelo roteiroDashboard) já tinha carregado SÓ jspdf (sem autoTable),
+  // fazendo `doc.autoTable is not a function` em qualquer fluxo subsequente
+  // (incluindo Banco de Roteiros). Agora valida que o plugin está ativo.
+  if (!window.jspdf) {
+    await loadScript('https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js');
+  }
+  const hasAutoTable = !!window.jspdf?.jsPDF?.API?.autoTable;
+  if (!hasAutoTable) {
+    await loadScript('https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.3/dist/jspdf.plugin.autotable.min.js');
+  }
   return window.jspdf;
 }
 
