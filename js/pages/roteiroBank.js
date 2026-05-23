@@ -14,6 +14,7 @@ import { store } from '../store.js';
 import { toast } from '../components/toast.js';
 import { renderPageHeader, renderFilterBar } from '../components/uiKit.js';
 import { fetchRoteiroBankList, archiveRoteiroBank, duplicateRoteiroBank, isExpired, ensureBankHero } from '../services/roteiroBank.js';
+import { generateRoteiroBankPDF } from '../services/roteiroBankGenerator.js';
 import { CONTINENTS } from '../services/portal.js';
 import { actionIcon } from '../components/uiKit.js';
 
@@ -97,8 +98,12 @@ function cardHTML(d) {
         </div>
         <div style="color:var(--text-muted);font-size:0.78rem;">${esc(citiesText)}</div>
         ${validity}
-        ${canEdit() ? `
         <div class="rb-actions" style="display:flex;gap:4px;justify-content:flex-end;margin-top:6px;border-top:1px solid var(--border-subtle);padding-top:8px;">
+          <button class="btn-icon-action" data-action="export-pdf" data-id="${esc(d.id)}" title="Exportar PDF"
+            style="padding:6px;background:transparent;border:1px solid var(--border-subtle);border-radius:6px;cursor:pointer;color:var(--text-secondary);">
+            ${actionIcon('download')}
+          </button>
+          ${canEdit() ? `
           <button class="btn-icon-action" data-action="duplicate" data-id="${esc(d.id)}" title="Duplicar"
             style="padding:6px;background:transparent;border:1px solid var(--border-subtle);border-radius:6px;cursor:pointer;color:var(--text-secondary);">
             ${actionIcon('duplicate')}
@@ -108,8 +113,8 @@ function cardHTML(d) {
             style="padding:6px;background:transparent;border:1px solid var(--border-subtle);border-radius:6px;cursor:pointer;color:var(--text-secondary);">
             ${actionIcon('archive')}
           </button>` : ''}
+          ` : ''}
         </div>
-        ` : ''}
       </div>
     </div>
   `;
@@ -153,7 +158,7 @@ function gridHTML() {
   if (!items.length) {
     return `<div style="text-align:center;padding:60px 0;color:var(--text-muted);">
       Nenhum roteiro encontrado.
-      ${canEdit() ? `<br><br><button class="btn btn-primary" data-action="new" style="margin-top:8px;">+ Novo roteiro</button> ou <button class="btn btn-secondary" data-action="import" style="margin-top:8px;">↑ Importar PDF</button>` : ''}
+      ${canEdit() ? `<br><br><button class="btn btn-primary" data-action="new" style="margin-top:8px;">+ Novo roteiro</button>` : ''}
     </div>`;
   }
   return `
@@ -172,9 +177,6 @@ export async function renderRoteiroBank(container) {
         subtitle: 'Curadoria PRIMETOUR de roteiros prontos — usados como referência manual e base da IA.',
         ...(canEdit() ? {
           primary: { action: 'new', label: '+ Novo roteiro' },
-          secondary: [
-            { action: 'import', label: 'Importar PDF', icon: '↑' },
-          ],
         } : {}),
       })}
       ${renderFilterBar({
@@ -244,8 +246,17 @@ export async function renderRoteiroBank(container) {
         location.hash = '#banco-roteiro-editor';
         return;
       }
-      if (action === 'import') {
-        location.hash = '#banco-roteiro-editor?import=1';
+      if (action === 'export-pdf') {
+        const d = state.list.find(x => x.id === id);
+        if (!d) { toast.error('Roteiro não encontrado.'); return; }
+        try {
+          toast.info('Gerando PDF…');
+          const res = await generateRoteiroBankPDF(d);
+          toast.success(`PDF gerado: ${res.filename || 'download iniciado'}`);
+        } catch (err) {
+          console.error('[Banco] export PDF falhou:', err);
+          toast.error('Falha ao gerar PDF: ' + (err.message || err));
+        }
         return;
       }
       if (action === 'duplicate') {

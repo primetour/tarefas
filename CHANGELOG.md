@@ -6,6 +6,50 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.50.3+20260522-banco-export-pdf] — 2026-05-22
+
+Release **PATCH** — 3 ajustes Renê no Banco de Roteiros.
+
+**Renê**: "botao importar pdf nao tem funcao e esta levando para criar novo
+roteiro... exclua + exportar por pdf deve ser uma function do banco de
+roteiros e ficar ao lado dos icones duplicar e excluir + sobre o layout,
+inspire-se no gerador de roteiros para criar o pdf nos mesmos padroes".
+
+**Mudanças**:
+
+1. **Removido botão "Importar PDF"** do header + empty state
+   - Não tinha função real (levava pra criar novo roteiro vazio)
+   - Import via PDF continua disponível via Cloud Function
+     `importRoteiroBankPdf` pra automação futura — UI dedicada virá em release
+     própria quando demanda surgir
+
+2. **Ícone "Exportar PDF" nos cards** (ao lado de Duplicar e Arquivar)
+   - SVG download (mesma família visual dos outros action icons)
+   - Visível pra **todos os usuários** (não requer canEdit) — qualquer
+     consultor pode exportar PDF do banco pra usar como referência
+
+3. **PDF replica padrão visual do Gerador de Roteiros**
+   - Novo arquivo `js/services/roteiroBankGenerator.js` com
+     `bankDocToRoteiroShape(bankDoc)` que adapta o schema do banco pro
+     shape esperado por `generateRoteiroPDF()` (reuso 100% do pipeline visual)
+   - Mesma capa, mesmo dia-a-dia, mesma identidade de cores, mesma
+     tipografia Poppins, mesmo cabeçalho/rodapé
+   - Adaptações semânticas:
+     - `categories[].hotels[]` → flatten em `hotels[]` (com label da categoria nas notes)
+     - `categories[].pricing[]` → `customRows[]` no formato "Categoria · período · Single/Duplo"
+     - `includes.{buckets}` → flatten com tags "[Hospedagem]", "[Traslados]", etc.
+     - `documentation.visas[]` → texto consolidado em `importantInfo.visa`
+     - `cancellation[]` → mesmo shape do roteiroPDF (period + penalty)
+     - `payment` → mapeado pra `deposit/installments/deadline/notes`
+     - `travelNotes[]` → `importantInfo.customFields[]`
+   - Filename: `Banco-{titulo-slug}.pdf`
+
+**Arquivos**:
+- novo: `js/services/roteiroBankGenerator.js`
+- mod: `js/pages/roteiroBank.js` (handler export-pdf, remove import button)
+
+---
+
 ## [4.50.1+20260522-banco-crud-thumbs-pais-dashboard] — 2026-05-22
 
 Release **PATCH** — complemento ao Banco de Roteiros com 5 demandas do Renê.

@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 50,
-  patch: 2,
-  build: '20260522-fix-filter-pais-render',
+  patch: 3,
+  build: '20260522-banco-export-pdf',
 };
 
 /** "1.2.0" */
