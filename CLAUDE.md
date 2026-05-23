@@ -521,3 +521,178 @@ Implementado em v103 só pra roteiros. Outras entidades têm pipeline implícito
 - ✅ Documentar em comentário ao lado do campo legado: `// LEGADO v4.49.100- — manter pra retrocompat até DD/MM/YYYY (mass cleanup script depois)`.
 - ✅ Migration script periódica (mensal): converter docs antigos quando consultor abrir o doc na UI nova.
 - ⚠️ Se dado legado nunca foi populado em produção (verificável via Firestore admin), pode remover schema na hora — não esperar deprecation cycle.
+
+---
+
+## 12. Armadilhas técnicas recorrentes (sprint 22-23/05/2026)
+
+Bugs reais que pegaram horas e merecem entrar de cabeça nas próximas releases.
+
+### a) `new Date('YYYY-MM-DD')` é UTC midnight — datas voltam 1 dia em pt-BR (v4.50.9)
+
+**Sintoma Renê**: "coloquei validade inicio 01/01/2020 e o sistema deixou no card 31/12/2019".
+
+**Causa**: JavaScript parseia string ISO sem hora como UTC midnight. Browser em UTC-3 chama `toLocaleDateString('pt-BR')` e renderiza 21h do dia anterior.
+
+```js
+new Date('2020-01-01').toLocaleDateString('pt-BR');     // ❌ "31/12/2019" em UTC-3
+new Date('2020-01-01T12:00:00').toLocaleDateString('pt-BR'); // ✅ "01/01/2020" (T sem Z = local)
+```
+
+**Fix definitivo pra qualquer date helper que recebe string ISO**:
+
+```js
+function fmtDateBr(val) {
+  if (!val) return '';
+  if (typeof val === 'string') {
+    const m = val.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return `${m[3]}/${m[2]}/${m[1]}`;   // parse manual em string, ignora timezone
+  }
+  const dt = val?.toDate ? val.toDate() : new Date(val);   // Firestore Timestamp ou outros
+  return dt.toLocaleDateString('pt-BR', {...});
+}
+```
+
+**Auditar em todo helper futuro**: se aceita string YYYY-MM-DD, NÃO passa por `new Date()`.
+
+### b) `script.onload` ≠ "prototype está pronto" — race condition em libs UMD
+
+**Sintoma**: `doc.autoTable is not a function` mesmo após `await loadScript('jspdf-autotable')` retornar. (v4.50.5 → v4.50.6).
+
+**Causa**: `onload` dispara quando o navegador termina de baixar+parsear o script, mas o último statement do bundle (`jsPDF.API.autoTable = function(){...}`) pode levar alguns ms a mais em determinados ambientes (especialmente browsers com isolamento heavy como o MCP Chrome).
+
+**Fix defensivo**: polling pós-loadScript verificando a propriedade que importa:
+
+```js
+await loadScript(autoTableUrl);
+for (let i = 0; i < 40 && !window.jspdf?.jsPDF?.API?.autoTable; i++) {
+  await new Promise(r => setTimeout(r, 50));   // até 2s
+}
+if (!window.jspdf?.jsPDF?.API?.autoTable) throw new Error('plugin não carregou');
+```
+
+**Princípio**: sempre que carregar lib UMD que estende protótipo de outra (autoTable estende jsPDF, chartjs-plugin estende Chart, etc.), checar a propriedade-alvo em vez de confiar só em onload.
+
+### c) Guard de cache que volta cedo demais — `if (window.x) return` esquece extensões
+
+**Sintoma**: PDF do Banco falhava com `autoTable is not a function` SE o user tivesse passado pelo Dashboard antes (que carrega jspdf sem autoTable via pdfKit.js).
+
+**Bug**:
+```js
+async function loadJsPDF() {
+  if (window.jspdf) return window.jspdf;   // ❌ jspdf existe, mas SEM autoTable
+  await loadScript(jspdf);
+  await loadScript(autoTable);
+}
+```
+
+**Fix**:
+```js
+async function loadJsPDF() {
+  if (!window.jspdf) await loadScript(jspdf);
+  if (!window.jspdf?.jsPDF?.API?.autoTable) await loadScript(autoTable);
+}
+```
+
+**Generalização**: guard sempre checa o ESTADO FINAL desejado, não só a presença de uma flag. Especialmente quando o load envolve N etapas separadas que outros componentes podem ter parcialmente feito.
+
+### d) Campos com nomes parecidos têm semânticas DIFERENTES — não confundir
+
+**Sintoma Renê (v4.50.7→8)**: "coloca data de criação e data de validade no card" → eu coloquei `doc.createdAt` (quando entrou no Firestore) + `doc.validity.endDate`. Errado. O que ele queria era `doc.validity.startDate` + `doc.validity.endDate` (ambos definidos pelo curador, semântica COMERCIAL, não técnica).
+
+**Princípio**: campos que parecem similares mas pertencem a domínios diferentes (sistema vs comercial vs operacional) precisam ser tratados como entidades distintas:
+
+| Domínio | Campo | Significado |
+|---|---|---|
+| Sistema | `createdAt` | Quando o doc foi criado no Firestore |
+| Sistema | `updatedAt` | Última edição técnica |
+| Comercial | `validity.startDate` | Quando o pacote começa a ser válido pra venda |
+| Comercial | `validity.endDate` | Quando o pacote vence |
+| Operacional | `travel.startDate` | Data real da viagem do cliente |
+
+**Antes de usar um campo "data"**: confirma o que ele significa lendo o schema OU perguntando. Confundir essas dimensões é confiscar trabalho do user.
+
+### e) Empty state ≠ "página vazia OK" — botões de empty state precisam funcionar
+
+**Sintoma**: empty state do Banco tinha "+ Novo roteiro" e "↑ Importar PDF". O importar levava o user pro mesmo lugar que criar (não tinha função). Renê pediu pra remover.
+
+**Princípio**: empty state é a primeira impressão da feature. Cada botão tem que:
+1. Ter ação clara e funcional
+2. Não duplicar outro botão
+3. Não levar pra fluxo inacabado
+
+Quando um caminho ainda não tá implementado, ESCONDE o botão até estar pronto. Nunca deixa botão "stub".
+
+### f) Reuso via adapter, não duplicação — `bankDocToRoteiroShape` (v4.50.3)
+
+**Contexto**: gerar PDF do Banco com mesmo layout do Gerador (1500+ linhas em `generateRoteiroPDF`).
+
+**Opção A (preguiçosa)**: copiar tudo, adaptar onde precisa.
+**Opção B (correta)**: escrever `bankDocToRoteiroShape(bankDoc)` que retorna objeto no shape esperado por `generateRoteiroPDF`, e chamar a função existente.
+
+```js
+// js/services/roteiroBankGenerator.js
+export function bankDocToRoteiroShape(bankDoc) { return { ...adaptado... }; }
+export async function generateRoteiroBankPDF(bankDoc) {
+  return generateRoteiroPDF(bankDocToRoteiroShape(bankDoc), null);
+}
+```
+
+Resultado: 100% reuso visual, zero divergência futura. Adaptações semânticas explícitas no adapter (`categories[].hotels[]` → flatten em `hotels[]`, `includes.{buckets}` → flatten com tags, etc.).
+
+**Princípio**: sempre que uma feature nova precisa do "mesmo visual" de uma existente, escreve adapter primeiro. Só duplica se realmente o pipeline divergir em >50%.
+
+### g) Chrome MCP cache stubborn — não confiar 100% no que MCP mostra
+
+**Observação recorrente**: depois de bump de versão + push, MCP Chrome insiste em servir o JS antigo mesmo com `?nuke=`, `caches.delete`, `serviceWorker.unregister`. User REAL pega versão nova ao recarregar normalmente.
+
+**Procedimento E2E**:
+1. Validar HTML em produção via `curl` (confirma versão no script tag)
+2. Validar JS em produção via `curl` (confirma o fix está no arquivo servido)
+3. Tentar MCP — se falhar com versão antiga, NÃO concluir que o fix está errado
+4. Reportar honesto: "código publicado tem fix (confirmado via curl), MCP serveu cache antigo, o user real terá versão correta"
+
+**Anti-padrão**: ficar bumping versões em loop tentando burlar cache MCP.
+
+### h) Novos agentes IA precisam gravar em `ai_usage_logs`
+
+Estabelecido em v4.50.1. Qualquer Cloud Function que faz chamada LLM (Anthropic/OpenAI/Gemini) precisa, após sucesso, gravar:
+
+```js
+await db.collection('ai_usage_logs').add({
+  userId, agentId, agentName, module,                  // identificação
+  provider, model,                                     // pra custo
+  inputTokens, outputTokens,                           // base
+  cacheCreationTokens, cacheReadTokens, tokensSaved,   // cache visibility
+  cacheHit: cacheReadTokens > 0,
+  webSearchCount,                                      // se aplicável
+  timestamp: FieldValue.serverTimestamp(),
+  expiresAt,                                           // TTL 90d
+  source: 'cf-NomeDaFunction',                         // pra rastrear origem
+  ...refs (queueId, bankDocId, etc.),
+});
+```
+
+IA Hub (`aiHub.js`) tem abas Custos/Logs que filtram por `module` — basta gravar com o módulo certo e aparece auto, sem mudança de UI.
+
+### i) PDF via Anthropic multimodal > pdf-parse server-side
+
+Estabelecido em v4.50.0. Pra extração estrutural de PDFs (roteiros, briefings, faturas), enviar como `content block type='document'` pro Claude Sonnet 4.5 é melhor que pdf-parse:
+
+- Custo: ~20k input + 7k output tokens por PDF (~$0.15)
+- Qualidade: Claude lê layout nativo (incluindo tabelas, colunas, etc.)
+- Zero deps server-side
+- Prompt direto retorna JSON conforme schema esperado
+
+**Não usar**: pdf-parse, pdfjs server-side (deps pesadas, layout perdido, regex frágil pra schemas estruturados).
+
+### j) Em qualquer lista exposta no front-end, sempre prever CRUD
+
+Estabelecido em v4.50.1. Categorias, coleções, tipos, status (que sejam editáveis) viram collection Firestore com defaults + CRUD via UI:
+
+- Collection `roteiro_bank_categories`, `roteiro_bank_collections`, `portal_segments`, etc.
+- Defaults em `const DEFAULT_X = [...]` no service (seed inicial)
+- `fetchX()` lê collection; se vazia, retorna defaults
+- UI tem modal "gerenciar X" com edit inline + add + delete (builtin lock 🔒)
+
+**Princípio Renê**: "nao pode ser algo q vc cria e o padrao nao pode ser alterado no front end".
