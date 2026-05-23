@@ -686,6 +686,62 @@ Estabelecido em v4.50.0. Pra extração estrutural de PDFs (roteiros, briefings,
 
 **Não usar**: pdf-parse, pdfjs server-side (deps pesadas, layout perdido, regex frágil pra schemas estruturados).
 
+### k) Listeners delegados em `container` SOBREVIVEM a `innerHTML=` — duplicam toast/save (v4.50.10)
+
+**Sintoma Renê**: "aperto pra salvar e aparece dois banners de sucesso. aconteceu o mesmo na hora de gerar pdf".
+
+**Causa**: padrão SPA do app reusa o mesmo `content` element entre navegações. Render é só `content.innerHTML = ...` + `container.addEventListener('click', ...)`. `innerHTML=` substitui CONTEÚDO (filhos), mas listeners no element pai PERMANECEM. 2ª visita ao mesmo módulo = 2 listeners idênticos = 2x toasts. 3ª = 3x. Etc.
+
+**Fix obrigatório em toda page que usa delegação**:
+
+```js
+let state = { abortCtrl: null /*, ...*/ };
+
+export async function renderXyz(container) {
+  if (state.abortCtrl) state.abortCtrl.abort();   // mata listeners antigos
+  state.abortCtrl = new AbortController();
+  const signal = state.abortCtrl.signal;
+  // ...
+  container.addEventListener('click',  handler1, { signal });
+  container.addEventListener('input',  handler2, { signal });
+  container.addEventListener('change', handler3, { signal });
+}
+
+export function destroyXyz() {
+  if (state.abortCtrl) { state.abortCtrl.abort(); state.abortCtrl = null; }
+  // ... outros cleanups (timers)
+}
+```
+
+**Auditar nos próximos sprints**: qualquer page que usa `container.addEventListener` (delegação) precisa de AbortController OU usar elemento criado a cada render (que não persiste). Lista parcial pra revisar: roteiros.js, portalTipsList.js, contentCalendar.js, devHours pages, etc.
+
+**Princípio**: SPA reusing root container + addEventListener = bug latente de duplicação. AbortController é zero-overhead e idempotente.
+
+### l) Toast `.info()` durante operação async + `.success()` no fim = "2 banners de sucesso" pro user
+
+`toast.info('Gerando…')` aparece no canto da tela. Operação leva 5-30s. `toast.success('Feito!')` aparece em cima do .info (que ainda não desapareceu). User vê 2 toasts e interpreta como duplicação.
+
+**Anti-padrão**:
+```js
+toast.info('Gerando PDF…');
+const res = await heavyOp();
+toast.success(`Pronto: ${res.filename}`);   // user vê dois banners empilhados
+```
+
+**Padrão melhor**: feedback inline no próprio botão (disable + spinner) durante operação, toast só no fim.
+
+```js
+btn.disabled = true; btn.innerHTML = '⋯';
+try {
+  const res = await heavyOp();
+  toast.success(`Pronto: ${res.filename}`);
+} finally {
+  btn.disabled = false; btn.innerHTML = origHTML;
+}
+```
+
+Se a operação for muito longa (>10s) e precisar de feedback global, usar `toast.info({ persistent: true, id: 'gerando' })` + `toast.dismiss('gerando')` antes do success.
+
 ### j) Em qualquer lista exposta no front-end, sempre prever CRUD
 
 Estabelecido em v4.50.1. Categorias, coleções, tipos, status (que sejam editáveis) viram collection Firestore com defaults + CRUD via UI:
