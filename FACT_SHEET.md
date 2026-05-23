@@ -104,7 +104,9 @@ O PRIMETOUR e uma plataforma SaaS proprietaria de gestao operacional desenvolvid
 - **CRUD inline de categorias e coleções** (v4.50.1) — modal compacto no editor com edit/add/delete (defaults Classic/Exclusive/Corporate · Sugestão Prime/Luxo/Standard/Moderado bloqueados com 🔒). Sem listas hardcoded.
 - **Thumb auto banco_imagens → Unsplash** (v4.50.1) — `resolveBankHero()` busca em portal_images por country+city, fallback Unsplash via CF com cache 90d. Listing aplica em background pra docs sem hero.
 - **Filtro país cascata** (v4.50.1+hotfix v4.50.2) — select dinâmico de países sob continente ativo, reset auto.
-- **Export PDF do banco** (v4.50.3) — ícone download em cada card, reusa pipeline visual do Gerador via `bankDocToRoteiroShape()`. Mesma capa, day-by-day, hotels, pricing, cancelamento, docs. Filename: `Banco-{titulo-slug}.pdf`.
+- **Export PDF do banco** (v4.50.3, hotfix v4.50.5+v4.50.6) — ícone download em cada card, reusa pipeline visual do Gerador via `bankDocToRoteiroShape()`. Mesma capa, day-by-day, hotels, pricing, cancelamento, docs. Filename: `Banco-{titulo-slug}.pdf`. Hotfixes: guard granular do plugin jspdf-autotable + polling defensivo pós script.onload (race condition em libs UMD que estendem prototype).
+- **Card mostra validade início + fim** (v4.50.7→v4.50.9) — bloco meta sempre visível com `validity.startDate` + `validity.endDate` do schema (não createdAt do doc). Fallback "Indefinida" quando vazio. Timezone-safe (parse manual de string ISO YYYY-MM-DD pra evitar `new Date()` UTC midnight bug).
+- **AbortController por render() em SPA** (v4.50.10) — fix de listeners delegados duplicados (cada navegação ao banco adicionava +1 listener no container, multiplicando toasts/saves). Padrão obrigatório registrado em CLAUDE.md §12.k.
 - **Logs IA Hub** (v4.50.1) — CFs processRoteiroQueue + importRoteiroBankPdf gravam `ai_usage_logs` com tokens + custo, auto-aparece nas abas Custos/Logs do aiHub.
 
 ### 3.3 Portal de Dicas (B2B Content Platform)

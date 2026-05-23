@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 50,
-  patch: 10,
-  build: '20260523-fix-double-toast-listeners',
+  patch: 11,
+  build: '20260523-banco-roteiros-modulo-foco-produto',
 };
 
 /** "1.2.0" */

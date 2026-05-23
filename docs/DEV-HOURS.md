@@ -1,6 +1,16 @@
 # Sistema de Horas de Desenvolvimento
 
-> **Última atualização:** v4.50.4 (22/05/2026) · 109 dias de calendário · ~827h 27min approved · ~R$ 124.111 · 7h 35min/dia médio · 210 releases + 17 phases (227 entradas aprovadas)
+> **Última atualização:** v4.50.10 (23/05/2026) · 110 dias de calendário · ~829h 27min approved · ~R$ 124.439 · 7h 32min/dia médio · 216 releases + 17 phases (233 entradas aprovadas)
+>
+> _Sprint 23/05/2026 (banco fase 4 — hotfixes UX+visual)_: **v4.50.5 → v4.50.10** — **+2,20h / +R$ 327,75**, todas marcadas `module: 'banco-roteiros'` (entram na aba Foco em Produto):
+> - **v4.50.5** (+0,36h): hotfix `doc.autoTable is not a function` — guard granular pra jspdf E plugin separadamente
+> - **v4.50.6** (+0,46h): polling defensivo pós script.onload (race condition lib UMD anexar prototype)
+> - **v4.50.7** (+0,18h): card com bloco meta de validade
+> - **v4.50.8** (+0,13h): correção (validity.startDate/endDate em vez de createdAt)
+> - **v4.50.9** (+0,32h): timezone YYYY-MM-DD voltava 1 dia em UTC-3 — bug clássico `new Date()` UTC midnight
+> - **v4.50.10** (+0,75h): duplo toast por listeners empilhados — AbortController por render() + spinner inline em vez de toast.info
+>
+> 4 lições novas em CLAUDE.md §12 (a, b, c, d) + §12 (k, l). Padrão AbortController obrigatório em SPA com delegação.
 >
 > _Sprint 22/05/2026 noite (banco fase 3 + cleanup)_: **v4.50.2 → v4.50.4** — **+1,45h / +R$ 217,32**:
 > - **v4.50.2** (+0,29h): hotfix filtro país (selects precisam de `id` não `name`)

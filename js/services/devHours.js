@@ -96,6 +96,11 @@ export const MODULES = [
   // governança e cost tracking.
   { id: 'iahub',    label: 'IA Hub',              color: '#10B981', icon: '🤖',
     desc: 'Plataforma de IA (agents, skills, multi-provider, governança e cost tracking).' },
+  // v4.50.11+ Banco de Roteiros: curadoria PRIMETOUR (Classic Collection, etc.)
+  // que alimenta a IA do gerador. Distinto de "Gerador de Roteiros" (cotação
+  // de cliente). Inclui import PDF via Anthropic multimodal.
+  { id: 'banco-roteiros', label: 'Banco de Roteiros', color: '#0EA5E9', icon: '📚',
+    desc: 'Curadoria de roteiros prontos (Classic Collection, etc.) — referência manual + base de conhecimento da IA.' },
 ];
 export const MODULE_MAP = Object.fromEntries(MODULES.map(m => [m.id, m]));
 
@@ -116,6 +121,12 @@ const MODULE_PATTERNS = {
   // 4.40.32+ IA Hub — cobre IA Hub, AI Hub, ai-hub, iahub, aihub. NÃO casa
   // mentions soltas de "IA" / "AI" (muito genéricas, gerariam false positive).
   iahub:    /\b((?:ia|ai)[-_ ]?hub|iahub|aihub)\b/i,
+  // v4.50.11+ Banco de Roteiros — cobre "banco-roteiros", "banco de roteiros",
+  // "roteiro-bank", "roteiroBank". MUITO específico pra não conflitar com
+  // "roteiros" (que pertence ao Gerador). Detecta primeiro (ordem dos hits
+  // não importa porque retornamos todos os matches; ambos podem aplicar se
+  // entry realmente tocar os 2 módulos).
+  'banco-roteiros': /\b(banco[-_ ]?de[-_ ]?roteiros?|banco[-_ ]?roteiros?|roteiros?[-_ ]?bank|roteiroBank)\b/i,
 };
 
 /**
