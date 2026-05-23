@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 50,
-  patch: 11,
-  build: '20260523-banco-roteiros-modulo-foco-produto',
+  patch: 12,
+  build: '20260523-products-cutoff-14mai',
 };
 
 /** "1.2.0" */

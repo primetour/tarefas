@@ -290,7 +290,7 @@
     import { getFirestore, collection, onSnapshot, query, orderBy } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
     import { firebaseConfig } from './js/config.js';
     // 4.40.28+ Importa MODULES + helpers de classificação (mesma engine usada pelo PDF)
-    import { MODULES, detectEntryModules, aggregateByModule, entryMatchesModules } from './js/services/devHours.js?v=4.50.11-banco-roteiros';
+    import { MODULES, detectEntryModules, aggregateByModule, entryMatchesModules } from './js/services/devHours.js?v=4.50.12-products-cutoff';
 
     const CATEGORIES = [
       { key: 'refinamento',     label: 'Refinamento',     color: '#8B5CF6', icon: '💭' },
@@ -345,7 +345,7 @@
       try {
         const baseFiltered = applyFilters(allEntries);
         const filtered = currentTab === 'products'
-          ? baseFiltered.filter(e => entryMatchesModules(e))
+          ? baseFiltered.filter(e => entryMatchesModules(e) && isAfterProductsCutoff(e))
           : baseFiltered;
         if (!filtered.length) { alert('Sem entradas para exportar com os filtros atuais.'); return; }
         const { exportDevHoursPdf } = await import('./js/services/devHoursPdf.js');
@@ -422,11 +422,24 @@
       });
     }
 
+    // v4.50.12+ Data de corte da iniciativa "Foco em Produto" (Renê 23/05):
+    // só conta releases a partir de 14/05/2026, quando o tracking de módulos
+    // de produto começou de fato. Entries anteriores ficam só na aba "Geral".
+    const PRODUCTS_CUTOFF = new Date('2026-05-14T00:00:00');
+
+    function isAfterProductsCutoff(e) {
+      const dt = e.completedAt?.toDate ? e.completedAt.toDate()
+               : e.createdAt?.toDate  ? e.createdAt.toDate()
+               : null;
+      return dt && dt >= PRODUCTS_CUTOFF;
+    }
+
     function render() {
       const arrAll = applyFilters(allEntries);
       // 4.40.28+ No tab "products" só conta entries que tocaram um dos módulos.
+      // v4.50.12+ E a partir da data de corte 14/05/2026.
       const arr = currentTab === 'products'
-        ? arrAll.filter(e => entryMatchesModules(e))
+        ? arrAll.filter(e => entryMatchesModules(e) && isAfterProductsCutoff(e))
         : arrAll;
 
       // Toggle visibilidade da tabela geral × seção produtos
@@ -435,7 +448,7 @@
       document.getElementById('products-section').style.display = isProducts ? 'block' : 'none';
 
       // Atualiza badge de contagem no tab Products (em ambas as views)
-      const productsCount = arrAll.filter(e => entryMatchesModules(e)).length;
+      const productsCount = arrAll.filter(e => entryMatchesModules(e) && isAfterProductsCutoff(e)).length;
       const badge = document.getElementById('tab-products-count');
       if (badge) badge.textContent = String(productsCount);
 
