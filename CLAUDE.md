@@ -742,6 +742,21 @@ try {
 
 Se a operação for muito longa (>10s) e precisar de feedback global, usar `toast.info({ persistent: true, id: 'gerando' })` + `toast.dismiss('gerando')` antes do success.
 
+### m) Singular `module` vs plural `modules` — verificar shape antes de escrever (v4.50.11+)
+
+**Sintoma Renê**: "banco de roteiros está zerado... mas fizemos muitas coisas nele".
+
+**Causa**: criei dev_hours entries com `module: 'banco-roteiros'` (singular string). O detector em `js/services/devHours.js` lê `entry.modules` (PLURAL array). Singular foi ignorado, heurística por título não pegou ("Hotfix Banco" sozinho não casa o regex `\bbanco[-_ ]?de[-_ ]?roteiros?\b` exigente). Aba "Foco em Produto" mostrou Banco zerado.
+
+**Fix definitivo**:
+1. Quando criar entry nova: SEMPRE `modules: ['x']` (plural array), não `module: 'x'`
+2. Backfill retroativo via script (já rodado em `functions/backfill-modules-array.cjs`)
+3. Helper sugerido pro futuro: `setEntryModule(doc, id)` que escreve nos 2 campos pra retrocompat
+
+**Princípio mais geral**: quando um campo tem N forms (singular/plural, array/string, snake/camelCase), o reader DEVE aceitar TODAS as forms. E o writer DEVE escrever na FORMA CANÔNICA documentada. Inconsistência entre reader e writer = bug latente.
+
+**Auditar**: qualquer campo "tipo" que aparece como string E array em lugares diferentes do código.
+
 ### j) Em qualquer lista exposta no front-end, sempre prever CRUD
 
 Estabelecido em v4.50.1. Categorias, coleções, tipos, status (que sejam editáveis) viram collection Firestore com defaults + CRUD via UI:

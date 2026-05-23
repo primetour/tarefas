@@ -2,6 +2,13 @@
 
 > **Última atualização:** v4.50.10 (23/05/2026) · 110 dias de calendário · ~829h 27min approved · ~R$ 124.439 · 7h 32min/dia médio · 216 releases + 17 phases (233 entradas aprovadas)
 >
+> **Iniciativa Foco em Produto — Banco de Roteiros (módulo novo v4.50.0+):**
+> 10 entries, **14,28h / R$ 2.139,20** acumulado.
+> _Hotfix retroativo 23/05_: rodado script `backfill-modules-array.cjs` que popula
+> `modules: ['banco-roteiros']` em docs que tinham só `module` singular — o detector
+> em devHours.js verifica array plural. Sem isso, aba Foco em Produto mostrava
+> Banco zerado mesmo com 10 entries marcadas. Lição em CLAUDE.md §12.m.
+>
 > _Sprint 23/05/2026 (banco fase 4 — hotfixes UX+visual)_: **v4.50.5 → v4.50.10** — **+2,20h / +R$ 327,75**, todas marcadas `module: 'banco-roteiros'` (entram na aba Foco em Produto):
 > - **v4.50.5** (+0,36h): hotfix `doc.autoTable is not a function` — guard granular pra jspdf E plugin separadamente
 > - **v4.50.6** (+0,46h): polling defensivo pós script.onload (race condition lib UMD anexar prototype)
