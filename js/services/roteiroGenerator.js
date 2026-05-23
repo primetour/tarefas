@@ -32,16 +32,21 @@ function loadScript(src) {
 
 async function loadJsPDF() {
   // v4.50.5+ guard granular: jspdf E autoTable, separadamente.
-  // Antes: `if (window.jspdf) return` voltava cedo demais quando pdfKit.js
-  // (usado pelo roteiroDashboard) já tinha carregado SÓ jspdf (sem autoTable),
-  // fazendo `doc.autoTable is not a function` em qualquer fluxo subsequente
-  // (incluindo Banco de Roteiros). Agora valida que o plugin está ativo.
+  // v4.50.6+ polling defensivo pós-load — script.onload dispara quando
+  // download termina, mas a anexação de `autoTable` ao prototype pode
+  // levar mais alguns ms em alguns navegadores. Espera até 2s.
   if (!window.jspdf) {
     await loadScript('https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js');
+    // Polling: até 1s pra window.jspdf aparecer
+    for (let i = 0; i < 20 && !window.jspdf; i++) await new Promise(r => setTimeout(r, 50));
   }
-  const hasAutoTable = !!window.jspdf?.jsPDF?.API?.autoTable;
-  if (!hasAutoTable) {
+  if (!window.jspdf?.jsPDF?.API?.autoTable) {
     await loadScript('https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.3/dist/jspdf.plugin.autotable.min.js');
+    // Polling: até 2s pra autoTable ser anexado ao prototype
+    for (let i = 0; i < 40 && !window.jspdf?.jsPDF?.API?.autoTable; i++) await new Promise(r => setTimeout(r, 50));
+  }
+  if (!window.jspdf?.jsPDF?.API?.autoTable) {
+    throw new Error('jspdf-autotable não carregou no prototype (timeout 2s)');
   }
   return window.jspdf;
 }

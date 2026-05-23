@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 50,
-  patch: 5,
-  build: '20260523-fix-autotable-guard',
+  patch: 6,
+  build: '20260523-fix-autotable-polling',
 };
 
 /** "1.2.0" */
