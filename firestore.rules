@@ -897,6 +897,16 @@ service cloud.firestore {
                     );
     }
 
+    // v4.50.1+ Coleções (Classic/Exclusive/Corporate) — mesma regra
+    match /roteiro_bank_collections/{key} {
+      allow read:   if isAuth();
+      allow create, update, delete: if isAuth() && (
+                      isAdmin()
+                      || hasPermission('portal_destinations_manage')
+                      || hasPermission('portal_manage')
+                    );
+    }
+
     match /roteiro_web_links/{token} {
       allow read:   if true;   // public — link holder can read
       allow create: if isAuth();

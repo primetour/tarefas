@@ -6,6 +6,84 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.50.1+20260522-banco-crud-thumbs-pais-dashboard] — 2026-05-22
+
+Release **PATCH** — complemento ao Banco de Roteiros com 5 demandas do Renê.
+
+**Renê**: "Todo tipo de categoria, coleção, tipo etc.. precisa ter a opcao
+pra criar ou editar isso. nao pode ser algo q vc cria e o padrao nao pode
+ser alterado no front end" + "thumb do roteiro deve buscar foto no banco
+de imagens. se não tem, aplica fallback do unsplash" + "filtro por país
+também" + "dash chamado roteiros precisa ser atualizado com tudo que foi
+feito" + "IA Hub tem que registrar toda a movimentacao no gerador e o
+custo de uso".
+
+**O que entrega**:
+
+1. **CRUD inline pra categorias E coleções** (no editor do banco):
+   - Link "gerenciar" ao lado do select de Coleção e dos botões de Categoria
+   - Modal compacto: lista todos os itens (cor, label, ordem, builtin lock),
+     edit inline em qualquer campo, add novo item embaixo, delete (exceto builtin)
+   - Defaults (Classic/Exclusive/Corporate · Sugestão Prime/Luxo/Standard/Moderado)
+     ficam protegidos com 🔒 — admin pode adicionar novos sem perder os defaults
+   - Collection nova: `roteiro_bank_collections/{key}` (Firestore rules iguais às
+     de categories)
+
+2. **Thumb auto-resolve banco_imagens → Unsplash**:
+   - Helper `resolveBankHero(doc)` em services/roteiroBank.js:
+     - 1º busca `portal_images` por `country` + `city` (assetCategory='location')
+     - 2º fallback Unsplash via CF `fetchDestinationPhoto` (cache 90d em photo_cache)
+   - Helper `ensureBankHero(id, doc)` persiste no doc (idempotente — não
+     toca hero pré-existente)
+   - Listing chama `ensureBankHero` em background pra docs sem hero — UI
+     atualiza progressivamente conforme resolve
+   - Backfill rodado nos 2 PDFs seed (script `backfill-bank-heroes.cjs`)
+
+3. **Filtro por país no Banco** (cascata continente→país):
+   - Novo select "País" ao lado de "Continente" no filter bar
+   - Opções derivadas dinamicamente: países dos roteiros sob continente ativo
+   - Reset automático ao mudar continente
+
+4. **Dashboard de Roteiros (#roteiro-dashboard) atualizado**:
+   - Bloco "📚 Banco de Roteiros" com 6 KPIs: Total, Publicados, Em revisão,
+     Rascunhos, Expirando <30d, Expirados
+   - Bloco "🤖 IA — Movimentação & Custo" com 6 KPIs (filtrados por período):
+     Execuções, Tokens input, Tokens output, Cache hits, Web searches,
+     Custo (R$ estimado com câmbio 5.20)
+   - Links rápidos pra `#banco-roteiros` e `#ai-hub`
+
+5. **IA Hub registra movimentação do Gerador**:
+   - CF `processRoteiroQueue` agora grava em `ai_usage_logs` (agentId
+     `roteiros-luxo-gen`, module `roteiros`) com tokens + cacheRead +
+     webSearchCount + queueId + source `cf-processRoteiroQueue`
+   - CF `importRoteiroBankPdf` também grava (agentId `roteiro-bank-import`,
+     module `banco-roteiros`)
+   - IA Hub aba "Custos" e "Logs" já filtra por module — não precisa
+     mexer no aiHub.js (auto-aparece)
+   - Custo estimado Sonnet 4.5: input $3/M, output $15/M, cache_read $0.30/M
+
+**Arquivos modificados**:
+- `js/services/roteiroBank.js` (+115 linhas: resolveBankHero, ensureBankHero,
+  fetchBankCollections/saveBankCollection/deleteBankCollection,
+  DEFAULT_COLLECTIONS)
+- `js/pages/roteiroBank.js` (+45 linhas: filtro país cascata + hero auto-resolve)
+- `js/pages/roteiroBankEditor.js` (+130 linhas: openMetaModal, rerenderCapa,
+  rerenderCategories, "gerenciar" links em coleções e categorias)
+- `js/pages/roteiroDashboard.js` (+95 linhas: 2 seções novas + fetchAiUsageRoteiros)
+- `functions/index.js` (+50 linhas: ai_usage_logs em 2 CFs)
+- `firestore.rules` (+12 linhas: roteiro_bank_collections)
+
+**Arquivo novo**:
+- `functions/backfill-bank-heroes.cjs` (script seed pros 2 PDFs)
+
+**Deploy**:
+```
+firebase deploy --only functions:processRoteiroQueue,functions:importRoteiroBankPdf
+firebase deploy --only firestore:rules
+```
+
+---
+
 ## [4.50.0+20260522-banco-roteiros-curadoria] — 2026-05-22
 
 Release **MINOR** — módulo NOVO: Banco de Roteiros (curadoria PRIMETOUR).

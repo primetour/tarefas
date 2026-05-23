@@ -6,7 +6,10 @@
 import { store } from '../store.js';
 import { toast } from '../components/toast.js';
 import { fetchRoteiroStats, fetchGenerations, ROTEIRO_STATUSES } from '../services/roteiros.js';
+import { fetchRoteiroBankList } from '../services/roteiroBank.js';
 import { createDoc, loadJsPdf, COL, txt, withExportGuard } from '../components/pdfKit.js';
+import { db } from '../firebase.js';
+import { collection, query, where, getDocs, limit as fbLimit } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 const esc = s => String(s || '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -14,6 +17,8 @@ let chartInstances = [];
 let currentPeriod = '30d';
 let allRoteiros = [];
 let allGenerations = [];
+let allBank = [];          // v4.50.1+ roteiros_bank
+let allAiUsage = [];       // v4.50.1+ ai_usage_logs (module='roteiros' || 'banco-roteiros')
 
 /* ─── Chart.js CDN loader ────────────────────────────────── */
 async function loadChartJS() {
@@ -170,8 +175,28 @@ export async function renderRoteiroDashboard(container) {
       ${Array(8).fill('<div class="rd-chart-card skeleton" style="height:300px;"></div>').join('')}
     </div>
 
+    <!-- v4.50.1+ Banco de Roteiros (curadoria) -->
+    <div id="rd-bank-section" style="margin-top:24px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+        <h3 style="margin:0;font-size:0.8125rem;font-weight:600;color:var(--text-secondary);
+          text-transform:uppercase;letter-spacing:0.06em;">📚 Banco de Roteiros (curadoria PRIMETOUR)</h3>
+        <a href="#banco-roteiros" style="font-size:0.78rem;color:var(--brand-blue);text-decoration:none;">abrir →</a>
+      </div>
+      <div id="rd-bank-kpis" class="rd-kpi-grid"></div>
+    </div>
+
+    <!-- v4.50.1+ IA — movimentação + custo -->
+    <div id="rd-ai-section" style="margin-top:24px;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+        <h3 style="margin:0;font-size:0.8125rem;font-weight:600;color:var(--text-secondary);
+          text-transform:uppercase;letter-spacing:0.06em;">🤖 IA — Movimentação & Custo (período)</h3>
+        <a href="#ai-hub" style="font-size:0.78rem;color:var(--brand-blue);text-decoration:none;">IA Hub →</a>
+      </div>
+      <div id="rd-ai-kpis" class="rd-kpi-grid"></div>
+    </div>
+
     <!-- Generations table -->
-    <div id="rd-gen-table" class="rd-chart-card" style="background:var(--bg-card);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);padding:16px;">
+    <div id="rd-gen-table" class="rd-chart-card" style="background:var(--bg-card);border:1px solid var(--border-subtle);border-radius:var(--radius-lg);padding:16px;margin-top:24px;">
       <div class="rd-chart-title" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
         <span style="flex:1;min-width:0;">Últimas Gerações</span>
         <span class="widget-insights-slot" data-widget-id="rd-gen-table"></span>
@@ -223,9 +248,13 @@ export async function renderRoteiroDashboard(container) {
 
   // Load data
   try {
-    const [roteiros, generations] = await Promise.all([
+    const [roteiros, generations, bank, aiUsage] = await Promise.all([
       fetchRoteiroStats(),
       fetchGenerations({ limit: 50 }),
+      // v4.50.1+ Banco de Roteiros (curadoria)
+      fetchRoteiroBankList({ includeArchived: true }).catch(() => []),
+      // v4.50.1+ AI usage logs do gerador + import (últimas 200 entradas)
+      fetchAiUsageRoteiros().catch(() => []),
     ]);
     allRoteiros = roteiros.map(r => ({
       ...r,
@@ -235,14 +264,29 @@ export async function renderRoteiroDashboard(container) {
       ...g,
       _ts: parseTimestamp(g.generatedAt),
     }));
+    allBank = bank;
+    allAiUsage = aiUsage.map(u => ({ ...u, _ts: parseTimestamp(u.timestamp) })).filter(u => u._ts);
   } catch (e) {
     console.warn('Erro ao carregar dados do dashboard de roteiros:', e);
     toast.error('Erro ao carregar dados do dashboard.');
     allRoteiros = [];
     allGenerations = [];
+    allBank = [];
+    allAiUsage = [];
   }
 
   await processAndRender();
+}
+
+/** v4.50.1+ Busca ai_usage_logs de roteiros (módulos 'roteiros' + 'banco-roteiros'). */
+async function fetchAiUsageRoteiros() {
+  // 2 queries em paralelo (Firestore não tem OR em campos diferentes)
+  const [s1, s2] = await Promise.all([
+    getDocs(query(collection(db, 'ai_usage_logs'), where('module', '==', 'roteiros'), fbLimit(500))),
+    getDocs(query(collection(db, 'ai_usage_logs'), where('module', '==', 'banco-roteiros'), fbLimit(200))),
+  ]);
+  const all = [...s1.docs, ...s2.docs].map(d => ({ id: d.id, ...d.data() }));
+  return all;
 }
 
 /* ─── Process & render all ───────────────────────────────── */
@@ -252,6 +296,8 @@ async function processAndRender() {
 
   renderKPIs(roteiros);
   renderCharts(Chart, roteiros);
+  renderBankKPIs();
+  renderAiKPIs();
   renderGenerationsTable();
 
   // Setup insights na primeira render (idempotente)
@@ -722,6 +768,73 @@ function renderMoedas(Chart, parent, roteiros) {
 }
 
 /* ─── Generations table ──────────────────────────────────── */
+/* ─── v4.50.1+ Banco de Roteiros KPIs ───────────────────── */
+
+function renderBankKPIs() {
+  const wrap = document.getElementById('rd-bank-kpis');
+  if (!wrap) return;
+  const total = allBank.length;
+  const approved = allBank.filter(b => b.status === 'approved').length;
+  const review = allBank.filter(b => b.status === 'review').length;
+  const draft = allBank.filter(b => b.status === 'draft').length;
+  const expiring = allBank.filter(b => {
+    if (!b.validity?.endDate) return false;
+    try {
+      const end = new Date(b.validity.endDate + 'T23:59:59');
+      const days = (end - new Date()) / (1000*60*60*24);
+      return days < 30 && days >= 0;
+    } catch { return false; }
+  }).length;
+  const expired = allBank.filter(b => {
+    if (!b.validity?.endDate) return false;
+    try { return new Date(b.validity.endDate + 'T23:59:59') < new Date(); }
+    catch { return false; }
+  }).length;
+  const cards = [
+    { label: 'Roteiros no banco', value: total, color: 'var(--brand-blue)' },
+    { label: 'Publicados', value: approved, color: '#10B981' },
+    { label: 'Em revisão', value: review, color: '#F59E0B' },
+    { label: 'Rascunhos', value: draft, color: 'var(--text-muted)' },
+    { label: 'Expirando <30d', value: expiring, color: '#F59E0B' },
+    { label: 'Expirados', value: expired, color: '#dc2626' },
+  ];
+  wrap.innerHTML = cards.map(c => kpiCardHTML(c.label, c.value, c.color)).join('');
+}
+
+/* ─── v4.50.1+ IA Usage KPIs ────────────────────────────── */
+
+function renderAiKPIs() {
+  const wrap = document.getElementById('rd-ai-kpis');
+  if (!wrap) return;
+  const usage = filterByPeriod(allAiUsage);
+  const total = usage.length;
+  const tokensIn  = usage.reduce((a, u) => a + (u.inputTokens || 0), 0);
+  const tokensOut = usage.reduce((a, u) => a + (u.outputTokens || 0), 0);
+  const cacheRead = usage.reduce((a, u) => a + (u.cacheReadTokens || 0), 0);
+  // Custo estimado (Sonnet 4.5): input $3/M, output $15/M, cache_read $0.30/M
+  const costUsd = (tokensIn * 3 + tokensOut * 15 + cacheRead * 0.30) / 1_000_000;
+  const costBrl = costUsd * 5.20; // câmbio fixo estimado, atualize se quiser FX live
+  const webSearch = usage.reduce((a, u) => a + (u.webSearchCount || 0), 0);
+  const cacheHits = usage.filter(u => u.cacheHit).length;
+  const cards = [
+    { label: 'Execuções IA',  value: total,                    color: 'var(--brand-blue)' },
+    { label: 'Tokens input',  value: tokensIn.toLocaleString('pt-BR'),  color: 'var(--text-secondary)' },
+    { label: 'Tokens output', value: tokensOut.toLocaleString('pt-BR'), color: 'var(--text-secondary)' },
+    { label: 'Cache hits',    value: cacheHits,                color: '#10B981' },
+    { label: 'Web searches',  value: webSearch,                color: '#F59E0B' },
+    { label: 'Custo',         value: `R$ ${costBrl.toFixed(2)}`, color: 'var(--brand-gold)' },
+  ];
+  wrap.innerHTML = cards.map(c => kpiCardHTML(c.label, c.value, c.color)).join('');
+}
+
+function kpiCardHTML(label, value, color) {
+  return `<div class="rd-kpi-card" style="background:var(--bg-card);border:1px solid var(--border-subtle);
+    border-radius:var(--radius-lg);padding:14px 16px;display:flex;flex-direction:column;gap:4px;min-height:72px;">
+    <span style="font-size:0.72rem;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);font-weight:600;">${esc(label)}</span>
+    <span style="font-size:1.4rem;font-weight:700;color:${color};">${esc(String(value))}</span>
+  </div>`;
+}
+
 function renderGenerationsTable() {
   const el = document.getElementById('rd-gen-table');
   if (!el) return;

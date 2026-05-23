@@ -13,7 +13,7 @@
 import { store } from '../store.js';
 import { toast } from '../components/toast.js';
 import { renderPageHeader, renderFilterBar } from '../components/uiKit.js';
-import { fetchRoteiroBankList, archiveRoteiroBank, duplicateRoteiroBank, isExpired } from '../services/roteiroBank.js';
+import { fetchRoteiroBankList, archiveRoteiroBank, duplicateRoteiroBank, isExpired, ensureBankHero } from '../services/roteiroBank.js';
 import { CONTINENTS } from '../services/portal.js';
 import { actionIcon } from '../components/uiKit.js';
 
@@ -22,7 +22,7 @@ const esc = s => s ? String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replac
 let state = {
   list: [],
   loading: false,
-  filter: { search: '', status: '', continent: '' },
+  filter: { search: '', status: '', continent: '', country: '' },
 };
 
 function canEdit() {
@@ -115,10 +115,22 @@ function cardHTML(d) {
   `;
 }
 
+/** Países disponíveis: todos os países dos roteiros (filtrados por continente se setado). */
+function countryOptions() {
+  const set = new Set();
+  for (const d of state.list || []) {
+    if (state.filter.continent && !d.geo.continents.includes(state.filter.continent)) continue;
+    (d.geo.countries || []).forEach(c => c && set.add(c));
+  }
+  const sorted = [...set].sort((a,b) => a.localeCompare(b, 'pt-BR'));
+  return [{ value: '', label: 'Todos países' }, ...sorted.map(c => ({ value: c, label: c }))];
+}
+
 function applyFilters() {
   return state.list.filter(d => {
     if (state.filter.status && d.status !== state.filter.status) return false;
     if (state.filter.continent && !d.geo.continents.includes(state.filter.continent)) return false;
+    if (state.filter.country && !d.geo.countries.includes(state.filter.country)) return false;
     if (state.filter.search) {
       const s = state.filter.search.toLowerCase();
       const hay = [
@@ -180,6 +192,8 @@ export async function renderRoteiroBank(container) {
             { value: '', label: 'Todos continentes' },
             ...CONTINENTS.map(c => ({ value: c, label: c })),
           ]},
+          // v4.50.1+ Filtro país cascata — opções derivadas dos roteiros sob o continente ativo
+          { name: 'country', label: 'País', value: state.filter.country, options: countryOptions() },
         ],
       })}
       <div id="rb-list-wrap">${gridHTML()}</div>
@@ -197,6 +211,24 @@ export async function renderRoteiroBank(container) {
   state.loading = false;
   const wrap = container.querySelector('#rb-list-wrap');
   if (wrap) wrap.innerHTML = gridHTML();
+
+  // v4.50.1+ Hero auto-resolve em background — pra docs sem hero,
+  // busca banco_imagens → Unsplash e persiste no doc. Atualiza UI quando achar.
+  const missingHero = (state.list || []).filter(d => !d?.images?.hero);
+  if (missingHero.length) {
+    (async () => {
+      for (const d of missingHero) {
+        try {
+          const url = await ensureBankHero(d.id, d);
+          if (url) {
+            d.images = { ...(d.images||{}), hero: url };
+            const wrap2 = container.querySelector('#rb-list-wrap');
+            if (wrap2) wrap2.innerHTML = gridHTML();   // re-render simples
+          }
+        } catch {}
+      }
+    })();
+  }
 
   /* ─── Listeners (delegados no container) ─── */
   container.addEventListener('click', async (e) => {
@@ -256,8 +288,22 @@ export async function renderRoteiroBank(container) {
   container.addEventListener('change', (e) => {
     if (e.target.matches('select[name="continent"]')) {
       state.filter.continent = e.target.value;
+      // Reset país (cascata: muda continente → países disponíveis mudam)
+      state.filter.country = '';
+      const countrySelect = container.querySelector('select[name="country"]');
+      if (countrySelect) {
+        countrySelect.innerHTML = countryOptions().map(o => `<option value="${o.value}">${o.label}</option>`).join('');
+        countrySelect.value = '';
+      }
       const wrap = container.querySelector('#rb-list-wrap');
       if (wrap) wrap.innerHTML = gridHTML();
+      return;
+    }
+    if (e.target.matches('select[name="country"]')) {
+      state.filter.country = e.target.value;
+      const wrap = container.querySelector('#rb-list-wrap');
+      if (wrap) wrap.innerHTML = gridHTML();
+      return;
     }
   });
   // Status pills

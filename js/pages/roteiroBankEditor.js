@@ -23,7 +23,11 @@ import { store } from '../store.js';
 import { toast } from '../components/toast.js';
 import {
   emptyRoteiroBank, fetchRoteiroBank, saveRoteiroBank,
-  fetchBankCategories, DEFAULT_CATEGORIES, ensureDestination,
+  fetchBankCategories, DEFAULT_CATEGORIES,
+  fetchBankCollections, DEFAULT_COLLECTIONS,
+  saveBankCategory, deleteBankCategory,
+  saveBankCollection, deleteBankCollection,
+  ensureDestination,
 } from '../services/roteiroBank.js';
 import { CONTINENTS } from '../services/portal.js';
 
@@ -36,6 +40,7 @@ let state = {
   saving: false,
   autosaveTimer: null,
   categories: DEFAULT_CATEGORIES,
+  collections: DEFAULT_COLLECTIONS,
 };
 
 function canEdit() {
@@ -96,8 +101,14 @@ function renderCapa() {
       </div>
       <div class="form-row" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
         <div>
-          <label class="form-label">Coleção</label>
-          <input class="form-input" type="text" data-bind="collectionLabel" value="${esc(d.collectionLabel)}" placeholder="Ex: Classic, Exclusive, Corporate">
+          <label class="form-label">
+            Coleção
+            ${canEdit() ? `<button type="button" data-action="manage-collections" style="margin-left:6px;font-size:0.7rem;background:transparent;border:none;color:var(--brand-blue);cursor:pointer;text-decoration:underline;">gerenciar</button>` : ''}
+          </label>
+          <select class="form-select" data-bind="collectionLabel">
+            <option value="">— selecione —</option>
+            ${state.collections.map(co => `<option value="${esc(co.label)}" ${d.collectionLabel===co.label?'selected':''}>${esc(co.label)}</option>`).join('')}
+          </select>
         </div>
         <div>
           <label class="form-label">Código (auto se vazio)</label>
@@ -243,10 +254,11 @@ function renderCategories() {
       <div id="rb-cats-list" style="display:flex;flex-direction:column;gap:14px;">
         ${(d.categories||[]).map((c,i)=>catBlockHTML(c,i)).join('') || '<div style="color:var(--text-muted);font-style:italic;">Nenhuma categoria. Adicione abaixo.</div>'}
       </div>
-      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
+      <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center;">
         ${state.categories.map(cat => `
           <button class="btn btn-secondary btn-sm" data-action="add-category" data-cat-key="${esc(cat.key)}" data-cat-label="${esc(cat.label)}">+ ${esc(cat.label)}</button>
         `).join('')}
+        ${canEdit() ? `<button class="btn btn-ghost btn-sm" data-action="manage-categories" style="font-size:0.78rem;color:var(--brand-blue);">⚙ gerenciar categorias</button>` : ''}
       </div>
     </section>
   `;
@@ -494,8 +506,9 @@ export async function renderRoteiroBankEditor(container) {
     }
   }
 
-  // Categorias dinâmicas (defaults + custom)
+  // Categorias + coleções dinâmicas (defaults + custom)
   try { state.categories = await fetchBankCategories(); } catch {}
+  try { state.collections = await fetchBankCollections(); } catch {}
 
   if (!canEdit() && !state.id) {
     container.innerHTML = `
@@ -662,6 +675,30 @@ export async function renderRoteiroBankEditor(container) {
       return;
     }
 
+    // v4.50.1+ CRUD modais
+    if (action === 'manage-categories') {
+      await openMetaModal({
+        title: 'Gerenciar categorias de hospedagem',
+        items: state.categories,
+        kind: 'categoria',
+        save: saveBankCategory,
+        del: deleteBankCategory,
+        onChange: async () => { state.categories = await fetchBankCategories(); rerenderCategories(container); },
+      });
+      return;
+    }
+    if (action === 'manage-collections') {
+      await openMetaModal({
+        title: 'Gerenciar coleções',
+        items: state.collections,
+        kind: 'coleção',
+        save: saveBankCollection,
+        del: deleteBankCollection,
+        onChange: async () => { state.collections = await fetchBankCollections(); rerenderCapa(container); },
+      });
+      return;
+    }
+
     // Cidade
     if (action === 'add-city') {
       state.doc.geo.cities.push({ city: '', country: '', continent: '', nights: 0 });
@@ -775,6 +812,132 @@ export async function renderRoteiroBankEditor(container) {
       dirty(); return;
     }
   });
+}
+
+/* ─── v4.50.1+ Modal CRUD genérico pra categorias/coleções ─── */
+
+function slugify(s) {
+  return String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
+function rerenderCapa(container) {
+  const sec = container.querySelector('[data-section="capa"]');
+  if (sec) sec.outerHTML = renderCapa();
+}
+function rerenderCategories(container) {
+  const sec = container.querySelector('[data-section="categories"]');
+  if (sec) sec.outerHTML = renderCategories();
+}
+
+/**
+ * Modal de CRUD pra qualquer lista key/label (categorias, coleções, etc).
+ * Não usa confirm() nativo — Tudo inline.
+ */
+async function openMetaModal({ title, items, kind, save, del, onChange }) {
+  const overlay = document.createElement('div');
+  overlay.className = 'rb-meta-modal-overlay';
+  overlay.style.cssText = `
+    position:fixed;inset:0;background:rgba(10,22,40,0.55);z-index:9000;
+    display:flex;align-items:center;justify-content:center;padding:20px;`;
+  overlay.innerHTML = `
+    <div class="rb-meta-modal" style="background:var(--bg-card);border-radius:12px;
+      max-width:560px;width:100%;max-height:85vh;display:flex;flex-direction:column;
+      box-shadow:0 12px 32px rgba(0,0,0,0.25);">
+      <div style="padding:16px 20px;border-bottom:1px solid var(--border-subtle);display:flex;justify-content:space-between;align-items:center;">
+        <h3 style="margin:0;font-size:1.05rem;font-weight:700;">${esc(title)}</h3>
+        <button class="rb-meta-close" style="background:transparent;border:none;font-size:1.4rem;cursor:pointer;color:var(--text-muted);">×</button>
+      </div>
+      <div class="rb-meta-list" style="overflow-y:auto;padding:12px 20px;flex:1;">
+        ${renderMetaList(items)}
+      </div>
+      <div style="padding:14px 20px;border-top:1px solid var(--border-subtle);display:flex;gap:8px;align-items:end;flex-wrap:wrap;">
+        <div style="flex:1;min-width:140px;">
+          <label class="form-label" style="font-size:0.7rem;">Label (novo)</label>
+          <input class="form-input rb-meta-new-label" type="text" placeholder="Ex: Premium Boutique">
+        </div>
+        <div style="width:90px;">
+          <label class="form-label" style="font-size:0.7rem;">Cor</label>
+          <input class="form-input rb-meta-new-color" type="color" value="#3B82F6">
+        </div>
+        <button class="btn btn-primary btn-sm rb-meta-add" style="height:38px;">+ Adicionar</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  function renderMetaList(arr) {
+    if (!arr.length) return '<div style="color:var(--text-muted);text-align:center;padding:24px;">Nenhum item.</div>';
+    return `<div style="display:flex;flex-direction:column;gap:6px;">${arr.map(it => `
+      <div class="rb-meta-row" data-key="${esc(it.key)}" style="display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border-subtle);border-radius:8px;">
+        <span style="width:14px;height:14px;border-radius:4px;background:${esc(it.color || '#888')};display:inline-block;flex-shrink:0;"></span>
+        <input class="form-input rb-meta-label" data-key="${esc(it.key)}" value="${esc(it.label)}" style="flex:1;font-size:0.85rem;">
+        <input class="form-input rb-meta-color" type="color" data-key="${esc(it.key)}" value="${esc(it.color || '#888888')}" style="width:50px;padding:2px;">
+        <input class="form-input rb-meta-order" type="number" data-key="${esc(it.key)}" value="${it.order || 0}" style="width:60px;font-size:0.78rem;" title="Ordem">
+        ${it.builtin ? '<span title="Default do sistema — não pode deletar" style="color:var(--text-muted);font-size:0.7rem;">🔒</span>' : `<button class="btn btn-ghost btn-sm rb-meta-del" data-key="${esc(it.key)}" style="color:#dc2626;">✕</button>`}
+      </div>
+    `).join('')}</div>`;
+  }
+
+  // Fechar
+  const close = () => overlay.remove();
+  overlay.querySelector('.rb-meta-close').addEventListener('click', close);
+  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+
+  // Add novo
+  overlay.querySelector('.rb-meta-add').addEventListener('click', async () => {
+    const label = overlay.querySelector('.rb-meta-new-label').value.trim();
+    if (!label) { toast.warning(`Preencha o label do ${kind}.`); return; }
+    const key = slugify(label);
+    if (items.some(i => i.key === key)) { toast.warning('Já existe item com esse label.'); return; }
+    try {
+      await save(key, {
+        label,
+        color: overlay.querySelector('.rb-meta-new-color').value || '#3B82F6',
+        order: (items[items.length-1]?.order || 0) + 1,
+        builtin: false,
+      });
+      toast.success(`${kind} criada.`);
+      await onChange();
+      // Refresh modal list
+      const newItems = (await (kind === 'categoria' ? fetchBankCategories : fetchBankCollections)());
+      overlay.querySelector('.rb-meta-list').innerHTML = renderMetaList(newItems);
+      attachRowHandlers();
+      overlay.querySelector('.rb-meta-new-label').value = '';
+    } catch (e) { toast.error(e.message); }
+  });
+
+  // Inline edit + delete
+  function attachRowHandlers() {
+    overlay.querySelectorAll('.rb-meta-del').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const key = btn.dataset.key;
+        if (!confirm('Remover este item? Roteiros que já usam continuam funcionando.')) return;
+        try {
+          await del(key);
+          toast.success('Removido.');
+          await onChange();
+          const newItems = (await (kind === 'categoria' ? fetchBankCategories : fetchBankCollections)());
+          overlay.querySelector('.rb-meta-list').innerHTML = renderMetaList(newItems);
+          attachRowHandlers();
+        } catch (e) { toast.error(e.message); }
+      });
+    });
+    overlay.querySelectorAll('.rb-meta-label, .rb-meta-color, .rb-meta-order').forEach(inp => {
+      inp.addEventListener('change', async () => {
+        const key = inp.dataset.key;
+        const row = overlay.querySelector(`.rb-meta-row[data-key="${key}"]`);
+        const label = row.querySelector('.rb-meta-label').value.trim();
+        const color = row.querySelector('.rb-meta-color').value;
+        const order = +row.querySelector('.rb-meta-order').value;
+        try {
+          await save(key, { label, color, order });
+          await onChange();
+        } catch (e) { toast.error(e.message); }
+      });
+    });
+  }
+  attachRowHandlers();
 }
 
 export function destroyRoteiroBankEditor() {

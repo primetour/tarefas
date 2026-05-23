@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 50,
-  patch: 0,
-  build: '20260522-banco-roteiros-curadoria',
+  patch: 1,
+  build: '20260522-banco-crud-thumbs-pais-dashboard',
 };
 
 /** "1.2.0" */

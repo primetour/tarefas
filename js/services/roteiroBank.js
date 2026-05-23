@@ -37,8 +37,9 @@ import {
 import { db }    from '../firebase.js';
 import { store } from '../store.js';
 
-const COL_BANK       = 'roteiros_bank';
-const COL_CATEGORIES = 'roteiro_bank_categories';
+const COL_BANK        = 'roteiros_bank';
+const COL_CATEGORIES  = 'roteiro_bank_categories';
+const COL_COLLECTIONS = 'roteiro_bank_collections';   // v4.50.1+ Classic/Exclusive/Corporate (CRUDable)
 
 function uid() { return store.get('currentUser')?.uid; }
 function canWrite() {
@@ -397,6 +398,112 @@ export async function saveBankCategory(key, data) {
 export async function deleteBankCategory(key) {
   if (!canWrite()) throw new Error('Permissão negada.');
   await deleteDoc(doc(db, COL_CATEGORIES, key));
+}
+
+/* ─── Coleções (Classic, Exclusive, Corporate…) — CRUD v4.50.1+ ─── */
+
+export const DEFAULT_COLLECTIONS = [
+  { key: 'classic',   label: 'Classic',   order: 1, color: '#3B82F6', builtin: true },
+  { key: 'exclusive', label: 'Exclusive', order: 2, color: '#D4A843', builtin: true },
+  { key: 'corporate', label: 'Corporate', order: 3, color: '#10B981', builtin: true },
+];
+
+export async function fetchBankCollections() {
+  try {
+    const snap = await getDocs(query(collection(db, COL_COLLECTIONS), orderBy('order')));
+    const docs = snap.docs.map(d => ({ key: d.id, ...d.data() }));
+    if (docs.length) return docs;
+  } catch (e) {
+    console.warn('[fetchBankCollections] falhou:', e.message);
+  }
+  return DEFAULT_COLLECTIONS;
+}
+
+export async function saveBankCollection(key, data) {
+  if (!canWrite()) throw new Error('Permissão negada.');
+  await setDoc(doc(db, COL_COLLECTIONS, key), {
+    ...data,
+    updatedAt: serverTimestamp(),
+    updatedBy: uid() || '',
+  }, { merge: true });
+}
+
+export async function deleteBankCollection(key) {
+  if (!canWrite()) throw new Error('Permissão negada.');
+  await deleteDoc(doc(db, COL_COLLECTIONS, key));
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   v4.50.1+ HERO IMAGE: banco_imagens → Unsplash fallback
+   ═══════════════════════════════════════════════════════════════ */
+
+/**
+ * Resolve hero image URL pra um roteiro_bank.
+ *
+ * Estratégia (mesma do roteiroEditor / portal_tips):
+ *   1. Banco de Imagens PRIMETOUR (`portal_images`) — busca por city+country
+ *      filtrando por assetCategory='location' (capa de destino)
+ *   2. Fallback: Unsplash via Cloud Function `fetchDestinationPhoto`
+ *      (que tem cache de 90d em `photo_cache/{queryKey}`)
+ *
+ * @param {object} doc — roteiro_bank com `geo.cities[]`
+ * @returns {Promise<{url: string|null, source: string|null, attribution?: string}>}
+ */
+export async function resolveBankHero(doc) {
+  const city = doc?.geo?.cities?.[0];
+  if (!city?.city) return { url: null, source: null };
+
+  // 1. Banco de Imagens
+  try {
+    const snap = await getDocs(query(
+      collection(db, 'portal_images'),
+      where('country', '==', city.country || ''),
+      limit(40),
+    ));
+    const cityKey = slugify(city.city);
+    const match = snap.docs.find(d => {
+      const data = d.data();
+      if (data.assetCategory && data.assetCategory !== 'location') return false;
+      return slugify(data.city || '') === cityKey;
+    });
+    if (match) {
+      const data = match.data();
+      const url = data.imageUrl || data.url || data.r2Url || null;
+      if (url) return { url, source: 'portal_images', attribution: data.copyright || '' };
+    }
+  } catch (e) { /* segue pro fallback */ }
+
+  // 2. Unsplash via CF (com cache de 90d em photo_cache)
+  try {
+    const { httpsCallable, getFunctions } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js');
+    const { app } = await import('../firebase.js');
+    const fn = httpsCallable(getFunctions(app, 'us-central1'), 'fetchDestinationPhoto');
+    const q = [city.city, city.country].filter(Boolean).join(', ');
+    const res = await fn({ query: q, count: 1 });
+    const url = res?.data?.url || null;
+    if (url) return { url, source: res?.data?.source || 'unsplash', attribution: res?.data?.attribution || '' };
+  } catch (e) { console.warn('[resolveBankHero] Unsplash falhou:', e?.message); }
+
+  return { url: null, source: null };
+}
+
+/**
+ * Garante hero — se já existe retorna; senão resolve + persiste no doc.
+ * Idempotente (não toca hero pré-existente).
+ *
+ * @returns {Promise<string|null>} URL final do hero
+ */
+export async function ensureBankHero(id, bankDoc) {
+  if (bankDoc?.images?.hero) return bankDoc.images.hero;
+  const { url, source, attribution } = await resolveBankHero(bankDoc);
+  if (!url || !id) return url;
+  try {
+    await setDoc(doc(db, COL_BANK, id), {
+      images: { ...(bankDoc.images||{}), hero: url, heroSource: source, heroAttribution: attribution },
+      updatedAt: serverTimestamp(),
+    }, { merge: true });
+  } catch (e) { console.warn('[ensureBankHero] persist falhou:', e.message); }
+  return url;
 }
 
 /* ═══════════════════════════════════════════════════════════════

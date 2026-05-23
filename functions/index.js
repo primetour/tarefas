@@ -3193,6 +3193,35 @@ export const processRoteiroQueue = onDocumentCreated({
       },
     });
     console.log(`[processRoteiroQueue] ${queueId} done (in=${result.inputTokens} out=${result.outputTokens} cacheRead=${result.cacheReadTokens||0})`);
+
+    // v4.50.1+ Registra em ai_usage_logs (mesmo formato do callLLM)
+    // pra IA Hub agregar custo + métricas do Gerador de Roteiros.
+    try {
+      const expiresAt = new Date();
+      expiresAt.setDate(expiresAt.getDate() + 90);
+      const cacheReadTokens = result.cacheReadTokens || 0;
+      await db.collection('ai_usage_logs').add({
+        userId: claimed.userId,
+        agentId: 'roteiros-luxo-gen',
+        agentName: 'Gerador de Roteiros (Luxo)',
+        module: 'roteiros',
+        provider: 'anthropic',
+        model: 'claude-sonnet-4-5',
+        inputTokens:          result.inputTokens || 0,
+        outputTokens:         result.outputTokens || 0,
+        cacheCreationTokens:  result.cacheCreationTokens || 0,
+        cacheReadTokens,
+        tokensSaved:          Math.round(cacheReadTokens * 0.7),
+        cacheHit:             cacheReadTokens > 0,
+        webSearchCount:       result.webSearchCount || 0,
+        timestamp: FieldValue.serverTimestamp(),
+        expiresAt,
+        source: 'cf-processRoteiroQueue',
+        queueId,
+        phases: result.phases || 1,
+      });
+    } catch (logErr) { console.warn('[processRoteiroQueue] ai_usage_logs falhou (não bloqueia):', logErr.message); }
+
   } catch (err) {
     console.error(`[processRoteiroQueue] ${queueId} failed:`, err?.message || err);
     await docRef.update({
@@ -3519,6 +3548,32 @@ REGRAS DE OURO:
   const ref = db.collection('roteiros_bank').doc();
   await ref.set(docData);
   console.log(`[importRoteiroBankPdf] doc criado: ${ref.id} status=${finalStatus} tokens in/out=${inputTokens}/${outputTokens}`);
+
+  // v4.50.1+ Registra em ai_usage_logs pra IA Hub agregar custo.
+  try {
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 90);
+    await db.collection('ai_usage_logs').add({
+      userId: uid,
+      agentId: 'roteiro-bank-import',
+      agentName: 'Import PDF Banco de Roteiros',
+      module: 'banco-roteiros',
+      provider: 'anthropic',
+      model: 'claude-sonnet-4-5',
+      inputTokens,
+      outputTokens,
+      cacheCreationTokens: 0,
+      cacheReadTokens: 0,
+      tokensSaved: 0,
+      cacheHit: false,
+      webSearchCount: 0,
+      timestamp: FieldValue.serverTimestamp(),
+      expiresAt,
+      source: 'cf-importRoteiroBankPdf',
+      bankDocId: ref.id,
+      filename: filename || 'unknown.pdf',
+    });
+  } catch (logErr) { console.warn('[importRoteiroBankPdf] ai_usage_logs falhou:', logErr.message); }
 
   return {
     docId: ref.id,
