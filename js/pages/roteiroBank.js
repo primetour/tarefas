@@ -24,6 +24,7 @@ let state = {
   list: [],
   loading: false,
   filter: { search: '', status: '', continent: '', country: '' },
+  abortCtrl: null,    // v4.50.10+ AbortController dos listeners delegados
 };
 
 function canEdit() {
@@ -199,6 +200,11 @@ function gridHTML() {
 }
 
 export async function renderRoteiroBank(container) {
+  // v4.50.10+ Aborta listeners de invocações anteriores (mesma rota re-aberta).
+  if (state.abortCtrl) state.abortCtrl.abort();
+  state.abortCtrl = new AbortController();
+  const signal = state.abortCtrl.signal;
+
   state.loading = true;
   container.innerHTML = `
     <div class="page-container" style="padding:20px;max-width:1400px;margin:0 auto;">
@@ -279,13 +285,22 @@ export async function renderRoteiroBank(container) {
       if (action === 'export-pdf') {
         const d = state.list.find(x => x.id === id);
         if (!d) { toast.error('Roteiro não encontrado.'); return; }
+        // v4.50.10+: indica progresso visualmente no próprio botão (sem toast
+        // "Gerando PDF…" que duplicava com o toast.success final).
+        const origHTML = btn.innerHTML;
+        btn.disabled = true;
+        btn.style.opacity = '0.6';
+        btn.innerHTML = '<span style="font-size:0.7rem;">⋯</span>';
         try {
-          toast.info('Gerando PDF…');
           const res = await generateRoteiroBankPDF(d);
           toast.success(`PDF gerado: ${res.filename || 'download iniciado'}`);
         } catch (err) {
           console.error('[Banco] export PDF falhou:', err);
           toast.error('Falha ao gerar PDF: ' + (err.message || err));
+        } finally {
+          btn.disabled = false;
+          btn.style.opacity = '';
+          btn.innerHTML = origHTML;
         }
         return;
       }
@@ -316,7 +331,7 @@ export async function renderRoteiroBank(container) {
       const id = card.dataset.id;
       location.hash = `#banco-roteiro-editor?id=${id}`;
     }
-  });
+  }, { signal });
 
   // Filtros
   container.addEventListener('input', (e) => {
@@ -325,7 +340,7 @@ export async function renderRoteiroBank(container) {
       const wrap = container.querySelector('#rb-list-wrap');
       if (wrap) wrap.innerHTML = gridHTML();
     }
-  });
+  }, { signal });
   container.addEventListener('change', (e) => {
     if (e.target.matches('#rb-filter-continent')) {
       state.filter.continent = e.target.value;
@@ -346,7 +361,7 @@ export async function renderRoteiroBank(container) {
       if (wrap) wrap.innerHTML = gridHTML();
       return;
     }
-  });
+  }, { signal });
   // Status pills
   container.addEventListener('click', (e) => {
     const pill = e.target.closest('[data-status-value]');
@@ -357,5 +372,5 @@ export async function renderRoteiroBank(container) {
     });
     const wrap = container.querySelector('#rb-list-wrap');
     if (wrap) wrap.innerHTML = gridHTML();
-  });
+  }, { signal });
 }

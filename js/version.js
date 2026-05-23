@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 50,
-  patch: 9,
-  build: '20260523-fix-timezone-iso-date',
+  patch: 10,
+  build: '20260523-fix-double-toast-listeners',
 };
 
 /** "1.2.0" */

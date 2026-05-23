@@ -39,6 +39,7 @@ let state = {
   dirty: false,
   saving: false,
   autosaveTimer: null,
+  abortCtrl: null,                              // v4.50.10+ controla listeners
   categories: DEFAULT_CATEGORIES,
   collections: DEFAULT_COLLECTIONS,
 };
@@ -492,6 +493,13 @@ function coerce(value, type) {
 /* ───────────────────────── Main render ───────────────────────── */
 
 export async function renderRoteiroBankEditor(container) {
+  // v4.50.10+ Aborta listeners de invocações anteriores (mesma rota re-aberta).
+  // Antes: cada navegação pra #banco-roteiro-editor adicionava +1 listener no
+  // container, causando 2x/3x/Nx toasts em qualquer ação delegada.
+  if (state.abortCtrl) state.abortCtrl.abort();
+  state.abortCtrl = new AbortController();
+  const signal = state.abortCtrl.signal;
+
   const qs = parseQs();
   state.id = qs.id || null;
   state.doc = emptyRoteiroBank();
@@ -650,7 +658,7 @@ export async function renderRoteiroBankEditor(container) {
       dirty();
       return;
     }
-  });
+  }, { signal });
 
   container.addEventListener('change', (e) => {
     if (e.target.matches('select[data-bind], select[data-city-bind], select[data-pricing-bind], select[data-visa-bind]')) {
@@ -660,7 +668,7 @@ export async function renderRoteiroBankEditor(container) {
       const ev = new Event('input', { bubbles: true });
       e.target.dispatchEvent(ev);
     }
-  });
+  }, { signal });
 
   container.addEventListener('click', async (e) => {
     const btn = e.target.closest('[data-action]');
@@ -811,7 +819,7 @@ export async function renderRoteiroBankEditor(container) {
       if (wrap) wrap.innerHTML = state.doc.documentation.visas.map((v,i)=>visaRowHTML(v,i)).join('');
       dirty(); return;
     }
-  });
+  }, { signal });
 }
 
 /* ─── v4.50.1+ Modal CRUD genérico pra categorias/coleções ─── */
@@ -942,5 +950,6 @@ async function openMetaModal({ title, items, kind, save, del, onChange }) {
 
 export function destroyRoteiroBankEditor() {
   if (state.autosaveTimer) { clearTimeout(state.autosaveTimer); state.autosaveTimer = null; }
-  state = { id: null, doc: null, dirty: false, saving: false, autosaveTimer: null, categories: DEFAULT_CATEGORIES };
+  if (state.abortCtrl)    { state.abortCtrl.abort(); state.abortCtrl = null; }
+  state = { id: null, doc: null, dirty: false, saving: false, autosaveTimer: null, abortCtrl: null, categories: DEFAULT_CATEGORIES, collections: DEFAULT_COLLECTIONS };
 }
