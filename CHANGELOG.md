@@ -6,6 +6,97 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.50.0+20260522-banco-roteiros-curadoria] — 2026-05-22
+
+Release **MINOR** — módulo NOVO: Banco de Roteiros (curadoria PRIMETOUR).
+
+**Decisão Renê**: "vamos trabalhar agora em um avanço desse módulo: banco de
+roteiros... uma aba que exibe sugestões de roteiros feitos com a curadoria
+da empresa... não tem IA nesse módulo, a princípio. é um local onde vamos
+incluir roteiros da empresa para a IA utilizar como base de conhecimento."
++ "Vou te mandar arquivos como esse para importar."
+
+**O que entrega**:
+
+1. **Collection nova `roteiros_bank`** — schema completo com 14 seções:
+   - Identidade (title, code, slug, collectionLabel)
+   - Status workflow (draft / review / approved / archived)
+   - **Validade** com endDate (controle de equipe — badge "Expirado" auto)
+   - Narrativa curta + longa
+   - Geo (continentes/países/cidades com nights — alinhado a portal_destinations)
+   - Duração (dias/noites)
+   - Days[] (dia-a-dia sugerido)
+   - **Categorias de hospedagem** (Sugestão Prime, Luxo, Standard, Moderado)
+     com hotels[] e pricing[] por período (estilo Classic Collection)
+   - Includes buckets (hospedagem/traslados/passeios/etc.)
+   - Excludes
+   - Pagamento (terrestre + aéreo + sinal)
+   - Cancelamento escalado
+   - Documentação (passaporte/menores/vistos por país/vacinas)
+   - Notas de viagem (clima, altitude)
+   - Imagens (hero + gallery + overrides)
+   - Source (manual / pdf_import / api_import)
+   - Tags + flag aiUsable (futuro v4.51+ IA usa como base)
+
+2. **Cloud Function `importRoteiroBankPdf`** (multimodal Claude Sonnet 4.5):
+   - Recebe `{ pdfBase64, filename, autoApprove }`
+   - Anthropic processa PDF nativamente (content block type='document')
+   - Extrai JSON estrutural conforme schema
+   - Grava em `roteiros_bank` (review ou approved)
+   - Permission: `portal_destinations_manage` / `portal_manage` / master
+   - Custo médio: ~$0.15/PDF (20k input + 7k output tokens)
+
+3. **Sidebar item próprio "Banco de Roteiros"** (#banco-roteiros):
+   - Listagem em cards (capa + título + cidades + dias + categorias + validade)
+   - Filtros: status pill, continente select, busca full-text
+   - Ações por card (autorizados): duplicar, arquivar
+   - Editor com auto-save 5s debounced (mesmo padrão v4.49.103+)
+
+4. **Editor (#banco-roteiro-editor)** com TODAS as seções editáveis:
+   - Capa, geo (cidades repeatable), dias (repeatable), categorias com hotels+pricing
+     (repeatable nested), includes (7 buckets), pagamento, cancelamento, vistos.
+   - Auto-vincula `portal_destinations` ao salvar (cria se não existe, com perm).
+
+5. **Firestore rules**:
+   - `roteiros_bank/{id}`: read pra qualquer autenticado, write pra
+     `portal_destinations_manage` / `portal_manage` / master.
+   - `roteiro_bank_categories/{key}`: CRUD pelos mesmos perms.
+
+6. **Seed inicial — 2 roteiros importados**:
+   - "Classic Collection: China e Tibete" (4 cidades, 3 categorias, 11 dias)
+     · docId: `VmucJQapEMcPwttNwmS1`
+   - "Peru Completo: Lima/Arequipa/Puno/Cusco/Valle Sagrado/Machu Picchu"
+     (6 cidades, 2 categorias, 11 dias)
+     · docId: `tXiKlh1HM7wV7YMLbqAl`
+   - Ambos status='approved', importedBy=Rene, source.type='pdf_import_seed'.
+
+**Arquivos novos**:
+- `js/services/roteiroBank.js` (380 linhas — schema + CRUD + ensureDestination)
+- `js/pages/roteiroBank.js` (240 linhas — listagem em cards)
+- `js/pages/roteiroBankEditor.js` (520 linhas — editor 7 seções com repeaters)
+- `functions/seed-roteiros-bank.cjs` (script seed via gcloud + Anthropic)
+
+**Arquivos modificados**:
+- `js/app.js` (rotas `banco-roteiros` e `banco-roteiro-editor`)
+- `js/components/sidebar.js` (item novo + alias rotas filhas)
+- `functions/index.js` (+200 linhas: `importRoteiroBankPdf` CF)
+- `firestore.rules` (+25 linhas: 2 collections novas)
+- `CHANGELOG.md` (este bloco)
+
+**Deploy manual**:
+```
+firebase deploy --only functions:importRoteiroBankPdf
+firebase deploy --only firestore:rules
+```
+
+**Próximo (v4.50.1)**:
+- Refator Destinos UI: tree-view continente → país → cidades collapsible
+- Quick-add destino: botão "+ destino" no editor (modal inline) que cria
+  em `portal_destinations` sem sair da página (hoje só auto-vincula on-save)
+- Export PDF/DOCX do roteiro do banco (replicar exports do roteiroEditor)
+
+---
+
 ## [4.49.109+20260522-fila-assincrona-cloud-function] — 2026-05-22
 
 Release **PATCH** — fila assíncrona com Cloud Function background

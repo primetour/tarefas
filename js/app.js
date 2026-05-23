@@ -74,6 +74,9 @@ import { renderArtsEditor }              from './pages/artsEditor.js';
 import { renderRoteiros }               from './pages/roteiros.js';
 import { renderRoteiroEditor, destroyRoteiroEditor } from './pages/roteiroEditor.js?v=4.43.0-async-fix';
 import { renderRoteiroDashboard, destroyRoteiroDashboard } from './pages/roteiroDashboard.js?v=20260508r1';
+// v4.50.0+ Banco de Roteiros — curadoria da empresa
+import { renderRoteiroBank }                                   from './pages/roteiroBank.js';
+import { renderRoteiroBankEditor, destroyRoteiroBankEditor }   from './pages/roteiroBankEditor.js';
 import { renderContentCalendar }         from './pages/contentCalendar.js';
 import { renderLuxuryTravel }            from './pages/luxuryTravel.js?v=20260508r1';
 import { renderLuxuryTravelAdmin }       from './pages/luxuryTravelAdmin.js?v=20260508r1';
@@ -555,6 +558,9 @@ function setupRouter() {
     'roteiros':         async () => { await renderRoteiros(content); },
     'roteiro-editor':   async () => { destroyRoteiroEditor(); await renderRoteiroEditor(content); },
     'roteiro-dashboard': async () => { destroyRoteiroDashboard(); await renderRoteiroDashboard(content); },
+    // v4.50.0+ Banco de Roteiros (curadoria)
+    'banco-roteiros':        async () => { await renderRoteiroBank(content); },
+    'banco-roteiro-editor':  async () => { destroyRoteiroBankEditor(); await renderRoteiroBankEditor(content); },
     'integrations': async () => { await renderIntegrations(content); },
     'about':        async () => { await renderAbout(content); },
     // Sistema de Horas de Desenvolvimento NÃO TEM rota interna.

@@ -3294,3 +3294,236 @@ function _safeParseJSON(rawText) {
     return null;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * importRoteiroBankPdf (v4.50.0+) — Banco de Roteiros
+ *
+ * Recebe um PDF (base64) de um roteiro curado (estilo "Classic Collection")
+ * e extrai estrutura JSON via Anthropic Claude multimodal (PDF document
+ * content block). Grava em `roteiros_bank` com status='review'.
+ *
+ * Input  : { pdfBase64: string, filename: string, autoApprove?: boolean }
+ * Output : { docId: string, parsed: object, tokensUsed: { input, output } }
+ *
+ * Permissão: canManageDestinations (mesma regra do banco — coerente).
+ * ═══════════════════════════════════════════════════════════════════════ */
+export const importRoteiroBankPdf = onCall({
+  region: 'us-central1',
+  timeoutSeconds: 540,         // 9min — Claude lê PDF inteiro
+  memory: '512MiB',
+  secrets: [ANTHROPIC_API_KEY],
+}, async (req) => {
+  if (!req.auth) throw new HttpsError('unauthenticated', 'Login obrigatório.');
+  const { pdfBase64, filename, autoApprove = false } = req.data || {};
+  if (!pdfBase64) throw new HttpsError('invalid-argument', 'pdfBase64 obrigatório.');
+  if (pdfBase64.length > 35_000_000) {
+    throw new HttpsError('invalid-argument', 'PDF muito grande (>25MB base64).');
+  }
+
+  // Verifica permissão via custom claims OU role doc
+  const uid = req.auth.uid;
+  let canImport = false;
+  try {
+    const u = await db.collection('users').doc(uid).get();
+    if (u.exists) {
+      const role = u.data()?.role;
+      if (role) {
+        const r = await db.collection('roles').doc(role).get();
+        const perms = r.exists ? (r.data()?.permissions || []) : [];
+        canImport = perms.includes('portal_destinations_manage')
+                 || perms.includes('portal_manage')
+                 || u.data()?.isMaster === true;
+      }
+    }
+  } catch (e) { /* default false */ }
+  if (!canImport) throw new HttpsError('permission-denied', 'Sem permissão pra importar.');
+
+  const extractPrompt = `
+Você é um extrator estruturado de roteiros de viagem curados da PRIMETOUR (agência de luxo brasileira).
+
+O PDF anexado contém UM roteiro completo no formato "Classic Collection" (estrutura típica:
+título, narrativa de capa, dia-a-dia, valores parte terrestre com múltiplas categorias de
+hospedagem, inclui/não inclui, formas de pagamento, cancelamento, documentação).
+
+Extraia TUDO em JSON estrito, conformando AO SCHEMA ABAIXO. Não invente dados — só inclua
+o que estiver explícito no PDF. Use null/array vazio quando não houver informação.
+
+SCHEMA OBRIGATÓRIO:
+{
+  "title": string,                         // ex: "Classic Collection: China e Tibete"
+  "subtitle": string,                      // opcional
+  "shortDescription": string,              // narrativa de capa (1-2 parágrafos)
+  "longDescription": string,               // opcional, mais detalhada se houver
+  "collectionLabel": string,               // ex: "Classic" (deduzir do título/cabeçalho)
+
+  "geo": {
+    "continents": [string],                // ex: ["Ásia"]
+    "countries":  [string],                // ex: ["China", "Tibete"]
+    "cities": [                            // SEQUÊNCIA das cidades no roteiro
+      { "city": string, "country": string, "continent": string, "nights": number }
+    ]
+  },
+
+  "durationDays":   number,                // total (chegada + saída)
+  "durationNights": number,                // soma das noites
+
+  "days": [                                // dia-a-dia sugerido
+    {
+      "dayNumber": number,
+      "city": string,                      // cidade principal do dia (ou "X - Y" se trecho)
+      "title": string,                     // título curto do dia
+      "narrative": string,                 // texto completo do dia
+      "overnightCity": string,             // onde pernoita (vazio no último dia se voo de saída)
+      "flightLeg": boolean                 // true se há voo interno no dia
+    }
+  ],
+
+  "categories": [                          // categorias de hospedagem (Sugestão Prime, Luxo, etc.)
+    {
+      "key": string,                       // slug: 'sugestao-prime', 'luxo', 'luxo-standard', 'luxo-moderado'
+      "label": string,                     // como aparece no PDF
+      "hotels": [
+        { "city": string, "name": string, "roomType": string, "nights": number, "supplierUrl": string }
+      ],
+      "pricing": [
+        {
+          "period": { "start": "YYYY-MM-DD", "end": "YYYY-MM-DD" },
+          "single": number,                // valor single (por pessoa)
+          "double": number,                // valor duplo (por pessoa)
+          "currency": "USD" | "BRL" | "EUR"
+        }
+      ],
+      "notes": string
+    }
+  ],
+
+  "includes": {                            // o que ESTÁ incluso (buckets)
+    "hospedagem":   [string],
+    "traslados":    [string],
+    "passeios":     [string],
+    "assistencia":  [string],              // recepção em aeroporto, etc.
+    "aereoInterno": [string],
+    "trem":         [string],
+    "outros":       [string]
+  },
+  "excludes": [string],                    // o que NÃO está incluso
+
+  "payment": {
+    "terrestrial": string,                 // forma pagamento parte terrestre
+    "aerial":      string,                 // forma pagamento parte aérea
+    "deposit":  { "amount": number, "currency": "USD"|"BRL"|"EUR", "perPerson": boolean, "notes": string },
+    "settlement":  string                  // prazo final pagamento
+  },
+
+  "cancellation": [                        // escala de cancelamento
+    { "fromDays": number, "multaPercent": number, "notes": string }
+  ],
+
+  "documentation": {
+    "passport": string,
+    "minors":   string,
+    "visas":    [ { "country": string, "required": boolean, "notes": string } ],
+    "vaccines": string
+  },
+
+  "travelNotes": [string],                 // bullets de notas (clima, altitude, observações)
+
+  "tags": [string]                         // 3-6 tags semânticas (ex: ["cultural", "espiritual", "unesco", "asia"])
+}
+
+REGRAS DE OURO:
+1. Retorne APENAS JSON válido, sem fences markdown, sem comentários.
+2. Datas no formato ISO YYYY-MM-DD. Se o PDF disser "01/01/2020 a 30/04/2020", converta.
+3. Valores numéricos sem prefixo de moeda (a moeda fica no campo "currency").
+4. "key" das categorias use slug: "sugestao-prime", "luxo", "luxo-standard", "luxo-moderado".
+   Se aparecer categoria nova, crie slug equivalente.
+5. cities[].nights deve REFLETIR exatamente o que o PDF diz pra cada cidade — soma de nights
+   deve bater com durationNights.
+6. Tags em português, lowercase, sem espaço.
+7. Se um campo não aparecer no PDF, use null (string) / 0 (number) / [] (array). Não pule chaves.
+`.trim();
+
+  const apiKey = ANTHROPIC_API_KEY.value();
+  if (!apiKey) throw new HttpsError('failed-precondition', 'ANTHROPIC_API_KEY missing.');
+
+  const reqBody = {
+    model: 'claude-sonnet-4-5',
+    max_tokens: 16000,
+    temperature: 0.1,
+    messages: [{
+      role: 'user',
+      content: [
+        { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: pdfBase64 } },
+        { type: 'text', text: extractPrompt },
+      ],
+    }],
+  };
+
+  console.log(`[importRoteiroBankPdf] user=${uid} file=${filename} pdfSizeKB=${Math.round(pdfBase64.length/1024)}`);
+
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+    body: JSON.stringify(reqBody),
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    console.error('[importRoteiroBankPdf] Anthropic error:', res.status, err);
+    throw new HttpsError('internal', `Anthropic ${res.status}: ${err.slice(0, 300)}`);
+  }
+  const d = await res.json();
+  const text = (d.content || []).filter(b => b.type === 'text').map(b => b.text || '').join('\n');
+  const inputTokens  = d.usage?.input_tokens  || 0;
+  const outputTokens = d.usage?.output_tokens || 0;
+
+  // Parse JSON defensivo
+  let parsed;
+  try {
+    const cleaned = text.replace(/^```json\s*/i, '').replace(/```\s*$/i, '').trim();
+    const start = cleaned.indexOf('{');
+    const end   = cleaned.lastIndexOf('}');
+    if (start < 0 || end < 0) throw new Error('JSON não encontrado no output');
+    parsed = JSON.parse(cleaned.slice(start, end + 1));
+  } catch (e) {
+    console.error('[importRoteiroBankPdf] parse falhou:', e.message, 'raw:', text.slice(0, 500));
+    throw new HttpsError('internal', `Falha ao parsear JSON do LLM: ${e.message}`);
+  }
+
+  // Monta o doc final pra Firestore (alinhado a emptyRoteiroBank)
+  const now = FieldValue.serverTimestamp();
+  const finalStatus = autoApprove ? 'approved' : 'review';
+  const docData = {
+    ...parsed,
+    status: finalStatus,
+    source: {
+      type: 'pdf_import',
+      originalFile: filename || 'unknown.pdf',
+      importedAt: now,
+      importedBy: uid,
+      llmTokens: { input: inputTokens, output: outputTokens },
+    },
+    createdAt: now,
+    createdBy: uid,
+    updatedAt: now,
+    updatedBy: uid,
+    ...(finalStatus === 'approved' ? { approvedAt: now, approvedBy: uid } : {}),
+  };
+
+  // Gera slug e code se não vieram do LLM
+  const slugify = (s) => String(s||'').toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  docData.slug = slugify(parsed.title || filename || 'roteiro');
+  docData.code = `${(parsed.collectionLabel||'BNK').slice(0,3).toUpperCase()}-${(parsed.title||'NEW').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^A-Z0-9 ]/g, '').split(/\s+/).filter(Boolean).slice(0,3).map(w=>w.slice(0,3)).join('') || 'NEW'}`;
+
+  const ref = db.collection('roteiros_bank').doc();
+  await ref.set(docData);
+  console.log(`[importRoteiroBankPdf] doc criado: ${ref.id} status=${finalStatus} tokens in/out=${inputTokens}/${outputTokens}`);
+
+  return {
+    docId: ref.id,
+    parsed,
+    tokensUsed: { input: inputTokens, output: outputTokens },
+    status: finalStatus,
+  };
+});

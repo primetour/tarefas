@@ -869,6 +869,34 @@ service cloud.firestore {
                     && resource.data.status == 'queued';
     }
 
+    // v4.50.0+ Banco de Roteiros — curadoria da empresa
+    // Read: qualquer usuário autenticado (consultores leem)
+    // Write: quem pode gerenciar destinos (princípio: curadoria é curadoria)
+    match /roteiros_bank/{docId} {
+      allow read:   if isAuth();
+      allow create: if isAuth() && (
+                      isAdmin()
+                      || hasPermission('portal_destinations_manage')
+                      || hasPermission('portal_manage')
+                    );
+      allow update: if isAuth() && (
+                      isAdmin()
+                      || hasPermission('portal_destinations_manage')
+                      || hasPermission('portal_manage')
+                    );
+      allow delete: if isAuth() && isAdmin();   // apenas master deleta hard
+    }
+
+    // v4.50.0+ Categorias de hospedagem do Banco — defaults + custom CRUD
+    match /roteiro_bank_categories/{key} {
+      allow read:   if isAuth();
+      allow create, update, delete: if isAuth() && (
+                      isAdmin()
+                      || hasPermission('portal_destinations_manage')
+                      || hasPermission('portal_manage')
+                    );
+    }
+
     match /roteiro_web_links/{token} {
       allow read:   if true;   // public — link holder can read
       allow create: if isAuth();

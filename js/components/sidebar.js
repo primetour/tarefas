@@ -65,6 +65,8 @@ const NAV_GROUPS = [
     items: [
       { route: 'content-calendar', icon: 'content-calendar', label: 'Calendário de Conteúdo', perm: 'content_calendar_view' },
       { route: 'roteiros',         icon: 'roteiros',         label: 'Gerador de Roteiros',    perm: 'roteiro_access' },
+      // v4.50.0+ Banco de Roteiros: curadoria PRIMETOUR (Classic Collection etc.) que alimenta a IA. Visível a todos autenticados.
+      { route: 'banco-roteiros',   icon: 'portal-areas',     label: 'Banco de Roteiros' },
       { route: 'portal-tips',      icon: 'portal-tips',      label: 'Portal de Dicas',        perm: 'portal_access'  },
       // 4.49.12+ Templates de áreas: tanto portal_areas_view quanto portal_areas_manage liberam ver
       { route: 'portal-areas',     icon: 'portal-areas',     label: 'Templates de áreas',     perm: 'portal_areas_view',   altPerm: 'portal_areas_manage' },
@@ -562,6 +564,11 @@ export class Sidebar {
       'portal-import':    'portal-tips',
       'portal-tip-editor':'portal-tips',
       'portal-import-manual':'portal-tips',
+      // v4.50.0+ Banco de Roteiros — editor é filha
+      'banco-roteiro-editor':'banco-roteiros',
+      // Gerador de Roteiros — editor + dashboard também são filhas
+      'roteiro-editor':       'roteiros',
+      'roteiro-dashboard':    'roteiros',
     };
     const effectiveRoute = routeAliases[route] || route;
     this.el.querySelectorAll('.nav-item').forEach(item => {

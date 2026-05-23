@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 49,
-  patch: 109,
-  build: '20260522-fila-assincrona-cloud-function',
+  minor: 50,
+  patch: 0,
+  build: '20260522-banco-roteiros-curadoria',
 };
 
 /** "1.2.0" */
