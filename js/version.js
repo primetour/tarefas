@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 51,
-  patch: 1,
-  build: '20260523-portal-notif-criacao-inline',
+  patch: 2,
+  build: '20260523-fix-notif-admin-filter-master',
 };
 
 /** "1.2.0" */

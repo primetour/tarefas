@@ -147,8 +147,11 @@ export async function createRequest({
     const { fetchUsers } = await import('./users.js');
     // Get admin/manager users to notify (cache 5min — economiza reads em alta concorrência)
     const allUsers = await fetchUsers({ active: true });
+    // v4.51.2+ Aceita TODAS as forms de "é admin": isMaster bool + roleId/role in [master,admin,head]
     const admins = allUsers
-      .filter(u => u.isMaster || u.roleId === 'admin' || u.roleId === 'head')
+      .filter(u => u.isMaster
+                || ['master', 'admin', 'head'].includes(u.roleId)
+                || ['master', 'admin', 'head'].includes(u.role))
       .map(u => u.id);
     if (admins.length) {
       notify('request.created', {

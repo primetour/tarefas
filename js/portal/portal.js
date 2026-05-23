@@ -3399,9 +3399,12 @@ async function handleSubmit(db, taskTypes) {
           collection(db, 'users'),
           where('active', '==', true)
         ));
+        // v4.51.2+ Inclui 'master' na lista (E2E mostrou que Renê tem roleId='master'
+        // mas sem isMaster setado — filter antigo perdia ele). Lição: aceitar TODAS
+        // as forms de "é admin": isMaster bool + roleId in ['master','admin','head'].
         const admins = usersSnap.docs
           .map(d => ({ id: d.id, ...d.data() }))
-          .filter(u => u.isMaster || u.roleId === 'admin' || u.roleId === 'head')
+          .filter(u => u.isMaster || ['master', 'admin', 'head'].includes(u.roleId) || ['master', 'admin', 'head'].includes(u.role))
           .map(u => u.id);
         if (admins.length) {
           await notify('request.created', {
