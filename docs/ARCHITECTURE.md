@@ -321,6 +321,38 @@ classifier → LLM classifier), o padrão recomendado é:
 Detalhes operacionais em `scripts/SHADOW-MODE-NL-CLASSIFIER.md` e
 `RULES-AND-AUTOMATIONS.md` §10.5d.
 
+### Banco de Roteiros (v4.50.0+) — curadoria estática + import IA
+
+**Princípio**: separar **curadoria** (template pronto) de **cotação** (saída de
+cliente). O Gerador de Roteiros (`#roteiros`) atende um cliente específico. O
+Banco de Roteiros (`#banco-roteiros`) é a biblioteca de templates da empresa.
+
+| Aspecto | Gerador de Roteiros | Banco de Roteiros |
+|---|---|---|
+| Collection | `roteiros` | `roteiros_bank` |
+| Schema | `emptyRoteiro()` (com client/travelers/costPricing) | `emptyRoteiroBank()` (sem cliente; com categories[] e validity) |
+| Dono | consultor (`consultantId`) | curadoria (write = `portal_destinations_manage`) |
+| Geração | IA via fila assíncrona (`processRoteiroQueue`) | Import PDF via Claude multimodal (`importRoteiroBankPdf`) |
+| Visibilidade | privado por consultor + colaboradores | read pra qualquer autenticado |
+| Status | draft/review/sent/approved/archived (pipeline cliente) | draft/review/approved/archived (pipeline curadoria) |
+
+**Por que duas collections separadas em vez de campo `isTemplate`**:
+1. Read patterns radicalmente diferentes (cliente raramente lê todos os seus
+   próprios; banco é lido por todos o tempo todo)
+2. Permissões mais simples (rules sem ramificações condicionais)
+3. Schemas divergem progressivamente (banco ganha categorias multi-período;
+   gerador ganha tasks operacionais)
+4. Auditoria limpa (`source.type` no banco distingue manual / pdf_import / api_import)
+
+**Import via Anthropic multimodal**: PDF base64 vai direto pro Claude Sonnet 4.5
+como content block `type='document'`. Nenhuma dependência de pdf-parse / pdfjs no
+servidor — Claude lê o PDF nativamente (incluindo layout de tabelas de pricing).
+Custo ~20k input + 7k output tokens por PDF (~$0.15).
+
+**Alinhamento com Destinos**: `ensureDestination()` no service garante que toda
+cidade do banco vira (ou referencia) um doc em `portal_destinations`. Mesmo
+princípio que `embeddedTips[]` no Gerador faz com `portal_tips`.
+
 ## Segurança em camadas
 
 > **Última auditoria completa:** 2026-05-15 (v4.40.21–23). Pré-auditoria

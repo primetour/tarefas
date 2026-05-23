@@ -1,6 +1,15 @@
 # Sistema de Horas de Desenvolvimento
 
-> **Última atualização:** v4.49.103 (22/05/2026) · 109 dias de calendário · ~807h 35min approved · ~R$ 121.137 · 7h 25min/dia médio · 200 releases + 17 phases (217 entradas aprovadas)
+> **Última atualização:** v4.50.0 (22/05/2026) · 109 dias de calendário · ~823h approved · ~R$ 123.453 · 7h 33min/dia médio · 206 releases + 17 phases (223 entradas aprovadas)
+>
+> _Sprint 22/05/2026 tarde/noite — Roteiros IA + Banco_: **6 releases** (4.49.104→4.49.109 + **v4.50.0 minor**) — **+15,46h / +R$ 2.316,38**. Bloco focado em viabilidade financeira/operacional da IA (chunking 20+ dias, prompt caching, fila assíncrona 30 simultâneos) + lançamento do **Banco de Roteiros** (módulo novo de curadoria, import PDF via Claude Sonnet 4.5 multimodal, 2 PDFs Classic Collection seedados).
+>
+> - **4.49.105** (+0,64h): Ícones unicode → SVG em 6 pages
+> - **4.49.106** (+0,23h): Defesa back sem confirm em roteiro vazio
+> - **4.49.107** (+0,72h): Fix IA truncamento (max_tokens 8k→16k)
+> - **4.49.108** (+2,40h): Chunking IA + prompt caching pra 20+ dias
+> - **4.49.109** (+3,63h): Fila assíncrona Cloud Function (lease pattern, 30+ simultâneos)
+> - **v4.50.0** (+7,84h): **Banco de Roteiros — módulo NOVO** (schema 14 seções, CF importRoteiroBankPdf multimodal Claude Sonnet 4.5, UI listing+editor, sidebar item, rules, seed 2 PDFs)
 >
 > _Sprint 22/05/2026 — Roteiros UX (completa)_: **18 releases** (4.49.86 → 4.49.103) — **+17,37h / +R$ 2.605,50**. Maior sprint single-day em volume de patches. Auditoria UX completa do Gerador de Roteiros após críticas iterativas do Renê:
 >

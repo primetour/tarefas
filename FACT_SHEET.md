@@ -90,6 +90,17 @@ O PRIMETOUR e uma plataforma SaaS proprietaria de gestao operacional desenvolvid
 - **Web links publicos** com contador de visualizacoes (`roteiro-view.html` standalone, sem auth)
 - **Tarefas operacionais auto** (Sprint 4) — quando aprovado, gera tasks vinculadas via `roteiroTasks.generateOperationalTasksForRoteiro`
 - **Dashboard de KPIs** — taxa de conversao, valor medio, top destinos, evolucao mensal
+- **Fila assincrona pra 30+ usuarios simultaneos** (v4.49.109) — Cloud Function background `processRoteiroQueue` com lease pattern (transaction), maxInstances=5, concurrency=1. Client cria doc na fila, escuta via `onSnapshot`. Capacidade ~100 geracoes/min steady. Anthropic Tier 1 (50 req/min) sobra.
+- **Chunking IA pra 20+ dias** (v4.49.108) — roteiros >14 dias ou >5 destinos geram em fases (skeleton + days chunks de 10). Prompt caching do system prompt economiza ~60% input. Garante zero truncamento.
+
+### 3.2.1 Banco de Roteiros (v4.50.0+) — Curadoria PRIMETOUR
+- **Modulo novo separado do Gerador** (#banco-roteiros) — roteiros curados da empresa (Classic Collection, Exclusive, Corporate) que servem como referencia manual pro consultor e base de conhecimento da IA (futuro v4.51+)
+- **Import de PDF via Claude multimodal** — Cloud Function `importRoteiroBankPdf` envia PDF base64 como content block `type='document'` pro Sonnet 4.5. Extrai 14 secoes estruturadas em ~120s. Custo medio ~$0.15/PDF
+- **Schema 14 secoes** — capa+identidade+validade+coleção, geografia (cidades multi-pais), dia-a-dia, categorias hospedagem com hotels+pricing por periodo, includes 7 buckets, excludes, pagamento, cancelamento escalado, documentacao+vistos por pais, notas viagem, imagens, source, tags
+- **Validade pra controle de equipe** — `validity.endDate` dispara badge "Expirado" no card automaticamente (nao esconde)
+- **Categorias estilo Classic Collection** — Sugestao Prime / Luxo / Luxo Standard / Luxo Moderado (defaults). User pode adicionar custom via `roteiro_bank_categories` collection
+- **Alinhamento com Destinos** — `ensureDestination()` auto-vincula `portal_destinations` no save (cria se nao existe e user tem permissao)
+- **Seed inicial 22/05/2026** — 2 PDFs Renê importados: China e Tibete (4 cidades, 3 cats), Peru Completo (6 cidades, 2 cats)
 
 ### 3.3 Portal de Dicas (B2B Content Platform)
 - **Hub unificado** com 3 abas internas: Gerar Material, Dicas Cadastradas, Importar Dicas

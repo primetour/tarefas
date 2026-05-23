@@ -350,6 +350,59 @@ Schema canônico em `js/services/roteiros.js` → `emptyRoteiro()`. Migration on
 - `linkedTaskIds[]` + `tasksGeneratedAt` (v4.43.0+ Sprint 4) — IDs de tasks operacionais geradas a partir do roteiro aprovado.
 - `createdAt`, `createdBy`, `updatedAt`, `updatedBy`
 
+### `roteiro_generations_queue` (v4.49.109+)
+
+Fila assíncrona pra geração de roteiros via IA. Client cria doc com `status='queued'`,
+Cloud Function `processRoteiroQueue` (onDocumentCreated, maxInstances=5, concurrency=1)
+claima via lease transaction, executa chunking ou single-shot, grava `result`. Client
+escuta via `onSnapshot`.
+
+- `id` (PK auto)
+- `userId` (FK → `users.uid`) — dono. Rule: create/read/delete só dono; update FALSE.
+- `briefingMessage`, `totalDias`, `useChunking`
+- `status` — `queued` | `processing` | `done` | `failed`
+- `phase`, `phaseLabel`, `progress { current, total }`
+- `claimedAt`, `workerId` — lease pattern (idempotência)
+- `result { text, inputTokens, outputTokens, cacheReadTokens, cacheCreationTokens, webSearchCount, webSearchResults[], webSearchQueries[], citations[], phases }`
+- `error`, `createdAt`, `completedAt`
+
+### `roteiros_bank` (v4.50.0+) — Banco de Roteiros (curadoria)
+
+**Módulo novo**. Roteiros curados da empresa (estilo "Classic Collection"). Schema
+em `js/services/roteiroBank.js` → `emptyRoteiroBank()` + `migrateRoteiroBank()`.
+Distinto de `roteiros` (que são cotações de cliente). Futuro v4.51+: IA usa como base
+de conhecimento (`aiUsable` flag).
+
+- `id` (PK auto)
+- `title`, `subtitle`, `code` (auto), `slug` (auto), `collectionLabel`
+- `status` — `draft` | `review` | `approved` | `archived`
+- `validity { startDate, endDate, notes }` — controle de equipe; expira badge "Expirado"
+- `shortDescription`, `longDescription`
+- `geo { continents[], countries[], cities[], destinationIds[] }` — cities = `[{ city, country, continent, nights }]`. Auto-vinculado a `portal_destinations` via `ensureDestination()` no save.
+- `durationDays`, `durationNights`
+- `days[]` — `[{ dayNumber, city, title, narrative, overnightCity, flightLeg }]`
+- `categories[]` — categorias de hospedagem (Sugestão Prime / Luxo / Standard / Moderado). Cada item: `{ key, label, notes, hotels: [{ city, name, roomType, nights, supplierUrl }], pricing: [{ period: { start, end }, single, double, currency }] }`
+- `includes { hospedagem[], traslados[], passeios[], assistencia[], aereoInterno[], trem[], outros[] }`
+- `excludes[]`
+- `payment { terrestrial, aerial, deposit{ amount, currency, perPerson, notes }, settlement }`
+- `cancellation[]` — `[{ fromDays, multaPercent, notes }]`
+- `documentation { passport, minors, visas[], vaccines }` — visas = `[{ country, required, notes }]`
+- `travelNotes[]`
+- `images { hero, gallery[], overrides{} }`
+- `source { type, originalFile, importedAt, importedBy, llmTokens{ input, output } }` — type: `manual` | `pdf_import` | `pdf_import_seed` | `api_import`
+- `tags[]`, `aiUsable`
+- `createdAt`, `createdBy`, `updatedAt`, `updatedBy`, `approvedAt`, `approvedBy`
+
+**Permissões**: read pra qualquer `isAuth()`; write requer `portal_destinations_manage` / `portal_manage` / master. Apenas master pode deletar (hard); demais usam `archiveRoteiroBank()`.
+
+### `roteiro_bank_categories` (v4.50.0+)
+
+Categorias de hospedagem do Banco (CRUD opcional via Settings). Defaults em
+`DEFAULT_CATEGORIES` (Sugestão Prime, Luxo, Luxo Standard, Luxo Moderado).
+
+- `id` (== `key`, slug)
+- `label`, `order`, `color`, `builtin`
+
 ### `landing_pages`
 - `id` (PK)
 - `slug`
