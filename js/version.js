@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 50,
-  patch: 12,
-  build: '20260523-products-cutoff-14mai',
+  minor: 51,
+  patch: 0,
+  build: '20260523-portal-solicitacoes-8-fixes',
 };
 
 /** "1.2.0" */

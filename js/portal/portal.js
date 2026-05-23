@@ -15,7 +15,15 @@ import {
 import { renderPickerButton, refreshPickerButton, bindOptionPicker } from '../components/optionPicker.js';
 
 /* ─── Estado do usuário autenticado ─────────────────────────── */
-let portalUser = null; // { uid, name, email, department }
+// v4.51.0+ `sector` é o campo canônico (setor formal); `department` é legado
+// mantido pra compat. UI mostra `sector || department`.
+let portalUser = null; // { uid, name, email, sector, department }
+
+// v4.51.0+ Anti-double-submit: flag global que bloqueia handleSubmit
+// concorrente. Antes: button.disabled era setado DENTRO de handleSubmit,
+// então um 2º click no mesmo frame escapava do guard. Renê: "Internet lenta
+// + usuário ansioso = duas tarefas em cima de uma só solicitação".
+let _submitInFlight = false;
 
 /* ─── Bootstrap ───────────────────────────────────────────── */
 // Cache da lista de domínios SSO autorizados (carregada dinamicamente)
@@ -65,6 +73,8 @@ async function boot() {
         uid:        user.uid,
         name:       profile.name || user.displayName || '',
         email:      user.email || '',
+        // v4.51.0+ sector é canônico; department é fallback legado
+        sector:     profile.sector || profile.department || '',
         department: profile.department || '',
       };
 
@@ -380,7 +390,7 @@ async function renderForm(db, taskTypes, auth) {
                 <div class="form-group" id="fg-user-area">
                   <label class="form-label">Sua área</label>
                   <input type="text" class="form-input" id="p-user-area"
-                    value="${esc(u.department)}" readonly
+                    value="${esc(u.sector || u.department || '')}" readonly
                     style="background:var(--bg-surface);opacity:0.7;cursor:not-allowed;" />
                 </div>
                 <div class="form-group" id="fg-area">
@@ -388,9 +398,9 @@ async function renderForm(db, taskTypes, auth) {
                     <span class="info-tip" title="Setor que está pedindo a demanda. Pode ser diferente do seu setor, caso esteja solicitando em nome de outro.">ℹ</span>
                   </label>
                   <select class="form-select" id="p-area" style="display:none;">
-                    ${REQUESTING_AREAS.map(a => `<option value="${a}" ${a===u.department?'selected':''}>${a}</option>`).join('')}
+                    ${REQUESTING_AREAS.map(a => `<option value="${a}" ${a===(u.sector||u.department)?'selected':''}>${a}</option>`).join('')}
                   </select>
-                  ${renderPickerButton({ btnId: 'p-area-btn', selected: findAreaOption(u.department), emptyLabel: '— Selecione a área —' })}
+                  ${renderPickerButton({ btnId: 'p-area-btn', selected: findAreaOption(u.sector || u.department), emptyLabel: '— Selecione a área —' })}
                   <div class="form-error" id="err-area">Selecione uma área.</div>
                 </div>
               </div>
@@ -439,6 +449,35 @@ async function renderForm(db, taskTypes, auth) {
 
                 <!-- Calendar widget inserted here by renderPortalCalendar -->
                 <div class="slots-container" id="slots-container"></div>
+              </div>
+
+              <!-- v4.51.0+ Renê: descrição depois do calendário pra UX (clicar slot
+                   → ver desc/título logo abaixo sem rolar a página inteira). -->
+              <!-- Passo 4: Título (pre-preenchido pelo slot) -->
+              <div class="form-group" id="fg-title">
+                <label class="form-label">Título da demanda <span class="required">*</span></label>
+                <input type="text" class="form-input" id="p-title"
+                  placeholder="Ex: Newsletter Maio — Programa ICs" maxlength="120" />
+                <div class="form-error" id="err-title">Informe um título para a demanda.</div>
+              </div>
+
+              <!-- Passo 5: Descrição -->
+              <div class="form-group" id="fg-desc">
+                <label class="form-label">Descrição da demanda <span class="required">*</span></label>
+                <textarea class="form-textarea" id="p-desc" rows="4"
+                  placeholder="Descreva em detalhes o que você precisa, contexto, referências e objetivos..."></textarea>
+                <div class="form-error" id="err-desc">Descreva sua demanda.</div>
+              </div>
+
+              <!-- v4.51.0+ Link de conteúdo (opcional) — referência externa (Notion, Drive, etc) -->
+              <div class="form-group" id="fg-content-link">
+                <label class="form-label">
+                  Link de conteúdo <span style="color:var(--text-muted);font-weight:400;">(opcional)</span>
+                  <span class="info-tip" title="URL de referência: Notion, Google Drive, Figma, brief etc. Ajuda o time a entender o contexto sem reuniões adicionais.">ℹ</span>
+                </label>
+                <input type="url" class="form-input" id="p-content-link"
+                  placeholder="https://..." />
+                <div class="form-error" id="err-content-link">Informe uma URL válida (começando com http:// ou https://).</div>
               </div>
 
               <!-- Urgency -->
@@ -552,21 +591,9 @@ async function renderForm(db, taskTypes, auth) {
                 ${renderPickerButton({ btnId: 'p-nucleo-btn', selected: null, emptyLabel: '— Selecione o squad —' })}
               </div>
 
-              <!-- Passo 6: Título (pre-preenchido pelo slot) -->
-              <div class="form-group" id="fg-title">
-                <label class="form-label">Título da demanda <span class="required">*</span></label>
-                <input type="text" class="form-input" id="p-title"
-                  placeholder="Ex: Newsletter Maio — Programa ICs" maxlength="120" />
-                <div class="form-error" id="err-title">Informe um título para a demanda.</div>
-              </div>
-
-              <!-- Passo 7: Descrição -->
-              <div class="form-group" id="fg-desc">
-                <label class="form-label">Descrição da demanda <span class="required">*</span></label>
-                <textarea class="form-textarea" id="p-desc" rows="4"
-                  placeholder="Descreva em detalhes o que você precisa, contexto, referências e objetivos..."></textarea>
-                <div class="form-error" id="err-desc">Descreva sua demanda.</div>
-              </div>
+              <!-- v4.51.0+ Título + descrição + link movidos pra cima (após calendário).
+                   Antes eram aqui no fim — Renê: "Trazer a descrição pra depois do
+                   calendário, pra facilitar o UX". -->
             </div>
 
             <!-- Submit buttons -->
@@ -653,57 +680,75 @@ function showNewsletterPrompt(db, taskTypes) {
   const hasNewsletter = taskTypes.some(t => t.id === 'newsletter' || t.name?.toLowerCase() === 'newsletter');
   if (!hasNewsletter) return;
 
+  // v4.51.0+ MODAL BLOQUEANTE (Renê: "Pop-up news fixo na tela. Usuário tem
+  // que aceitar ou negar o pop up pra sair (hoje é banner na parte inferior)").
   // Remove any existing prompt before showing a new one
   document.getElementById('nl-quick-prompt')?.remove();
 
-  const prompt = document.createElement('div');
-  prompt.id = 'nl-quick-prompt';
-  prompt.style.cssText = `
-    position:fixed;bottom:24px;right:24px;z-index:9999;
-    background:var(--bg-card);border:1px solid rgba(212,168,67,0.3);
-    border-radius:12px;padding:20px;max-width:340px;
-    box-shadow:0 8px 32px rgba(0,0,0,0.3);
-    animation:slideUp 0.3s ease-out;
+  // Overlay full-screen com backdrop dimmed — bloqueia interação com form
+  const overlay = document.createElement('div');
+  overlay.id = 'nl-quick-prompt';
+  overlay.style.cssText = `
+    position:fixed;inset:0;z-index:9999;
+    background:rgba(10,22,40,0.65);backdrop-filter:blur(2px);
+    display:flex;align-items:center;justify-content:center;padding:24px;
+    animation:fadeIn 0.2s ease-out;
     font-family:var(--font-ui);
   `;
-  prompt.innerHTML = `
-    <div style="display:flex;align-items:flex-start;gap:12px;">
-      <div style="font-size:1.5rem;flex-shrink:0;">📧</div>
-      <div style="flex:1;">
-        <div style="font-weight:600;color:var(--text-primary);font-size:0.9375rem;margin-bottom:4px;">
-          Solicitação de Newsletter?
+  overlay.innerHTML = `
+    <div style="background:var(--bg-card);border:1px solid rgba(212,168,67,0.3);
+      border-radius:14px;padding:28px;max-width:460px;width:100%;
+      box-shadow:0 16px 48px rgba(0,0,0,0.4);
+      animation:slideUp 0.3s ease-out;">
+      <div style="display:flex;align-items:flex-start;gap:14px;margin-bottom:8px;">
+        <div style="font-size:2rem;flex-shrink:0;">📧</div>
+        <div style="flex:1;">
+          <h2 style="font-weight:700;color:var(--text-primary);font-size:1.125rem;margin:0 0 6px 0;">
+            Solicitação de Newsletter?
+          </h2>
+          <p style="font-size:0.875rem;color:var(--text-muted);line-height:1.55;margin:0;">
+            Se a sua demanda é newsletter, podemos preencher automaticamente os campos
+            (setor Marketing, tipo Newsletter) e levar você direto ao calendário editorial.
+          </p>
         </div>
-        <p style="font-size:0.8125rem;color:var(--text-muted);line-height:1.5;margin:0 0 12px 0;">
-          Preencha automaticamente os campos para newsletter e vá direto ao calendário editorial.
-        </p>
-        <div style="display:flex;gap:8px;">
-          <button id="nl-quick-yes" style="padding:6px 16px;border-radius:6px;border:none;
-            background:var(--brand-gold);color:var(--text-inverse,#FFFFFF);font-weight:600;cursor:pointer;font-size:0.8125rem;">
-            Sim, é newsletter
-          </button>
-          <button id="nl-quick-no" style="padding:6px 12px;border-radius:6px;border:1px solid var(--border-subtle);
-            background:transparent;color:var(--text-muted);cursor:pointer;font-size:0.8125rem;">
-            Não
-          </button>
-        </div>
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;">
+        <button id="nl-quick-no" type="button"
+          style="padding:10px 18px;border-radius:8px;border:1px solid var(--border-default);
+          background:transparent;color:var(--text-secondary);cursor:pointer;font-size:0.875rem;
+          font-weight:500;font-family:inherit;">
+          Não, é outro tipo
+        </button>
+        <button id="nl-quick-yes" type="button"
+          style="padding:10px 20px;border-radius:8px;border:none;
+          background:var(--brand-gold);color:var(--text-inverse,#0A1628);font-weight:700;
+          cursor:pointer;font-size:0.875rem;font-family:inherit;">
+          Sim, é newsletter →
+        </button>
       </div>
     </div>
   `;
 
-  document.body.appendChild(prompt);
+  document.body.appendChild(overlay);
 
   document.getElementById('nl-quick-yes')?.addEventListener('click', async () => {
-    prompt.remove();
-    // Auto-fill for newsletter
+    overlay.remove();
     await prefillNewsletter(db, taskTypes);
   });
 
   document.getElementById('nl-quick-no')?.addEventListener('click', () => {
-    prompt.remove();
+    overlay.remove();
   });
 
-  // Auto-dismiss after 15 seconds
-  setTimeout(() => { prompt.remove(); }, 15000);
+  // v4.51.0+ Não há auto-dismiss — user TEM que escolher pra sair (modal bloqueante)
+  // Esc também fecha (= "não")
+  const escHandler = (e) => {
+    if (e.key === 'Escape') {
+      overlay.remove();
+      document.removeEventListener('keydown', escHandler);
+    }
+  };
+  document.addEventListener('keydown', escHandler);
 }
 
 async function prefillNewsletter(db, taskTypes) {
@@ -2107,10 +2152,34 @@ async function openEditRequestModal(db, taskTypes, data) {
   document.body.appendChild(overlay);
 
   // Urgency toggle
+  // v4.51.0+ Renê: "Edição de solicitação permite desmarcar a urgência. Não pode!"
+  // Urgência é MONOTÔNICA: pode ir false→true, mas não true→false. Governance:
+  // depois que o time foi avisado da urgência, não dá pra "fingir que nunca foi".
   let editUrgent = !!(reqData.urgency);
+  const wasUrgentOriginally = editUrgent;
   const urgToggle = overlay.querySelector('#fs-edit-urgency-toggle');
   const urgDot = overlay.querySelector('#fs-edit-urgency-dot');
+
+  // Marcar visualmente como locked se já era urgente
+  if (wasUrgentOriginally && urgToggle) {
+    urgToggle.style.cursor = 'not-allowed';
+    urgToggle.title = 'Urgência não pode ser desmarcada após criada. Para reverter, fale com o time de triagem.';
+  }
+
   urgToggle?.addEventListener('click', () => {
+    // Bloqueia desmarcar se era urgente originalmente
+    if (wasUrgentOriginally) {
+      // Mostra inline info uma vez
+      let info = overlay.querySelector('#fs-edit-urgency-locked-info');
+      if (!info) {
+        info = document.createElement('div');
+        info.id = 'fs-edit-urgency-locked-info';
+        info.style.cssText = 'margin-top:8px;padding:8px 10px;background:rgba(239,68,68,0.08);border-left:3px solid #EF4444;font-size:0.78rem;color:var(--text-secondary);border-radius:4px;';
+        info.textContent = '🔒 Urgência não pode ser desmarcada após criada. Fale com a triagem se precisa reverter.';
+        urgToggle.parentNode.appendChild(info);
+      }
+      return; // não toggla
+    }
     editUrgent = !editUrgent;
     if (editUrgent) {
       urgDot.style.cssText += 'border-color:#EF4444;background:#EF4444;color:#fff;';
@@ -2238,7 +2307,10 @@ async function openEditRequestModal(db, taskTypes, data) {
 
       // Auto-FORÇA urgência se nova data manual viola SLA da variação
       // (governança: requester não pode burlar o prazo mínimo de produção)
-      let finalUrgent = editUrgent;
+      // v4.51.0+ E também NUNCA permite desmarcar urgência já criada (monotônico):
+      // se era urgente, continua urgente independente do que UI mandou.
+      const wasUrgentBefore = !!(reqData.urgency);
+      let finalUrgent = wasUrgentBefore ? true : editUrgent;
       const variation = (editTypeData?.variations || []).find(v => v.id === reqData.variationId);
       const slaDays = variation?.slaDays;
       if (newDate && slaDays != null && !isNaN(slaDays)) {
@@ -2982,13 +3054,29 @@ function bindFormEvents(db, taskTypes) {
             `<option value="${v.id}" data-sla="${v.slaDays}">${esc(v.name)} · ${v.slaDays===0?'mesmo dia':v.slaDays+'d'}</option>`
           ).join('');
         varFG.style.display = 'block';
+
+        // v4.51.0+ Auto-preencher variação se houver SÓ 1 (Renê: "quando só
+        // há 1 tipo registrado, já trazer o campo preenchido pelo sistema")
+        if (typeData.variations.length === 1) {
+          const only = typeData.variations[0];
+          varSel.value = only.id;
+          // Refresca picker visual com a única opção selecionada
+          refreshPickerButton('p-variation-btn', {
+            selected: { id: only.id, label: `${only.name} · ${only.slaDays===0?'mesmo dia':only.slaDays+'d'}`, icon: '🎯', color: '#8B5CF6' },
+            emptyLabel: '— Selecione a variação —',
+          });
+          // Dispara change pra populate SLA badge + due date
+          varSel.dispatchEvent(new Event('change'));
+        } else {
+          // Reseta visual do picker (lista foi reescrita, sem auto-select)
+          refreshPickerButton('p-variation-btn', { selected: null, emptyLabel: '— Selecione a variação —' });
+        }
       } else {
         // Type has no variations — hide the field
         varFG.style.display = 'none';
+        refreshPickerButton('p-variation-btn', { selected: null, emptyLabel: '— Selecione a variação —' });
       }
     }
-    // Reseta visual do picker de variação (lista foi reescrita)
-    refreshPickerButton('p-variation-btn', { selected: null, emptyLabel: '— Selecione a variação —' });
 
     if (slotsEl) slotsEl.classList.add('visible');
 
@@ -3228,12 +3316,23 @@ function validate() {
 
 /* ─── Submit ──────────────────────────────────────────────── */
 async function handleSubmit(db, taskTypes) {
+  // v4.51.0+ Lock global anti-double-submit. Antes: button.disabled era
+  // setado DENTRO da função — em redes lentas, 2 clicks em <100ms ambos
+  // entravam em addDoc antes do disable. Renê: "permitido abrir duas tarefas
+  // em cima de uma só solicitação". Agora: flag _submitInFlight bloqueia
+  // re-entrância no INÍCIO da função.
+  if (_submitInFlight) {
+    console.warn('[handleSubmit] submit já em andamento — ignorando duplo-click');
+    return;
+  }
+
   if (!validate()) {
     // Scroll to first error
     document.querySelector('.has-error')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     return;
   }
 
+  _submitInFlight = true;
   const btn = document.getElementById('portal-submit-btn');
   if (btn) { btn.disabled = true; btn.classList.add('loading'); btn.textContent = 'Enviando...'; }
 
@@ -3253,7 +3352,8 @@ async function handleSubmit(db, taskTypes) {
       userId:         portalUser?.uid || null,
       requesterName:  document.getElementById('p-name')?.value?.trim()             || '',
       requesterEmail: document.getElementById('p-email')?.value?.trim().toLowerCase() || '',
-      userArea:       portalUser?.department || '',
+      // v4.51.0+ userArea = setor canônico do user (Renê: "estava trazendo núcleo/legado em vez de setor")
+      userArea:       portalUser?.sector || portalUser?.department || '',
       requestingArea: document.getElementById('p-area')?.value                     || '',
       sector:         sector                                                        || '',
       outOfCalendar:  outOfCal === true,
@@ -3264,6 +3364,8 @@ async function handleSubmit(db, taskTypes) {
       nucleo:         document.getElementById('p-nucleo')?.value                   || '',
       title:          document.getElementById('p-title')?.value?.trim()            || '',
       description:    document.getElementById('p-desc')?.value?.trim()             || '',
+      // v4.51.0+ Link de conteúdo opcional (Notion/Drive/Figma/etc.) — referência externa
+      contentLink:    document.getElementById('p-content-link')?.value?.trim()     || '',
       urgency:        urgency === true,
       desiredDate:    document.getElementById('p-date')?.value
         ? new Date(document.getElementById('p-date').value + 'T12:00:00')
@@ -3302,6 +3404,9 @@ async function handleSubmit(db, taskTypes) {
   } catch(e) {
     alert('Erro ao enviar solicitação: ' + e.message);
     if (btn) { btn.disabled = false; btn.classList.remove('loading'); btn.textContent = 'Enviar apenas esta solicitação →'; }
+  } finally {
+    // v4.51.0+ Libera o lock SEMPRE — sucesso, erro ou validação tardia
+    _submitInFlight = false;
   }
 }
 

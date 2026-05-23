@@ -504,12 +504,34 @@ function mountShell(root) {
   // Start real-time notification listener
   const currentUser = store.get('currentUser');
   if (currentUser?.uid) {
+    // v4.51.0+ Toast global pra notificações novas (Renê: "Notificação de
+    // alteração de tarefa aparece somente na pág tarefas + Quando chega
+    // solicitação não tem notificação no sistema"). Antes: só badge + som.
+    // Agora: badge + som + toast com link "Ver" que abre o painel.
+    let _prevUnreadSet = null;
     _unsubNotifications = subscribeNotifications(currentUser.uid, (notifications) => {
       store.set('notifications', notifications);
       const unread = notifications.filter(n => !n.read).length;
       store.set('unreadCount', unread);
       checkAndPlaySound(unread);
       updateNotifSidebarBadge(unread);
+
+      // Detecta notifs NOVAS (id não estava no set anterior) e dispara toast
+      try {
+        const currentSet = new Set(notifications.filter(n => !n.read).map(n => n.id));
+        if (_prevUnreadSet !== null) {
+          const newOnes = notifications.filter(n => !n.read && !_prevUnreadSet.has(n.id));
+          if (newOnes.length) {
+            import('./components/toast.js').then(({ toast }) => {
+              for (const n of newOnes.slice(0, 3)) {   // máx 3 toasts simultâneos pra não floodar
+                const msg = `${n.title || 'Nova notificação'}${n.body ? ' — ' + String(n.body).slice(0, 80) : ''}`;
+                toast.info(msg, { duration: 8000 });
+              }
+            }).catch(() => {});
+          }
+        }
+        _prevUnreadSet = currentSet;
+      } catch (e) { /* não bloqueia */ }
     });
     // Cleanup expired notifications (runs once on login)
     cleanupExpired(currentUser.uid).catch(() => {});
