@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 50,
-  patch: 1,
-  build: '20260522-banco-crud-thumbs-pais-dashboard',
+  patch: 2,
+  build: '20260522-fix-filter-pais-render',
 };
 
 /** "1.2.0" */

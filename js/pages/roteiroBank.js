@@ -188,12 +188,12 @@ export async function renderRoteiroBank(container) {
         ],
         activeStatus: state.filter.status,
         selects: [
-          { name: 'continent', label: 'Continente', value: state.filter.continent, options: [
+          { id: 'rb-filter-continent', label: 'Continente', value: state.filter.continent, options: [
             { value: '', label: 'Todos continentes' },
             ...CONTINENTS.map(c => ({ value: c, label: c })),
           ]},
           // v4.50.1+ Filtro país cascata — opções derivadas dos roteiros sob o continente ativo
-          { name: 'country', label: 'País', value: state.filter.country, options: countryOptions() },
+          { id: 'rb-filter-country', label: 'País', value: state.filter.country, options: countryOptions() },
         ],
       })}
       <div id="rb-list-wrap">${gridHTML()}</div>
@@ -286,11 +286,11 @@ export async function renderRoteiroBank(container) {
     }
   });
   container.addEventListener('change', (e) => {
-    if (e.target.matches('select[name="continent"]')) {
+    if (e.target.matches('#rb-filter-continent')) {
       state.filter.continent = e.target.value;
       // Reset país (cascata: muda continente → países disponíveis mudam)
       state.filter.country = '';
-      const countrySelect = container.querySelector('select[name="country"]');
+      const countrySelect = container.querySelector('#rb-filter-country');
       if (countrySelect) {
         countrySelect.innerHTML = countryOptions().map(o => `<option value="${o.value}">${o.label}</option>`).join('');
         countrySelect.value = '';
@@ -299,7 +299,7 @@ export async function renderRoteiroBank(container) {
       if (wrap) wrap.innerHTML = gridHTML();
       return;
     }
-    if (e.target.matches('select[name="country"]')) {
+    if (e.target.matches('#rb-filter-country')) {
       state.filter.country = e.target.value;
       const wrap = container.querySelector('#rb-list-wrap');
       if (wrap) wrap.innerHTML = gridHTML();
