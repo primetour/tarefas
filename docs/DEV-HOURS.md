@@ -1,6 +1,8 @@
 # Sistema de Horas de Desenvolvimento
 
-> **Última atualização:** v4.50.0 (22/05/2026) · 109 dias de calendário · ~823h approved · ~R$ 123.453 · 7h 33min/dia médio · 206 releases + 17 phases (223 entradas aprovadas)
+> **Última atualização:** v4.50.1 (22/05/2026) · 109 dias de calendário · ~826h approved · ~R$ 123.894 · 7h 35min/dia médio · 207 releases + 17 phases (224 entradas aprovadas)
+>
+> _Sprint 22/05/2026 noite (banco fase 2)_: **v4.50.1** complemento do Banco de Roteiros — **+2,94h / +R$ 441,00**. Demandas Renê pós-v4.50.0: CRUD inline pra coleções e categorias, thumb auto banco_imagens→Unsplash (Backfill rodado nos 2 PDFs), filtro país cascata, dashboard com 2 blocos novos (Banco + IA), ai_usage_logs em processRoteiroQueue + importRoteiroBankPdf. Hotfix v4.50.2 (filter selects precisam de `id` não `name`).
 >
 > _Sprint 22/05/2026 tarde/noite — Roteiros IA + Banco_: **6 releases** (4.49.104→4.49.109 + **v4.50.0 minor**) — **+15,46h / +R$ 2.316,38**. Bloco focado em viabilidade financeira/operacional da IA (chunking 20+ dias, prompt caching, fila assíncrona 30 simultâneos) + lançamento do **Banco de Roteiros** (módulo novo de curadoria, import PDF via Claude Sonnet 4.5 multimodal, 2 PDFs Classic Collection seedados).
 >
