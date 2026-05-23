@@ -71,23 +71,27 @@ function cardHTML(d) {
 
   const cats = (d.categories || []).length;
 
-  // v4.50.7+ Data de criação + validade (sempre visível; "indefinida" se vazio)
+  // v4.50.7+ Validade do roteiro (start + end) — campos do schema definidos
+  // pelo curador. NÃO confundir com data de criação do doc no sistema.
+  // v4.50.8 (Renê): "vc tem que respeitar os campos 'validade início' e
+  // 'validade fim' nessa tarefa, e nao qdo o roteiro foi criado no sistema".
   const fmtDateBr = (val) => {
     if (!val) return '';
     try {
-      // Firestore Timestamp tem .toDate(); string ISO "YYYY-MM-DD" usa Date direto
+      // Aceita string ISO YYYY-MM-DD OU Firestore Timestamp
       const dt = val?.toDate ? val.toDate() : new Date(val);
       if (isNaN(dt.getTime())) return '';
       return dt.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
     } catch { return ''; }
   };
-  const createdAtTxt = fmtDateBr(d.createdAt) || '—';
-  const validityTxt = d.validity?.endDate ? fmtDateBr(d.validity.endDate) : 'Indefinida';
-  const validityIsIndef = !d.validity?.endDate;
+  const startTxt   = d.validity?.startDate ? fmtDateBr(d.validity.startDate) : 'Indefinida';
+  const endTxt     = d.validity?.endDate   ? fmtDateBr(d.validity.endDate)   : 'Indefinida';
+  const startIndef = !d.validity?.startDate;
+  const endIndef   = !d.validity?.endDate;
   const meta = `
     <div style="display:flex;gap:14px;color:var(--text-muted);font-size:0.72rem;flex-wrap:wrap;">
-      <span title="Criado em">📅 Criado: <strong style="color:var(--text-secondary);">${esc(createdAtTxt)}</strong></span>
-      <span title="Validade do roteiro" style="${validityIsIndef ? 'font-style:italic;' : ''}">⏳ Validade: <strong style="color:${validityIsIndef ? 'var(--text-muted)' : 'var(--text-secondary)'};">${esc(validityTxt)}</strong></span>
+      <span title="Validade início" style="${startIndef ? 'font-style:italic;' : ''}">📅 Início: <strong style="color:${startIndef ? 'var(--text-muted)' : 'var(--text-secondary)'};">${esc(startTxt)}</strong></span>
+      <span title="Validade fim"    style="${endIndef ? 'font-style:italic;' : ''}">⏳ Fim: <strong style="color:${endIndef ? 'var(--text-muted)' : 'var(--text-secondary)'};">${esc(endTxt)}</strong></span>
     </div>`;
 
   return `

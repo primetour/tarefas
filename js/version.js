@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 50,
-  patch: 7,
-  build: '20260523-banco-card-datas',
+  patch: 8,
+  build: '20260523-banco-card-validade-correta',
 };
 
 /** "1.2.0" */
