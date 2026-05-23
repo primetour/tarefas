@@ -804,6 +804,43 @@ Não confiar APENAS em `button.disabled` — em event delegation ou múltiplos t
 2. **Save**: defense-in-depth — `finalValue = wasTrueOriginally ? true : uiValue` (não confia só na UI)
 3. **Documentação**: campo no schema tem comentário "MONOTÔNICO — só pode ir false→true"
 
+### q) Service que lê estado global (store) quebra em entry-points alternativos (v4.51.3)
+
+**Sintoma**: `notify()` em `services/notifications.js` lia `store.get('currentUser')?.uid` pra setar `actorId`. Funcionava no app principal. Mas quando o portal público (`js/portal/portal.js`, que NÃO usa o store do app — tem seu próprio `portalUser` global) chamou `notify()`, `actorId = undefined`. Firestore rule `actorId == request.auth.uid` rejeitou batch inteiro com `permission-denied`.
+
+**Princípio**: services que precisam de dados de contexto (user atual, workspace, etc.) devem:
+1. **Aceitar override via params** (`actorId`, `workspaceId`, etc.)
+2. Cair pro lookup automático no store **só** quando params não vêm
+3. **Abortar cedo** com mensagem clara se ambos falham (em vez de continuar e tomar permission-denied silencioso)
+
+```js
+async function notify(type, { actorId: actorIdOverride = null, ... } = {}) {
+  const actorId = actorIdOverride || store.get('currentUser')?.uid;
+  if (!actorId) {
+    console.warn('[notify] sem actorId — rule vai bloquear');
+    return;
+  }
+  // ...
+}
+```
+
+**Auditar**: outros services que leem store implicitamente (`saveX()`, `audit()`, `addTaskActivity()`, etc.) podem ter o mesmo bug quando chamados de scripts/portais/CFs alternativas. Padrão: cada um aceita override do contexto.
+
+### r) Filtros de "é admin" devem aceitar TODAS as formas (v4.51.2)
+
+Sistemas crescem com aliases: `isMaster:true`, `roleId:'master'`, `roleId:'admin'`, `roleId:'head'`, `role:'master'`, etc. Filtros que checam só uma forma vazam users elegíveis.
+
+**Padrão pra "é admin"**:
+```js
+const ADMIN_ROLES = ['master', 'admin', 'head'];
+const isAdmin = u =>
+     u.isMaster
+  || ADMIN_ROLES.includes(u.roleId)
+  || ADMIN_ROLES.includes(u.role);
+```
+
+Centralizar em helper `store.isAdminUser(u)` evita drift entre N callers. Esta lição é generalização de §12.m (singular vs plural fields).
+
 ### j) Em qualquer lista exposta no front-end, sempre prever CRUD
 
 Estabelecido em v4.50.1. Categorias, coleções, tipos, status (que sejam editáveis) viram collection Firestore com defaults + CRUD via UI:

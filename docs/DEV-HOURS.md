@@ -1,6 +1,11 @@
 # Sistema de Horas de Desenvolvimento
 
-> **Última atualização:** v4.51.1 (23/05/2026) · 110 dias de calendário · ~831h 52min approved · ~R$ 124.800 · 7h 33min/dia médio · 218 releases + 17 phases (235 entradas aprovadas)
+> **Última atualização:** v4.51.3 (23/05/2026) · 110 dias de calendário · ~832h 39min approved · ~R$ 124.917 · 7h 34min/dia médio · 220 releases + 17 phases (237 entradas aprovadas)
+>
+> _Double-check E2E_: testes reais no Chrome MCP revelaram 2 bugs adicionais pós-v4.51.1:
+> - **v4.51.2** (+0,23h): filter de admins ignorava roleId='master'
+> - **v4.51.3** (+0,55h): notify() sem actorId override → permission-denied no portal
+> Lições novas CLAUDE.md §12.q (services store-coupled) + §12.r (filtros "é admin" multi-form).
 >
 > _Sprint 23/05/2026 tarde — Portal de Solicitações_: **v4.51.0 + v4.51.1** — **+2,41h / +R$ 360,75**. 10 bugs Renê listados; 8 corrigidos em v4.51.0 + notif criação inline em v4.51.1. Lições novas CLAUDE.md §12.n (2 caminhos pra mesma op = side effects esquecidos), §12.o (anti-double-submit no início), §12.p (flags monotônicas). Pendentes pra v4.51.2: calendar layout (preciso reproduzir em viewport específico), audit que admins têm `roleId: 'admin'|'head'` populado.
 >
