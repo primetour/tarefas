@@ -757,6 +757,53 @@ Se a operação for muito longa (>10s) e precisar de feedback global, usar `toas
 
 **Auditar**: qualquer campo "tipo" que aparece como string E array em lugares diferentes do código.
 
+### n) Dois caminhos pra mesma operação criam side-effects esquecidos (v4.51.1)
+
+**Sintoma Renê**: "quando chega solicitação não tem notificação no sistema".
+
+**Bug**: `js/services/requests.js → createRequest()` dispara `notify('request.created')` pra admins. Mas o portal público (`js/portal/portal.js → handleSubmit()`) **NÃO usa o service** — chama `addDoc(collection(db, 'requests'), reqDoc)` direto, bypassando toda a lógica colateral.
+
+**Princípio**: quando existem 2+ caminhos pra mesma operação CRUD (service + page direta, frontend + admin script, etc.), TODA lógica colateral (notif, audit, cache invalidation) precisa ou:
+1. Estar centralizada no service (e os outros caminhos chamam o service) — **preferido**
+2. Estar replicada em todos os caminhos com comentário cross-referenciando (`// MIRROR de createRequest() em services/requests.js linha X`)
+3. Ser implementada via **Cloud Function `onDocumentCreated`** que roda independente de quem escreveu (mais robusto, à prova de novas pages)
+
+**Auditar**: pra cada `addDoc/setDoc` em página front, ver se há service equivalente com side-effects. Se sim, ou redirecionar pro service ou replicar inline com comentário.
+
+### o) Anti-double-submit DEVE checar flag no INÍCIO da função (v4.51.0)
+
+**Sintoma Renê**: "Internet lenta + usuário ansioso = duas tarefas em cima de uma só solicitação".
+
+**Bug clássico**: `button.disabled = true` setado DENTRO do handler. Em rede lenta, 2 clicks chegam em <100ms, ambos passam pela validação ANTES do disable, ambos chamam `addDoc`.
+
+**Fix definitivo**: flag de módulo verificada no INÍCIO da função, liberada em `finally`:
+
+```js
+let _submitInFlight = false;
+async function handleSubmit() {
+  if (_submitInFlight) return;     // ✓ guard ANTES de qualquer await
+  _submitInFlight = true;
+  try {
+    // ... operação async ...
+  } finally {
+    _submitInFlight = false;
+  }
+}
+```
+
+Não confiar APENAS em `button.disabled` — em event delegation ou múltiplos triggers do mesmo handler, o disable pode chegar tarde.
+
+### p) Urgência (e flags one-way semelhantes) devem ser MONOTÔNICAS (v4.51.0)
+
+**Sintoma Renê**: "edição de solicitação permite desmarcar a urgência. Não pode!"
+
+**Princípio**: após uma solicitação ser marcada como urgente, o time foi notificado, replanejou agenda, possivelmente cancelou outras coisas. Permitir desmarcar depois = revisionismo histórico que confunde governança.
+
+**Padrão pra qualquer flag one-way** (urgência, "publicado", "aprovado", "arquivado" reversível parcial):
+1. **UI**: cursor:not-allowed + tooltip explicativo + info inline ao clicar
+2. **Save**: defense-in-depth — `finalValue = wasTrueOriginally ? true : uiValue` (não confia só na UI)
+3. **Documentação**: campo no schema tem comentário "MONOTÔNICO — só pode ir false→true"
+
 ### j) Em qualquer lista exposta no front-end, sempre prever CRUD
 
 Estabelecido em v4.50.1. Categorias, coleções, tipos, status (que sejam editáveis) viram collection Firestore com defaults + CRUD via UI:

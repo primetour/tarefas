@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 51,
-  patch: 0,
-  build: '20260523-portal-solicitacoes-8-fixes',
+  patch: 1,
+  build: '20260523-portal-notif-criacao-inline',
 };
 
 /** "1.2.0" */

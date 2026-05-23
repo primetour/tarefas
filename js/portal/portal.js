@@ -3386,6 +3386,37 @@ async function handleSubmit(db, taskTypes) {
       await autoCreateTask(db, ref, reqDoc, typeData);
     }
 
+    // v4.51.1+ Notif IN-APP pra admins/managers (Renê: "Quando chega
+    // solicitação não tem notificação no sistema"). Antes: portal/portal.js
+    // usava addDoc direto e bypassava `createRequest()` do service, que era
+    // o único lugar que disparava notify('request.created'). Agora replicado
+    // inline aqui — non-blocking, falha silenciosa não impede submissão.
+    (async () => {
+      try {
+        const { notify } = await import('../services/notifications.js');
+        // Busca admins/managers diretamente (sem fetchUsers que faz query autenticada)
+        const usersSnap = await getDocs(query(
+          collection(db, 'users'),
+          where('active', '==', true)
+        ));
+        const admins = usersSnap.docs
+          .map(d => ({ id: d.id, ...d.data() }))
+          .filter(u => u.isMaster || u.roleId === 'admin' || u.roleId === 'head')
+          .map(u => u.id);
+        if (admins.length) {
+          await notify('request.created', {
+            entityType: 'request', entityId: ref.id,
+            recipientIds: admins,
+            title: 'Nova solicitação recebida',
+            body: `${reqDoc.requesterName} — ${reqDoc.typeName || 'Solicitação'}${reqDoc.urgency ? ' (URGENTE)' : ''}`,
+            route: 'requests',
+            category: 'request',
+            priority: reqDoc.urgency ? 'high' : 'normal',
+          });
+        }
+      } catch (e) { console.warn('[portal] notify falhou:', e.message); }
+    })();
+
     // Notify team via EmailJS
     await notifyTeam({ ...reqDoc, requestId: ref.id }).catch(() => {});
 
