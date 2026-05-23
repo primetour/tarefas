@@ -3415,6 +3415,9 @@ async function handleSubmit(db, taskTypes) {
             route: 'requests',
             category: 'request',
             priority: reqDoc.urgency ? 'high' : 'normal',
+            // v4.51.2+ portal não popula store.currentUser → precisa passar actor explícito
+            actorId: portalUser?.uid,
+            actorName: portalUser?.name || reqDoc.requesterName,
           });
         }
       } catch (e) { console.warn('[portal] notify falhou:', e.message); }

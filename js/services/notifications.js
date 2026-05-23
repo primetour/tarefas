@@ -217,7 +217,14 @@ export async function notify(type, {
   route,
   priority = 'normal',
   category,
-}) {
+  // v4.51.2+ Permite caller passar actorId/actorName explícitos. Necessário
+  // pra portais/scripts que NÃO populam store.currentUser (ex: portal/portal.js
+  // usa portalUser global). Sem isso, notify() gravava actorId=undefined e
+  // a Firestore rule (request.resource.data.actorId == request.auth.uid)
+  // bloqueava o batch inteiro com "Missing or insufficient permissions".
+  actorId: actorIdOverride = null,
+  actorName: actorNameOverride = null,
+} = {}) {
   if (!recipientIds.length) { console.log('[Notify] No recipients, skipping'); return; }
 
   // 4.23+ — Bug fix: lia userProfile cacheado, podendo gravar o nome do
@@ -225,8 +232,8 @@ export async function notify(type, {
   // notificações disparadas por outros). Agora re-lê o currentUser pelo
   // store de users (que é o source of truth atualizado por subscriptions),
   // e só usa userProfile como fallback.
-  const actorId   = uid();
-  const actorName = (() => {
+  const actorId   = actorIdOverride || uid();
+  const actorName = actorNameOverride || (() => {
     if (actorId) {
       const users = store.get('users') || [];
       const u = users.find(x => x.id === actorId);
@@ -234,6 +241,12 @@ export async function notify(type, {
     }
     return store.get('userProfile')?.name || 'Sistema';
   })();
+
+  // v4.51.2+ Aborta se ainda sem actorId — rule exige actorId == auth.uid
+  if (!actorId) {
+    console.warn('[Notify] sem actorId, abortando — rule exige actorId == auth.uid');
+    return;
+  }
 
   // Auto-detect category from type
   if (!category) category = type.split('.')[0];

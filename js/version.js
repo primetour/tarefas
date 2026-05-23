@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 51,
-  patch: 2,
-  build: '20260523-fix-notif-admin-filter-master',
+  patch: 3,
+  build: '20260523-notify-actor-override-portal',
 };
 
 /** "1.2.0" */
