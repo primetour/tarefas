@@ -72,8 +72,8 @@ const NAV_GROUPS = [
       { route: 'portal-areas',     icon: 'portal-areas',     label: 'Templates de áreas',     perm: 'portal_areas_view',   altPerm: 'portal_areas_manage' },
       // 4.49.12+ Banco de Imagens: perm granular nova com fallback legacy
       { route: 'portal-images',    icon: 'portal-images',    label: 'Banco de Imagens',       perm: 'portal_images_manage', altPerm: 'portal_manage' },
-      { route: 'landing-pages',    icon: 'landing-pages',    label: 'Landing Pages',          perm: 'portal_manage'  },
-      { route: 'cms',              icon: 'cms',              label: 'CMS / Site',             perm: 'portal_manage'  },
+      // v4.50.4+ "Landing Pages" e "CMS / Site" removidos da sidebar (Renê 22/05) —
+      // rotas continuam funcionando via hash direto, mas não aparecem no nav.
       { route: 'sites-btg',        icon: 'cms',              label: 'Sites',                  perm: 'portal_manage', href: 'btg/dashboard/sites/' },
       { route: 'arts-editor',      icon: 'arts-editor',      label: 'Editor de Artes',        perm: 'portal_manage'  },
       // 4.49.12+ Luxury Travel: gated por luxury_travel_manage (antes sempre visível)
@@ -307,10 +307,11 @@ export class Sidebar {
           </div>
           <button class="sidebar-user-menu-btn">⋯</button>
         </div>
-        <!-- Versão + acesso à documentação técnica + horas de desenvolvimento.
+        <!-- Versão + acesso à documentação técnica.
              Single source of truth: js/version.js
-             docs.html e dev-hours-view.html são públicos (auditoria externa
-             autorizada) — ver docs/UI-COMPONENTS.md "Acesso público (3.0.0)". -->
+             docs.html é público (auditoria externa autorizada).
+             v4.50.4+: link "⏱" pra dev-hours-view.html REMOVIDO (Renê 22/05) —
+             continua acessível só via URL externa /dev-hours-view.html. -->
         <div style="display:flex;align-items:stretch;border-top:1px solid var(--border-subtle);margin-top:4px;opacity:0.7;">
           <a class="sidebar-version" href="docs.html" target="_blank" rel="noopener"
             title="Documentação técnica · Build: ${APP_VERSION_FULL}"
@@ -321,15 +322,6 @@ export class Sidebar {
             onmouseover="this.style.color='var(--brand-gold)';"
             onmouseout="this.style.color='var(--text-muted)';"
           ><span>PRIMETOUR · ${APP_VERSION_LABEL}</span><span style="font-size:0.625rem;">📚</span></a>
-          <a href="dev-hours-view.html#products" target="_blank" rel="noopener"
-            title="Horas de Desenvolvimento — Foco em produto (Portal/Imagens/Roteiros)"
-            style="display:flex;align-items:center;justify-content:center;
-              padding:8px 12px 10px;font-size:0.875rem;color:var(--text-muted);
-              text-decoration:none;border-left:1px solid var(--border-subtle);
-              transition:color 0.15s;"
-            onmouseover="this.style.color='var(--brand-gold)';"
-            onmouseout="this.style.color='var(--text-muted)';"
-          >⏱</a>
         </div>
       </div>
     `;

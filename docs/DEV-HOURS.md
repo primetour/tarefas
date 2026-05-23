@@ -1,8 +1,13 @@
 # Sistema de Horas de Desenvolvimento
 
-> **Última atualização:** v4.50.1 (22/05/2026) · 109 dias de calendário · ~826h approved · ~R$ 123.894 · 7h 35min/dia médio · 207 releases + 17 phases (224 entradas aprovadas)
+> **Última atualização:** v4.50.4 (22/05/2026) · 109 dias de calendário · ~827h 27min approved · ~R$ 124.111 · 7h 35min/dia médio · 210 releases + 17 phases (227 entradas aprovadas)
 >
-> _Sprint 22/05/2026 noite (banco fase 2)_: **v4.50.1** complemento do Banco de Roteiros — **+2,94h / +R$ 441,00**. Demandas Renê pós-v4.50.0: CRUD inline pra coleções e categorias, thumb auto banco_imagens→Unsplash (Backfill rodado nos 2 PDFs), filtro país cascata, dashboard com 2 blocos novos (Banco + IA), ai_usage_logs em processRoteiroQueue + importRoteiroBankPdf. Hotfix v4.50.2 (filter selects precisam de `id` não `name`).
+> _Sprint 22/05/2026 noite (banco fase 3 + cleanup)_: **v4.50.2 → v4.50.4** — **+1,45h / +R$ 217,32**:
+> - **v4.50.2** (+0,29h): hotfix filtro país (selects precisam de `id` não `name`)
+> - **v4.50.3** (+1,01h): Banco — remover Importar PDF (sem função) + ícone Exportar PDF nos cards com layout idêntico ao Gerador (novo `roteiroBankGenerator.js` adapta schema bank→roteiro)
+> - **v4.50.4** (+0,15h): sidebar cleanup — Dev Hours, Landing Pages, CMS/Site removidos do nav
+>
+> _Sprint 22/05/2026 noite (banco fase 2)_: **v4.50.1** complemento do Banco de Roteiros — **+2,94h / +R$ 441,00**. Demandas Renê pós-v4.50.0: CRUD inline pra coleções e categorias, thumb auto banco_imagens→Unsplash (Backfill rodado nos 2 PDFs), filtro país cascata, dashboard com 2 blocos novos (Banco + IA), ai_usage_logs em processRoteiroQueue + importRoteiroBankPdf.
 >
 > _Sprint 22/05/2026 tarde/noite — Roteiros IA + Banco_: **6 releases** (4.49.104→4.49.109 + **v4.50.0 minor**) — **+15,46h / +R$ 2.316,38**. Bloco focado em viabilidade financeira/operacional da IA (chunking 20+ dias, prompt caching, fila assíncrona 30 simultâneos) + lançamento do **Banco de Roteiros** (módulo novo de curadoria, import PDF via Claude Sonnet 4.5 multimodal, 2 PDFs Classic Collection seedados).
 >

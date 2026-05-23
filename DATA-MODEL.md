@@ -397,8 +397,17 @@ de conhecimento (`aiUsable` flag).
 
 ### `roteiro_bank_categories` (v4.50.0+)
 
-Categorias de hospedagem do Banco (CRUD opcional via Settings). Defaults em
-`DEFAULT_CATEGORIES` (Sugestão Prime, Luxo, Luxo Standard, Luxo Moderado).
+Categorias de hospedagem do Banco (CRUD via modal inline no editor desde v4.50.1).
+Defaults em `DEFAULT_CATEGORIES` (Sugestão Prime, Luxo, Luxo Standard, Luxo Moderado).
+
+- `id` (== `key`, slug)
+- `label`, `order`, `color`, `builtin` (boolean — defaults bloqueados com 🔒 no modal)
+
+### `roteiro_bank_collections` (v4.50.1+)
+
+Coleções (marca curatorial) do Banco — Classic / Exclusive / Corporate. CRUD via
+modal inline no editor (mesma UX das categorias). Defaults em
+`DEFAULT_COLLECTIONS`.
 
 - `id` (== `key`, slug)
 - `label`, `order`, `color`, `builtin`

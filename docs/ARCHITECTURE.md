@@ -353,6 +353,27 @@ Custo ~20k input + 7k output tokens por PDF (~$0.15).
 cidade do banco vira (ou referencia) um doc em `portal_destinations`. Mesmo
 princípio que `embeddedTips[]` no Gerador faz com `portal_tips`.
 
+**Export PDF reusa Gerador** (v4.50.3+): em vez de duplicar 1500+ linhas do
+`roteiroGenerator.js`, criamos `bankDocToRoteiroShape(bankDoc)` em
+`js/services/roteiroBankGenerator.js` que adapta o shape do banco pro shape
+esperado por `generateRoteiroPDF(roteiro)`. Adaptações principais:
+`categories[].hotels[]` flatten em `hotels[]` (notes guarda label da categoria),
+`categories[].pricing[]` vira `pricing.customRows[]` no formato
+"Categoria · período · Single/Duplo", `includes.{buckets}` flatten com tags
+"[Hospedagem]", "[Passeios]", etc., `documentation.visas[]` consolidado em
+`importantInfo.visa`, `cancellation[]` no shape do roteiroPDF.
+
+**Hero auto-resolve** (v4.50.1+): listing chama `ensureBankHero(id, doc)` em
+background pra docs sem hero. Lookup: `portal_images` por country+city com
+`assetCategory='location'` → fallback CF `fetchDestinationPhoto` (cache 90d em
+`photo_cache/{queryKey}`). Mesma cascata usada pelo Gerador.
+
+**IA Hub integração** (v4.50.1+): CFs `processRoteiroQueue` (gerador IA) e
+`importRoteiroBankPdf` (import banco) gravam em `ai_usage_logs` (mesma collection
+que outros agentes) com tokens + cacheRead + webSearchCount. Visualização
+automática nas abas Custos/Logs do `aiHub.js` — filtro por `module` ('roteiros'
+ou 'banco-roteiros').
+
 ## Segurança em camadas
 
 > **Última auditoria completa:** 2026-05-15 (v4.40.21–23). Pré-auditoria

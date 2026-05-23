@@ -101,6 +101,11 @@ O PRIMETOUR e uma plataforma SaaS proprietaria de gestao operacional desenvolvid
 - **Categorias estilo Classic Collection** — Sugestao Prime / Luxo / Luxo Standard / Luxo Moderado (defaults). User pode adicionar custom via `roteiro_bank_categories` collection
 - **Alinhamento com Destinos** — `ensureDestination()` auto-vincula `portal_destinations` no save (cria se nao existe e user tem permissao)
 - **Seed inicial 22/05/2026** — 2 PDFs Renê importados: China e Tibete (4 cidades, 3 cats), Peru Completo (6 cidades, 2 cats)
+- **CRUD inline de categorias e coleções** (v4.50.1) — modal compacto no editor com edit/add/delete (defaults Classic/Exclusive/Corporate · Sugestão Prime/Luxo/Standard/Moderado bloqueados com 🔒). Sem listas hardcoded.
+- **Thumb auto banco_imagens → Unsplash** (v4.50.1) — `resolveBankHero()` busca em portal_images por country+city, fallback Unsplash via CF com cache 90d. Listing aplica em background pra docs sem hero.
+- **Filtro país cascata** (v4.50.1+hotfix v4.50.2) — select dinâmico de países sob continente ativo, reset auto.
+- **Export PDF do banco** (v4.50.3) — ícone download em cada card, reusa pipeline visual do Gerador via `bankDocToRoteiroShape()`. Mesma capa, day-by-day, hotels, pricing, cancelamento, docs. Filename: `Banco-{titulo-slug}.pdf`.
+- **Logs IA Hub** (v4.50.1) — CFs processRoteiroQueue + importRoteiroBankPdf gravam `ai_usage_logs` com tokens + custo, auto-aparece nas abas Custos/Logs do aiHub.
 
 ### 3.3 Portal de Dicas (B2B Content Platform)
 - **Hub unificado** com 3 abas internas: Gerar Material, Dicas Cadastradas, Importar Dicas

@@ -6,6 +6,33 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.50.4+20260522-sidebar-cleanup] — 2026-05-22
+
+Release **PATCH** — limpeza da sidebar (3 itens removidos).
+
+**Renê**: "sidebar: exclua o link do dev hour do sidebar — nao pode ser
+acessado via sistema. só via link + exclua o item 'landing pages' + exclua
+o item cms/site".
+
+**Removidos** (rotas continuam funcionando via hash direto, só não aparecem
+mais no nav):
+
+- ⏱ Link de Horas de Desenvolvimento no rodapé da sidebar — agora só
+  acessível via URL externa `https://primetour.github.io/tarefas/dev-hours-view.html`
+- "Landing Pages" do grupo Serviços
+- "CMS / Site" do grupo Serviços
+
+**Mantido**:
+- "Sites" (BTG dashboard externo) — pedido foi pra remover "CMS/Site" e
+  "Landing Pages", "Sites" tem outra função (link pra dashboard de sites
+  hospedados no BTG)
+- Link de docs técnicas (📚 PRIMETOUR · vX.Y.Z) no rodapé — esse continua
+
+**Arquivos**:
+- mod: `js/components/sidebar.js`
+
+---
+
 ## [4.50.3+20260522-banco-export-pdf] — 2026-05-22
 
 Release **PATCH** — 3 ajustes Renê no Banco de Roteiros.

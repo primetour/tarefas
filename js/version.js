@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 50,
-  patch: 3,
-  build: '20260522-banco-export-pdf',
+  patch: 4,
+  build: '20260522-sidebar-cleanup',
 };
 
 /** "1.2.0" */
