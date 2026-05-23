@@ -70,9 +70,25 @@ function cardHTML(d) {
   const nights = d.durationNights || cities.reduce((acc, _, i) => acc + (d.geo.cities[i]?.nights || 0), 0);
 
   const cats = (d.categories || []).length;
-  const validity = d.validity?.endDate
-    ? `<span style="color:var(--text-muted);font-size:0.72rem;">Validade até ${esc(d.validity.endDate)}</span>`
-    : '';
+
+  // v4.50.7+ Data de criação + validade (sempre visível; "indefinida" se vazio)
+  const fmtDateBr = (val) => {
+    if (!val) return '';
+    try {
+      // Firestore Timestamp tem .toDate(); string ISO "YYYY-MM-DD" usa Date direto
+      const dt = val?.toDate ? val.toDate() : new Date(val);
+      if (isNaN(dt.getTime())) return '';
+      return dt.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    } catch { return ''; }
+  };
+  const createdAtTxt = fmtDateBr(d.createdAt) || '—';
+  const validityTxt = d.validity?.endDate ? fmtDateBr(d.validity.endDate) : 'Indefinida';
+  const validityIsIndef = !d.validity?.endDate;
+  const meta = `
+    <div style="display:flex;gap:14px;color:var(--text-muted);font-size:0.72rem;flex-wrap:wrap;">
+      <span title="Criado em">📅 Criado: <strong style="color:var(--text-secondary);">${esc(createdAtTxt)}</strong></span>
+      <span title="Validade do roteiro" style="${validityIsIndef ? 'font-style:italic;' : ''}">⏳ Validade: <strong style="color:${validityIsIndef ? 'var(--text-muted)' : 'var(--text-secondary)'};">${esc(validityTxt)}</strong></span>
+    </div>`;
 
   return `
     <div class="rb-card" data-id="${esc(d.id)}" style="background:var(--bg-card);
@@ -97,7 +113,7 @@ function cardHTML(d) {
           <span title="Categorias hospedagem">🏨 ${cats}</span>
         </div>
         <div style="color:var(--text-muted);font-size:0.78rem;">${esc(citiesText)}</div>
-        ${validity}
+        ${meta}
         <div class="rb-actions" style="display:flex;gap:4px;justify-content:flex-end;margin-top:6px;border-top:1px solid var(--border-subtle);padding-top:8px;">
           <button class="btn-icon-action" data-action="export-pdf" data-id="${esc(d.id)}" title="Exportar PDF"
             style="padding:6px;background:transparent;border:1px solid var(--border-subtle);border-radius:6px;cursor:pointer;color:var(--text-secondary);">

@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 50,
-  patch: 6,
-  build: '20260523-fix-autotable-polling',
+  patch: 7,
+  build: '20260523-banco-card-datas',
 };
 
 /** "1.2.0" */
