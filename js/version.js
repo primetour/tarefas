@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 50,
-  patch: 8,
-  build: '20260523-banco-card-validade-correta',
+  patch: 9,
+  build: '20260523-fix-timezone-iso-date',
 };
 
 /** "1.2.0" */

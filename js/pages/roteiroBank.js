@@ -78,7 +78,17 @@ function cardHTML(d) {
   const fmtDateBr = (val) => {
     if (!val) return '';
     try {
-      // Aceita string ISO YYYY-MM-DD OU Firestore Timestamp
+      // v4.50.9+ Bug timezone: `new Date("2020-01-01")` é UTC midnight, em
+      // UTC-3 (Brasília) renderiza como 31/12/2019 21:00. Pra string ISO
+      // YYYY-MM-DD (campo de validade), parse manual em timezone local.
+      if (typeof val === 'string') {
+        const m = val.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (m) {
+          const [_, y, mo, d] = m;
+          return `${d}/${mo}/${y}`;
+        }
+      }
+      // Firestore Timestamp ou outros formatos
       const dt = val?.toDate ? val.toDate() : new Date(val);
       if (isNaN(dt.getTime())) return '';
       return dt.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
