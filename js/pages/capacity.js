@@ -14,7 +14,12 @@ import {
   calcUserWorkload, ABSENCE_TYPES,
 } from '../services/capacity.js';
 import { fetchTasks } from '../services/tasks.js';
-import { setupTasksAutoRefresh, teardownTasksAutoRefresh } from '../services/realtimeSync.js';
+
+// NOTA (v4.53.5): este arquivo está ÓRFÃO no router — rota #capacity foi
+// merged em team.js em release anterior ("capacity merged into team" em
+// app.js). Mantido apenas como referência caso a rota volte a separar.
+// Por isso o realtimeSync não está aplicado aqui (não há renderCapacity
+// sendo montada em runtime).
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -35,9 +40,6 @@ let activeTab    = 'mine'; // 'mine' | 'team'
 
 /* ─── Render ─────────────────────────────────────────────── */
 export async function renderCapacity(container) {
-  // v4.53.4+ Auto-refresh real-time quando tasks mudam em outra aba/device
-  setupTasksAutoRefresh('capacity', container, renderCapacity);
-
   const canViewAll = store.can('absence_manage_team') || store.can('system_manage_users') || store.can('system_view_all');
 
   container.innerHTML = `
@@ -453,10 +455,4 @@ async function confirmDelete(absenceId) {
     toast.success('Ausência removida.');
     await loadAndRender();
   } catch(e) { toast.error(e.message); }
-}
-
-
-/* v4.53.4+ Cleanup do realtime subscriber ao sair da page */
-export function destroyCapacity() {
-  teardownTasksAutoRefresh('capacity');
 }
