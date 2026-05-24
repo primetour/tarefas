@@ -6,6 +6,24 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.54.2+20260524-portal-wizard-newsletter-prefill] — 2026-05-24
+
+Release **PATCH** — popup "Solicitação de Newsletter?" volta a pré-preencher o wizard.
+
+**Renê**: "o popup q pergunta se a solicitacao é newsletter segue funcional, correto? se sim, segue".
+
+**Bug detectado em E2E**: popup APARECIA + clicar "Sim, é newsletter" FECHAVA, mas o wizard NÃO era pré-preenchido (sector + type ficavam vazios). Causa: `prefillNewsletter` em `portal.js` tocava nos IDs `p-setor` / `p-type` do form antigo que não existem mais no wizard.
+
+**Fix**:
+1. `portalWizard.js` exporta nova função `prefillWizardData({sector, typeId, date})` que escreve em `_state.data` + re-renderiza + avança automaticamente pro Step 2 se sector+typeId estiverem completos (UX do popup é "vai pro calendário").
+2. `prefillNewsletter` em `portal.js` detecta `#pw-host` no DOM e delega pra `prefillWizardData`. Fallback pro caminho legado se wizard não estiver ativo.
+
+**Resultado**: clicar "Sim, é newsletter" agora salta direto pro Passo 2 (Quando) com Marketing + Newsletter já preenchidos no estado.
+
+**Arquivos**: js/portal/portalWizard.js, js/portal/portal.js, solicitar.html, js/version.js, index.html, CHANGELOG.md
+
+---
+
 ## [4.54.1+20260524-portal-wizard-fix-validate-step4] — 2026-05-24
 
 Release **PATCH** — hotfix do wizard (achado em E2E test imediato).

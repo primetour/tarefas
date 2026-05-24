@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 54,
-  patch: 1,
-  build: '20260524-portal-wizard-fix-validate-step4',
+  patch: 2,
+  build: '20260524-portal-wizard-newsletter-prefill',
 };
 
 /** "1.2.0" */

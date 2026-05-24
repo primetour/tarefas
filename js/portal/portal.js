@@ -781,10 +781,26 @@ function showNewsletterPrompt(db, taskTypes) {
 }
 
 async function prefillNewsletter(db, taskTypes) {
-  // Clear any validation errors from previous submission
+  // v4.54.2+ Wizard path: se o wizard novo está montado (#pw-host existe),
+  // delega pra prefillWizardData (que escreve no state interno + avança pro
+  // step 2). O caminho legado (campos p-setor/p-type) só roda no fallback do
+  // portalLegacy.js — esses elementos não existem mais no wizard novo.
+  if (document.getElementById('pw-host')) {
+    try {
+      const nlType = taskTypes.find(t => t.id === 'newsletter' || t.name?.toLowerCase() === 'newsletter');
+      const { prefillWizardData } = await import('./portalWizard.js?v=4.54.2');
+      prefillWizardData({ sector: 'Marketing', typeId: nlType?.id });
+      return;
+    } catch (e) {
+      console.warn('[prefillNewsletter] wizard prefill falhou:', e?.message || e);
+      // segue pro fallback abaixo
+    }
+  }
+
+  // Clear any validation errors from previous submission (form antigo)
   document.querySelectorAll('.has-error').forEach(el => el.classList.remove('has-error'));
 
-  // Set setor = Marketing
+  // Set setor = Marketing (form antigo)
   const setorEl = document.getElementById('p-setor');
   if (setorEl) {
     setorEl.value = 'Marketing';

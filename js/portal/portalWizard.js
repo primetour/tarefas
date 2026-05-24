@@ -86,6 +86,27 @@ export function renderPortalWizard(container, opts) {
   _bindKeyboard();
 }
 
+/* ─── Pre-preencher campos do wizard externamente (v4.54.2+) ───
+ * Usado pelo popup "Solicitação de Newsletter?" no portal.js, que antes
+ * preenchia campos `p-setor`/`p-type` do form antigo (não existem mais).
+ * Aceita { sector, typeId, date } e atualiza _state.data + re-renderiza o
+ * step atual. Se sector+typeId vierem, avança automaticamente pro Step 2.
+ */
+export function prefillWizardData({ sector, typeId, date } = {}) {
+  if (!_state) return false;
+  if (sector !== undefined) _state.data.sector = sector;
+  if (typeId !== undefined) _captureType(typeId);
+  if (date !== undefined) _state.data.desiredDate = date;
+  _persistDraft();
+  // Se sector+typeId completos, salta pro Step 2 direto (UX do popup é "vai pro calendário")
+  if (_state.data.sector && _state.data.typeId && _state.step === 1) {
+    _renderStep(2);
+  } else {
+    _renderStep(_state.step);  // re-render do step atual pra refletir os valores
+  }
+  return true;
+}
+
 /* ─── Cleanup (chamar ao sair) ─── */
 export function destroyPortalWizard() {
   if (_keyHandler) {
