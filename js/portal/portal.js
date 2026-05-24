@@ -1202,12 +1202,19 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
             border-radius:4px;background:transparent;color:var(--text-muted);cursor:pointer;">▶</button>
         </div>
 
-        <!-- Fullscreen toggle -->
-        <button id="pcal-expand" style="padding:3px 8px;border:1px solid var(--border-subtle);
-          border-radius:4px;background:${portalCalExpanded?'var(--brand-gold)':'transparent'};
-          color:${portalCalExpanded?'#000':'var(--text-muted)'};cursor:pointer;font-size:0.6875rem;"
-          title="${portalCalExpanded?'Sair da tela cheia':'Tela cheia'}">
-          ${portalCalExpanded?'✕ Fechar':'⛶ Tela cheia'}
+        <!-- v4.51.7+ Fullscreen toggle com destaque (Renê 24/05) -->
+        <button id="pcal-expand" style="padding:6px 14px;border-radius:6px;cursor:pointer;
+          font-size:0.8125rem;font-weight:600;display:inline-flex;align-items:center;gap:6px;
+          transition:all 0.15s;font-family:inherit;
+          ${portalCalExpanded
+            ? 'border:1px solid var(--brand-gold);background:var(--brand-gold);color:#0A1628;'
+            : 'border:1px solid var(--brand-gold);background:rgba(212,168,67,0.12);color:var(--brand-gold);box-shadow:0 0 0 3px rgba(212,168,67,0.10);'
+          }"
+          onmouseover="this.style.background='var(--brand-gold)';this.style.color='#0A1628';"
+          onmouseout="this.style.background='${portalCalExpanded?'var(--brand-gold)':'rgba(212,168,67,0.12)'}';this.style.color='${portalCalExpanded?'#0A1628':'var(--brand-gold)'}';"
+          title="${portalCalExpanded?'Sair da tela cheia':'Visualizar em tela cheia'}">
+          <span style="font-size:0.95rem;line-height:1;">${portalCalExpanded?'✕':'⛶'}</span>
+          <span>${portalCalExpanded?'Fechar tela cheia':'Tela cheia'}</span>
         </button>
       </div>
 

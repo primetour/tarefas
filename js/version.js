@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 51,
-  patch: 6,
-  build: '20260524-variacao-antes-prioridade',
+  patch: 7,
+  build: '20260524-btn-tela-cheia-destaque',
 };
 
 /** "1.2.0" */
