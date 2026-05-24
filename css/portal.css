@@ -629,40 +629,68 @@ input[type="week"]::-webkit-calendar-picker-indicator:hover {
 /* v4.51.4+ Calendário portal: alinhamento ao form (Renê screenshot 24/05).
  *
  * Bug: células do grid `repeat(7, 1fr)` tinham `min-width: auto` (default CSS Grid).
- * Quando o conteúdo (ex: "News PARTNERS...") era mais largo que 1/7 do container,
- * a célula expandia pra acomodar — quebrando os `1fr` iguais e estourando largura
- * do card pai. Visível no screenshot: grid vazando à direita do portal-card.
+ * Quando o conteúdo (ex: "News PARTNERS (inspiracional)") era mais largo que 1/7
+ * do container, a célula expandia pra acomodar — quebrando os `1fr` iguais e
+ * estourando largura do card pai.
  *
- * Fix: força `min-width: 0` em todas as células + `overflow: hidden` no widget.
- * O `text-overflow: ellipsis` já estava nos textos internos — só faltava o
- * container ter `min-width: 0` pra colapsar quando o texto não cabe.
+ * v4.51.5: 1ª tentativa não foi suficiente (Renê: "nem o calendario pequeno e nem
+ * a espansao pra tela cheia"). Reforço UNIVERSAL — box-sizing + min-width:0 em
+ * TODOS os descendentes do widget, não só os que listei explicitamente. Force-wins
+ * com !important onde necessário pra sobrescrever inline styles.
+ *
+ * Slots-container também precisa de overflow:hidden pra evitar que o calendar
+ * vaze do form-group pai.
  */
+
+/* Container pai (form-group .slots-container já tinha display:none/flex —
+ * adicionando contenção horizontal) */
+.slots-container {
+  overflow: hidden;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+/* Widget root + tudo abaixo: box-sizing + min-width:0 em todos os elementos */
+#portal-calendar-widget,
+#portal-calendar-widget * {
+  box-sizing: border-box;
+  min-width: 0;
+}
+
 #portal-calendar-widget {
   max-width: 100%;
-  overflow-x: hidden;
-  box-sizing: border-box;
-}
-#portal-calendar-widget > div {
-  max-width: 100%;
-  box-sizing: border-box;
-}
-#portal-calendar-widget [data-pcal-date],
-#portal-calendar-widget .pcal-day-cell {
-  min-width: 0;
+  width: 100%;
   overflow: hidden;
 }
-#portal-calendar-widget [style*="grid-template-columns"] {
-  min-width: 0;
+
+/* Wrapper interno (com bg/border) */
+#portal-calendar-widget > div {
+  max-width: 100%;
   width: 100%;
-  box-sizing: border-box;
+  overflow: hidden;
 }
-/* Também aplica em divs internas (slot-click, task-click, req-click) que
- * têm text-overflow:ellipsis no inline style — todas precisam de min-width:0
- * herdado/aplicado pra ellipsis funcionar. */
+
+/* Grid de 7 colunas — força contenção */
+#portal-calendar-widget [style*="grid-template-columns"] {
+  width: 100%;
+  max-width: 100%;
+}
+
+/* Day cells: clip horizontal explícito */
+#portal-calendar-widget [data-pcal-date],
+#portal-calendar-widget .pcal-day-cell {
+  overflow: hidden;
+  max-width: 100%;
+}
+
+/* Itens internos (slot-click, task-click, req-click) com ellipsis */
 #portal-calendar-widget .pcal-slot-click,
 #portal-calendar-widget .pcal-task-click,
 #portal-calendar-widget .pcal-req-click,
 #portal-calendar-widget .pcal-filled-click {
-  min-width: 0;
   max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
 }

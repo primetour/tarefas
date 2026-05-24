@@ -1149,20 +1149,25 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
 
   const wrap = document.createElement('div');
   wrap.id = 'portal-calendar-widget';
+  // v4.51.5+ width:100% + box-sizing:border-box em TODOS os modos.
+  // Não-expanded: sem isso, o grid interno (com textos longos tipo "News PARTNERS
+  // (inspiracional)") forçava intrinsic width maior que o slots-container pai e
+  // vazava à direita. Expanded: forçar width:100% no inner pra ele preencher o
+  // overlay e respeitar o max-width:1200px sem vazar viewport menor.
   if (portalCalExpanded) {
     wrap.style.cssText = `
       position:fixed;top:0;left:0;right:0;bottom:0;z-index:10000;
       background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;
-      padding:16px;animation:fadeIn 0.2s ease-out;
+      padding:16px;animation:fadeIn 0.2s ease-out;box-sizing:border-box;
     `;
   } else {
-    wrap.style.cssText = 'margin-top:16px;';
+    wrap.style.cssText = 'margin-top:16px;width:100%;box-sizing:border-box;overflow:hidden;';
   }
   wrap.innerHTML = `
     <div style="background:var(--bg-surface);border:1px solid var(--border-subtle);
       border-radius:8px;padding:${portalCalExpanded?'24px':'12px'};font-family:var(--font-ui);
-      transition:all 0.2s ease;
-      ${portalCalExpanded ? 'width:100%;max-width:1200px;max-height:90vh;overflow-y:auto;box-shadow:0 16px 64px rgba(0,0,0,0.4);' : ''}
+      transition:all 0.2s ease;width:100%;box-sizing:border-box;
+      ${portalCalExpanded ? 'max-width:1200px;max-height:90vh;overflow:auto;box-shadow:0 16px 64px rgba(0,0,0,0.4);' : 'overflow:hidden;'}
     ">
 
       <!-- Header: type selector + gran switcher + nav -->
