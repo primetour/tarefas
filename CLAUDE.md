@@ -841,6 +841,33 @@ const isAdmin = u =>
 
 Centralizar em helper `store.isAdminUser(u)` evita drift entre N callers. Esta lição é generalização de §12.m (singular vs plural fields).
 
+### s) Status novo = SINGLE SOURCE OF TRUTH + propagação em N lugares (v4.53.1)
+
+**Sintoma Renê**: "faça double check em tudo, pq bugs e melhorias em tarefas tem muitas camadas... precisamos cobrir todos os cenários pra evitar que o usuario trave".
+
+**Bug latente após v4.53.0** (que introduziu status `validation`): adicionei a `STATUSES` em `js/services/tasks.js` + `DEFAULT_TRANSITIONS` em `workflowEngine.js`, mas tarefas no novo status ficariam **invisíveis em N camadas** porque cada componente tem o seu próprio map/array hardcoded com a lista anterior de status. Auditoria via Explore agent encontrou **11 pontos**:
+
+1. **Queries Firestore `where('status','in', [...])`** — `notificationScheduler.js`, `dailySummary.js`, `slaAlerts.js`. Se não inclui o status novo, query filtra fora silenciosamente.
+2. **Maps `STATUS_COLOR/STATUS_ICONS/S/L`** — cada page que renderiza chip de status tem seu próprio map. Faltando key = render quebrado/vazio.
+3. **Fallback `getValidTransitions`** — `taskModal.js` linha 50 tem fallback se workflow engine não carrega. Precisa replicar a lista.
+4. **Charts/legendas de dashboard** — `dashboard.js` legenda + cores precisam novo status.
+5. **System prompts de IA** — `ai.js DEFAULT_MODULE_HINTS` + `aiActions.js` tool schemas listam enums válidos. IA chama tool com status inválido = erro.
+6. **Global search header** — `header.js STATUS_ICONS` renderiza chip de status em resultado.
+
+**Princípio**: status (e qualquer enum semântico) tem **uma única fonte canônica** (`STATUSES` em `services/tasks.js`). MAS o JS vanilla não importa esse array em todos os lugares — cada componente duplica por simplicidade/performance. Quando estende STATUSES, **auditoria obrigatória cross-app**:
+
+```bash
+# scripts pra rodar antes de declarar status novo "pronto"
+grep -rn "where.*status.*in.*\[" js/services js/pages              # queries Firestore
+grep -rn "STATUS_COLOR\|STATUS_ICON\|statusIcons\|statusColors" js  # maps de render
+grep -rn "getValidTransitions\|DEFAULT_TRANSITIONS" js              # fallback de workflow
+grep -rn "not_started.*in_progress.*review" js                      # listas hardcoded
+```
+
+Cada hit precisa ser revisado. Se for muito grande, considerar refatorar pra importar STATUSES + map dinâmico (perf cost é negligível pra <20 items).
+
+**Auto-correção futura**: criar helper `js/services/statusMaps.js` que exporta `STATUS_COLORS_MAP`, `STATUS_ICONS_MAP`, `STATUS_LABELS_MAP` gerados a partir de `STATUSES` — assim adicionar status novo só requer mexer no array canônico.
+
 ### j) Em qualquer lista exposta no front-end, sempre prever CRUD
 
 Estabelecido em v4.50.1. Categorias, coleções, tipos, status (que sejam editáveis) viram collection Firestore com defaults + CRUD via UI:
