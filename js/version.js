@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 54,
-  patch: 2,
-  build: '20260524-portal-wizard-newsletter-prefill',
+  patch: 3,
+  build: '20260524-portal-wizard-same-module-instance',
 };
 
 /** "1.2.0" */

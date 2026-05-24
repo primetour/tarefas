@@ -6,6 +6,24 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.54.3+20260524-portal-wizard-same-module-instance] — 2026-05-24
+
+Release **PATCH** — fix do fix anterior: import com querystrings diferentes criava 2 instâncias do módulo.
+
+**Bug detectado em re-teste E2E após v4.54.2**: popup "Sim, é newsletter" continuava sem pré-preencher o wizard. Investigando, descobri que `portal.js` fazia:
+- `await import('./portalWizard.js?v=4.54.1')` no `renderForm` (linha 679)
+- `await import('./portalWizard.js?v=4.54.2')` no `prefillNewsletter` (linha 791)
+
+ES modules cacheiam por URL **exata** (com querystring). Querystrings diferentes = 2 instâncias separadas. `prefillWizardData` foi executada na instância nova (com `_state = null`), enquanto o wizard rodando tinha `_state` válido na primeira instância. O early return `if (!_state) return false` silenciou tudo.
+
+**Fix**: ambos os imports agora usam URL sem querystring (`./portalWizard.js`). Cache-bust principal continua no `<script>` tag de `solicitar.html` (que invalida o portal.js inteiro). Garante mesma instância do módulo em todas as referências.
+
+**Lição**: dynamic imports com querystrings de versão devem ser CONSISTENTES dentro do mesmo arquivo. Se diferem, vira bug latente. Centralize via constante ou omita.
+
+**Arquivos**: js/portal/portal.js, js/version.js, index.html, solicitar.html, CHANGELOG.md
+
+---
+
 ## [4.54.2+20260524-portal-wizard-newsletter-prefill] — 2026-05-24
 
 Release **PATCH** — popup "Solicitação de Newsletter?" volta a pré-preencher o wizard.

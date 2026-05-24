@@ -676,7 +676,11 @@ async function renderForm(db, taskTypes, auth) {
   const formView = document.getElementById('form-view');
   if (formView) {
     try {
-      const { renderPortalWizard } = await import('./portalWizard.js?v=4.54.1');
+      // v4.54.3+ Import SEM querystring pra garantir mesma instância do módulo
+      // entre renderPortalWizard (init) e prefillWizardData (popup newsletter).
+      // Diferentes querystrings criavam 2 instâncias com _state separados.
+      // Cache-bust principal está no <script> tag de solicitar.html.
+      const { renderPortalWizard } = await import('./portalWizard.js');
       formView.innerHTML = '<div id="pw-host"></div>';
       renderPortalWizard(document.getElementById('pw-host'), {
         db, taskTypes,
@@ -788,7 +792,7 @@ async function prefillNewsletter(db, taskTypes) {
   if (document.getElementById('pw-host')) {
     try {
       const nlType = taskTypes.find(t => t.id === 'newsletter' || t.name?.toLowerCase() === 'newsletter');
-      const { prefillWizardData } = await import('./portalWizard.js?v=4.54.2');
+      const { prefillWizardData } = await import('./portalWizard.js');
       prefillWizardData({ sector: 'Marketing', typeId: nlType?.id });
       return;
     } catch (e) {
