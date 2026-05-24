@@ -6,6 +6,20 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.54.1+20260524-portal-wizard-fix-validate-step4] — 2026-05-24
+
+Release **PATCH** — hotfix do wizard (achado em E2E test imediato).
+
+**Bug**: `_validateStep4` era referenciado em `_tryAdvance` array de validators mas NÃO existia no arquivo. `ReferenceError: _validateStep4 is not defined` quebrava silenciosamente o handler do botão "Próximo" no Step 1 (validator array linha quebrava antes de executar). Wizard ficava preso no Step 1 mesmo com sector + tipo preenchidos.
+
+**Fix**: cria `_validateStep4()` que valida defensivamente os 3 anteriores (não tem campos obrigatórios próprios no Step 4 — só toggles opcionais). Refatora `_validateStep1` pra usar optional chaining em `getElementById` — necessário porque `_validateStep4` chama `_validateStep1` quando o DOM do Step 1 não existe mais.
+
+**Detectado** via `mcp__Claude_in_Chrome__read_console_messages` filtrando por `error|reference`. Reforça §1 do CLAUDE.md: TESTAR em ambiente real é obrigatório — `node --check` passou (syntax OK), mas hoisting de function declarations não pega ReferenceError em call sites.
+
+**Arquivos**: js/portal/portalWizard.js, js/portal/portal.js (cache-bust), solicitar.html, js/version.js, index.html, CHANGELOG.md
+
+---
+
 ## [4.54.0+20260524-portal-wizard-4-steps] — 2026-05-24
 
 Release **MINOR** — Portal de Solicitações refatorado: form único de scroll → wizard tela cheia de 4 passos.

@@ -285,11 +285,16 @@ function _captureType(typeId) {
 }
 
 function _validateStep1() {
+  // v4.54.1+ Defensive: usa optional chaining em todos os getElementById.
+  // _validateStep4 chama _validateStep1 mas os elementos #pw-err-* só
+  // existem quando o step 1 está renderizado.
   let ok = true;
-  if (!_state.data.sector) { document.getElementById('pw-err-sector').style.display='block'; ok = false; }
-  else                      document.getElementById('pw-err-sector').style.display='none';
-  if (!_state.data.typeId) { const e=document.getElementById('pw-err-type'); if(e){e.style.display='block';} ok = false; }
-  else { const e=document.getElementById('pw-err-type'); if(e){e.style.display='none';} }
+  const errSector = document.getElementById('pw-err-sector');
+  const errType   = document.getElementById('pw-err-type');
+  if (!_state.data.sector) { if (errSector) errSector.style.display = 'block'; ok = false; }
+  else                      { if (errSector) errSector.style.display = 'none'; }
+  if (!_state.data.typeId) { if (errType) errType.style.display = 'block'; ok = false; }
+  else                      { if (errType) errType.style.display = 'none'; }
   return ok;
 }
 
@@ -604,6 +609,13 @@ function _summaryRow(label, value) {
     <div style="color:var(--text-muted);">${esc(label)}:</div>
     <div style="color:var(--text-primary);">${value}</div>
   `;
+}
+
+/* Step 4 não tem campos obrigatórios novos — só toggles opcionais + revisão.
+ * Como precaução, valida que os steps anteriores ainda estão íntegros (defensive).
+ */
+function _validateStep4() {
+  return _validateStep1() && _validateStep2() && _validateStep3();
 }
 
 /* ─── Navegação ─── */

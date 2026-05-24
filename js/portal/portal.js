@@ -676,7 +676,7 @@ async function renderForm(db, taskTypes, auth) {
   const formView = document.getElementById('form-view');
   if (formView) {
     try {
-      const { renderPortalWizard } = await import('./portalWizard.js?v=4.54.0');
+      const { renderPortalWizard } = await import('./portalWizard.js?v=4.54.1');
       formView.innerHTML = '<div id="pw-host"></div>';
       renderPortalWizard(document.getElementById('pw-host'), {
         db, taskTypes,
