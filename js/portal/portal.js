@@ -480,6 +480,25 @@ async function renderForm(db, taskTypes, auth) {
                 <div class="form-error" id="err-content-link">Informe uma URL válida (começando com http:// ou https://).</div>
               </div>
 
+              <!-- v4.51.6+ Variação do material vem ANTES de Prioridade (Renê 24/05).
+                   Ordem antiga: title → desc → link → urgência → partnership → ooc → variação.
+                   Ordem nova:   title → desc → link → variação → urgência → partnership → ooc → núcleo. -->
+              <!-- Passo 6: Variação do material (pre-preenchida pelo slot) -->
+              <div class="form-group" id="fg-variation" style="display:none;">
+                <label class="form-label">
+                  Variação do material <span class="required">*</span>
+                  <span class="info-tip" title="A variação define o SLA de produção. Pode ser preenchida automaticamente ao clicar em um slot do calendário.">ℹ</span>
+                </label>
+                <select class="form-select" id="p-variation" style="display:none;">
+                  <option value="">— Selecione a variação —</option>
+                </select>
+                ${renderPickerButton({ btnId: 'p-variation-btn', selected: null, emptyLabel: '— Selecione a variação —' })}
+                <div class="sla-badge" id="sla-badge" style="margin-top:8px;">
+                  <span style="color:var(--brand-gold);">⏱</span>
+                  <span>SLA de produção: <strong id="sla-label"></strong></span>
+                </div>
+              </div>
+
               <!-- Urgency -->
               <div class="form-group">
                 <label class="form-label">
@@ -563,23 +582,8 @@ async function renderForm(db, taskTypes, auth) {
                 </span>
               </div>
 
-              <!-- Passo 4: Variação do material (pre-preenchida pelo slot) -->
-              <div class="form-group" id="fg-variation" style="display:none;">
-                <label class="form-label">
-                  Variação do material <span class="required">*</span>
-                  <span class="info-tip" title="A variação define o SLA de produção. Pode ser preenchida automaticamente ao clicar em um slot do calendário.">ℹ</span>
-                </label>
-                <select class="form-select" id="p-variation" style="display:none;">
-                  <option value="">— Selecione a variação —</option>
-                </select>
-                ${renderPickerButton({ btnId: 'p-variation-btn', selected: null, emptyLabel: '— Selecione a variação —' })}
-                <div class="sla-badge" id="sla-badge" style="margin-top:8px;">
-                  <span style="color:var(--brand-gold);">⏱</span>
-                  <span>SLA de produção: <strong id="sla-label"></strong></span>
-                </div>
-              </div>
-
-              <!-- Passo 5: Núcleo (pre-preenchido pelo slot) -->
+              <!-- v4.51.6+ Variação do material movida pra cima de Urgência (Renê 24/05) -->
+              <!-- Passo 7: Núcleo (pre-preenchido pelo slot) -->
               <div class="form-group" id="fg-nucleo" style="display:none;">
                 <label class="form-label">
                   Squad responsável

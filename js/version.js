@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 51,
-  patch: 5,
-  build: '20260524-calendar-box-sizing-universal',
+  patch: 6,
+  build: '20260524-variacao-antes-prioridade',
 };
 
 /** "1.2.0" */
