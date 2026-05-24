@@ -6,6 +6,44 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.54.0+20260524-portal-wizard-4-steps] — 2026-05-24
+
+Release **MINOR** — Portal de Solicitações refatorado: form único de scroll → wizard tela cheia de 4 passos.
+
+**Renê** (relato de usuários): "usuarios estao sugerindo que o portal de solicitacoes nao seja em forma, e sim um passo a passo tela cheia, pra facilitar o UX e ficar mais intuitivo. teria de ter poucos passos".
+
+**Estrutura dos passos**:
+
+| # | Título | Campos |
+|---|---|---|
+| 1 | Setor e tipo | Setor responsável + Tipo de demanda |
+| 2 | Quando | Calendário com slots + Data desejada + Squad (opcional) + "Fora do calendário" |
+| 3 | Detalhes | Variação (com SLA) + Título + Descrição + Link (opcional) |
+| 4 | Revisão | Toggles "Urgente" + "Parceria" + cartão de resumo + botão Enviar |
+
+**Features além do MVP**:
+- **Progresso visual no topo** com 4 dots (✓ feito · ● ativo · ○ pendente)
+- **Atalhos de teclado**: `Enter` avança · `Esc` volta
+- **Skip auto**: se setor só tem 1 tipo OU tipo só tem 1 variação, pre-seleciona automaticamente
+- **Auto-save em localStorage** por step (chave `portal-wizard-draft.{uid}`, expira em 7 dias)
+- **Botão "Salvar e sair"** salva rascunho explícito
+- **Botão "Enviar + Outra similar"** envia + reinicia wizard mantendo setor+tipo, pulando direto pro Passo 2
+- **Tela de sucesso** ao final com CTA "Nova solicitação"
+- **Validação por passo**: não avança sem obrigatórios (com erro inline no campo)
+
+**Arquitetura**:
+- Novo: `js/portal/portalWizard.js` (~600 linhas) — autossuficiente, exporta `renderPortalWizard(container, opts)` + `destroyPortalWizard()`
+- `js/portal/portal.js` modificado mínimo: substitui `bindFormEvents()` por `renderPortalWizard()` no final de `renderForm()`. Form antigo continua exportado em `js/portal/portalLegacy.js` como backup pra rollback rápido (30 dias).
+- **Zero mudança no schema**: doc salvo em `requests` é idêntico ao anterior (mesmos campos, novo `source: 'portal-wizard-v4.54.0'`)
+- **Zero mudança em Firestore rules**: collection `requests` continua igual.
+
+**Pendente pra próxima release** (v4.54.1):
+- **"Importar via foto/PDF"** no Passo 1 — aprovado pelo Renê mas adiado pra não bloar esta release. Vai reusar Cloud Function `callLLM` existente com prompt de extração.
+
+**Arquivos**: js/portal/portalWizard.js (novo), js/portal/portal.js, js/portal/portalLegacy.js (backup), solicitar.html (cache-bust), js/version.js, index.html, CHANGELOG.md
+
+---
+
 ## [4.53.4+20260524-realtime-sync-8-pages] — 2026-05-24
 
 Release **PATCH** — auto-refresh real-time em 8 pages que usavam `fetchTasks` one-shot.

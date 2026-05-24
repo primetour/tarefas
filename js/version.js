@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 53,
-  patch: 4,
-  build: '20260524-realtime-sync-8-pages',
+  minor: 54,
+  patch: 0,
+  build: '20260524-portal-wizard-4-steps',
 };
 
 /** "1.2.0" */

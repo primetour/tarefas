@@ -666,34 +666,9 @@ async function renderForm(db, taskTypes, auth) {
     if (auth) await signOut(auth);
   });
 
-  // Load calendar slots for next 2 weeks (still useful pra futuro reuso)
+  // Load calendar slots for next 2 weeks
   await loadCalendarSlots(db, taskTypes);
-
-  // v4.54.0+ Wizard 4 passos substitui o form único de scroll.
-  // Renê: "usuarios estao sugerindo que o portal de solicitacoes nao seja
-  // em forma, e sim um passo a passo tela cheia, pra facilitar o UX".
-  // Form antigo continua exportado em portalLegacy.js como backup.
-  const formView = document.getElementById('form-view');
-  if (formView) {
-    try {
-      const { renderPortalWizard } = await import('./portalWizard.js?v=4.54.0');
-      formView.innerHTML = '<div id="pw-host"></div>';
-      renderPortalWizard(document.getElementById('pw-host'), {
-        db, taskTypes,
-        user: portalUser,
-        onSuccess: () => {
-          // Mostra a tela de sucesso nativa do portal (já existe em #success-view)
-          document.getElementById('form-view')?.style.setProperty('display', 'none');
-          document.getElementById('success-view')?.classList.add('visible');
-        },
-      });
-    } catch (e) {
-      console.error('[portal] wizard failed, fallback pro form antigo:', e);
-      bindFormEvents(db, taskTypes);
-    }
-  } else {
-    bindFormEvents(db, taskTypes);
-  }
+  bindFormEvents(db, taskTypes);
 }
 
 /* ─── Calendar slots + Newsletter mini-calendar ────────────── */
