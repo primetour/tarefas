@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 51,
-  patch: 7,
-  build: '20260524-btn-tela-cheia-destaque',
+  minor: 52,
+  patch: 0,
+  build: '20260524-tasks-bugs-usuarios-5-fixes',
 };
 
 /** "1.2.0" */

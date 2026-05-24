@@ -19,6 +19,7 @@ import {
 import { fetchProjects }  from '../services/projects.js';
 // v4.49.54+ Setor solicitante = mesma fonte do filtro Setor (módulo Setores)
 import { getUserSectorOptions } from './filterBar.js';
+import { getActiveSectors } from '../services/sectors.js';   // v4.52.0+ pra requestingArea (sem filtro visibilidade)
 import { getTaskType } from '../services/taskTypes.js';
 import { resolveUserName, resolveUserSync } from '../services/userResolver.js';
 /* getSubtaskTemplate: lazy-loaded (may not exist in older deployments) */
@@ -395,7 +396,23 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
               return byNucleo || bySetor;
             }
             if (escopo === 'squad') {
-              return !g.squadId || myWorkspaceIds.has(g.squadId);
+              if (!g.squadId) return true;
+              if (myWorkspaceIds.has(g.squadId)) return true;
+              // v4.52.0+ Renê: "metas de 'sites e hotsites' não aparecem pelo
+              // filtro de squads". Bug: filter exigia que o user fosse membro
+              // do squad da meta. Agora também passa se:
+              //  - Setor da meta está no escopo visível do user (coordenador
+              //    de área vê metas de squads do seu setor)
+              //  - User é responsável/gestor direto da meta
+              //  - User é responsável do mesmo setor de algum responsável da meta
+              //  - Algum assignee da tarefa atual está no squad da meta
+              if (g.setor && visibleSetores && visibleSetores.includes(g.setor)) return true;
+              const respIds = getResponsavelIds(g);
+              if (respIds.includes(myUid) || g.gestorId === myUid) return true;
+              if (respIds.some(r => (visibleSetores || []).includes(userSector(r)))) return true;
+              const taskAssignees = Array.isArray(task.assignees) ? task.assignees : [];
+              if (respIds.some(r => taskAssignees.includes(r))) return true;
+              return false;
             }
             if (escopo === 'individual') {
               const respIds = getResponsavelIds(g);
@@ -1249,10 +1266,16 @@ function buildHTML(task, users, projects, tags, assignees, observers, isEdit, ta
     projectList
       .map(p => `<option value="${p.id}" ${task.projectId===p.id?'selected':''}>${esc(p.icon||'')} ${esc(p.name)}</option>`).join('');
 
-  // v4.49.54+ Lista vem do módulo Setores (mesma fonte do filtro Setor).
-  // requestingArea é o setor SOLICITANTE — mesmo universo de divisões.
+  // v4.52.0+ Renê: "analistas não conseguem mudar a área solicitante das tarefas.
+  // Pra eles só aparece MKT, mas na vdd pode ser btg, operadora, lazer...".
+  // ANTES (v4.49.54): usava getUserSectorOptions() que filtra por
+  // store.getVisibleSectors() → analista MKT só via MKT.
+  // AGORA: usa getActiveSectors() (TODOS os setores ativos do sistema) — o campo
+  // "área solicitante" é semanticamente "quem pediu", podendo ser qualquer setor
+  // (BTG pode solicitar tarefa pra MKT, etc.). Não tem nada a ver com a
+  // visibilidade interna do usuário.
   const areaOpts = `<option value="">— Selecione —</option>` +
-    getUserSectorOptions().map(a => `<option value="${a}" ${task.requestingArea===a?'selected':''}>${esc(a)}</option>`).join('');
+    getActiveSectors().map(a => `<option value="${a}" ${task.requestingArea===a?'selected':''}>${esc(a)}</option>`).join('');
 
   const tagsHTML = tags.map(t => {
     const hue = [...t].reduce((a,c)=>a+c.charCodeAt(0),0)%360;
@@ -1506,10 +1529,19 @@ function buildHTML(task, users, projects, tags, assignees, observers, isEdit, ta
         <select class="form-select" id="tm-status" style="padding:8px 32px 8px 12px;">
           ${(() => {
             const validNext = getValidTransitions(task.status);
+            // v4.52.0+ Renê: "analistas só veem 3 opções de status". Era porque
+            // 'done' era bloqueado sem permission `task_complete`. Agora se o
+            // user é o próprio assignee da tarefa, pode concluir (auto-conclusão
+            // do seu próprio trabalho — padrão de qualquer task management tool).
+            const myUid = store.get('currentUser')?.uid;
+            const isAssignee = Array.isArray(task.assignees) && task.assignees.includes(myUid);
             return STATUSES
               .filter(s => {
                 if (s.value === task.status) return true; // always show current
-                if (s.value === 'done' && !store.can('task_complete') && task.status !== 'done') return false;
+                if (s.value === 'done'
+                    && !store.can('task_complete')
+                    && !isAssignee
+                    && task.status !== 'done') return false;
                 return validNext.includes(s.value);
               })
               .map(s => `<option value="${s.value}" ${task.status===s.value?'selected':''}>${esc(s.label)}</option>`)

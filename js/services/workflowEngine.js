@@ -5,12 +5,14 @@
 import { store } from '../store.js';
 
 /* ─── Regras de transicao validas ─────────────────────────── */
-// Define quais transicoes sao permitidas por default
+// v4.52.0+ Status `approval` adicionado entre review e done (Renê).
+// Define quais transicoes sao permitidas por default.
 const DEFAULT_TRANSITIONS = {
   'not_started': ['in_progress', 'cancelled'],
-  'in_progress': ['review', 'done', 'cancelled'],
-  'review':      ['done', 'rework', 'cancelled'],
-  'rework':      ['in_progress', 'review', 'cancelled'],
+  'in_progress': ['review', 'approval', 'done', 'cancelled'],
+  'review':      ['approval', 'done', 'rework', 'cancelled'],
+  'approval':    ['done', 'rework', 'review', 'cancelled'],
+  'rework':      ['in_progress', 'review', 'approval', 'cancelled'],
   'done':        ['rework'],
   'cancelled':   ['not_started'],
 };
@@ -32,7 +34,8 @@ export function isValidTransition(fromStatus, toStatus) {
  */
 export function getValidTransitions(fromStatus) {
   if (store.isMaster() || store.can('system_manage_settings')) {
-    return ['not_started', 'in_progress', 'review', 'rework', 'done', 'cancelled'];
+    // v4.52.0+ Master vê tudo (inclusive 'approval')
+    return ['not_started', 'in_progress', 'review', 'approval', 'rework', 'done', 'cancelled'];
   }
   return DEFAULT_TRANSITIONS[fromStatus] || [];
 }

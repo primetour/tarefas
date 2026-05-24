@@ -181,10 +181,15 @@ function showRequesterEditBanners(tasks) {
 }
 
 /* ─── Constantes ─────────────────────────────────────────── */
+// v4.52.0+ Status "approval" (Em aprovação) adicionado entre review e done
+// (Renê: "acrescentar mais um passo - 'em aprovação'"). Aplicado cross-módulo:
+// tarefas, steps, calendário (todos leem STATUSES daqui). workflowEngine.js
+// foi atualizado com transições correspondentes.
 export const STATUSES = [
   { value: 'not_started', label: 'Não iniciado',   color: '#38BDF8' },
   { value: 'in_progress', label: 'Em Andamento',   color: '#F59E0B' },
   { value: 'review',      label: 'Em Revisão',     color: '#A78BFA' },
+  { value: 'approval',    label: 'Em Aprovação',   color: '#0EA5E9' },
   { value: 'rework',      label: 'Retrabalho',     color: '#F97316' },
   { value: 'done',        label: 'Concluída',      color: '#22C55E' },
   { value: 'cancelled',   label: 'Cancelada',      color: '#EF4444' },
