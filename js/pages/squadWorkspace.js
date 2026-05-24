@@ -503,7 +503,12 @@ function attachEvents() {
         await toggleTaskComplete(id, isDone);
         if (isDone) {
           const fresh = await getTask(id).catch(() => task);
-          openTaskDoneOverlay(id, fresh);
+          // v4.53.2+ Analista → cai em validation. Não abrir overlay CSAT.
+          if (fresh?.status === 'validation') {
+            toast.success('Tarefa enviada pra validação do coordenador.');
+          } else {
+            openTaskDoneOverlay(id, fresh);
+          }
         }
         await reload();
       } catch (err) { toast.error(err.message); }

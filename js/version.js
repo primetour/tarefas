@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 53,
-  patch: 1,
-  build: '20260524-validation-double-check-cross-app',
+  patch: 2,
+  build: '20260524-validation-analista-sem-popup-csat',
 };
 
 /** "1.2.0" */

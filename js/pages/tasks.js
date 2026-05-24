@@ -2251,7 +2251,14 @@ async function _handleDelegatedClick(e) {
           console.warn('[tasks] getTask after complete falhou:', err.message);
           return task;
         });
-        openTaskDoneOverlay(id, fresh);
+        // v4.53.2+ Analista sem task_complete: tarefa foi pra `validation`
+        // (não pra `done`). NÃO abre overlay CSAT/metas — quem valida é o
+        // coordenador no módulo Solicitações → "Aguardando validação".
+        if (fresh?.status === 'validation') {
+          toast.success('Tarefa enviada pra validação do coordenador.');
+        } else {
+          openTaskDoneOverlay(id, fresh);
+        }
       }
     } catch(err) { toast.error(err.message); }
     return;
@@ -2376,7 +2383,12 @@ async function _handleDrop(e) {
         if (newStatus === 'done') {
           await toggleTaskComplete(_dragTaskId, true);
           const fresh = await getTask(_dragTaskId).catch(() => task);
-          openTaskDoneOverlay(_dragTaskId, fresh);
+          // v4.53.2+ Analista → cai em validation. Não abrir overlay CSAT.
+          if (fresh?.status === 'validation') {
+            toast.success('Tarefa enviada pra validação do coordenador.');
+          } else {
+            openTaskDoneOverlay(_dragTaskId, fresh);
+          }
         } else {
           await updateTask(_dragTaskId, { status: newStatus });
         }

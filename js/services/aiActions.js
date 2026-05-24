@@ -766,12 +766,17 @@ const MODULE_ACTIONS = {
     },
     {
       name: 'complete_task',
-      description: 'Marcar uma tarefa como concluída',
+      description: 'Marcar uma tarefa como concluída. Se o usuário não tem permissão task_complete (analista), a tarefa cai em "validation" (SLA congela) e gestor finaliza no módulo Solicitações.',
       params: { taskId: 'string — ID da tarefa' },
       execute: async ({ taskId }) => {
-        const { toggleTaskComplete } = await import('./tasks.js');
+        const { toggleTaskComplete, getTask } = await import('./tasks.js');
         await toggleTaskComplete(taskId, true);
-        return { success: true, message: 'Tarefa marcada como concluída!' };
+        // v4.53.2+ Se virou 'validation', reflete na mensagem
+        const fresh = await getTask(taskId).catch(() => null);
+        if (fresh?.status === 'validation') {
+          return { success: true, message: 'Tarefa enviada pra validação do coordenador (SLA congelado).', data: { taskId, status: 'validation' } };
+        }
+        return { success: true, message: 'Tarefa marcada como concluída!', data: { taskId, status: 'done' } };
       },
     },
     {

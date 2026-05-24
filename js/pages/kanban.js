@@ -1110,7 +1110,12 @@ function bindCardDrag(card) {
         await toggleTaskComplete(id, willBeDone);
         if (willBeDone) {
           const fresh = await getTask(id).catch(() => task);
-          openTaskDoneOverlay(id, fresh || task);
+          // v4.53.2+ Analista → cai em validation. Não abrir overlay CSAT.
+          if (fresh?.status === 'validation') {
+            toast.success('Tarefa enviada pra validação do coordenador.');
+          } else {
+            openTaskDoneOverlay(id, fresh || task);
+          }
         }
       } catch (err) { toast.error(err.message); }
       dragTask = null;
@@ -1193,7 +1198,13 @@ function bindColumnDrop(col) {
       if (newColValue === 'done') {
         const { getTask } = await import('../services/tasks.js');
         const fresh = await getTask(taskId).catch(() => dragTask);
-        openTaskDoneOverlay(taskId, fresh || dragTask || {});
+        // v4.53.2+ Analista sem task_complete: ao arrastar pra 'done',
+        // moveTaskKanban joga em 'validation'. Não abrir overlay CSAT.
+        if (fresh?.status === 'validation') {
+          toast.success('Tarefa enviada pra validação do coordenador.');
+        } else {
+          openTaskDoneOverlay(taskId, fresh || dragTask || {});
+        }
       }
     } catch(err) {
       toast.error('Erro ao mover tarefa: ' + err.message);
@@ -1422,10 +1433,17 @@ function bindPipelineColumnDrop(col, type) {
     if (!taskId) return;
 
     try {
-      const { updateTask, getTask } = await import('../services/tasks.js');
+      const { updateTask, getTask, updateTaskStatus } = await import('../services/tasks.js');
+      // v4.53.2+ Esteira: se analista (sem task_complete) E é assignee da
+      // tarefa, arrastar pra coluna 'done' deve ir pra validation, não pra
+      // done. Espelha comportamento de toggleTaskComplete.
+      const canComplete = store.can('task_complete');
+      const isAssignee  = Array.isArray(dragTask?.assignees) && dragTask.assignees.includes(store.get('currentUser')?.uid);
+      const goesToValidation = isDone && !canComplete && isAssignee;
+
       const updates = {
         customFields: { ...(dragTask?.customFields||{}), currentStep: stepId || null },
-        status:       isDone ? 'done' : 'in_progress',
+        status:       isDone ? (goesToValidation ? 'validation' : 'done') : 'in_progress',
         _prevStatus:  dragTask?.status || 'in_progress',
         order:        Date.now(),
       };
@@ -1434,7 +1452,12 @@ function bindPipelineColumnDrop(col, type) {
       // Double-check overlay when completing a task via kanban drag
       if (isDone) {
         const fresh = await getTask(taskId).catch(() => dragTask);
-        openTaskDoneOverlay(taskId, fresh || dragTask || {});
+        // v4.53.2+ Analista → cai em validation. Não abrir overlay CSAT.
+        if (fresh?.status === 'validation') {
+          toast.success('Tarefa enviada pra validação do coordenador.');
+        } else {
+          openTaskDoneOverlay(taskId, fresh || dragTask || {});
+        }
       }
     } catch(err) {
       toast.error('Erro ao mover tarefa: ' + err.message);

@@ -6,6 +6,32 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.53.2+20260524-validation-analista-sem-popup-csat] — 2026-05-24
+
+Release **PATCH** — bloqueia popup CSAT/metas pra analista + toast "enviada pra validação" em todos os callers.
+
+**Renê**: "no caso da tarefa concluida por analista e que vai pra solicitações, o popup de csat e metas foi retirado, certo? para o perfil deles nao aparece na conclusao da tarefa (ja que isso esta sendo feito por coordenador, gerente, diretoria... via modulo solicitacoes/aguardando validacao. O certo é ter um aviso de que a tarefa foi pra la pra ser validada pelo superior. vc fez assim?"
+
+**Bug encontrado**: a v4.53.0 corrigiu o service `toggleTaskComplete` (analista → validation), MAS os callers nas pages (`tasks.js`, `kanban.js`, `squadWorkspace.js`) chamavam `openTaskDoneOverlay` SEMPRE — sem checar se status virou `done` ou `validation`. Resultado: popup CSAT/metas abria pro analista mesmo a tarefa indo pra validação. E não havia toast informando que foi pra validação.
+
+**Fixes**:
+
+1. **`js/pages/tasks.js:2245`** (check inline + drop-drag) — após `toggleTaskComplete`, lê `fresh.status`. Se `validation`: `toast.success('Tarefa enviada pra validação do coordenador.')`. Se `done`: abre overlay normal.
+2. **`js/pages/tasks.js:2384`** (drag-drop pra coluna 'done' quando agrupado por status) — mesmo guard.
+3. **`js/pages/kanban.js:1110`** (checkbox card) — mesmo guard.
+4. **`js/pages/kanban.js:1196`** (drag drop coluna status) — mesmo guard.
+5. **`js/pages/kanban.js:1445`** (drag drop esteira/step) — agora também redireciona pra validation se analista é assignee + arrastou pra coluna 'done' (consistente com toggleTaskComplete).
+6. **`js/pages/squadWorkspace.js:503`** — mesmo guard.
+7. **`js/services/aiActions.js:768`** (`complete_task` da IA) — após complete, checa fresh.status e retorna mensagem específica ("Tarefa enviada pra validação do coordenador (SLA congelado)") quando virar validation. IA assistente passa info correta pro analista.
+
+**Não tocado** (correto manter overlay aberto):
+- `js/pages/requests.js:147` — aba "Aguardando validação" é visível só pra coordenador/gerente/diretor (que TEM task_complete) — aqui o overlay CSAT/metas é o objetivo da aba.
+- `js/components/taskModal.js:307` — já tinha guard `canComplete` antes de abrir overlay (corrigido em v4.53.0).
+
+**Arquivos**: js/pages/tasks.js, js/pages/kanban.js, js/pages/squadWorkspace.js, js/services/aiActions.js, js/version.js, index.html, CHANGELOG.md
+
+---
+
 ## [4.53.1+20260524-validation-double-check-cross-app] — 2026-05-24
 
 Release **PATCH** — double-check sistemático do status `validation` (v4.53.0) em todas as camadas do app.
