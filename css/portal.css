@@ -625,3 +625,44 @@ input[type="week"]::-webkit-calendar-picker-indicator:hover {
   .batch-item { flex-direction: column; gap: 8px; }
   .batch-item-actions { width: 100%; justify-content: flex-end; }
 }
+
+/* v4.51.4+ Calendário portal: alinhamento ao form (Renê screenshot 24/05).
+ *
+ * Bug: células do grid `repeat(7, 1fr)` tinham `min-width: auto` (default CSS Grid).
+ * Quando o conteúdo (ex: "News PARTNERS...") era mais largo que 1/7 do container,
+ * a célula expandia pra acomodar — quebrando os `1fr` iguais e estourando largura
+ * do card pai. Visível no screenshot: grid vazando à direita do portal-card.
+ *
+ * Fix: força `min-width: 0` em todas as células + `overflow: hidden` no widget.
+ * O `text-overflow: ellipsis` já estava nos textos internos — só faltava o
+ * container ter `min-width: 0` pra colapsar quando o texto não cabe.
+ */
+#portal-calendar-widget {
+  max-width: 100%;
+  overflow-x: hidden;
+  box-sizing: border-box;
+}
+#portal-calendar-widget > div {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+#portal-calendar-widget [data-pcal-date],
+#portal-calendar-widget .pcal-day-cell {
+  min-width: 0;
+  overflow: hidden;
+}
+#portal-calendar-widget [style*="grid-template-columns"] {
+  min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+/* Também aplica em divs internas (slot-click, task-click, req-click) que
+ * têm text-overflow:ellipsis no inline style — todas precisam de min-width:0
+ * herdado/aplicado pra ellipsis funcionar. */
+#portal-calendar-widget .pcal-slot-click,
+#portal-calendar-widget .pcal-task-click,
+#portal-calendar-widget .pcal-req-click,
+#portal-calendar-widget .pcal-filled-click {
+  min-width: 0;
+  max-width: 100%;
+}

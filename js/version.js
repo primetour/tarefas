@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 51,
-  patch: 3,
-  build: '20260523-notify-actor-override-portal',
+  patch: 4,
+  build: '20260524-calendar-grid-min-width',
 };
 
 /** "1.2.0" */
