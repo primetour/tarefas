@@ -610,8 +610,9 @@ async function renderAvaliacoes(container) {
         Nenhuma avaliação registrada ainda.</div>`;
 
     // Linked tasks section — shows ALL tasks, not just confirmed evidence
-    const statusIcons = { done:'✓', in_progress:'▶', review:'◉', not_started:'○', cancelled:'✕', rework:'↺' };
-    const statusColors = { done:'#22C55E', in_progress:'#F59E0B', review:'#A78BFA', not_started:'#38BDF8', cancelled:'#EF4444', rework:'#F97316' };
+    // v4.53.1+ Adicionado 'approval' e 'validation' (alinhado a STATUSES de tasks.js)
+    const statusIcons  = { done:'✓', in_progress:'▶', review:'◉', approval:'⚖', validation:'🔍', not_started:'○', cancelled:'✕', rework:'↺' };
+    const statusColors = { done:'#22C55E', in_progress:'#F59E0B', review:'#A78BFA', approval:'#0EA5E9', validation:'#EAB308', not_started:'#38BDF8', cancelled:'#EF4444', rework:'#F97316' };
     const isGestorForLink = goal.gestorId === store.get('currentUser')?.uid || store.isMaster() || store.can('system_manage_roles');
 
     const evidenceHTML = `

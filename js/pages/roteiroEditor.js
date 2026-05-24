@@ -1789,10 +1789,17 @@ async function populateLinkedTasksList(taskIds) {
       return;
     }
     const progress = calcLinkedTasksProgress(tasks);
+    // v4.53.1+ Inclui validation/approval/review/rework/cancelled pra não cair em undefined
+    // quando linkedTasks chegam em qualquer status novo do workflow de tasks.
     const STATUS_COLORS = {
       not_started: { bg: '#94A3B8', text: 'Não iniciada' },
       in_progress: { bg: '#3B82F6', text: 'Em andamento' },
+      review:      { bg: '#A78BFA', text: 'Em revisão' },
+      approval:    { bg: '#0EA5E9', text: 'Em aprovação' },
+      validation:  { bg: '#EAB308', text: 'Aguardando validação' },
+      rework:      { bg: '#F97316', text: 'Retrabalho' },
       done:        { bg: '#10B981', text: 'Concluída' },
+      cancelled:   { bg: '#EF4444', text: 'Cancelada' },
       blocked:     { bg: '#EF4444', text: 'Bloqueada' },
       pending:     { bg: '#F59E0B', text: 'Pendente' },
     };

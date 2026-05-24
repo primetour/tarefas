@@ -755,12 +755,16 @@ function mountMiniCalendar(myTasks, onTaskClick) {
   })();
 
   // Cor do dot por status — alinhada ao resto do painel
+  // v4.53.1+ Alinhado a STATUSES de services/tasks.js (inclui approval/validation)
   const STATUS_COLOR = {
     not_started: '#38BDF8',
     in_progress: '#F59E0B',
     review:      '#A78BFA',
+    approval:    '#0EA5E9',
+    validation:  '#EAB308',
     rework:      '#F97316',
     done:        '#22C55E',
+    cancelled:   '#EF4444',
   };
 
   function renderMonth() {
@@ -858,7 +862,7 @@ function mountMiniCalendar(myTasks, onTaskClick) {
 
     // Legenda — discreta
     html += `<div style="display:flex;flex-wrap:wrap;gap:10px;margin-top:8px;font-size:0.625rem;color:var(--text-muted);">
-      ${Object.entries({not_started:'A fazer',in_progress:'Em andamento',review:'Revisão',rework:'Retrabalho',done:'Concluída'})
+      ${Object.entries({not_started:'A fazer',in_progress:'Em andamento',review:'Revisão',approval:'Aprovação',validation:'Validação',rework:'Retrabalho',done:'Concluída'})
         .map(([k,l]) => `<span style="display:inline-flex;align-items:center;gap:4px;">
           <span style="width:6px;height:6px;border-radius:50%;background:${STATUS_COLOR[k]};"></span>${l}
         </span>`).join('')}

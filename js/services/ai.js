@@ -143,7 +143,9 @@ FORMATO DOS CAMPOS (NUNCA QUEBRE):
 - tags, nucleos: SEMPRE arrays de strings, mesmo com um só item. Ex: ["marketing"] e não "marketing".
 - dueDate, startDate: SEMPRE formato YYYY-MM-DD (ex: "2026-04-15"). NUNCA datas por extenso.
 - priority: APENAS urgent | high | medium | low.
-- status: APENAS not_started | in_progress | review | rework | done | cancelled.
+- status: APENAS not_started | in_progress | review | approval | validation | rework | done | cancelled.
+  • approval (v4.52.0): aguardando aprovação de gestor (ex: peça de marketing). Use quando o briefing exige sign-off antes de seguir.
+  • validation (v4.53.0): analista marcou como pronto, mas só gestor/coordenador pode finalizar. SLA é congelado neste estado (não conta como atrasada). NUNCA crie tarefa começando em validation — é estado intermediário pós-conclusão do analista.
 - customFields: objeto { key: value }. SÓ use se souber o typeId e seus campos reais (rode list_task_types antes). Exemplo: {"outOfCalendar": true, "newsletterStatus": "Pauta"}.
 
 FLUXOS OBRIGATÓRIOS:
@@ -165,7 +167,8 @@ CONCEITO:
 
 FORMATO:
 - assignees: SEMPRE array de UIDs, NUNCA nomes. Se não souber, omita.
-- status (coluna): APENAS not_started | in_progress | review | rework | done | cancelled.
+- status (coluna): APENAS not_started | in_progress | review | approval | validation | rework | done | cancelled.
+  • approval = aguardando aprovação de gestor; validation = analista concluiu, aguardando double-check (SLA congelado).
 - dueDate: YYYY-MM-DD.
 
 FLUXOS:

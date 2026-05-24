@@ -27,9 +27,12 @@ export async function checkSlaAlerts() {
     const tomorrowStr = tomorrow.toISOString().slice(0, 10);
 
     // Fetch active tasks (not done/cancelled) with dueDate
+    // v4.53.1+ Inclui 'approval' (v4.52.0) e 'validation' (v4.53.0).
+    // NOTA: 'validation' tem SLA congelado (isTaskOverdue retorna false),
+    // mas mantemos na query pra dashboard de SLA acompanhar visualmente.
     const q = query(
       collection(db, 'tasks'),
-      where('status', 'in', ['not_started', 'in_progress', 'review', 'rework']),
+      where('status', 'in', ['not_started', 'in_progress', 'review', 'approval', 'validation', 'rework']),
       limit(500)
     );
     const snap = await getDocs(q);

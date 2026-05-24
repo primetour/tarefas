@@ -6,6 +6,76 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.53.1+20260524-validation-double-check-cross-app] — 2026-05-24
+
+Release **PATCH** — double-check sistemático do status `validation` (v4.53.0) em todas as camadas do app.
+
+**Renê**: "faça double check em tudo, pq bugs e melhorias em tarefas tem muitas camadas... precisamos cobrir todos os cenários pra evitar que o usuario trave ao tentar usar a partir desse novo cenario".
+
+Auditoria cross-app encontrou 9+ pontos onde os status `approval` (v4.52.0) e `validation` (v4.53.0) não estavam propagados. Tarefas nesses status apareceriam invisíveis em listagens, dashboards, alertas SLA, IA, queries Firestore e fallbacks de transição.
+
+**Fixes aplicados**:
+
+1. `js/services/notificationScheduler.js:56` — `activeSet` ampliado para incluir approval/validation (resumo diário não pulava mais essas tarefas).
+2. `js/services/dailySummary.js:25` — query Firestore `where('status','in',[...])` ampliada (analytics e dashboard de produtividade incluem agora).
+3. `js/services/slaAlerts.js:32` — query SLA ampliada (validation entra no monitor mesmo congelado — SLA UI mostra status correto).
+4. `js/pages/goals.js:614` — `statusIcons` + `statusColors` incluem approval (⚖ azul) e validation (🔍 amarelo).
+5. `js/pages/roteiroEditor.js:1792` — `STATUS_COLORS` do dropdown de status ampliado (workflow visual completo).
+6. `js/components/header.js:939` — `STATUS_ICONS` da global search inclui approval/validation.
+7. `js/services/cardPrefs.js:170-171` — `S` (símbolos) + `L` (labels) renderizados em cards Kanban incluem approval (⚖ Em aprovação) + validation (🔍 Aguardando validação).
+8. `js/pages/dashboard.js:758 + 861` — `STATUS_COLOR` + legenda do gráfico de status incluem novos estados.
+9. `js/components/taskModal.js:50` — fallback do `getValidTransitions` (quando workflow engine não carrega) inclui approval/validation.
+10. `js/services/ai.js:146,168` — `DEFAULT_MODULE_HINTS` (tasks + kanban) documentam approval/validation no system prompt da IA com semântica + armadilhas.
+11. `js/services/aiActions.js:684,738,958,971,1056` — Tool schemas (`create_task`, `update_task`, `move_card`, `create_card`, `get_board_summary`) aceitam approval/validation com warning de quando NÃO usar validation (estado pós-conclusão).
+
+**Princípio que entra no CLAUDE.md §12.s**: status novo = **single source of truth** (`STATUSES` em `js/services/tasks.js`) + **propagação em N lugares**. Sempre que um STATUSES é estendido, auditar: queries Firestore (`where in`), maps `STATUS_COLOR`/`STATUS_ICONS`/`S/L`, dropdowns de transição (engine + fallback), system prompts de IA, dashboards/charts (legendas), notificações (allowlists).
+
+**Arquivos modificados**: js/services/notificationScheduler.js, js/services/dailySummary.js, js/services/slaAlerts.js, js/pages/goals.js, js/pages/roteiroEditor.js, js/components/header.js, js/services/cardPrefs.js, js/pages/dashboard.js, js/components/taskModal.js, js/services/ai.js, js/services/aiActions.js, js/version.js, index.html, CHANGELOG.md
+
+---
+
+## [4.53.0+20260524-validation-flow-sla-freeze] — 2026-05-24
+
+Release **MINOR** — fluxo de validação obrigatória pós-conclusão do analista + status `validation` + SLA congelado.
+
+**Renê**: "sobre analista poder finalizar tarefa que é assigne. usuarios querem que essas tarefas sejam enviadas para o modulo solicitacoes, em uma nova aba, pra double check envolvendo csat e metas. ou seja, analista 'conclui' tarefa, mas quem finaliza é coordenador, gerente, diretor... tudo q é concluido vai pra um lugar em que passa por esse double check e encaminhamento. importante: ao 'concluir', precisa fechar o SLA, pra nao cair no erro do coordenador demorar para finalizar e a tarefa ficar 'em atraso'".
+
+**Mudanças**:
+
+1. **Novo status `validation`** em `js/services/tasks.js` `STATUSES`:
+   - Label: "Aguardando validação"
+   - Cor: `#EAB308` (amarelo)
+   - Adicionado a `DEFAULT_TRANSITIONS` em `workflowEngine.js` — qualquer estado ativo pode ir pra validation; só `done`/`rework`/`review` saem de validation.
+
+2. **SLA congelado em validation**:
+   - `isTaskOverdue()` retorna `false` se `status === 'validation'`
+   - Tarefa não vira "atrasada" enquanto aguarda gestor finalizar
+   - Quando gestor marca como `done` final: grava `validatedBy` + `validatedAt`
+   - Quando entra em validation: grava `slaFrozenAt` + `slaFrozenBy`
+
+3. **`toggleTaskComplete` redirige analista sem `task_complete` pra validation**:
+   - Assignee com permissão de concluir → vai direto pra `done` (comportamento atual)
+   - Assignee SEM `task_complete` (analista júnior) → vai pra `validation`
+   - Gestores com `task_complete` continuam podendo finalizar direto
+
+4. **Nova função `updateTaskStatus(taskId, newStatus)`** centraliza side-effects:
+   - Transição → validation: notifica managers (gerente/coordenador/diretor) do setor
+   - Transição validation → done: grava validadores + auditoria
+
+5. **Nova aba "🔍 Aguardando validação"** em `js/pages/requests.js`:
+   - Badge contagem dinâmica
+   - Lista de tarefas aguardando double-check
+   - Ações inline: "Validar (concluir)" e "Devolver pra retrabalho"
+   - Filtro: só master/admin/manager/coordinator vê
+
+6. **Modal de tarefa adaptado** (`js/components/taskModal.js`):
+   - Dropdown de status mostra validation pra assignee
+   - Botão "Concluir" vira "Enviar pra validação" se assignee não tem `task_complete`
+
+**Arquivos**: js/services/tasks.js, js/services/workflowEngine.js, js/components/taskModal.js, js/pages/requests.js, js/version.js, index.html
+
+---
+
 ## [4.50.4+20260522-sidebar-cleanup] — 2026-05-22
 
 Release **PATCH** — limpeza da sidebar (3 itens removidos).

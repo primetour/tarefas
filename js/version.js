@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 53,
-  patch: 0,
-  build: '20260524-validation-flow-sla-freeze',
+  patch: 1,
+  build: '20260524-validation-double-check-cross-app',
 };
 
 /** "1.2.0" */

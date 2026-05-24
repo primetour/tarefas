@@ -47,7 +47,8 @@ import {
 } from './dynamicFields.js';
 /* workflowEngine: lazy-loaded to avoid blocking pre-login */
 let _wfLoaded = false;
-let getValidTransitions = (status) => Object.keys({ not_started:1, in_progress:1, review:1, rework:1, done:1, cancelled:1 });
+// v4.53.1+ Fallback alinhado a STATUSES (inclui approval v4.52 e validation v4.53)
+let getValidTransitions = (status) => Object.keys({ not_started:1, in_progress:1, review:1, approval:1, validation:1, rework:1, done:1, cancelled:1 });
 let checkSubtaskAutoAdvance = () => null;
 async function _loadWorkflowEngine() {
   if (_wfLoaded) return;

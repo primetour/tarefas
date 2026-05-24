@@ -936,7 +936,9 @@ export class Header {
     }
 
     const STATUS_ICONS = {
-      todo:'🔵', in_progress:'🟡', review:'🟣', done:'🟢', backlog:'⚪', cancelled:'🔴', rework:'🟠'
+      todo:'🔵', not_started:'🔵', in_progress:'🟡', review:'🟣',
+      approval:'🔷', validation:'🟨',  // v4.53.1+ alinhados a STATUSES
+      done:'🟢', backlog:'⚪', cancelled:'🔴', rework:'🟠'
     };
 
     let html = '';

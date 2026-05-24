@@ -681,7 +681,7 @@ const MODULE_ACTIONS = {
         title: 'string — título da tarefa (obrigatório)',
         description: 'string — descrição detalhada (opcional)',
         priority: 'string — urgent, high, medium, low (default: medium)',
-        status: 'string — not_started, in_progress, review, rework, done, cancelled (default: not_started)',
+        status: 'string — not_started, in_progress, review, approval, validation, rework, done, cancelled (default: not_started). NOTA: validation é estado pós-conclusão do analista (SLA congelado) — NUNCA crie tarefa começando nele.',
         sector: 'string — setor responsável (opcional)',
         dueDate: 'string — data de vencimento YYYY-MM-DD (opcional)',
         startDate: 'string — data de início YYYY-MM-DD (opcional)',
@@ -735,7 +735,7 @@ const MODULE_ACTIONS = {
         taskId: 'string — ID da tarefa (obrigatório)',
         title: 'string — novo título (opcional)',
         description: 'string — nova descrição (opcional)',
-        status: 'string — not_started, in_progress, review, rework, done, cancelled (opcional)',
+        status: 'string — not_started, in_progress, review, approval, validation, rework, done, cancelled (opcional). approval = aguardando aprovação de gestor; validation = analista concluiu, gestor faz double-check (SLA congelado).',
         priority: 'string — urgent, high, medium, low (opcional)',
         dueDate: 'string — nova data de vencimento YYYY-MM-DD (opcional)',
         startDate: 'string — nova data de início YYYY-MM-DD (opcional)',
@@ -955,7 +955,7 @@ const MODULE_ACTIONS = {
       description: 'Mover um card do Kanban para outro status/coluna',
       params: {
         taskId: 'string — ID da tarefa/card',
-        newStatus: 'string — novo status: not_started, in_progress, review, rework, done',
+        newStatus: 'string — novo status: not_started, in_progress, review, approval, validation, rework, done, cancelled',
       },
       execute: async ({ taskId, newStatus }) => {
         const { moveTaskKanban } = await import('./tasks.js');
@@ -968,7 +968,7 @@ const MODULE_ACTIONS = {
       description: 'Criar um novo card no Kanban',
       params: {
         title: 'string — título do card (obrigatório)',
-        status: 'string — coluna: not_started, in_progress, review (default: not_started)',
+        status: 'string — coluna: not_started, in_progress, review, approval (default: not_started). NÃO use validation aqui — é estado pós-conclusão de analista.',
         priority: 'string — urgent, high, medium, low (default: medium)',
         description: 'string — descrição (opcional)',
         assignees: 'string[] — UIDs dos responsáveis (opcional)',
@@ -1053,7 +1053,7 @@ const MODULE_ACTIONS = {
       execute: async () => {
         const { fetchTasks } = await import('./tasks.js');
         const tasks = await fetchTasks({ limitN: 500 });
-        const columns = { not_started: 0, in_progress: 0, review: 0, rework: 0, done: 0 };
+        const columns = { not_started: 0, in_progress: 0, review: 0, approval: 0, validation: 0, rework: 0, done: 0, cancelled: 0 };
         tasks.forEach(t => { if (columns[t.status] !== undefined) columns[t.status]++; });
         return {
           success: true,

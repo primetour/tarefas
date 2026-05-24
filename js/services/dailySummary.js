@@ -20,9 +20,12 @@ export async function generateDailySummary() {
   localStorage.setItem(SUMMARY_KEY, today);
 
   try {
+    // v4.53.1+ Inclui 'approval' (v4.52.0) e 'validation' (v4.53.0) na query.
+    // Sem isso, daily summary pulava tasks nesses status novos.
+    // ATENÇÃO: Firestore `in` aceita até 10 values, estamos em 6 (ok).
     const q = query(
       collection(db, 'tasks'),
-      where('status', 'in', ['not_started', 'in_progress', 'review', 'rework']),
+      where('status', 'in', ['not_started', 'in_progress', 'review', 'approval', 'validation', 'rework']),
       limit(500)
     );
     const snap = await getDocs(q);

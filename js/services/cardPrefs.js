@@ -167,8 +167,9 @@ export function renderCardFields(task, opts = {}) {
       }
 
       case 'status': {
-        const S = { not_started:'◌', in_progress:'▶', review:'◷', done:'✓', rework:'↩', cancelled:'✕' };
-        const L = { not_started:'Não iniciada', in_progress:'Em andamento', review:'Revisão', done:'Concluída', rework:'Retrabalho', cancelled:'Cancelada' };
+        // v4.53.1+ Inclui approval (v4.52.0) e validation (v4.53.0)
+        const S = { not_started:'◌', in_progress:'▶', review:'◷', approval:'⚖', validation:'🔍', done:'✓', rework:'↩', cancelled:'✕' };
+        const L = { not_started:'Não iniciada', in_progress:'Em andamento', review:'Revisão', approval:'Em aprovação', validation:'Aguardando validação', done:'Concluída', rework:'Retrabalho', cancelled:'Cancelada' };
         if (task.status && task.status !== 'not_started') bits.push(
           `<span title="Status: ${L[task.status]||task.status}">${S[task.status]||'◎'} ${L[task.status]||task.status}</span>`
         );

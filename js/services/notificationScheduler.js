@@ -53,7 +53,10 @@ async function checkDeadlines() {
   const currentUser = store.get('currentUser');
   if (!currentUser?.uid) return;
 
-  const activeSet = new Set(['not_started', 'in_progress', 'review', 'rework']);
+  // v4.53.1+ Inclui 'approval' (v4.52.0) e 'validation' (v4.53.0) — esses status
+  // são parte do pipeline ativo. Sem isso, deadline alerts paravam de disparar
+  // quando task transicionava pra approval/validation.
+  const activeSet = new Set(['not_started', 'in_progress', 'review', 'approval', 'validation', 'rework']);
 
   // Reusa o cache de fetchTasks (TTL 90s + populado pelo onSnapshot do tasks/kanban).
   // Isso elimina o getDocs paralelo que essa função fazia antes.
