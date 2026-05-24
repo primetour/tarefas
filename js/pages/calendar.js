@@ -5,6 +5,7 @@
  */
 
 import { fetchTasks, updateTask, PRIORITY_MAP }  from '../services/tasks.js';
+import { setupTasksAutoRefresh, teardownTasksAutoRefresh } from '../services/realtimeSync.js';
 import { fetchProjects }              from '../services/projects.js';
 import { openTaskModal }             from '../components/taskModal.js';
 import { store, routeGuard }         from '../store.js';
@@ -62,6 +63,9 @@ let _calProjects = [];
 
 /* ─── Main render ────────────────────────────────────────── */
 export async function renderCalendar(container) {
+  // v4.53.4+ Auto-refresh real-time
+  setupTasksAutoRefresh('calendar', container, renderCalendar);
+
   if (!routeGuard(container, 'task_create')) return;
   // Lazy load taskTypes (saiu do boot pra economizar reads)
   if (!(store.get('taskTypes') || []).length) {
@@ -973,3 +977,9 @@ export async function getNewsletterCalendarData(year, month) {
 }
 
 export { getSlotsForDate };
+
+
+/* v4.53.4+ Cleanup do realtime subscriber ao sair da page */
+export function destroyCalendar() {
+  teardownTasksAutoRefresh('calendar');
+}

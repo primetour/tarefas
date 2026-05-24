@@ -14,6 +14,7 @@ import { installGlobalEscHandler } from './components/uiKit.js';
 // v4.49.61+ Indicador de conexão (chip canto sup direito quando reconnecting/offline)
 import { mountConnectionIndicator } from './components/connectionIndicator.js';
 import { subscribeNotifications, cleanupExpired } from './services/notifications.js';
+import { teardownAllTasksAutoRefresh }            from './services/realtimeSync.js';
 import { syncBrandingToCache }                    from './services/branding.js';
 import { injectSandboxBanner }                    from './services/sandbox.js';
 import { injectClockTimer, maybeShowClockStartPrompt } from './components/clockTimer.js';
@@ -682,6 +683,11 @@ function setupRouter() {
       destroyRequests();
       destroyNotifications();
       destroyRoteiroEditor();
+      // v4.53.4+ Limpa subscriptions de pages migradas pra real-time
+      // (dashboard, capacity, goals, squadWorkspace, timeline, calendar,
+      // profile, projects) — defesa-em-profundidade caso destroyXxx
+      // específico não tenha sido chamado.
+      teardownAllTasksAutoRefresh();
       // Remover painel de IA flutuante (será recriado para o novo módulo)
       document.getElementById('ai-panel-auto')?.remove();
       // Limpar o container garante que não há resíduos visuais

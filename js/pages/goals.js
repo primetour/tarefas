@@ -15,6 +15,7 @@ import {
   getResponsavelIds,
 } from '../services/goals.js';
 import { NUCLEOS, fetchTasks, fetchArchivedTasks, updateTask, wasTaskCompletedLate } from '../services/tasks.js';
+import { setupTasksAutoRefresh, teardownTasksAutoRefresh } from '../services/realtimeSync.js';
 import { fetchAllWorkspaces } from '../services/workspaces.js';
 import { openTaskModal } from '../components/taskModal.js';
 import { renderPickerButton, bindOptionPicker, refreshPickerButton } from '../components/optionPicker.js';
@@ -71,6 +72,9 @@ function getResponsavelNames(goal, users) {
 let allGoals=[], allUsers=[], allTasksForGoals=[], evaluations=[], activeTab='metas';
 
 export async function renderGoals(container) {
+  // v4.53.4+ Auto-refresh real-time
+  setupTasksAutoRefresh('goals', container, renderGoals);
+
   if (!store.can('goals_view') && !store.isMaster()) {
     container.innerHTML = `<div class="empty-state" style="padding:60px 20px;text-align:center;">
       <div class="empty-state-icon">🔒</div>
@@ -2730,4 +2734,10 @@ async function exportGoalsPdf() {
   doc.save(`primetour_metas_${new Date().toISOString().slice(0, 10)}.pdf`);
   toast.success('PDF exportado.');
   } finally { _exportPdfBusy = false; }
+}
+
+
+/* v4.53.4+ Cleanup do realtime subscriber ao sair da page */
+export function destroyGoals() {
+  teardownTasksAutoRefresh('goals');
 }

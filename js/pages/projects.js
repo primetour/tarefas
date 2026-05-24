@@ -12,6 +12,7 @@ import {
   PROJECT_COLORS, PROJECT_ICONS, PROJECT_STATUSES, PROJECT_STATUS_MAP,
 } from '../services/projects.js';
 import { fetchTasks } from '../services/tasks.js';
+import { setupTasksAutoRefresh, teardownTasksAutoRefresh } from '../services/realtimeSync.js';
 import { openTaskModal } from '../components/taskModal.js';
 import { renderPickerButton, bindOptionPicker } from '../components/optionPicker.js';
 
@@ -116,6 +117,9 @@ function renderCsatSection(project) {
 }
 
 export async function renderProjects(container) {
+  // v4.53.4+ Auto-refresh real-time
+  setupTasksAutoRefresh('projects', container, renderProjects);
+
   container.innerHTML = `
     <div class="page-header">
       <div class="page-header-left">
@@ -886,4 +890,10 @@ function toInputDate(ts) {
   if (!ts) return '';
   const d = ts?.toDate ? ts.toDate() : new Date(ts);
   return d.toISOString().slice(0, 16);
+}
+
+
+/* v4.53.4+ Cleanup do realtime subscriber ao sair da page */
+export function destroyProjects() {
+  teardownTasksAutoRefresh('projects');
 }

@@ -4,6 +4,7 @@
  */
 
 import { fetchTasks, PRIORITY_MAP }  from '../services/tasks.js';
+import { setupTasksAutoRefresh, teardownTasksAutoRefresh } from '../services/realtimeSync.js';
 import {
   renderFilterBar, bindFilterBar, buildFilterFn,
 } from '../components/filterBar.js';
@@ -49,6 +50,9 @@ function initTlFilterState() {
 }
 
 export async function renderTimeline(container) {
+  // v4.53.4+ Auto-refresh real-time
+  setupTasksAutoRefresh('timeline', container, renderTimeline);
+
   if (!routeGuard(container, 'task_edit_any')) return;
   // Lazy load taskTypes (saiu do boot)
   if (!(store.get('taskTypes') || []).length) {
@@ -495,4 +499,10 @@ function buildSubtaskDotHTML(sub, left, mode, taskId) {
     data-sub-id="${esc(sub.id || '')}"
     style="left:${left}px;"
     title="${tooltip}"></div>`;
+}
+
+
+/* v4.53.4+ Cleanup do realtime subscriber ao sair da page */
+export function destroyTimeline() {
+  teardownTasksAutoRefresh('timeline');
 }

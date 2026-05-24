@@ -8,6 +8,7 @@ import { toast }  from '../components/toast.js';
 import { modal }  from '../components/modal.js';
 import { updateUserProfile, changePassword } from '../auth/auth.js';
 import { fetchTasks }    from '../services/tasks.js';
+import { setupTasksAutoRefresh, teardownTasksAutoRefresh } from '../services/realtimeSync.js';
 import { fetchProjects } from '../services/projects.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -55,6 +56,9 @@ function getInitials(name) {
 }
 
 export async function renderProfile(container) {
+  // v4.53.4+ Auto-refresh real-time
+  setupTasksAutoRefresh('profile', container, renderProfile);
+
   const user    = store.get('currentUser');
   const profile = store.get('userProfile');
 
@@ -847,3 +851,9 @@ function _bindProfileEvents(profile) {
 
 /* Color picker do avatar removido — cor do avatar agora é fixa
  * (definida pelo perfil/sistema, não mais editável pelo usuário). */
+
+
+/* v4.53.4+ Cleanup do realtime subscriber ao sair da page */
+export function destroyProfile() {
+  teardownTasksAutoRefresh('profile');
+}

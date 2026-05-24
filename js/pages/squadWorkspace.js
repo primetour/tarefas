@@ -13,6 +13,7 @@ import {
   fetchTasks, toggleTaskComplete, getTask,
   STATUS_MAP, PRIORITY_MAP,
 } from '../services/tasks.js';
+import { setupTasksAutoRefresh, teardownTasksAutoRefresh } from '../services/realtimeSync.js';
 import { openTaskModal, openTaskDoneOverlay } from '../components/taskModal.js';
 import { renderPickerButton, bindOptionPicker } from '../components/optionPicker.js';
 
@@ -36,6 +37,9 @@ const expanded  = new Set();   // ids de projetos expandidos
 
 /* ─── Entry ──────────────────────────────────────────────── */
 export async function renderSquadWorkspace(container) {
+  // v4.53.4+ Auto-refresh real-time
+  setupTasksAutoRefresh('squadWorkspace', container, renderSquadWorkspace);
+
   squadId = parseSquadIdFromHash();
   if (!squadId) {
     container.innerHTML = renderEmpty('Nenhum squad selecionado.', 'Volte para a lista de squads e clique em um para abrir.');
@@ -788,4 +792,10 @@ async function openSquadInviteModal() {
       });
     });
   }, 50);
+}
+
+
+/* v4.53.4+ Cleanup do realtime subscriber ao sair da page */
+export function destroySquadWorkspace() {
+  teardownTasksAutoRefresh('squadWorkspace');
 }

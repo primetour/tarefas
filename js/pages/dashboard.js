@@ -11,10 +11,15 @@ import { toast }         from '../components/toast.js';
 import { countPendingRequests } from '../services/requests.js';
 import { fetchGoals }    from '../services/goals.js';
 import { fetchUserAbsences, fetchAllAbsences, ABSENCE_TYPES } from '../services/capacity.js';
+import { setupTasksAutoRefresh, teardownTasksAutoRefresh } from '../services/realtimeSync.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 export async function renderDashboard(container) {
+  // v4.53.4+ Auto-refresh em real-time: quando outra aba/device cria/muda
+  // tarefa, dashboard refresca silenciosamente (debounce 1.5s).
+  setupTasksAutoRefresh('dashboard', container, renderDashboard);
+
   // 4.49.11+ Guard granular: dashboard_home_view (antes era sem guard).
   // Roles sem essa perm caem em "Acesso restrito" com sugestão de outro módulo.
   if (!store.canViewHomeDashboard()) {
@@ -1465,4 +1470,9 @@ function formatDate(date) {
   return new Intl.DateTimeFormat('pt-BR',{
     weekday:'long', day:'numeric', month:'long', year:'numeric'
   }).format(date);
+}
+
+/* v4.53.4+ Cleanup do realtime subscriber ao sair da page */
+export function destroyDashboard() {
+  teardownTasksAutoRefresh('dashboard');
 }

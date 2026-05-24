@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 53,
-  patch: 3,
-  build: '20260524-subscribe-auto-reconnect-visibility',
+  patch: 4,
+  build: '20260524-realtime-sync-8-pages',
 };
 
 /** "1.2.0" */

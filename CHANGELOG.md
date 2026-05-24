@@ -6,6 +6,48 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.53.4+20260524-realtime-sync-8-pages] — 2026-05-24
+
+Release **PATCH** — auto-refresh real-time em 8 pages que usavam `fetchTasks` one-shot.
+
+**Renê**: "faça migração página a página" (continuação da v4.53.3, que cobriu apenas `/tasks`, `/kanban`, `/requests` e sino global).
+
+**Helper novo**: `js/services/realtimeSync.js` exporta `setupTasksAutoRefresh(pageId, container, refreshFn)` + `teardownTasksAutoRefresh(pageId)` + `teardownAllTasksAutoRefresh()`. Usa `subscribeToTasks` internamente; ignora o primeiro callback (snapshot inicial); debounce de 1.5s pra agrupar bursts; idempotente (re-setup limpa o anterior).
+
+**Pages migradas** (+ destroyXxx exportado em cada):
+
+| Page | Função | Destroy |
+|---|---|---|
+| `/dashboard` | `setupTasksAutoRefresh('dashboard', ...)` | `destroyDashboard` |
+| `/capacity` | `setupTasksAutoRefresh('capacity', ...)` | `destroyCapacity` |
+| `/goals` | `setupTasksAutoRefresh('goals', ...)` | `destroyGoals` |
+| `/squadWorkspace` | `setupTasksAutoRefresh('squadWorkspace', ...)` | `destroySquadWorkspace` |
+| `/timeline` | `setupTasksAutoRefresh('timeline', ...)` | `destroyTimeline` |
+| `/calendar` | `setupTasksAutoRefresh('calendar', ...)` | `destroyCalendar` |
+| `/profile` | `setupTasksAutoRefresh('profile', ...)` | `destroyProfile` |
+| `/projects` | `setupTasksAutoRefresh('projects', ...)` | `destroyProjects` |
+
+**Cleanup centralizado**: `app.js` `beforeNavigation` agora chama `teardownAllTasksAutoRefresh()` como defesa-em-profundidade — se uma page futura usar setupTasksAutoRefresh sem ter destroyXxx wirado em beforeNavigation, ainda assim limpa.
+
+**Como funciona em runtime**:
+1. User entra em `/dashboard` → `renderDashboard` chama `setupTasksAutoRefresh('dashboard', container, renderDashboard)`.
+2. `subscribeToTasks` dispara callback inicial — ignorado (`gotInitial=false→true`).
+3. Outro user/aba/device cria tarefa → snapshot dispara callback novamente → debounce 1.5s → `renderDashboard(container)` é chamado de novo.
+4. `setupTasksAutoRefresh` é chamado dentro de `renderDashboard` de novo, faz unsub + sub idempotente — sem leak, sem loop.
+5. User navega pra outra rota → `beforeNavigation` chama `teardownAllTasksAutoRefresh()` → subscription some.
+
+**Pages NÃO migradas** (intencionalmente):
+- `csat.js` — já tem subscribe pra surveys e fetchTasks é só pra cross-link (não crítico)
+- `dashboards.js` — fetchTasks está em handler interno de admin, não no mount
+- `settings.js` — fetchTasks em handler admin
+- `contentCalendar.js` — já tem subscribeToTasksByIds próprio
+
+Junto com v4.53.3 (auto-reconnect visibility/online em `subscribeToTasks`/`subscribeNotifications`), o sistema inteiro elimina o "preciso F5" reclamado pelo user.
+
+**Arquivos**: js/services/realtimeSync.js (novo), 8 js/pages/*.js (dashboard, capacity, goals, squadWorkspace, timeline, calendar, profile, projects), js/app.js, js/version.js, index.html, CHANGELOG.md
+
+---
+
 ## [4.53.3+20260524-subscribe-auto-reconnect-visibility] — 2026-05-24
 
 Release **PATCH** — auto-reconnect dos `onSnapshot` quando aba volta de background longo OU network volta de offline.

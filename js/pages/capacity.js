@@ -14,6 +14,7 @@ import {
   calcUserWorkload, ABSENCE_TYPES,
 } from '../services/capacity.js';
 import { fetchTasks } from '../services/tasks.js';
+import { setupTasksAutoRefresh, teardownTasksAutoRefresh } from '../services/realtimeSync.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -34,6 +35,9 @@ let activeTab    = 'mine'; // 'mine' | 'team'
 
 /* ─── Render ─────────────────────────────────────────────── */
 export async function renderCapacity(container) {
+  // v4.53.4+ Auto-refresh real-time quando tasks mudam em outra aba/device
+  setupTasksAutoRefresh('capacity', container, renderCapacity);
+
   const canViewAll = store.can('absence_manage_team') || store.can('system_manage_users') || store.can('system_view_all');
 
   container.innerHTML = `
@@ -449,4 +453,10 @@ async function confirmDelete(absenceId) {
     toast.success('Ausência removida.');
     await loadAndRender();
   } catch(e) { toast.error(e.message); }
+}
+
+
+/* v4.53.4+ Cleanup do realtime subscriber ao sair da page */
+export function destroyCapacity() {
+  teardownTasksAutoRefresh('capacity');
 }
