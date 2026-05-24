@@ -37,8 +37,12 @@ Hierarquia: master ⊃ admin ⊃ manager ⊃ coordinator ⊃ member ⊃ partner
 | task_view_all | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
 | task_edit_any | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
 | task_delete_any | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| **task_complete** | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
 | project_create | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
 | bulk_import | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
+
+> **`task_complete`** controla quem pode finalizar uma tarefa direto pra `done`.
+> Quem não tem essa permissão (member/partner) cai no fluxo de **validação obrigatória** — ver §"Fluxo de validação obrigatória (v4.53.0+)" mais abaixo.
 
 ### Equipe e CLT
 | Permissão | master | admin | manager | coordinator | member | partner |
@@ -147,6 +151,86 @@ no client por permissão (defesa em profundidade + UX):
 
 ---
 
+## Fluxo de validação obrigatória (v4.53.0+)
+
+**Decisão de negócio**: tarefas concluídas por analista júnior precisam de double-check (CSAT + vínculo de metas) por um superior antes de virarem oficialmente `done`. Evita SLA atrasar enquanto o gestor demora pra revisar.
+
+### Quem pode finalizar direto vs quem passa por validação
+
+A vinculação é feita pela permissão **`task_complete`** no role do usuário. **Não é um nível "diretoria sim, gerente não"** — é um flag granular: se um analista específico precisar de autonomia, basta ligar `permissionOverrides.task_complete = true` no perfil dele (UI de Usuários já suporta).
+
+| Role | task_complete? | Ao clicar "Concluir" |
+|---|---|---|
+| `master` (Diretoria) | ✅ | Vai direto pra `done` → **popup CSAT + metas abre** |
+| `admin` (Head) | ✅ | Vai direto pra `done` → **popup CSAT + metas abre** |
+| `manager` (Gerente) | ✅ | Vai direto pra `done` → **popup CSAT + metas abre** |
+| `coordinator` (Coordenador) | ✅ | Vai direto pra `done` → **popup CSAT + metas abre** |
+| `member` (Analista) | ❌ | Vai pra `validation` (SLA congela) → toast "Tarefa enviada pra validação do coordenador." |
+| `partner` (Parceiro) | ❌ | Idem analista (raro) |
+
+### Fluxograma
+
+```
+[Analista clica "Concluir"]
+    │
+    ▼
+toggleTaskComplete(id, true)
+    │
+    ├── store.can('task_complete')? ─────────► SIM ─► status = 'done'
+    │                                                 ├─ slaFrozenAt = null (limpa freeze)
+    │                                                 ├─ completedAt = now
+    │                                                 ├─ playCompletionSound()
+    │                                                 └─ overlay CSAT/metas (page caller abre)
+    │
+    └── NÃO + é assignee? ─────────────────────► SIM ─► status = 'validation'
+                                                        ├─ slaFrozenAt = now
+                                                        ├─ slaFrozenBy = uid
+                                                        ├─ notify(managers do setor)
+                                                        ├─ playCompletionSound()
+                                                        └─ toast "enviada pra validação"
+                                                              │
+                                                              ▼
+                                              [Coordenador abre módulo
+                                               Solicitações → aba "🔍
+                                               Aguardando validação"]
+                                                              │
+                              ┌───────────────────────────────┼───────────────────────────────┐
+                              ▼                                                                ▼
+                  [Botão "Validar (concluir)"]                                  [Botão "Devolver pra retrabalho"]
+                              │                                                                │
+                              ▼                                                                ▼
+              status = 'done', validatedBy, validatedAt                          status = 'rework' + reworkReason
+              overlay CSAT/metas abre pro coordenador
+```
+
+### Implementação técnica
+
+- **Service único**: `toggleTaskComplete` em `js/services/tasks.js:867` faz o switch baseado em `store.can('task_complete')`. Quem não tem perm + é assignee delega pra `updateTaskStatus(id, 'validation')`.
+- **SLA freeze**: `isTaskOverdue(task)` retorna `false` se `task.status === 'validation'` — tarefa não vira "atrasada" enquanto coordenador não validar.
+- **Cobertura cross-app (v4.53.2)**: TODOS os callers (`pages/tasks.js`, `pages/kanban.js`, `pages/squadWorkspace.js`, `services/aiActions.js`) leem `fresh.status` após complete e roteiam:
+  - `'validation'` → toast informativo (NÃO abre overlay)
+  - `'done'` → `openTaskDoneOverlay()` com CSAT/metas
+- **Aba de validação**: visível só pra `master | task_complete` em `js/pages/requests.js:223`. Não-gestores não veem badge nem aba.
+
+### Como dar autonomia a um analista específico
+
+UI: **Configurações → Usuários → editar perfil → Permission Overrides → `task_complete: ON`**.
+Isso liga só pra esse user, mantendo o role `member` intacto pra todos os outros analistas. Mesma mecânica vale pra REMOVER a permissão de um coordenador que você não quer que finalize direto (`task_complete: OFF`).
+
+### Auditoria de roles
+
+Pra confirmar quais roles têm `task_complete` em produção:
+
+```bash
+# script ad-hoc (admin SDK)
+roles = await db.collection('roles').get();
+roles.forEach(r => console.log(r.id, r.data().permissions?.task_complete));
+```
+
+Última auditoria (24/05/2026): master/admin/manager/coordinator = ✅; member/partner = ❌.
+
+---
+
 ## Lifecycle de usuário
 
 ### Criação
@@ -208,5 +292,6 @@ provedor de identidade (Microsoft 365), não no app.
 
 - **v1.0** (2026-05-02): primeira versão
 - **v1.1** (2026-05-05, alinhado com `app v3.1.0`): unificação de núcleos→squads, atualização do status MFA, alinhamento com cobertura SOC 2 / ISO 27001
+- **v1.2** (2026-05-24, alinhado com `app v4.53.2`): adicionada perm `task_complete` na tabela Tarefas + nova seção "Fluxo de validação obrigatória" documentando o roteamento `done` vs `validation` baseado na hierarquia + overrides por user
 - Owner: Incident Commander (DPO)
 - Revisão obrigatória: trimestral OU em qualquer mudança de schema RBAC
