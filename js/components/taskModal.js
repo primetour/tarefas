@@ -280,24 +280,35 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
           _bypassDirtyCheck = true;
           m.close();
         } },
-      // Botão "Concluir" — atalho rápido pra marcar como done sem precisar
-      // mexer no select de status. Aparece apenas em edição, quando a task
-      // ainda não está done e o user tem permissão. Reusa o overlay de
-      // conclusão (evidência/CSAT) pra paridade com o check da lista.
-      ...(isEdit && task.status !== 'done' && store.can('task_complete') ? [{
-        label:`${renderIcon('check',{size:14})} <span style="vertical-align:middle;">Concluir tarefa</span>`, class:'btn-success', closeOnClick:false,
+      // Botão "Concluir" — atalho rápido. Comportamento depende da permissão:
+      //   - Manager/admin (task_complete): conclui direto pra `done` + overlay
+      //     evidência/CSAT (mesmo do check da lista).
+      //   - Assignee SEM task_complete (v4.53.0+): envia pra `validation` —
+      //     SLA congela, manager finaliza depois no módulo de Solicitações.
+      ...((isEdit && task.status !== 'done' && (store.can('task_complete') || (Array.isArray(task.assignees) && task.assignees.includes(store.get('currentUser')?.uid)))) ? [{
+        label: store.can('task_complete')
+          ? `${renderIcon('check',{size:14})} <span style="vertical-align:middle;">Concluir tarefa</span>`
+          : `${renderIcon('check',{size:14})} <span style="vertical-align:middle;">Enviar pra validação</span>`,
+        class: 'btn-success', closeOnClick: false,
         onClick: async (_,{close}) => {
           try {
-            const { toggleTaskComplete, getTask } = await import('../services/tasks.js');
-            await toggleTaskComplete(task.id, true);
+            const canComplete = store.can('task_complete');
+            const { updateTaskStatus, getTask, toggleTaskComplete } = await import('../services/tasks.js');
+            if (canComplete) {
+              await toggleTaskComplete(task.id, true);
+            } else {
+              // v4.53.0+ Envia pra fila de validação (SLA congela)
+              await updateTaskStatus(task.id, 'validation');
+            }
             const fresh = await getTask(task.id).catch(() => task);
-            // Mostra overlay (evidência) ANTES de fechar pra dar continuidade
-            const { openTaskDoneOverlay } = await import('./taskModal.js');
-            await openTaskDoneOverlay(task.id, fresh || task);
+            if (canComplete) {
+              const { openTaskDoneOverlay } = await import('./taskModal.js');
+              await openTaskDoneOverlay(task.id, fresh || task);
+            }
             _bypassDirtyCheck = true;
             close();
             onSave?.();
-            toast.success('Tarefa concluída.');
+            toast.success(canComplete ? 'Tarefa concluída.' : 'Tarefa enviada pra validação do coordenador.');
           } catch(e) { toast.error(e.message); }
         },
       }] : []),
@@ -1529,19 +1540,30 @@ function buildHTML(task, users, projects, tags, assignees, observers, isEdit, ta
         <select class="form-select" id="tm-status" style="padding:8px 32px 8px 12px;">
           ${(() => {
             const validNext = getValidTransitions(task.status);
-            // v4.52.0+ Renê: "analistas só veem 3 opções de status". Era porque
-            // 'done' era bloqueado sem permission `task_complete`. Agora se o
-            // user é o próprio assignee da tarefa, pode concluir (auto-conclusão
-            // do seu próprio trabalho — padrão de qualquer task management tool).
+            // v4.53.0+ Renê: "analista 'conclui' tarefa, mas quem finaliza é
+            // coordenador. tudo q é concluido vai pra um lugar de double check".
+            // Fluxo:
+            //   - Master/manager (com task_complete): vê 'done' normalmente
+            //   - Assignee SEM task_complete: vê 'validation' (Aguardando
+            //     validação) em vez de 'done'. SLA congela ao mudar pra
+            //     validation, não vira atraso. Manager finaliza depois.
+            //   - Outros (não assignee, sem perm): nem 'done' nem 'validation'
             const myUid = store.get('currentUser')?.uid;
             const isAssignee = Array.isArray(task.assignees) && task.assignees.includes(myUid);
+            const canComplete = store.can('task_complete');
             return STATUSES
               .filter(s => {
                 if (s.value === task.status) return true; // always show current
-                if (s.value === 'done'
-                    && !store.can('task_complete')
-                    && !isAssignee
-                    && task.status !== 'done') return false;
+                if (s.value === 'done') {
+                  if (canComplete) return validNext.includes(s.value);
+                  // sem perm: bloqueia 'done' (assignee usa 'validation' agora)
+                  return task.status === 'done';
+                }
+                if (s.value === 'validation') {
+                  // só assignee ou quem tem perm pode mandar pra validação
+                  if (!isAssignee && !canComplete) return false;
+                  return validNext.includes(s.value);
+                }
                 return validNext.includes(s.value);
               })
               .map(s => `<option value="${s.value}" ${task.status===s.value?'selected':''}>${esc(s.label)}</option>`)

@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 52,
+  minor: 53,
   patch: 0,
-  build: '20260524-tasks-bugs-usuarios-5-fixes',
+  build: '20260524-validation-flow-sla-freeze',
 };
 
 /** "1.2.0" */

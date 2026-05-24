@@ -53,10 +53,123 @@ let allRequests  = [];
 let unsubscribe  = null;
 let filterStatus = '';
 let filterSector = '';
+// v4.53.0+ Aba "Aguardando validação" — fluxo de double-check (analista
+// concluiu → coordenador valida CSAT+metas → finaliza como done).
+// Renê: "tudo q é concluido vai pra um lugar de double check e encaminhamento".
+let currentTab     = 'requests';   // 'requests' | 'validation'
+let validationTasks = [];
+let unsubValidation = null;
+
+/* ─── v4.53.0+ Validation tab (tasks aguardando double-check) ────── */
+
+async function startValidationSubscription({ countOnly = false } = {}) {
+  if (unsubValidation) { unsubValidation(); unsubValidation = null; }
+  const [{ subscribeToTasks }] = await Promise.all([ import('../services/tasks.js') ]);
+  // Query: status='validation' (assinatura em tempo real)
+  // Assinatura: subscribeToTasks(callback, filters)
+  unsubValidation = subscribeToTasks((tasks) => {
+    validationTasks = (tasks || []).filter(t => t.status === 'validation');
+    // Atualiza badge sempre
+    const badge = document.getElementById('val-count-badge');
+    if (badge) badge.textContent = String(validationTasks.length);
+    if (!countOnly && currentTab === 'validation') renderValidationList();
+  }, {});
+}
+
+function renderValidationList() {
+  const wrap = document.getElementById('validation-list');
+  if (!wrap) return;
+  if (!validationTasks.length) {
+    wrap.innerHTML = `
+      <div class="empty-state" style="padding:48px 24px;text-align:center;color:var(--text-muted);">
+        <div style="font-size:2.5rem;margin-bottom:8px;">✓</div>
+        <div style="font-size:1rem;font-weight:600;">Nada aguardando validação</div>
+        <p style="font-size:0.875rem;margin-top:4px;">Quando analistas concluírem tarefas, elas aparecem aqui pra seu double-check.</p>
+      </div>`;
+    return;
+  }
+  const users = store.get('users') || [];
+  const nameOf = (uid) => users.find(u => u.id === uid)?.name || '—';
+  wrap.innerHTML = validationTasks.map(t => {
+    const assigneeNames = (t.assignees || []).map(nameOf).join(', ');
+    const frozenAt = t.slaFrozenAt?.toDate?.() || (t.slaFrozenAt ? new Date(t.slaFrozenAt) : null);
+    const frozenLabel = frozenAt ? `🔒 SLA pausado em ${fmtDate(frozenAt)}` : '';
+    const dueDate = t.dueDate?.toDate?.() || (t.dueDate ? new Date(t.dueDate) : null);
+    const dueLabel = dueDate ? `Prazo original: ${fmtDateOnly(dueDate)}` : '';
+    const metaCount = Array.isArray(t.metaLinks) ? t.metaLinks.length : 0;
+    return `
+      <div class="val-card" data-task-id="${esc(t.id)}" style="background:var(--bg-card);
+        border:1px solid var(--border-subtle);border-left:4px solid #EAB308;
+        border-radius:8px;padding:14px 18px;margin-bottom:10px;">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:4px;">
+              ${esc(t.requestingArea || '—')} ${t.sector ? '· '+esc(t.sector) : ''}
+            </div>
+            <div style="font-size:1rem;font-weight:600;color:var(--text-primary);line-height:1.3;cursor:pointer;"
+              data-action="open-task" data-task-id="${esc(t.id)}">
+              ${esc(t.title || '(sem título)')}
+            </div>
+            <div style="font-size:0.78rem;color:var(--text-secondary);margin-top:6px;display:flex;gap:14px;flex-wrap:wrap;">
+              <span>👤 ${esc(assigneeNames || '—')}</span>
+              <span>🎯 ${metaCount} meta${metaCount===1?'':'s'} vinculada${metaCount===1?'':'s'}</span>
+              ${dueLabel ? `<span>📅 ${dueLabel}</span>` : ''}
+            </div>
+            ${frozenLabel ? `<div style="font-size:0.72rem;color:#EAB308;margin-top:6px;">${frozenLabel}</div>` : ''}
+          </div>
+          <div style="display:flex;gap:6px;flex-direction:column;flex-shrink:0;">
+            <button class="btn btn-success btn-sm" data-action="validate-done" data-task-id="${esc(t.id)}"
+              style="white-space:nowrap;">✓ Validar e concluir</button>
+            <button class="btn btn-secondary btn-sm" data-action="validate-rework" data-task-id="${esc(t.id)}"
+              style="white-space:nowrap;">↩ Devolver pra retrabalho</button>
+            <button class="btn btn-ghost btn-sm" data-action="open-task" data-task-id="${esc(t.id)}"
+              style="white-space:nowrap;">⚙ Abrir tarefa</button>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+
+  // Handlers
+  wrap.querySelectorAll('[data-action]').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const action = btn.dataset.action;
+      const id = btn.dataset.taskId;
+      if (!id) return;
+      try {
+        if (action === 'open-task') {
+          const { getTask } = await import('../services/tasks.js');
+          const task = await getTask(id);
+          if (task) openTaskModal({ task, onSave: () => renderValidationList() });
+        } else if (action === 'validate-done') {
+          if (!confirm('Validar e concluir esta tarefa? CSAT será disparado pro solicitante.')) return;
+          const { toggleTaskComplete, getTask } = await import('../services/tasks.js');
+          await toggleTaskComplete(id, true);
+          toast.success('Tarefa validada e concluída.');
+          // Abre overlay CSAT/evidência opcional
+          try {
+            const fresh = await getTask(id);
+            const mod = await import('../components/taskModal.js');
+            if (fresh && mod.openTaskDoneOverlay) await mod.openTaskDoneOverlay(id, fresh);
+          } catch {}
+        } else if (action === 'validate-rework') {
+          const motivo = prompt('Motivo da devolução (será visível pro analista):');
+          if (!motivo) return;
+          const { updateTaskStatus, updateTask } = await import('../services/tasks.js');
+          await updateTaskStatus(id, 'rework');
+          // Anexa motivo como nota
+          await updateTask(id, { reworkReason: motivo, reworkAt: new Date(), reworkBy: store.get('currentUser')?.uid });
+          toast.success('Tarefa devolvida pra retrabalho.');
+        }
+      } catch (err) { toast.error(err.message || 'Falha ao processar.'); }
+    });
+  });
+}
 
 /* ─── Render ─────────────────────────────────────────────── */
 export function destroyRequests() {
   if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+  if (unsubValidation) { unsubValidation(); unsubValidation = null; }
 }
 
 export async function renderRequests(container) {
@@ -96,20 +209,58 @@ export async function renderRequests(container) {
       </div>
     </div>
 
-    <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
-      <button class="btn btn-ghost btn-sm req-filter-btn ${filterStatus===''?'active':''}" data-status="">
-        Todas
+    <!-- v4.53.0+ Tabs (Solicitações | Validações). Aba "Validações" só
+         aparece pra quem pode validar tarefas (task_complete ou master). -->
+    <div class="req-tabs" style="display:flex;gap:0;border-bottom:1px solid var(--border-subtle);margin-bottom:16px;">
+      <button class="req-tab ${currentTab==='requests'?'active':''}" data-tab="requests"
+        style="padding:10px 18px;background:transparent;border:none;cursor:pointer;font-family:inherit;
+        font-size:0.875rem;font-weight:${currentTab==='requests'?700:500};
+        color:${currentTab==='requests'?'var(--brand-gold)':'var(--text-muted)'};
+        border-bottom:2px solid ${currentTab==='requests'?'var(--brand-gold)':'transparent'};
+        margin-bottom:-1px;transition:all 0.15s;">
+        📥 Solicitações
       </button>
-      ${REQUEST_STATUSES.map(s=>`
-        <button class="btn btn-ghost btn-sm req-filter-btn ${filterStatus===s.value?'active':''}"
-          data-status="${s.value}" style="color:${s.color};">
-          ${s.icon} ${s.label}
+      ${(store.isMaster() || store.can('task_complete')) ? `
+        <button class="req-tab ${currentTab==='validation'?'active':''}" data-tab="validation"
+          style="padding:10px 18px;background:transparent;border:none;cursor:pointer;font-family:inherit;
+          font-size:0.875rem;font-weight:${currentTab==='validation'?700:500};
+          color:${currentTab==='validation'?'var(--brand-gold)':'var(--text-muted)'};
+          border-bottom:2px solid ${currentTab==='validation'?'var(--brand-gold)':'transparent'};
+          margin-bottom:-1px;transition:all 0.15s;display:flex;align-items:center;gap:6px;">
+          🔍 Aguardando validação
+          <span id="val-count-badge" style="font-size:0.7rem;padding:2px 7px;border-radius:999px;
+            background:rgba(234,179,8,0.18);color:#EAB308;font-weight:700;">0</span>
         </button>
-      `).join('')}
+      ` : ''}
     </div>
 
-    <div id="requests-list">
-      <div class="empty-state"><div class="empty-state-icon">⟳</div></div>
+    <div id="requests-tab-content" style="display:${currentTab==='requests'?'block':'none'};">
+      <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
+        <button class="btn btn-ghost btn-sm req-filter-btn ${filterStatus===''?'active':''}" data-status="">
+          Todas
+        </button>
+        ${REQUEST_STATUSES.map(s=>`
+          <button class="btn btn-ghost btn-sm req-filter-btn ${filterStatus===s.value?'active':''}"
+            data-status="${s.value}" style="color:${s.color};">
+            ${s.icon} ${s.label}
+          </button>
+        `).join('')}
+      </div>
+
+      <div id="requests-list">
+        <div class="empty-state"><div class="empty-state-icon">⟳</div></div>
+      </div>
+    </div>
+
+    <div id="validation-tab-content" style="display:${currentTab==='validation'?'block':'none'};">
+      <p style="font-size:0.875rem;color:var(--text-muted);margin-bottom:14px;">
+        Tarefas concluídas pelos analistas aguardando seu double-check (CSAT + metas)
+        antes de serem finalizadas. <strong style="color:#EAB308;">SLA pausa</strong>
+        enquanto está aqui — não vira atraso.
+      </p>
+      <div id="validation-list">
+        <div class="empty-state"><div class="empty-state-icon">⟳</div></div>
+      </div>
     </div>
   `;
 
@@ -122,6 +273,25 @@ export async function renderRequests(container) {
       );
     });
   });
+
+  // v4.53.0+ Tabs handler (Solicitações | Validações)
+  container.querySelectorAll('.req-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      currentTab = btn.dataset.tab;
+      // Re-renderiza todo o page pra atualizar styles dos tabs (mais simples
+      // que mutar inline styles em 2 botões)
+      destroyRequests();
+      renderRequests(container);
+    });
+  });
+
+  // Inicia subscription de validation quando aba é validation
+  if (currentTab === 'validation' && (store.isMaster() || store.can('task_complete'))) {
+    startValidationSubscription();
+  } else if (store.isMaster() || store.can('task_complete')) {
+    // Mesmo na aba "Solicitações", subscribe pra atualizar badge de contagem
+    startValidationSubscription({ countOnly: true });
+  }
 
   // Filtro de setor (picker visual + select hidden)
   const reqSectorEl = document.getElementById('req-sector-filter');

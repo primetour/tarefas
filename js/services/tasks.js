@@ -181,18 +181,22 @@ function showRequesterEditBanners(tasks) {
 }
 
 /* ─── Constantes ─────────────────────────────────────────── */
-// v4.52.0+ Status "approval" (Em aprovação) adicionado entre review e done
-// (Renê: "acrescentar mais um passo - 'em aprovação'"). Aplicado cross-módulo:
-// tarefas, steps, calendário (todos leem STATUSES daqui). workflowEngine.js
-// foi atualizado com transições correspondentes.
+// v4.52.0+ Status "approval" (Em aprovação) adicionado entre review e done.
+// v4.53.0+ Status "validation" (Aguardando validação) — fila pré-done pra
+// double-check de coordenador. Quando analista assignee clica "concluir":
+// se NÃO tem perm `task_complete` → vai pra `validation` (SLA congela aqui,
+// não vira atraso). Manager valida CSAT + metas e finaliza como `done`.
+// Renê: "analista 'conclui' tarefa, mas quem finaliza é coordenador. tudo
+// que é concluido vai pra um lugar de double check + encaminhamento."
 export const STATUSES = [
-  { value: 'not_started', label: 'Não iniciado',   color: '#38BDF8' },
-  { value: 'in_progress', label: 'Em Andamento',   color: '#F59E0B' },
-  { value: 'review',      label: 'Em Revisão',     color: '#A78BFA' },
-  { value: 'approval',    label: 'Em Aprovação',   color: '#0EA5E9' },
-  { value: 'rework',      label: 'Retrabalho',     color: '#F97316' },
-  { value: 'done',        label: 'Concluída',      color: '#22C55E' },
-  { value: 'cancelled',   label: 'Cancelada',      color: '#EF4444' },
+  { value: 'not_started', label: 'Não iniciado',         color: '#38BDF8' },
+  { value: 'in_progress', label: 'Em Andamento',         color: '#F59E0B' },
+  { value: 'review',      label: 'Em Revisão',           color: '#A78BFA' },
+  { value: 'approval',    label: 'Em Aprovação',         color: '#0EA5E9' },
+  { value: 'validation',  label: 'Aguardando validação', color: '#EAB308' },
+  { value: 'rework',      label: 'Retrabalho',           color: '#F97316' },
+  { value: 'done',        label: 'Concluída',            color: '#22C55E' },
+  { value: 'cancelled',   label: 'Cancelada',            color: '#EF4444' },
 ];
 
 /**
@@ -219,6 +223,10 @@ export const STATUS_OVERDUE = {
 export function isTaskOverdue(t) {
   if (!t || !t.dueDate) return false;
   if (t.status === 'done' || t.status === 'cancelled') return false;
+  // v4.53.0+ Renê: "ao 'concluir' [pra validation], precisa fechar o SLA,
+  // pra nao cair no erro do coordenador demorar para finalizar e a tarefa
+  // ficar 'em atraso'". `validation` é checkpoint do analista — SLA pausa.
+  if (t.status === 'validation') return false;
   const due = t.dueDate?.toDate ? t.dueDate.toDate() : new Date(t.dueDate);
   if (isNaN(due)) return false;
   const today = new Date();
@@ -793,12 +801,89 @@ export async function updateTask(taskId, data, opts = {}) {
   }
 }
 
+/**
+ * v4.53.0+ Atualiza status da tarefa via updateTask + side-effects do `validation`.
+ *   - validation: grava `slaFrozenAt = now` + notifica managers (request.validation_needed)
+ *   - sair de validation: limpa `slaFrozenAt`
+ *   - done a partir de validation: grava `validatedBy`/`validatedAt` (trilha auditoria)
+ *
+ * Usado pelo botão "Enviar pra validação" no header da tarefa e pelo dropdown
+ * de status quando user é assignee sem perm task_complete.
+ */
+export async function updateTaskStatus(taskId, newStatus) {
+  const prev = await getTask(taskId).catch(() => null);
+  if (!prev) throw new Error('Tarefa não encontrada');
+  const wasValidation = prev.status === 'validation';
+  const me = store.get('currentUser');
+
+  const updates = { status: newStatus };
+
+  if (newStatus === 'validation') {
+    updates.slaFrozenAt = serverTimestamp();
+    updates.slaFrozenBy = me?.uid || null;
+  }
+  if (wasValidation && newStatus !== 'validation') {
+    // Saiu de validation: limpa freeze
+    updates.slaFrozenAt = null;
+    updates.slaFrozenBy = null;
+    if (newStatus === 'done') {
+      updates.validatedBy = me?.uid || null;
+      updates.validatedAt = serverTimestamp();
+    }
+  }
+
+  await updateTask(taskId, updates);
+
+  // Notifica managers/admins quando entra em validation
+  if (newStatus === 'validation' && prev.status !== 'validation') {
+    try {
+      const { notify } = await import('./notifications.js');
+      const users = store.get('users') || [];
+      const managers = users
+        .filter(u => u.isMaster
+                  || ['master','admin','head'].includes(u.roleId)
+                  || ['master','admin','head'].includes(u.role)
+                  || u.permissions?.includes?.('task_complete'))
+        .map(u => u.id)
+        .filter(id => id !== me?.uid);   // não notifica o próprio analista
+      if (managers.length) {
+        await notify('task.validation_needed', {
+          entityType: 'task', entityId: taskId,
+          recipientIds: managers,
+          title: 'Tarefa aguardando validação',
+          body: `${me?.name || 'Analista'} concluiu "${prev.title || 'tarefa'}" — aguardando double-check.`,
+          route: 'requests?tab=validation',
+          category: 'task',
+          priority: 'high',
+        });
+      }
+    } catch (e) { console.warn('[updateTaskStatus] notify validation falhou:', e.message); }
+  }
+
+  return { taskId, status: newStatus };
+}
+
 /* ─── Completar tarefa (toggle) ──────────────────────────── */
 export async function toggleTaskComplete(taskId, isDone) {
+  const user = store.get('currentUser');
+  // v4.53.0+ Renê: "analista 'conclui' tarefa, mas quem finaliza é coordenador".
+  // Se user NÃO tem task_complete mas É assignee, redireciona pra fila de
+  // validação (SLA congela). Sem erro — UX fluida em vez de bloquear.
   if (isDone && !store.can('task_complete')) {
+    let prevTask = null;
+    try {
+      const snap = await getDoc(doc(db, 'tasks', taskId));
+      if (snap.exists()) prevTask = snap.data();
+    } catch (_) {}
+    const isAssignee = Array.isArray(prevTask?.assignees) && prevTask.assignees.includes(user?.uid);
+    if (isAssignee) {
+      // Redireciona pra validation flow (delega side-effects pra updateTaskStatus)
+      await updateTaskStatus(taskId, 'validation');
+      playCompletionSound();
+      return;
+    }
     throw new Error('Você não tem permissão para concluir tarefas. Peça a um coordenador para homologar.');
   }
-  const user = store.get('currentUser');
   // Lê título antes do update pra incluir no audit (rotular humano-friendly)
   let taskTitle = '';
   try {
@@ -809,6 +894,8 @@ export async function toggleTaskComplete(taskId, isDone) {
   await updateDoc(doc(db, 'tasks', taskId), {
     status:      isDone ? 'done' : 'not_started',
     completedAt: isDone ? serverTimestamp() : null,
+    // v4.53.0+ Limpa freeze ao concluir oficialmente (caso vinha de validation)
+    slaFrozenAt: isDone ? null : undefined,
     updatedAt:   serverTimestamp(),
     updatedBy:   user.uid,
   });

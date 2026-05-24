@@ -5,14 +5,16 @@
 import { store } from '../store.js';
 
 /* ─── Regras de transicao validas ─────────────────────────── */
-// v4.52.0+ Status `approval` adicionado entre review e done (Renê).
-// Define quais transicoes sao permitidas por default.
+// v4.52.0+ Status `approval` adicionado entre review e done.
+// v4.53.0+ Status `validation` — fila pré-done pra double-check. Analista
+// assignee sem perm task_complete cai aqui ao "concluir". Manager finaliza.
 const DEFAULT_TRANSITIONS = {
   'not_started': ['in_progress', 'cancelled'],
-  'in_progress': ['review', 'approval', 'done', 'cancelled'],
-  'review':      ['approval', 'done', 'rework', 'cancelled'],
-  'approval':    ['done', 'rework', 'review', 'cancelled'],
-  'rework':      ['in_progress', 'review', 'approval', 'cancelled'],
+  'in_progress': ['review', 'approval', 'validation', 'done', 'cancelled'],
+  'review':      ['approval', 'validation', 'done', 'rework', 'cancelled'],
+  'approval':    ['validation', 'done', 'rework', 'review', 'cancelled'],
+  'validation':  ['done', 'rework', 'review'],  // só manager finaliza (done)
+  'rework':      ['in_progress', 'review', 'approval', 'validation', 'cancelled'],
   'done':        ['rework'],
   'cancelled':   ['not_started'],
 };
@@ -34,8 +36,8 @@ export function isValidTransition(fromStatus, toStatus) {
  */
 export function getValidTransitions(fromStatus) {
   if (store.isMaster() || store.can('system_manage_settings')) {
-    // v4.52.0+ Master vê tudo (inclusive 'approval')
-    return ['not_started', 'in_progress', 'review', 'approval', 'rework', 'done', 'cancelled'];
+    // v4.52.0+ Master vê tudo (inclusive 'approval' e 'validation')
+    return ['not_started', 'in_progress', 'review', 'approval', 'validation', 'rework', 'done', 'cancelled'];
   }
   return DEFAULT_TRANSITIONS[fromStatus] || [];
 }
