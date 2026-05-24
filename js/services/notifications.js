@@ -335,6 +335,45 @@ export function subscribeNotifications(userId, callback) {
     limit(200),
   );
 
+  // v4.53.3+ Auto-reconnect: aba voltou de hidden por >5min OU network voltou.
+  // Mesma proteção aplicada em subscribeToTasks — sino global é o canal
+  // principal pro user perceber "tarefa nova", precisa estar sempre vivo.
+  let innerUnsub = null;
+  const abortCtrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  let lastHiddenAt = 0;
+  const setupListener = () => {
+    if (innerUnsub) { try { innerUnsub(); } catch {} innerUnsub = null; }
+    innerUnsub = createNotifListener(q, callback);
+  };
+  setupListener();
+
+  if (typeof document !== 'undefined' && abortCtrl) {
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        lastHiddenAt = Date.now();
+      } else if (lastHiddenAt) {
+        const hiddenForMs = Date.now() - lastHiddenAt;
+        if (hiddenForMs > 5 * 60 * 1000) {
+          console.log('[notif] aba voltou após', Math.round(hiddenForMs/1000), 's hidden — re-subscribe');
+          setupListener();
+        }
+        lastHiddenAt = 0;
+      }
+    }, { signal: abortCtrl.signal });
+
+    window.addEventListener('online', () => {
+      console.log('[notif] network voltou online — re-subscribe');
+      setupListener();
+    }, { signal: abortCtrl.signal });
+  }
+
+  return () => {
+    if (abortCtrl) abortCtrl.abort();
+    if (innerUnsub) { try { innerUnsub(); } catch {} innerUnsub = null; }
+  };
+}
+
+function createNotifListener(q, callback) {
   return onSnapshot(q, snap => {
     const notifications = snap.docs
       .map(d => ({ id: d.id, ...d.data() }))

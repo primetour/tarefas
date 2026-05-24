@@ -1211,6 +1211,51 @@ export function subscribeToTasks(callback, filters = {}) {
   const constraints = [orderBy('order', 'asc'), limit(5000)];
   const q = query(collection(db, 'tasks'), ...constraints);
 
+  // v4.53.3+ Auto-reconnect quando aba volta de hidden por >5min OU
+  // quando network volta de offline. Fix: relato de "preciso F5 pra ver
+  // tarefa nova" quando a aba ficou aberta horas em background — Firestore
+  // SDK pode pausar listener em economia de bateria, e em alguns browsers
+  // não re-subscribe automaticamente quando volta.
+  let innerUnsub = null;
+  let lastHiddenAt = 0;
+  const abortCtrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  const setupListener = () => {
+    if (innerUnsub) { try { innerUnsub(); } catch {} innerUnsub = null; }
+    innerUnsub = createTasksListener(q, callback, filters);
+  };
+  setupListener();
+
+  if (typeof document !== 'undefined' && abortCtrl) {
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        lastHiddenAt = Date.now();
+      } else if (lastHiddenAt) {
+        const hiddenForMs = Date.now() - lastHiddenAt;
+        if (hiddenForMs > 5 * 60 * 1000) {
+          console.log('[tasks] aba voltou após', Math.round(hiddenForMs/1000), 's hidden — re-subscribe');
+          setupListener();
+        }
+        lastHiddenAt = 0;
+      }
+    }, { signal: abortCtrl.signal });
+
+    window.addEventListener('online', () => {
+      console.log('[tasks] network voltou online — re-subscribe');
+      setupListener();
+    }, { signal: abortCtrl.signal });
+  }
+
+  return () => {
+    if (abortCtrl) abortCtrl.abort();
+    if (innerUnsub) { try { innerUnsub(); } catch {} innerUnsub = null; }
+  };
+}
+
+/* Lógica interna do snapshot — extraída pra ser reaproveitada em re-subscribe.
+ * Idempotente: cada chamada cria um novo listener. Quem chamou descarta o
+ * anterior antes (ver setupListener acima).
+ */
+function createTasksListener(q, callback, filters = {}) {
   let debounceTimer = null;
   return onSnapshot(q, (snap) => {
     clearTimeout(debounceTimer);

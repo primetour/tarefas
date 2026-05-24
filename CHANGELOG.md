@@ -6,6 +6,47 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.53.3+20260524-subscribe-auto-reconnect-visibility] — 2026-05-24
+
+Release **PATCH** — auto-reconnect dos `onSnapshot` quando aba volta de background longo OU network volta de offline.
+
+**Renê**: "usuario relata que tem de dar reload para verificar se tem tarefa nova no sistema".
+
+**Auditoria revelou**: `subscribeToTasks` e `subscribeNotifications` JÁ usam `onSnapshot` (real-time correto), mas em alguns cenários o listener silencia:
+- Aba aberta há horas em background — Firestore SDK pausa listener pra economizar bateria/quota; alguns browsers não re-subscribem automaticamente ao voltar.
+- Network teve drop e voltou — SDK reconecta, mas atraso pode ser longo.
+
+**Fix em ambos os services** (`tasks.js`, `notifications.js`):
+
+```js
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) lastHiddenAt = Date.now();
+  else if (lastHiddenAt && (Date.now() - lastHiddenAt) > 5 * 60_000) {
+    setupListener();   // re-subscribe explícito
+  }
+});
+
+window.addEventListener('online', () => setupListener());
+```
+
+**Threshold**: 5 minutos hidden é o ponto onde compensa pagar 1 leitura nova vs continuar confiando em listener possivelmente morto. Abaixo disso, SDK Firestore lida bem sozinho.
+
+**Refatoração**: lógica original do snapshot extraída pra `createTasksListener` / `createNotifListener` (funções helper) — assim `setupListener()` é idempotente: descarta o listener anterior e cria um novo. Sem risco de duplicar callback.
+
+**Cleanup**: `AbortController` por subscribe garante que ao chamar `unsub()` retornado pelo `subscribeToTasks(callback)`, os listeners globais (visibilitychange + online) também somem — zero memory leak.
+
+**Cobertura**:
+- ✅ `/tasks` lista — vai pegar tarefas novas após voltar pra aba
+- ✅ `/kanban` — idem
+- ✅ `/requests` aba Aguardando validação — idem
+- ✅ Sino global de notificações (header) — toast "Nova tarefa atribuída" vai disparar mesmo após horas
+
+**Não cobre** (pages que usam `fetchTasks` one-shot): `/dashboard`, `/capacity`, `/goals`, `/squadWorkspace`, `/timeline`, `/calendar`, `/csat`, `/profile`. Migração delas pra `subscribeToTasks` é melhor em release dedicada — fica como to-do.
+
+**Arquivos**: js/services/tasks.js, js/services/notifications.js, js/version.js, index.html, CHANGELOG.md
+
+---
+
 ## [4.53.2+20260524-validation-analista-sem-popup-csat] — 2026-05-24
 
 Release **PATCH** — bloqueia popup CSAT/metas pra analista + toast "enviada pra validação" em todos os callers.

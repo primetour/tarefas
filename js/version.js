@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 53,
-  patch: 2,
-  build: '20260524-validation-analista-sem-popup-csat',
+  patch: 3,
+  build: '20260524-subscribe-auto-reconnect-visibility',
 };
 
 /** "1.2.0" */
