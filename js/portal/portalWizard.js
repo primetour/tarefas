@@ -1612,6 +1612,12 @@ function _renderSuccessAndRestart() {
 
 /* ─── Draft (localStorage) ─── */
 function _persistDraft() {
+  // v4.57.5+ NÃO sobrescreve draft com state vazio. Caso contrário, o
+  // _renderStep(1) chamado no init/reload limpa o draft real do user.
+  // Só persiste quando há conteúdo útil — mesmo critério de hasDraftContent.
+  const d = _state.data;
+  const hasContent = !!(d.sector || d.typeId || d.title || d.description || d.desiredDate || d.nucleo);
+  if (!hasContent) return;
   try {
     localStorage.setItem(_state.draftKey, JSON.stringify({
       step: _state.step,
