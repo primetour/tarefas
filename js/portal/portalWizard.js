@@ -1117,12 +1117,13 @@ function _fmtDate(iso) {
 /* v4.55.3+ Carrega últimas solicitações do user atual (até 5) pra permitir
  * edição inline a partir do banner do Step 1. */
 async function _loadRecentRequests() {
-  if (!_state?.user?.uid || !_state?.db) return;
+  if (!_state?.user?.email || !_state?.db) return;
   try {
-    // Filtra requests do user, status pending OU em_andamento (editáveis)
+    // v4.55.4+ Filtra por EMAIL (não uid) — requests antigas (portalLegacy.js)
+    // não gravavam requesterUid, só requesterEmail. Email é estável e robusto.
     const q = query(
       collection(_state.db, 'requests'),
-      where('requesterUid', '==', _state.user.uid),
+      where('requesterEmail', '==', _state.user.email),
       limit(20)
     );
     const snap = await getDocs(q);
