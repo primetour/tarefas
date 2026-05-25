@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 55,
-  patch: 8,
-  build: '20260524-portal-wizard-criticos-autoCreate-notify-syncTask',
+  minor: 56,
+  patch: 0,
+  build: '20260524-portal-wizard-cal-rico-preview-prefill-banners',
 };
 
 /** "1.2.0" */

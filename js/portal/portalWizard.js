@@ -443,6 +443,22 @@ function _renderStep2() {
             </div>
           </div>
         </label>
+        <!-- v4.56.0+ Banner educativo OOC (longo, paridade legacy) -->
+        ${d.outOfCalendar ? `
+          <div style="margin-top:8px;padding:10px 14px;border-radius:6px;
+            background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.35);
+            font-size:0.75rem;color:var(--text-primary);line-height:1.5;display:flex;gap:8px;">
+            <span style="font-size:1rem;flex-shrink:0;">⚠</span>
+            <span>
+              <strong>Atenção: impacto de operar fora do calendário editorial</strong><br/>
+              Demandas fora do calendário prejudicam o planejamento da equipe e podem comprometer
+              a <strong>performance de entrega</strong>, <strong>taxa de cliques</strong> e
+              <strong>saúde do servidor de disparo</strong> da PRIMETOUR — especialmente para
+              newsletters. Envios não planejados aumentam o risco de marcação como spam e reduzem
+              o engajamento da base. Use apenas quando estritamente necessário.
+            </span>
+          </div>
+        ` : ''}
       </div>
     </div>
   `;
@@ -557,6 +573,10 @@ function _renderCalendarGrid(type) {
     const slotColor = hasSlots ? (slots[0].color || 'var(--brand-gold)') : '';
     const slotId = hasSlots ? slots[0].id : '';
     const extraSlots = slots.length > 1 ? slots.length - 1 : 0;
+    // v4.56.0+ Slot fill detection — prioriza: request do user > batch local > vazio
+    const existingReq = (_state.recentRequests || []).find(r => r.desiredDate === iso);
+    const batchItem   = (_state.batchQueue || []).find(b => b.desiredDate === iso);
+    const filled = !!existingReq || !!batchItem;
 
     const bg = isSelected ? 'rgba(212,168,67,0.25)'
              : hasSlots   ? `${slotColor}22`
@@ -569,12 +589,40 @@ function _renderCalendarGrid(type) {
     const cursor = isPast ? 'not-allowed' : 'pointer';
     const opacity = isPast ? '0.35' : '1';
 
+    // v4.56.0+ Render rico: prefix com ◌ (vazio) ou ✓ (preenchido) e cor de status pra requests
+    let displayText = hasSlots ? slotTitle : '';
+    let displayColor = hasSlots ? slotColor : '';
+    let cellExtraBg = bg;
+    let cellExtraBorder = border;
+    let cellTitle = hasSlots ? esc(slotTitle) + (isPast?' (passado)':'') : (isPast?'Data passada':'Fora do calendário editorial');
+    if (existingReq) {
+      const st = existingReq.status || 'pending';
+      const statusColor = ({ pending:'#F59E0B', converted:'#16A34A', rejected:'#EF4444', em_andamento:'#0EA5E9' })[st] || '#6B7280';
+      displayText = `✓ ${existingReq.title || existingReq.typeName || 'Sua solicitação'}`;
+      displayColor = statusColor;
+      cellExtraBorder = `2px solid ${statusColor}`;
+      cellExtraBg = `${statusColor}15`;
+      cellTitle = `Sua solicitação: ${existingReq.title || existingReq.typeName || ''} (${_statusLabel(st)}). Clique pra ver.`;
+    } else if (batchItem) {
+      displayText = `✦ No seu lote`;
+      displayColor = '#16A34A';
+      cellExtraBorder = '1px dashed #16A34A';
+      cellExtraBg = 'rgba(34,197,94,0.10)';
+      cellTitle = `${batchItem.title || '(sem título)'} — pendente no lote local`;
+    } else if (hasSlots) {
+      displayText = `◌ ${slotTitle}`;
+    }
+    // Tooltip rico — adiciona contexto extra do tipo + área se houver slot
+    if (hasSlots && !existingReq && !batchItem) {
+      cellTitle = `Slot: ${esc(slots.map(s=>s.title||'').join(' · '))} | ${esc(type?.name||'')}${isPast?' (passado)':''}`;
+    }
     cells += `
       <div class="pw-cal-day" data-date="${iso}" data-has-slot="${hasSlots?'1':'0'}" data-slot-id="${esc(slotId)}"
+        data-filled="${filled?'1':'0'}" data-req-id="${esc(existingReq?.id||'')}"
         ${isPast?'data-disabled="1"':''}
-        title="${hasSlots ? esc(slotTitle) + (isPast?' (passado)':'') : (isPast?'Data passada':'Fora do calendário editorial')}"
+        title="${cellTitle}"
         style="
-          background:${bg};border:${border};border-radius:6px;
+          background:${cellExtraBg};border:${cellExtraBorder};border-radius:6px;
           padding:6px 4px;cursor:${cursor};opacity:${opacity};
           min-height:54px;min-width:0;display:flex;flex-direction:column;
           overflow:hidden;box-sizing:border-box;
@@ -583,10 +631,10 @@ function _renderCalendarGrid(type) {
         <div style="font-weight:${isToday?'700':'500'};color:${isToday?'var(--brand-gold)':'var(--text-primary)'};min-width:0;">
           ${d}
         </div>
-        ${hasSlots ? `
-          <div style="font-size:0.625rem;color:${slotColor};font-weight:600;margin-top:auto;line-height:1.1;
+        ${displayText ? `
+          <div style="font-size:0.625rem;color:${displayColor};font-weight:600;margin-top:auto;line-height:1.1;
             overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;max-width:100%;" title="${esc(slots.map(s=>s.title||'Slot').join(' · '))}">
-            ${esc(slotTitle)}${extraSlots ? ` <span style="background:${slotColor};color:#fff;padding:0 4px;border-radius:8px;font-size:0.5625rem;margin-left:2px;">+${extraSlots}</span>` : ''}
+            ${esc(displayText)}${extraSlots && !existingReq && !batchItem ? ` <span style="background:${slotColor};color:#fff;padding:0 4px;border-radius:8px;font-size:0.5625rem;margin-left:2px;">+${extraSlots}</span>` : ''}
           </div>
         ` : ''}
       </div>
@@ -595,11 +643,14 @@ function _renderCalendarGrid(type) {
 
   return `
     <div style="border:1px solid var(--border-subtle);border-radius:10px;padding:12px;background:var(--bg-surface);">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:8px;">
         <button type="button" id="pw-cal-prev" aria-label="Mês anterior"
           style="background:transparent;border:1px solid var(--border-default);border-radius:6px;width:30px;height:30px;cursor:pointer;color:var(--text-secondary);">‹</button>
-        <div style="font-weight:600;font-size:0.9375rem;color:var(--text-primary);">
-          ${PT_MONTHS[m]} ${y}
+        <div style="display:flex;align-items:center;gap:10px;flex:1;justify-content:center;">
+          <div style="font-weight:600;font-size:0.9375rem;color:var(--text-primary);">
+            ${PT_MONTHS[m]} ${y}
+          </div>
+          <button type="button" id="pw-cal-today" class="btn btn-secondary btn-sm" title="Voltar pra hoje">Hoje</button>
         </div>
         <button type="button" id="pw-cal-next" aria-label="Próximo mês"
           style="background:transparent;border:1px solid var(--border-default);border-radius:6px;width:30px;height:30px;cursor:pointer;color:var(--text-secondary);">›</button>
@@ -617,7 +668,15 @@ function _renderCalendarGrid(type) {
         </div>
         <div style="display:flex;align-items:center;gap:5px;">
           <span style="width:12px;height:12px;border-radius:3px;background:#44d54122;border:1px solid #44d541;display:inline-block;"></span>
-          Slot pré-agendado
+          ◌ Slot vazio
+        </div>
+        <div style="display:flex;align-items:center;gap:5px;">
+          <span style="width:12px;height:12px;border-radius:3px;background:#F59E0B15;border:2px solid #F59E0B;display:inline-block;"></span>
+          ✓ Sua solicitação
+        </div>
+        <div style="display:flex;align-items:center;gap:5px;">
+          <span style="width:12px;height:12px;border-radius:3px;background:rgba(34,197,94,0.10);border:1px dashed #16A34A;display:inline-block;"></span>
+          ✦ No lote
         </div>
         <div style="display:flex;align-items:center;gap:5px;">
           <span style="width:12px;height:12px;border-radius:3px;background:transparent;border:1px solid var(--border-subtle);display:inline-block;"></span>
@@ -631,6 +690,7 @@ function _renderCalendarGrid(type) {
 function _wireCalendarGrid() {
   const prev = document.getElementById('pw-cal-prev');
   const next = document.getElementById('pw-cal-next');
+  const today = document.getElementById('pw-cal-today');
   prev?.addEventListener('click', () => {
     _state.calDate = new Date(_state.calDate);
     _state.calDate.setMonth(_state.calDate.getMonth() - 1);
@@ -641,27 +701,55 @@ function _wireCalendarGrid() {
     _state.calDate.setMonth(_state.calDate.getMonth() + 1);
     _rerenderCalendar();
   });
+  // v4.56.0+ Botão "Hoje"
+  today?.addEventListener('click', () => {
+    _state.calDate = new Date();
+    _rerenderCalendar();
+  });
 
   document.querySelectorAll('.pw-cal-day')?.forEach(cell => {
-    if (cell.dataset.disabled === '1') return;
     cell.addEventListener('click', () => {
+      // v4.56.0+ Bloqueio past com alert (paridade legacy)
+      if (cell.dataset.disabled === '1') {
+        alert('⛔ Data passada — escolha uma data a partir de hoje.');
+        return;
+      }
       const iso = cell.dataset.date;
       const hasSlot = cell.dataset.hasSlot === '1';
       const slotId = cell.dataset.slotId;
+      const reqId  = cell.dataset.reqId;
+      const isFilled = cell.dataset.filled === '1';
       const type = _state.taskTypes.find(t => t.id === _state.data.typeId);
+
+      // v4.56.0+ Click em request existente do user → abrir preview/edit
+      if (reqId) {
+        const req = _state.recentRequests.find(r => r.id === reqId);
+        if (req) {
+          _openRequestPreview(req);
+          return;
+        }
+      }
 
       _state.data.desiredDate = iso;
       const dateInput = document.getElementById('pw-date');
       if (dateInput) dateInput.value = iso;
 
       if (hasSlot) {
-        // Dentro do calendário editorial: desmarca OOC
+        // Dentro do calendário editorial: desmarca OOC + pre-fill RICO (v4.56.0+)
         _state.data.outOfCalendar = false;
         const slot = (type?.scheduleSlots || []).find(s => s.id === slotId);
-        // Se slot tem requestingArea, pre-prenche
-        if (slot?.requestingArea) _state.data.requestingArea = slot.requestingArea;
+        if (slot) {
+          // Pre-fill rico (paridade legacy fillFormFromSlot)
+          if (slot.requestingArea) _state.data.requestingArea = slot.requestingArea;
+          if (slot.title && !_state.data.title) _state.data.title = slot.title;
+          // Match variação por slot.variationId ou por título
+          if (slot.variationId && type?.variations) {
+            const v = type.variations.find(x => x.id === slot.variationId);
+            if (v) { _state.data.variationId = v.id; _state.data.variationName = v.name; }
+          }
+        }
       } else {
-        // Dia vazio: força fora do calendário
+        // Dia vazio: força fora do calendário + banner explicativo
         _state.data.outOfCalendar = true;
       }
 
@@ -673,6 +761,92 @@ function _wireCalendarGrid() {
       _rerenderCalendar();
     });
   });
+}
+
+/* v4.56.0+ Preview modal pra uma request já enviada do user. Versão simplificada:
+ * mostra metadata + status + descrição + botão "Editar" que entra em edit mode. */
+function _openRequestPreview(req) {
+  const status = req.status || 'pending';
+  const STATUS_MAP = {
+    pending:      { label: 'Pendente',     color: '#F59E0B' },
+    converted:    { label: 'Convertida',   color: '#16A34A' },
+    rejected:     { label: 'Rejeitada',    color: '#EF4444' },
+    em_andamento: { label: 'Em andamento', color: '#0EA5E9' },
+    done:         { label: 'Concluída',    color: '#22C55E' },
+    archived:     { label: 'Arquivada',    color: '#6B7280' },
+  };
+  const st = STATUS_MAP[status] || { label: status, color: '#6B7280' };
+  const canEdit = ['pending', 'converted'].includes(status);
+
+  // Remove se já existe
+  document.getElementById('pw-preview-modal')?.remove();
+  const modal = document.createElement('div');
+  modal.id = 'pw-preview-modal';
+  modal.style.cssText = `
+    position:fixed;inset:0;z-index:10000;background:rgba(10,22,40,0.55);
+    display:flex;align-items:center;justify-content:center;padding:24px;
+    backdrop-filter:blur(2px);font-family:var(--font-ui);
+  `;
+  modal.innerHTML = `
+    <div style="background:var(--bg-card);border-radius:14px;padding:24px;max-width:520px;width:100%;
+      box-shadow:0 12px 40px rgba(0,0,0,0.35);max-height:85vh;overflow-y:auto;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <span style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:12px;
+            background:${st.color}22;color:${st.color};font-size:0.75rem;font-weight:600;">
+            ${esc(st.label)}
+          </span>
+          ${req.urgency ? '<span style="font-size:0.75rem;color:#EF4444;font-weight:600;">🔴 Urgente</span>' : ''}
+          ${req.outOfCalendar ? '<span style="font-size:0.75rem;color:#F59E0B;font-weight:600;">⚠ Fora do calendário</span>' : ''}
+        </div>
+        <button type="button" id="pw-preview-close" aria-label="Fechar"
+          style="background:transparent;border:none;font-size:1.5rem;cursor:pointer;color:var(--text-muted);line-height:1;">×</button>
+      </div>
+      <h3 style="margin:0 0 12px;font-size:1.0625rem;color:var(--text-primary);line-height:1.3;">
+        ${esc(req.title || req.typeName || 'Sem título')}
+      </h3>
+      <div style="display:grid;grid-template-columns:100px 1fr;gap:6px 12px;font-size:0.8125rem;margin-bottom:14px;">
+        <div style="color:var(--text-muted);">Data:</div>
+        <div>${esc(_fmtDate(req.desiredDate))}</div>
+        <div style="color:var(--text-muted);">Tipo:</div>
+        <div>${esc(req.typeIcon||'')} ${esc(req.typeName||'?')}</div>
+        ${req.variationName ? `<div style="color:var(--text-muted);">Variação:</div><div>${esc(req.variationName)}</div>` : ''}
+        <div style="color:var(--text-muted);">Setor:</div>
+        <div>${esc(req.sector||'?')}</div>
+        ${req.nucleo ? `<div style="color:var(--text-muted);">Squad:</div><div>${esc(req.nucleo)}</div>` : ''}
+      </div>
+      ${req.description ? `
+        <div style="margin-bottom:14px;">
+          <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:4px;">Descrição</div>
+          <div style="background:var(--bg-surface);padding:10px 12px;border-radius:6px;font-size:0.8125rem;
+            max-height:140px;overflow-y:auto;white-space:pre-wrap;line-height:1.45;">
+            ${esc((req.description || '').slice(0, 600))}${req.description?.length > 600 ? '…' : ''}
+          </div>
+        </div>` : ''}
+      ${req.contentLink ? `
+        <div style="margin-bottom:14px;font-size:0.8125rem;">
+          <span style="color:var(--text-muted);">Link:</span>
+          <a href="${esc(req.contentLink)}" target="_blank" rel="noopener" style="color:var(--brand-gold);word-break:break-all;">
+            ${esc(req.contentLink)}
+          </a>
+        </div>` : ''}
+      <div style="display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap;margin-top:18px;">
+        ${canEdit ? `<button type="button" id="pw-preview-edit" class="btn btn-primary btn-sm">✏ Editar solicitação</button>` : ''}
+        <button type="button" id="pw-preview-close-btn" class="btn btn-secondary btn-sm">Fechar</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  const close = () => modal.remove();
+  modal.addEventListener('click', e => { if (e.target === modal) close(); });
+  document.getElementById('pw-preview-close')?.addEventListener('click', close);
+  document.getElementById('pw-preview-close-btn')?.addEventListener('click', close);
+  document.getElementById('pw-preview-edit')?.addEventListener('click', () => {
+    close();
+    _enterEditMode(req);
+  });
+  const esc2 = (e) => { if (e.key === 'Escape') { close(); document.removeEventListener('keydown', esc2); } };
+  document.addEventListener('keydown', esc2);
 }
 
 function _rerenderCalendar() {
@@ -767,7 +941,22 @@ function _wireStep3() {
     const opt = varSel.options[varSel.selectedIndex];
     _state.data.variationName = opt?.text?.split('·')[0]?.trim() || '';
     refreshSla();
-    _checkAutoUrgency();  // v4.54.4+ Re-checa lock pq SLA pode ter mudado
+    // v4.56.0+ Auto-fill due date pelo SLA da variação (se ainda não tem data) — paridade legacy
+    if (!_state.data.desiredDate) {
+      const type = _state.taskTypes.find(t => t.id === _state.data.typeId);
+      const v = type?.variations?.find(x => x.id === varSel.value);
+      const slaDays = parseInt(v?.slaDays || v?.sla, 10);
+      if (Number.isFinite(slaDays) && slaDays > 0) {
+        const d = new Date();
+        let biz = slaDays;
+        while (biz > 0) {
+          d.setDate(d.getDate() + 1);
+          if (d.getDay() !== 0 && d.getDay() !== 6) biz--;
+        }
+        _state.data.desiredDate = _toISODate(d);
+      }
+    }
+    _checkAutoUrgency();
     _persistDraft();
   });
   titleI?.addEventListener('input', () => { _state.data.title = titleI.value.trim(); _persistDraft(); });
@@ -808,6 +997,11 @@ function _renderStep4() {
   const type = _state.taskTypes.find(x => x.id === d.typeId);
   const variation = type?.variations?.find(v => v.id === d.variationId);
   const urgencyLocked = !!d.urgencyAutoLocked;
+  // v4.56.0+ Urgência monotônica: se em edit mode + request original era urgent → lock
+  const origReq = _state.editMode ? _state.recentRequests.find(r => r.id === _state.editId) : null;
+  const editLockedUrg = !!(origReq?.urgency);
+  // Garante state consistente (não pode unset se locked)
+  if (editLockedUrg && !d.urgency) d.urgency = true;
   return `
     <div class="portal-card" style="padding:24px;">
       <h2 style="margin:0 0 6px;font-size:1.25rem;color:var(--text-primary);">Última revisão</h2>
@@ -816,19 +1010,34 @@ function _renderStep4() {
       </p>
 
       <div class="form-group">
-        <label style="display:flex;align-items:flex-start;gap:10px;cursor:${urgencyLocked?'not-allowed':'pointer'};padding:12px;
+        <label style="display:flex;align-items:flex-start;gap:10px;cursor:${urgencyLocked||editLockedUrg?'not-allowed':'pointer'};padding:12px;
           border:1px solid ${d.urgency?'rgba(239,68,68,0.4)':'var(--border-subtle)'};border-radius:8px;background:var(--bg-surface);
-          ${urgencyLocked?'opacity:0.85;':''}">
-          <input type="checkbox" id="pw-urgency" ${d.urgency?'checked':''} ${urgencyLocked?'disabled':''} style="margin-top:3px;" />
+          ${urgencyLocked||editLockedUrg?'opacity:0.85;':''}">
+          <input type="checkbox" id="pw-urgency" ${d.urgency?'checked':''} ${urgencyLocked||editLockedUrg?'disabled':''} style="margin-top:3px;" />
           <div>
-            <div style="font-weight:500;color:var(--text-primary);">🔴 Marcar como urgente ${urgencyLocked?'<span style="color:var(--brand-gold);font-size:0.75rem;font-weight:600;">🔒 automático</span>':''}</div>
+            <div style="font-weight:500;color:var(--text-primary);">🔴 Marcar como urgente ${urgencyLocked||editLockedUrg?'<span style="color:var(--brand-gold);font-size:0.75rem;font-weight:600;">🔒 automático</span>':''}</div>
             <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">
-              ${urgencyLocked
-                ? esc(d.urgencyLockReason || 'Prazo apertado — urgência definida automaticamente pelo sistema.')
-                : 'Só quando há prazo real e inegociável. Urgências injustificadas prejudicam o time.'}
+              ${editLockedUrg
+                ? '🔒 Esta solicitação já foi marcada como urgente e não pode ser desmarcada — o time já planejou em torno disso.'
+                : urgencyLocked
+                  ? esc(d.urgencyLockReason || 'Prazo apertado — urgência definida automaticamente pelo sistema.')
+                  : 'Só quando há prazo real e inegociável. Urgências injustificadas prejudicam o time.'}
             </div>
           </div>
         </label>
+        <!-- v4.56.0+ Banner educativo URGENCY (longo, paridade legacy) -->
+        ${d.urgency ? `
+          <div style="margin-top:8px;padding:10px 14px;border-radius:6px;
+            background:rgba(239,68,68,0.06);border:1px solid rgba(239,68,68,0.3);
+            font-size:0.75rem;color:var(--text-primary);line-height:1.5;display:flex;gap:8px;">
+            <span style="font-size:1rem;flex-shrink:0;">⚠</span>
+            <span>
+              <strong>Atenção:</strong> Urgências injustificadas prejudicam o planejamento e a
+              qualidade das entregas de toda a equipe. Use este campo apenas quando há um prazo
+              real e inegociável. Sua solicitação será avaliada pela equipe.
+            </span>
+          </div>
+        ` : ''}
       </div>
 
       <div class="form-group" style="margin-top:12px;">
@@ -869,11 +1078,12 @@ function _wireStep4() {
   const urg = document.getElementById('pw-urgency');
   const par = document.getElementById('pw-partnership');
   urg?.addEventListener('change', () => {
-    // v4.54.4+ Se está auto-locked, ignora toggle manual (defesa em profundidade)
-    if (_state.data.urgencyAutoLocked) { urg.checked = true; return; }
+    // v4.54.4+ Se está auto-locked OU é edit mode monotônico, ignora
+    const origReq = _state.editMode ? _state.recentRequests.find(r => r.id === _state.editId) : null;
+    const wasUrgent = !!(origReq?.urgency);
+    if (_state.data.urgencyAutoLocked || wasUrgent) { urg.checked = true; return; }
     _state.data.urgency = urg.checked;
     _persistDraft();
-    // Re-render pra mudar borda visual
     _renderStep(4);
   });
   par?.addEventListener('change', () => {
