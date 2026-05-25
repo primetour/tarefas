@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 57,
-  patch: 28,
-  build: '20260525-integrations-cross-module-4-fixes',
+  patch: 29,
+  build: '20260525-integrations-followup-subtask-advance-calendar',
 };
 
 /** "1.2.0" */

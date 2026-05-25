@@ -6,6 +6,28 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.57.29+20260525-integrations-followup-subtask-advance-calendar] — 2026-05-25
+
+Release **PATCH** — follow-up da auditoria de integrações (#5 + extensão de #2 pra content_calendar).
+
+**Fix #5 — Subtask auto-advance agora persiste no Firestore.**
+
+`taskModal.js` linha 2968 mostrava toast "status movido para Em Revisão" quando todas subtasks ficavam done, mas só alterava `statusSelect.value` no DOM. Se user fechasse modal sem Salvar (Esc/X), status voltava ao anterior. O toast mentia.
+
+Fix: quando `isEdit` (task existente), persistir via `updateTask(task.id, {status: suggested})`. Em caso de erro, rollback do DOM + toast de erro. Em create mode (task nova), mantém comportamento anterior (aplica ao salvar) — toast deixa explícito.
+
+**Fix integração — `deleteTask` limpa `content_calendar.taskId` órfão.**
+
+Extensão do padrão de v4.57.28 (#2 requests) pro content_calendar. Slots com `taskId` apontando pra task deletada renderizavam "Sem tarefa" silenciosamente — `subscribeToTasksByIds` filtrava o ID inexistente sem warning. Cleanup batch zera `taskId` + flag `taskDeleted=true` + `taskDeletedAt`. UI do calendário pode oferecer "criar nova tarefa" via flag.
+
+**Princípio reforçado**: toda relação one-way (slot→task, request→task) precisa de cleanup quando o destino é deletado. Cloud Function `onDocumentDeleted` continua sendo o padrão mais robusto, mas inline cleanup cobre o uso atual.
+
+**Testes manuais**:
+- Modal task aberta, marcar todas subtasks done, fechar com Esc → status persiste como "review" no Firestore (testar via fetch direto).
+- Criar slot no content_calendar, vincular task, deletar task → slot.taskId=null + taskDeleted=true (verificar no doc Firestore).
+
+---
+
 ## [4.57.28+20260525-integrations-cross-module-4-fixes] — 2026-05-25
 
 Release **PATCH** — auditoria de integrações Tarefas ↔ outros módulos (CSAT, Metas, Solicitações, Squads, Calendário, Projetos). Quatro fixes críticos em uma release porque os 4 são side-effects esquecidos no mesmo padrão arquitetural (operação CRUD em um módulo precisa propagar pro vizinho).

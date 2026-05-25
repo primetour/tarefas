@@ -1034,6 +1034,31 @@ export async function deleteTask(taskId) {
   } catch (e) {
     console.warn('[deleteTask] cleanup request.taskId falhou:', e?.message);
   }
+
+  // v4.57.29 fix integração: limpa content_calendar.taskId se houver slot linkado.
+  // Antes: deletar task deixava slot do calendário apontando pra doc fantasma —
+  // `subscribeToTasksByIds` falhava silenciosamente, slot mostrava "Sem tarefa".
+  // Agora: query inversa + batch update zera taskId + flag taskDeleted.
+  try {
+    const slotSnap = await getDocs(query(
+      collection(db, 'content_calendar'),
+      where('taskId', '==', taskId),
+      limit(5),
+    ));
+    if (!slotSnap.empty) {
+      const batch = writeBatch(db);
+      slotSnap.forEach(d => {
+        batch.update(d.ref, {
+          taskId: null,
+          taskDeleted: true,
+          taskDeletedAt: serverTimestamp(),
+        });
+      });
+      await batch.commit();
+    }
+  } catch (e) {
+    console.warn('[deleteTask] cleanup content_calendar.taskId falhou:', e?.message);
+  }
 }
 
 /* ─── Buscar tarefa ──────────────────────────────────────── */

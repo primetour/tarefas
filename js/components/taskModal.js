@@ -2967,9 +2967,29 @@ function bindEvents(task, users, currentTags, currentAssignees, currentObservers
       const statusSelect = qId('tm-status');
       const suggested = checkSubtaskAutoAdvance(task);
       if (suggested && statusSelect && statusSelect.value !== 'done' && statusSelect.value !== suggested) {
+        const prevStatus = statusSelect.value;
         statusSelect.value = suggested;
         const statusLabel = suggested === 'review' ? 'Em Revisão' : 'Em Andamento';
-        toast.info(`Todas as subtarefas concluidas — status movido para "${statusLabel}".`);
+        // v4.57.29 fix #5: persiste status auto-advanced (antes era DOM-only —
+        // se user fechasse modal sem Salvar, o status voltava ao anterior).
+        // O toast já dizia "status movido para X", implicando persistência.
+        if (isEdit) {
+          import('../services/tasks.js').then(async ({ updateTask }) => {
+            try {
+              await updateTask(task.id, { status: suggested });
+              task.status = suggested;
+              toast.info(`Subtarefas concluídas — status atualizado para "${statusLabel}".`);
+            } catch (e) {
+              // rollback DOM se persist falhar
+              statusSelect.value = prevStatus;
+              console.warn('[taskModal] auto-advance persist falhou:', e?.message);
+              toast.error(`Sugestão de status "${statusLabel}" não foi salva: ${e?.message || 'erro'}`);
+            }
+          }).catch(() => {});
+        } else {
+          // create mode: status fica no select, aplica ao Salvar (sem persist agora)
+          toast.info(`Status sugerido: "${statusLabel}" (será aplicado ao salvar).`);
+        }
       }
     } catch (err) { toast.error(err.message); }
   });
