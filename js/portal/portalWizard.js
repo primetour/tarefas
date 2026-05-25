@@ -204,10 +204,9 @@ function _renderFooter() {
   const submitting = _state.submitting;
   el.innerHTML = `
     <div style="max-width:680px;margin:0 auto;display:flex;gap:10px;align-items:center;">
-      <button class="btn btn-ghost" id="pw-save-exit"
-        style="font-size:0.8125rem;color:var(--text-muted);"
+      <button class="btn btn-secondary btn-sm" id="pw-save-exit"
         title="Salva rascunho e fecha o navegador. Você pode voltar depois.">
-        💾 Salvar e sair
+        Salvar e sair
       </button>
       <div style="flex:1;"></div>
       ${isFirst ? '' : `
@@ -280,7 +279,7 @@ function _renderStep1() {
           <div style="font-size:0.875rem;color:var(--text-primary);">
             ✏️ <strong>Editando solicitação</strong> já enviada — alterações serão sinalizadas no sistema da equipe.
           </div>
-          <button type="button" id="pw-cancel-edit" class="btn btn-ghost" style="font-size:0.75rem;">
+          <button type="button" id="pw-cancel-edit" class="btn btn-secondary btn-sm">
             Cancelar edição
           </button>
         </div>
@@ -577,15 +576,16 @@ function _renderCalendarGrid(type) {
         style="
           background:${bg};border:${border};border-radius:6px;
           padding:6px 4px;cursor:${cursor};opacity:${opacity};
-          min-height:54px;display:flex;flex-direction:column;
+          min-height:54px;min-width:0;display:flex;flex-direction:column;
+          overflow:hidden;box-sizing:border-box;
           font-size:0.75rem;line-height:1.2;transition:all 0.12s;
           ${isPast?'':'user-select:none;'}">
-        <div style="font-weight:${isToday?'700':'500'};color:${isToday?'var(--brand-gold)':'var(--text-primary)'};">
+        <div style="font-weight:${isToday?'700':'500'};color:${isToday?'var(--brand-gold)':'var(--text-primary)'};min-width:0;">
           ${d}
         </div>
         ${hasSlots ? `
           <div style="font-size:0.625rem;color:${slotColor};font-weight:600;margin-top:auto;line-height:1.1;
-            overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(slots.map(s=>s.title||'Slot').join(' · '))}">
+            overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;max-width:100%;" title="${esc(slots.map(s=>s.title||'Slot').join(' · '))}">
             ${esc(slotTitle)}${extraSlots ? ` <span style="background:${slotColor};color:#fff;padding:0 4px;border-radius:8px;font-size:0.5625rem;margin-left:2px;">+${extraSlots}</span>` : ''}
           </div>
         ` : ''}
@@ -1055,8 +1055,10 @@ function _renderSuccess(batchCount = 0) {
       <div style="font-size:4rem;color:var(--brand-gold);margin-bottom:16px;">✓</div>
       <h2 style="margin:0 0 8px;color:var(--text-primary);">${esc(title)}</h2>
       <p style="color:var(--text-muted);margin:0 0 32px;">${esc(subtitle)}</p>
-      <button class="btn btn-primary" id="pw-new">Fazer nova solicitação</button>
-      <button class="btn btn-secondary" id="pw-call-success" style="margin-left:8px;">Voltar ao início</button>
+      <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
+        <button class="btn btn-primary" id="pw-new">Fazer nova solicitação</button>
+        <button class="btn btn-secondary" id="pw-call-success">Voltar ao início</button>
+      </div>
     </div>
   `;
   document.getElementById('pw-new')?.addEventListener('click', () => {

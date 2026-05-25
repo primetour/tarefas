@@ -17,7 +17,7 @@ import { renderPickerButton, refreshPickerButton, bindOptionPicker } from '../co
 /* v4.55.1+ Versão única do portalWizard.js usada em TODOS os dynamic imports
  * deste arquivo. Sempre que portalWizard.js mudar, atualizar esta constante.
  * Mesma string em ambos os imports → mesma instância (ES module cache por URL). */
-const WIZARD_VERSION = '4.55.6';
+const WIZARD_VERSION = '4.55.7';
 
 /* ─── Estado do usuário autenticado ─────────────────────────── */
 // v4.51.0+ `sector` é o campo canônico (setor formal); `department` é legado
@@ -96,8 +96,10 @@ async function boot() {
 
 /* ─── Tela de login ──────────────────────────────────────── */
 function renderLoginScreen(auth, root) {
-  const savedTheme = localStorage.getItem('portal-theme') || 'dark';
-  if (savedTheme === 'light') document.documentElement.setAttribute('data-theme', 'light');
+  // v4.55.7+ Modo CLARO como default (Renê) — só usa dark se user explicitamente escolheu
+  const savedTheme = localStorage.getItem('portal-theme') || 'light';
+  if (savedTheme !== 'dark') document.documentElement.setAttribute('data-theme', 'light');
+  else document.documentElement.removeAttribute('data-theme');
   root.innerHTML = `
     <div class="portal-wrap">
       <header class="portal-header">
@@ -650,9 +652,10 @@ async function renderForm(db, taskTypes, auth) {
     </div>
   `;
 
-  // Theme toggle
-  const savedTheme = localStorage.getItem('portal-theme') || 'dark';
-  if (savedTheme === 'light') document.documentElement.setAttribute('data-theme', 'light');
+  // Theme toggle — v4.55.7+ light é default (Renê)
+  const savedTheme = localStorage.getItem('portal-theme') || 'light';
+  if (savedTheme !== 'dark') document.documentElement.setAttribute('data-theme', 'light');
+  else document.documentElement.removeAttribute('data-theme');
   const themeBtn = document.getElementById('portal-theme-btn');
   if (themeBtn) {
     themeBtn.textContent = savedTheme === 'light' ? '🌙' : '☀️';
