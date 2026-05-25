@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 55,
-  patch: 7,
-  build: '20260524-portal-light-mode-default-buttons-overflow',
+  patch: 8,
+  build: '20260524-portal-wizard-criticos-autoCreate-notify-syncTask',
 };
 
 /** "1.2.0" */

@@ -975,13 +975,50 @@ async function _onSubmit(submitAnother) {
       const { requesterUid, requesterName, requesterEmail, requestingArea, ...editableFields } = currentDoc;
       const editPayload = {
         ...editableFields,
-        source: 'portal-wizard-v4.55.5-edit',
+        source: 'portal-wizard-v4.55.8-edit',
         requesterEditFlag: true,
         requesterEditedAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       };
       await updateDoc(firestoreDoc(_state.db, 'requests', _state.editId), editPayload);
       refId = _state.editId;
+
+      // v4.55.8+ CRÍTICO: se a request já foi convertida em task, sincroniza a task
+      // linked com flag de edit + campos alterados. Sem isso, analista que está
+      // trabalhando na task não vê que o solicitante mudou a descrição/título.
+      const origReq = _state.recentRequests.find(r => r.id === _state.editId);
+      if (origReq?.taskId) {
+        const dueDateForTask = (() => {
+          const ds = currentDoc.desiredDate;
+          if (!ds) return null;
+          const m = String(ds).match(/^(\d{4})-(\d{2})-(\d{2})/);
+          return m ? new Date(+m[1], +m[2]-1, +m[3], 12, 0, 0) : new Date(ds);
+        })();
+        const taskUpdate = {
+          title:           currentDoc.title,
+          description:     currentDoc.description,
+          priority:        currentDoc.urgency ? 'urgent' : 'medium',
+          outOfCalendar:   currentDoc.outOfCalendar,
+          variationId:     currentDoc.variationId,
+          variationName:   currentDoc.variationName,
+          requesterEditFlag:    true,
+          requesterEditAt:      serverTimestamp(),
+          requesterEditChanges: 'Atualizado pelo solicitante via portal',
+          updatedAt:       serverTimestamp(),
+        };
+        if (dueDateForTask) taskUpdate.dueDate = dueDateForTask;
+        try {
+          const { withRetry } = await import('../services/retry.js');
+          await withRetry(
+            () => updateDoc(firestoreDoc(_state.db, 'tasks', origReq.taskId), taskUpdate),
+            { label: 'portal.wizard.requesterEdit.syncTask', maxAttempts: 3 },
+          );
+        } catch (e) {
+          console.warn('[wizard] sync task linked falhou após retries:', e?.code, e?.message);
+          // Toast de erro inline (não bloqueia o sucesso da request — só avisa)
+          _showSyncErrorToast();
+        }
+      }
     } else {
       // Create current
       const ref = await addDoc(collection(_state.db, 'requests'), {
@@ -991,16 +1028,29 @@ async function _onSubmit(submitAnother) {
       });
       refId = ref.id;
 
+      // v4.55.8+ Auto-create task se type.autoAccept (paridade c/ portalLegacy)
+      const currentType = _state.taskTypes.find(t => t.id === currentDoc.typeId);
+      if (currentType?.autoAccept) {
+        await _autoCreateTask(refId, currentDoc, currentType);
+      }
+
       // v4.55.5+ Se há lote, submete cada item enfileirado sequencialmente
       if (_state.batchQueue.length > 0) {
         for (const batchData of _state.batchQueue) {
           try {
             const bDoc = _buildRequestDoc(batchData, user);
-            await addDoc(collection(_state.db, 'requests'), {
+            const bRef = await addDoc(collection(_state.db, 'requests'), {
               ...bDoc,
               status: 'pending',
               createdAt: serverTimestamp(),
             });
+            // v4.55.8+ autoCreateTask por item do lote também
+            const bType = _state.taskTypes.find(t => t.id === bDoc.typeId);
+            if (bType?.autoAccept) {
+              await _autoCreateTask(bRef.id, bDoc, bType);
+            }
+            // v4.55.8+ notify admins por item também (legacy faz 1 por request)
+            _notifyAdmins(batchData, bRef.id).catch(e => console.warn('[wizard] batch notifyAdmins:', e?.message));
             batchCount++;
           } catch (err) {
             console.warn('[wizard] batch item falhou:', err?.message || err);
@@ -1033,10 +1083,121 @@ async function _onSubmit(submitAnother) {
   }
 }
 
+/* v4.55.8+ Toast inline (sucesso/erro) — usado pra avisar sobre falha em
+ * sync de task linked sem bloquear o fluxo principal da request. */
+function _showSyncErrorToast() {
+  const el = document.createElement('div');
+  el.style.cssText = `
+    position:fixed;bottom:24px;right:24px;z-index:10003;padding:12px 20px;
+    border-radius:8px;background:#DC2626;color:#fff;font-size:0.875rem;
+    font-weight:600;font-family:var(--font-ui);
+    box-shadow:0 4px 20px rgba(0,0,0,0.3);max-width:420px;line-height:1.4;
+  `;
+  el.textContent = '⚠ Sua edição foi salva, mas a sincronização da tarefa interna falhou. A equipe pode não ver a alteração — entre em contato se necessário.';
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 9000);
+}
+
+/* v4.55.8+ Notif IN-APP pros admins do sistema (Renê v4.51.1: "quando chega
+ * solicitação não tem notificação no sistema"). Replicado do portalLegacy.
+ * - busca users active=true
+ * - filtra admins (isMaster OR roleId/role in [master,admin,head])
+ * - chama notify('request.created') com actorId/actorName explícitos
+ *   (portal não popula store.currentUser → precisa passar override)
+ */
 async function _notifyAdmins(d, requestId) {
-  // Reutiliza notifyTeam do portal.js antigo se disponível, senão best-effort skip
-  if (typeof window.__portalNotifyTeam === 'function') {
-    return window.__portalNotifyTeam({ ...d, id: requestId });
+  try {
+    const { notify } = await import('../services/notifications.js');
+    const usersSnap = await getDocs(query(
+      collection(_state.db, 'users'),
+      where('active', '==', true)
+    ));
+    const admins = usersSnap.docs
+      .map(doc => ({ id: doc.id, ...doc.data() }))
+      .filter(u => u.isMaster || ['master', 'admin', 'head'].includes(u.roleId) || ['master', 'admin', 'head'].includes(u.role))
+      .map(u => u.id);
+    if (!admins.length) return;
+    await notify('request.created', {
+      entityType: 'request', entityId: requestId,
+      recipientIds: admins,
+      title: 'Nova solicitação recebida',
+      body: `${_state.user?.name || d.requesterName || 'Solicitante'} — ${d.typeName || 'Solicitação'}${d.urgency ? ' (URGENTE)' : ''}`,
+      route: 'requests',
+      category: 'request',
+      priority: d.urgency ? 'high' : 'normal',
+      actorId: _state.user?.uid,
+      actorName: _state.user?.name || d.requesterName,
+    });
+  } catch (e) {
+    console.warn('[wizard] notifyAdmins falhou:', e?.message || e);
+  }
+}
+
+/* v4.55.8+ Auto-cria tarefa quando type.autoAccept=true. Replicado do
+ * portalLegacy. Calcula dueDate via SLA da variação (bizDays), grava task
+ * em collection 'tasks' + atualiza request com status='converted' + taskId.
+ */
+async function _autoCreateTask(reqRef, reqDoc, typeData) {
+  try {
+    const variation = typeData.variations?.find(v => v.id === reqDoc.variationId);
+    const slaDays = variation?.slaDays ?? variation?.sla ?? 2;
+    let dueDate = reqDoc.desiredDate || null;
+    if (!dueDate) {
+      const d = new Date();
+      let biz = slaDays;
+      while (biz > 0) {
+        d.setDate(d.getDate() + 1);
+        if (d.getDay() !== 0 && d.getDay() !== 6) biz--;
+      }
+      dueDate = d;
+    } else if (typeof dueDate === 'string') {
+      // YYYY-MM-DD → Date local meio-dia (evita timezone bug)
+      const m = dueDate.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (m) dueDate = new Date(+m[1], +m[2]-1, +m[3], 12, 0, 0);
+      else   dueDate = new Date(dueDate);
+    }
+    const taskDoc = {
+      workspaceId:      null,
+      sector:           reqDoc.sector || null,
+      title:            reqDoc.title || reqDoc.typeName || 'Nova Tarefa',
+      description:      reqDoc.description || '',
+      status:           'not_started',
+      priority:         reqDoc.urgency ? 'urgent' : 'medium',
+      projectId:        null,
+      assignees:        [],
+      tags:             [],
+      startDate:        serverTimestamp(),
+      dueDate:          dueDate,
+      typeId:           reqDoc.typeId || null,
+      variationId:      reqDoc.variationId || null,
+      variationName:    reqDoc.variationName || '',
+      variationSLADays: slaDays,
+      customFields:     {},
+      type:             reqDoc.typeName?.toLowerCase() || '',
+      requestingArea:   reqDoc.requestingArea || '',
+      nucleos:          reqDoc.nucleo ? [reqDoc.nucleo] : [],
+      outOfCalendar:    reqDoc.outOfCalendar || false,
+      subtasks:         [],
+      comments:         [],
+      attachments:      [],
+      order:            Date.now(),
+      completedAt:      null,
+      createdAt:        serverTimestamp(),
+      createdBy:        _state.user?.uid || 'portal',
+      updatedAt:        serverTimestamp(),
+      updatedBy:        _state.user?.uid || 'portal',
+      sourceRequestId:  reqRef,
+    };
+    const taskRef = await addDoc(collection(_state.db, 'tasks'), taskDoc);
+    await updateDoc(firestoreDoc(_state.db, 'requests', reqRef), {
+      status: 'converted',
+      taskId: taskRef.id,
+      updatedAt: serverTimestamp(),
+    });
+    return taskRef.id;
+  } catch (e) {
+    console.warn('[wizard] _autoCreateTask falhou:', e?.message || e);
+    return null;
   }
 }
 
