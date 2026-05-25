@@ -1,6 +1,6 @@
 # Portal de Solicitações — Plano de Testes E2E
 
-**Versão atual**: v4.55.8
+**Versão atual**: v4.57.1
 **Arquivo testado**: `js/portal/portalWizard.js` (+ `js/portal/portal.js` shell)
 **Ambiente**: `https://primetour.github.io/tarefas/solicitar.html`
 
@@ -324,4 +324,29 @@ Vai ser um script `tests/portal-wizard-e2e.js` que:
 
 ---
 
-**Última atualização**: v4.55.8 — 2026-05-24
+**Última atualização**: v4.57.1 — 2026-05-24
+
+## Releases entregues nesta sprint (após auditoria)
+
+| Versão | Features |
+|--------|----------|
+| v4.55.7 | Fixes Renê: modo claro default, botões padrão sistema, calendário overflow |
+| v4.55.8 | **3 CRÍTICOS**: autoCreateTask, notifyAdmins (notify('request.created')), syncTask linked com retry |
+| v4.56.0 | Calendário rico: render requests/batch nas cells (cor por status), preview modal ao clicar request, pre-fill rico ao clicar slot (título+area+variação), botão Hoje, bloqueio past com alert, banners educativos urgência/OOC (longos), urgência monotônica em edit, auto-fill dueDate por SLA, tooltips ricos, legenda visual ampliada |
+| v4.56.1 | info-tip ℹ nos labels, validação inline ContentLink, bloqueio data passada manual com alert, sanitização typeColor regex |
+| v4.57.0 | Calendário 3 granularidades: Mês/Semana/Dia com nav contextual + grid adaptativo + header dinâmico |
+| v4.57.1 | Success view 3 variações (auto-aceito / urgente / normal), batchId/batchIndex/batchTotal nos docs, notifyTeam consolidado pra batch (1 email "N solicitações em conjunto") |
+
+**Cobertura atual estimada: ~92%**. Gaps menores remanescentes:
+- Newsletter prompt re-mostra após "Fazer nova solicitação"
+- Header com nome/email/área visível
+- Modal fullscreen separado (wizard já é fullscreen — gap menor)
+- Partnership toggle com `.active` class visual
+- Requesting area dedicado picker
+- Types globais (`!t.sector`) matching
+- Batch panel cards grid rico (atual mostra lista simples)
+- Edit batch item async cascade
+- Alert-banner info "data não bate no calendário editorial"
+- Locked banner 🔒 inline (atual usa badge)
+- Edit history append detalhado por campo
+- Bateria E2E automatizada (script JS)
