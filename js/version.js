@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 54,
-  patch: 4,
-  build: '20260524-portal-wizard-fase-A-notify-lock-urgency',
+  patch: 5,
+  build: '20260524-portal-wizard-fase-A-sla-field-fix',
 };
 
 /** "1.2.0" */

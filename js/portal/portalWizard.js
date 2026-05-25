@@ -466,7 +466,7 @@ function _renderStep3() {
           <label class="form-label">Variação do material <span class="required">*</span></label>
           <select class="form-select" id="pw-variation">
             <option value="">— Selecione a variação —</option>
-            ${variations.map(v => `<option value="${esc(v.id)}" ${d.variationId===v.id?'selected':''}>${esc(v.name)}${v.sla?` · SLA ${v.sla}d`:''}</option>`).join('')}
+            ${variations.map(v => `<option value="${esc(v.id)}" ${d.variationId===v.id?'selected':''}>${esc(v.name)}${(v.slaDays || v.sla)?` · SLA ${(v.slaDays || v.sla)}d`:''}</option>`).join('')}
           </select>
           <div class="form-error" id="pw-err-variation" style="display:none;color:var(--color-danger);font-size:0.75rem;margin-top:4px;">
             Selecione a variação.
@@ -512,7 +512,7 @@ function _wireStep3() {
     if (!slaHint) return;
     const type = _state.taskTypes.find(t => t.id === _state.data.typeId);
     const v = type?.variations?.find(x => x.id === _state.data.variationId);
-    slaHint.textContent = v?.sla ? `⏱ SLA de produção: ${v.sla} dia${v.sla>1?'s':''}` : '';
+    slaHint.textContent = v?.sla ? `⏱ SLA de produção: ${(v.slaDays || v.sla)} dia${(v.slaDays || v.sla)>1?'s':''}` : '';
   };
   refreshSla();
 
@@ -608,7 +608,7 @@ function _renderStep4() {
           ${_summaryRow('Tipo', `${esc(d.typeIcon||'◈')} ${esc(d.typeName)}`)}
           ${_summaryRow('Quando', _fmtDate(d.desiredDate))}
           ${d.nucleo ? _summaryRow('Squad', esc(d.nucleo)) : ''}
-          ${variation ? _summaryRow('Variação', esc(variation.name) + (variation.sla?` (SLA ${variation.sla}d)`:'')) : ''}
+          ${variation ? _summaryRow('Variação', esc(variation.name) + ((variation.slaDays || variation.sla)?` (SLA ${variation.slaDays || variation.sla}d)`:'')) : ''}
           ${_summaryRow('Título', esc(d.title))}
           ${_summaryRow('Descrição', `<div style="max-height:80px;overflow:auto;white-space:pre-wrap;">${esc(d.description)}</div>`)}
           ${d.contentLink ? _summaryRow('Link', `<a href="${esc(d.contentLink)}" target="_blank" rel="noopener">${esc(d.contentLink)}</a>`) : ''}
@@ -923,7 +923,8 @@ function _checkAutoUrgency() {
   // SLA da variação selecionada
   const type = _state.taskTypes.find(t => t.id === d.typeId);
   const variation = type?.variations?.find(v => v.id === d.variationId);
-  const slaDays = variation?.sla ? parseInt(variation.sla, 10) : NaN;
+  const slaRaw = variation?.slaDays || variation?.sla;
+  const slaDays = slaRaw ? parseInt(slaRaw, 10) : NaN;
   const bizDays = _countBusinessDays(now, deadline);
 
   let shouldLock = false;
