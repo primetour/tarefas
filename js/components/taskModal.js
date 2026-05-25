@@ -2051,15 +2051,19 @@ function bindEvents(task, users, currentTags, currentAssignees, currentObservers
   // handleSave; bindOptionPicker dispara `change` ao selecionar pra que
   // listeners existentes continuem reagindo.
 
-  // v4.49.54+ Setor solicitante puxa do módulo Setores (mesma fonte do
-  // filtro Setor). Antes: REQUESTING_AREAS hardcoded.
+  // v4.49.54+ Setor solicitante puxa do módulo Setores (mesma fonte do filtro Setor).
+  // v4.52.0 trocou o <select> hidden pra getActiveSectors mas esqueceu do PICKER
+  // VISUAL (que sobrescreve a UI). Analista continuava vendo só o próprio setor.
+  // v4.57.21 (Renê): "usuario de perfil analista nao consegue editar setor
+  // solicitante, pois aparece apenas o próprio setor dele... qdo setor solicitante
+  // pode ser qualquer setor cadastrado". Fix: picker usa MESMA fonte do select.
   bindOptionPicker({
     btnId:    'tm-area-btn',
     selectId: 'tm-area',
     emptyLabel: '— Selecione setor —',
     buildConfig: () => ({
       empty: { id: '', label: '— Selecione setor —' },
-      options: getUserSectorOptions().map(a => ({ id: a, label: a, icon: '◈' })),
+      options: getActiveSectors().map(a => ({ id: a, label: a, icon: '◈' })),
       searchPlaceholder: 'Buscar setor…',
     }),
     findSelected: (id) => id ? { id, label: id, icon: '◈' } : null,

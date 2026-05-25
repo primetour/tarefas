@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 57,
-  patch: 20,
-  build: '20260525-wizard-edit-race-snapshot-fallback',
+  patch: 21,
+  build: '20260525-task-setor-solicitante-todos-setores',
 };
 
 /** "1.2.0" */

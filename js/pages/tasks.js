@@ -15,6 +15,7 @@ import { createDoc, loadJsPdf, COL, STATUS_STYLE, txt, withExportGuard } from '.
 // v4.49.53+ Reusa lógica de setor (UNIÃO dyn + REQUESTING_AREAS + dedup)
 // que já está battle-tested em kanban/calendar/timeline via filterBar.
 import { getUserSectorOptions, squadOptsGrouped } from '../components/filterBar.js';
+import { getActiveSectors } from '../services/sectors.js';   // v4.57.21+ filtro "setor solicitante" (sem visibility)
 import { wireUiKitMenus } from '../components/uiKit.js';
 import { userAvatarInner } from '../components/userAvatar.js';
 import {
@@ -482,7 +483,8 @@ export async function renderTasks(container) {
       <div class="toolbar-filter-wrap" style="${filterVisibility.area?'':'display:none;'}min-width:160px;">
         <select id="filter-area" style="display:none;">
           <option value="">Todos os setores solicitantes</option>
-          ${getUserSectorOptions().map(a=>`<option value="${esc(a)}">${esc(a)}</option>`).join('')}
+          ${/* v4.57.21: getActiveSectors (todos), não getUserSectorOptions (só visíveis ao user) */ ''}
+          ${getActiveSectors().map(a=>`<option value="${esc(a)}">${esc(a)}</option>`).join('')}
         </select>
         ${renderPickerButton({ btnId: 'filter-area-btn', selected: null, emptyLabel: 'Todos os setores solicitantes' })}
       </div>
@@ -1967,7 +1969,10 @@ function _attachPageEvents() {
   // Diferença é só de contexto: requestingArea é o setor que PEDIU a demanda;
   // sector é o setor que EXECUTA. REQUESTING_AREAS hardcoded permanece em
   // services/tasks.js como fallback técnico pra auto-provisioning legacy.
-  const areaOpts = () => getUserSectorOptions().map(a => ({
+  // v4.57.21: getActiveSectors (todos), não getUserSectorOptions (só visíveis).
+  // Analista MKT precisa ver opção "BTG" no filtro pra encontrar tasks que
+  // BTG pediu pro MKT executar.
+  const areaOpts = () => getActiveSectors().map(a => ({
     id: a, label: a, icon: '◈', color: hashColor(a),
   }));
   const findArea = (id) => areaOpts().find(o => o.id === id) || null;

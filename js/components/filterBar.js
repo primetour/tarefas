@@ -90,11 +90,13 @@ function areaOpts() {
   // (uma divisão da empresa). A diferença é só de CONTEXTO:
   //   - task.sector          = setor proprietário (quem executa)
   //   - task.requestingArea  = setor solicitante (quem pediu)
-  // Por isso, o dropdown do filtro de "Área solicitante" usa a MESMA fonte
-  // do filtro Setor (módulo Setores), não mais REQUESTING_AREAS hardcoded.
-  // REQUESTING_AREAS permanece como fallback técnico de back-compat pra
-  // tasks legadas com requestingArea = string que não existe mais no módulo.
-  return getUserSectorOptions().map(a => ({
+  //
+  // v4.57.21 (Renê): "usuario de perfil analista nao consegue editar setor
+  // solicitante, pois aparece apenas o próprio setor dele". Igual bug do
+  // taskModal — getUserSectorOptions filtra por visibilidade do user. Pro
+  // SETOR SOLICITANTE, qualquer setor da empresa pode pedir (não tem nada
+  // a ver com visibilidade do user). Fix: getActiveSectors (TODOS ativos).
+  return getActiveSectors().map(a => ({
     id: a, label: a, icon: '', color: hashColor(a),
   }));
 }
