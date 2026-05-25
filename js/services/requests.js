@@ -267,8 +267,29 @@ export async function deleteRequest(reqId, source) {
     await deleteBtgRequest(reqId);
     return;
   }
+  // v4.57.28 fix integração #3: captura taskId antes de deletar pra cleanup
+  // inverso. Antes: deletar request deixava task com requestId apontando pra
+  // doc inexistente — banner "veio de solicitação" no taskModal virava 404.
+  let linkedTaskId = null;
+  try {
+    const snap = await getDoc(doc(db, 'requests', reqId));
+    if (snap.exists()) linkedTaskId = snap.data().taskId || null;
+  } catch {}
+
   await deleteDoc(doc(db, 'requests', reqId));
-  await auditLog('requests.delete', 'request', reqId, {});
+  await auditLog('requests.delete', 'request', reqId, { linkedTaskId });
+
+  if (linkedTaskId) {
+    try {
+      await updateDoc(doc(db, 'tasks', linkedTaskId), {
+        requestId: null,
+        requestDeleted: true,
+        requestDeletedAt: serverTimestamp(),
+      });
+    } catch (e) {
+      console.warn('[deleteRequest] cleanup task.requestId falhou:', e?.message);
+    }
+  }
 }
 
 /* ─── Contar pendentes (para badge) ─────────────────────────

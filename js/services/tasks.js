@@ -937,6 +937,24 @@ export async function toggleTaskComplete(taskId, isDone) {
   invalidateTasksCache();
   await auditLog('tasks.complete', 'task', taskId, { done: isDone, title: taskTitle });
   if (isDone) playCompletionSound();
+
+  // v4.57.28 fix integração #1: dispara CSAT igual updateTask (caminho do modal).
+  // Antes: checkbox da lista bypassa CSAT. Causa: 2 paths pra "concluir tarefa"
+  // (modal salva via updateTask que aciona CSAT; checkbox da lista via
+  // toggleTaskComplete que NÃO acionava). UX inconsistente. CLAUDE.md §12.n
+  // (caminhos múltiplos pra mesma operação precisam paridade de side-effects).
+  if (isDone) {
+    try {
+      const fresh = await getDoc(doc(db, 'tasks', taskId));
+      if (fresh.exists()) {
+        const merged = { id: taskId, ...fresh.data() };
+        const csatMod = await import('./csat.js');
+        if (csatMod.triggerCsatOnTaskComplete) {
+          await csatMod.triggerCsatOnTaskComplete(merged);
+        }
+      }
+    } catch (e) { console.warn('[toggleTaskComplete] CSAT trigger falhou:', e?.message); }
+  }
 }
 
 /* ─── Excluir tarefa ─────────────────────────────────────── */
@@ -989,6 +1007,32 @@ export async function deleteTask(taskId) {
     } catch (e) {
       console.warn('[Tasks] cleanup de conversão de notícia falhou:', e.message);
     }
+  }
+
+  // v4.57.28 fix integração #2: limpa request.taskId se houver request linkada.
+  // Antes: deletar task deixava request órfã apontando pra doc inexistente —
+  // banner "veio de solicitação" no UI da request virava 404 ao clicar.
+  // Agora: query inversa + updateDoc clear (best-effort, não bloqueia delete).
+  try {
+    const reqSnap = await getDocs(query(
+      collection(db, 'requests'),
+      where('taskId', '==', taskId),
+      limit(5),  // theoretically 1, mas defensivo
+    ));
+    if (!reqSnap.empty) {
+      const batch = writeBatch(db);
+      reqSnap.forEach(d => {
+        batch.update(d.ref, {
+          taskId: null,
+          taskDeleted: true,
+          taskDeletedAt: serverTimestamp(),
+          // mantém status='converted' pra histórico; quem fez delete pode reabrir manualmente
+        });
+      });
+      await batch.commit();
+    }
+  } catch (e) {
+    console.warn('[deleteTask] cleanup request.taskId falhou:', e?.message);
   }
 }
 

@@ -383,7 +383,20 @@ export async function triggerCsatOnTaskComplete(task) {
         if (trigger === 'custom_milestones' && task.isMilestone) {
           return fireProjectCsat(project, { reason: 'milestone', triggerTaskId: task.id });
         }
-        // projeto controla — esse evento não dispara
+        // v4.57.28 fix integração #6+#11: trigger 'every' agora funcional
+        // (antes só 'custom_milestones' era tratado — UI permitia 'every' mas
+        // código silenciava). Demais triggers continuam pulando individual.
+        if (trigger === 'every') {
+          return fireProjectCsat(project, { reason: 'every_task', triggerTaskId: task.id });
+        }
+        // v4.57.28 fix #11: log EXPLÍCITO quando projeto silencia individual CSAT.
+        // Antes: retornava null sem rastro — task com clientEmail não disparava
+        // e user nunca entendia por quê.
+        console.info(
+          `[CSAT] skip individual: project="${project.name || task.projectId}" ` +
+          `controla CSAT (trigger=${trigger}, isMilestone=${!!task.isMilestone}). ` +
+          `Task "${task.title || task.id}" não dispara CSAT individual.`
+        );
         return null;
       }
     } catch (e) {

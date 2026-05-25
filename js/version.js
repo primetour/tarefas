@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 57,
-  patch: 27,
-  build: '20260525-tasks-audit-final-5-fixes',
+  patch: 28,
+  build: '20260525-integrations-cross-module-4-fixes',
 };
 
 /** "1.2.0" */

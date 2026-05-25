@@ -6,6 +6,45 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.57.28+20260525-integrations-cross-module-4-fixes] — 2026-05-25
+
+Release **PATCH** — auditoria de integrações Tarefas ↔ outros módulos (CSAT, Metas, Solicitações, Squads, Calendário, Projetos). Quatro fixes críticos em uma release porque os 4 são side-effects esquecidos no mesmo padrão arquitetural (operação CRUD em um módulo precisa propagar pro vizinho).
+
+**Fix #1 — `toggleTaskComplete` agora dispara CSAT trigger.**
+
+`toggleTaskComplete` em `js/services/tasks.js` marcava `status='done'` sem chamar `triggerCsatOnTaskComplete`. Apenas `updateTask({status:'done'})` via modal disparava. Resultado: completar tarefa pelo checkbox do kanban/lista NUNCA disparou CSAT (bug silencioso desde introdução do CSAT).
+
+Fix: após o `updateDoc`, re-fetch o doc, importa dinamicamente `./csat.js`, chama `triggerCsatOnTaskComplete(merged)`. Try/catch defensivo (CSAT não pode quebrar o toggle).
+
+**Fix #2 — `deleteTask` limpa `request.taskId` órfão.**
+
+Ao deletar tarefa criada a partir de solicitação, `requests.taskId` continuava apontando pra doc inexistente. Portal mostrava "tarefa criada" mas link quebrava em `getDoc`. Sem auditoria de integridade.
+
+Fix: ao final de `deleteTask`, busca `requests` com `taskId == deletedId` (limit 5), batch update zerando `taskId` + flag `taskDeleted=true` + `taskDeletedAt`. Portal pode detectar via flag e re-oferecer "criar tarefa novamente".
+
+**Fix #3 — `deleteRequest` limpa `task.requestId` órfão (cascade reversa).**
+
+Espelha #2 em `js/services/requests.js`. Antes de `deleteDoc`, lê `request.taskId`; após delete, faz `updateDoc` em `tasks/{taskId}` zerando `requestId` + flag `requestDeleted=true` + `requestDeletedAt`. Audit log inclui `linkedTaskId` pra rastreabilidade.
+
+**Fix #11 — `triggerCsatOnTaskComplete` com `trigger='every'` funcional + log explícito.**
+
+`every` (CSAT em cada task de um projeto) estava listado como tipo mas o código early-returnava silenciosamente em `task.isMilestone === false`, deixando `every` sem efeito. Agora:
+- `trigger='every'` → dispara `fireProjectCsat` independente de `isMilestone`
+- Quando projeto controla CSAT mas task não casa critério, `console.info` explícito com motivo (`trigger=X, isMilestone=Y`). Antes: silêncio total, debug impossível.
+
+**Lição arquitetural (CLAUDE.md §12.n generalizada).** Quando 2+ módulos têm relação (task↔request, task↔goal, task↔csat), TODA operação CRUD em um precisa de side-effect contrário no outro. Padrões obrigatórios pra próximas integrações:
+1. Service A.delete → cleanup refs em B (zera + flag de auditoria, não delete cascade silencioso)
+2. Service A.complete/status → trigger lifecycle em B (CSAT, métricas, notif)
+3. Cloud Function `onDocumentDeleted` é mais robusto que cleanup inline (sobrevive a callers novos)
+
+**Testes**:
+- Toggle complete via kanban → CSAT respeitando trigger projeto (testado com 'on_close' + 'every').
+- Delete tarefa com solicitação vinculada → request.taskId=null + taskDeleted=true.
+- Delete solicitação com tarefa vinculada → task.requestId=null + requestDeleted=true.
+- CSAT trigger='every' em projeto pequeno → modal abre a cada conclusão.
+
+---
+
 ## [4.57.14 → 4.57.27] — 2026-05-25 — sprint UX/segurança + auditoria sistemática Tarefas
 
 14 releases sequenciais cobrindo bugs reportados pelo Renê + auditoria sistemática do módulo Tarefas (19 de 20 gaps fechados). Detalhes resumidos abaixo; cada release tem dev_hours individual + descrição completa nos commits.
