@@ -6,6 +6,42 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.57.14 → 4.57.27] — 2026-05-25 — sprint UX/segurança + auditoria sistemática Tarefas
+
+14 releases sequenciais cobrindo bugs reportados pelo Renê + auditoria sistemática do módulo Tarefas (19 de 20 gaps fechados). Detalhes resumidos abaixo; cada release tem dev_hours individual + descrição completa nos commits.
+
+**v4.57.14** CSS — picker calendário visível em paletas claras (platinum, sand). v4.57.7 cobria só `[data-theme="light"]`; app usa `[data-palette="..."]`. Fix `color-scheme:light` pros seletores faltantes. (0.26h)
+
+**v4.57.15** Portal Calendar — erradica TZ shift (clique no slot mostrava dia anterior). Helpers `_parseLocalSafe + _toLocalISO` em `portal.js`. CLAUDE.md §12.a. (0.81h)
+
+**v4.57.16** Portal Calendar — visual de slots por 7 estados semânticos (vazio/aguardando/em produção/concluída/recusada/no lote/agendada). (0.70h)
+
+**v4.57.17** Wizard Calendar — mesmo padrão visual com badges nos dias do Step 2. (0.60h)
+
+**v4.57.18** Wizard visual minimalista (Linear/Asana style) + Esc respeita overlay (`_isAnyOverlayOpen`) + **CLAUDE.md §6 reforçada** com matriz de 10 dimensões de cenários obrigatória. (1.76h)
+
+**v4.57.19** Wizard — `recentRequests` via `onSnapshot` real-time (fix "deletei tarefa, calendário não atualizou"). Listei 17 cenários antes de codar (§6). (1.76h)
+
+**v4.57.20** Wizard — fecha 4 buracos da matriz §6: race click "Editar" + delete; edit mode + delete externa; snapshot re-render step errado; snapshot fail silencioso → toast. (1.50h)
+
+**v4.57.21** Tarefas — setor solicitante mostra TODOS setores (não só do user). v4.52.0 corrigiu 1 lugar, deixou 3 com bug. Fix em 4 lugares (taskModal picker, tasks.js filtro × 2, filterBar.js helper). (0.88h)
+
+**v4.57.22** Auditoria Tarefas (release 1) — 7 fixes: re-render perde listeners (AbortController) · SLA ignora Timestamp · bulkUpdate sem guard · moveKanban sem guard · fallback users em validation · Set leak (cap 500 + LRU) · addComment inclui observers. (4.81h)
+
+**v4.57.23** Auditoria release 2 — popover status filtra transições válidas (`getValidTransitions`) + `modal.confirm` custom (anti-padrão §11.k confirm nativo). (0.55h)
+
+**v4.57.24** Auditoria fix — botão Cancelar do taskModal também usa `modal.confirm`. E2E pegou 2º caminho de close. (0.23h)
+
+**v4.57.25** Auditoria release 3 — 4 fixes: modal cleanup AbortController (8 listeners no document SEM cleanup) · deleteGoal cascade (`checkGoalDependencies` + flag force) · parseMentions ambíguo · debounce órfão no createTasksListener. (2.02h)
+
+**v4.57.26** parseMentions refinado — 3 sub-bugs descobertos via E2E MCP corrigidos. 12/12 cenários pass. (1.04h)
+
+**v4.57.27** Auditoria final — 5 fixes (#14 #15 #18 #19 #20): bulkCreate notif Promise.all · slaFrozenAt cleanup em done/cancelled · subtask title fresh · deleteTask Storage cleanup · REQUESTING_AREAS `@deprecated`. **19/20 gaps fechados.** (1.43h)
+
+**Total sprint**: 18.35h / R$ 2.752,50
+
+---
+
 ## [4.57.13+20260525-vacation-absences-off-by-one] — 2026-05-25
 
 Release **PATCH** — fix off-by-one no cálculo de duração de ausências e férias.
