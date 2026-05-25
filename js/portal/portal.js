@@ -902,8 +902,12 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
         if (t.status === 'cancelled') return;
         const df = t.dueDate||t.startDate;
         if (!df) return;
-        const dt = df.toDate?df.toDate():new Date(df);
-        if (dt.getFullYear()!==y||dt.getMonth()!==m) return;
+        // v4.57.15: parse local-safe pra eliminar shift de 1 dia em UTC-3.
+        // Antes: new Date('2026-05-26') = UTC midnight → getDate() local = 25.
+        // Tasks iam pra taskMap[25] em vez de taskMap[26], aparecendo no dia
+        // anterior no calendar. (CLAUDE.md §12.a — bug recorrente erradicado.)
+        const dt = _parseLocalSafe(df);
+        if (!dt || dt.getFullYear()!==y || dt.getMonth()!==m) return;
         const k = dt.getDate();
         if (!taskMap[k]) taskMap[k]=[];
         taskMap[k].push({
@@ -912,7 +916,7 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
           requesterName:t.requesterName||'', typeName:t.typeName||activeType?.name||'',
           sector:t.sector||activeType?.sector||'',
           urgency:t.urgency||false, outOfCalendar:t.outOfCalendar||false,
-          dateISO: dt.toISOString().slice(0,10),
+          dateISO: _toLocalISO(dt),
         });
       });
     } catch(e) { console.warn('portal calendar data error:', e.message); }
@@ -939,8 +943,10 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
         const r = d.data();
         const df = r.desiredDate;
         if (!df) return;
-        const dt = df.toDate ? df.toDate() : new Date(df);
-        const iso = dt.toISOString().slice(0, 10);
+        // v4.57.15: parse local-safe + toLocalISO pra evitar shift UTC.
+        const dt = _parseLocalSafe(df);
+        if (!dt) return;
+        const iso = _toLocalISO(dt);
         const info = STATUS_LABELS[r.status] || STATUS_LABELS.pending;
         // Keep the most relevant status per date (converted > pending > rejected)
         if (!requestMap[iso] || r.status === 'converted' || (r.status === 'pending' && requestMap[iso].status === 'rejected')) {
@@ -3630,8 +3636,11 @@ async function notifyTeam(reqDoc) {
           description:    reqDoc.description     || '',
           urgency:        reqDoc.urgency         || false,
           outOfCalendar:  reqDoc.outOfCalendar   || false,
-          desiredDate:    reqDoc.desiredDate
-            ? new Date(reqDoc.desiredDate).toLocaleDateString('pt-BR') : '',
+          desiredDate:    (() => {
+            // v4.57.15: local-safe (era new Date(string) = UTC midnight, voltava dia)
+            const dt = _parseLocalSafe(reqDoc.desiredDate);
+            return dt ? dt.toLocaleDateString('pt-BR') : '';
+          })(),
         }}),
       }
     );
@@ -3642,6 +3651,41 @@ async function notifyTeam(reqDoc) {
 }
 
 /* ─── Helpers ─────────────────────────────────────────────── */
+
+/* v4.57.15+ Date parsing local-safe — eliminar o bug recorrente §12.a do
+ * CLAUDE.md: `new Date('2026-05-26')` é UTC midnight; em UTC-3 vira dia 25
+ * 21h, fazendo `getDate()` retornar o dia anterior. Bug aparecia no
+ * calendário do portal: tasks de hoje exibidas no dia anterior, slot
+ * selecionado mostrando outro, etc.
+ *
+ * - `_parseLocalSafe(val)`: aceita Firestore Timestamp, Date, ou string
+ *   YYYY-MM-DD (opcionalmente com hora). Retorna Date no fuso local com
+ *   dia/mês/ano corretos. Retorna null se inválido.
+ * - `_toLocalISO(date)`: serializa Date pra YYYY-MM-DD usando getFullYear
+ *   /Month/Date locais (não toISOString, que é UTC). */
+function _parseLocalSafe(val) {
+  if (!val) return null;
+  if (val?.toDate) return val.toDate();
+  if (val instanceof Date) return isNaN(val.getTime()) ? null : val;
+  if (typeof val === 'string') {
+    const m = val.match(/^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2}))?)?/);
+    if (m) {
+      return new Date(+m[1], +m[2]-1, +m[3], +(m[4]||0), +(m[5]||0), +(m[6]||0), 0);
+    }
+    const fallback = new Date(val);
+    return isNaN(fallback.getTime()) ? null : fallback;
+  }
+  if (typeof val === 'number') return new Date(val);
+  return null;
+}
+function _toLocalISO(date) {
+  if (!date || isNaN(date.getTime?.())) return '';
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 /**
  * Retorna a data MÍNIMA permitida pra solicitação (= hoje, fuso local).
  * 4.34.11+ Trocado de toISOString() (UTC) pra fuso local porque à noite
