@@ -5,7 +5,7 @@
 
 import {
   collection, doc, getDoc, getDocs, setDoc, addDoc,
-  updateDoc, deleteDoc, query, where, orderBy,
+  updateDoc, deleteDoc, query, where, orderBy, limit, writeBatch,
   arrayUnion, arrayRemove, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { db }       from '../firebase.js';
@@ -183,10 +183,67 @@ export async function deleteWorkspace(wsId, { force = false } = {}) {
   }
 
   await deleteDoc(doc(db, 'workspaces', wsId));
-  await auditLog('workspaces.delete', 'workspace', wsId, {});
+  await auditLog('workspaces.delete', 'workspace', wsId, { force });
 
   const updated = (store.get('userWorkspaces') || []).filter(w => w.id !== wsId);
   store.set('userWorkspaces', updated);
+
+  // v4.57.30 fix integração: cleanup tasks + projects órfãos (force=true).
+  // Sem isso, tasks com workspaceId fantasma quebram filtros de squad ativo
+  // (store.getActiveWorkspaceIds excluía a task do view) e projects com o
+  // wsId no array workspaceIds ficavam "visíveis pra todos os squads" por
+  // ter um ID inválido. Zera/remove o FK + flag pra UI poder exibir aviso.
+  if (force) {
+    // 1) Tasks: workspaceId é single → zera + flag
+    try {
+      const tasksSnap = await getDocs(query(
+        collection(db, 'tasks'),
+        where('workspaceId', '==', wsId),
+        limit(500),
+      ));
+      if (!tasksSnap.empty) {
+        const batch = writeBatch(db);
+        tasksSnap.forEach(d => {
+          batch.update(d.ref, {
+            workspaceId: null,
+            workspaceDeleted: true,
+            workspaceDeletedAt: serverTimestamp(),
+          });
+        });
+        await batch.commit();
+      }
+    } catch (e) {
+      console.warn('[deleteWorkspace] cleanup tasks.workspaceId falhou:', e?.message);
+    }
+
+    // 2) Projects: workspaceIds é array → arrayRemove + flag (não zera o array todo,
+    //    project pode pertencer a outros squads)
+    try {
+      const projSnap = await getDocs(query(
+        collection(db, 'projects'),
+        where('workspaceIds', 'array-contains', wsId),
+        limit(500),
+      ));
+      if (!projSnap.empty) {
+        const batch = writeBatch(db);
+        projSnap.forEach(d => {
+          const data = d.data();
+          const isLast = Array.isArray(data.workspaceIds) && data.workspaceIds.length === 1;
+          const updates = {
+            workspaceIds: arrayRemove(wsId),
+            workspaceDeleted: true,
+            workspaceDeletedAt: serverTimestamp(),
+          };
+          // espelho legado: se project só tinha esse wsId, zera workspaceId tb
+          if (isLast || data.workspaceId === wsId) updates.workspaceId = null;
+          batch.update(d.ref, updates);
+        });
+        await batch.commit();
+      }
+    } catch (e) {
+      console.warn('[deleteWorkspace] cleanup projects.workspaceIds falhou:', e?.message);
+    }
+  }
 }
 
 /* ─── Adicionar membro ───────────────────────────────────── */

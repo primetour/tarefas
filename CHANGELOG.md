@@ -6,6 +6,40 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.57.30+20260525-delete-orphan-cleanup-project-workspace-tasktype] — 2026-05-25
+
+Release **PATCH** — extensão sistemática do padrão de cleanup (v4.57.28/29) pra 3 deletes que deixavam tasks órfãs silenciosamente.
+
+**Fix — `deleteProject(force=true)` limpa `tasks.projectId`.**
+
+UI já avisava "vínculos ficarão órfãos" mas nada limpava o FK. Tasks ficavam com `projectId` apontando pra projeto inexistente — filtros por projeto perdiam essas tasks, agrupadores quebravam, `getProject(projectId)` retornava null em loops. Agora: batch zera `projectId` + flag `projectDeleted=true` + `projectDeletedAt`. UI pode exibir chip "projeto excluído" no card. Limite 500 (Firestore batch cap).
+
+**Fix — `deleteWorkspace(force=true)` limpa `tasks.workspaceId` + `projects.workspaceIds[]`.**
+
+Dois passes:
+1. `tasks` onde `workspaceId == wsId` → zera + flag (`workspaceDeleted=true`). Filtro de squad ativo (`store.getActiveWorkspaceIds`) excluía a task do view porque o ID não casava nenhum squad real — task ficava invisível.
+2. `projects` onde `workspaceIds array-contains wsId` → `arrayRemove(wsId)` + flag. Mantém demais squads do projeto (multi-squad B5p). Se era o único, zera o espelho legado `workspaceId` também.
+
+**Fix — `deleteTaskType` limpa `tasks.typeId` órfão.**
+
+Antes: zero guard de dependência E zero cleanup. Tasks com `typeId` deletado tinham regras quebradas (`blockDuplicate`, `maxPerDay`), SLA dependente do tipo voltava 0, filtros silenciosamente excluíam, badge mostrava string vazia. Cleanup: zera `typeId` + flag `typeDeleted` + `typeDeletedName` (preserva nome do tipo deletado pra UI mostrar "ex-tipo: X").
+
+**Princípio reforçado (CLAUDE.md §12.n)**: toda referência FK entre coleções precisa de cleanup quando o destino é deletado. Padrão consolidado nesta sprint:
+- Query inversa `where('fkField', '==', id)` ou `array-contains`
+- Batch limit 500
+- `null` no FK + flag `xxxDeleted=true` + timestamp `xxxDeletedAt`
+- Preservar metadata útil pra UI (nome, label) quando aplicável
+- Try/catch defensivo (cleanup não pode bloquear delete)
+
+Cloud Function `onDocumentDeleted` continua sendo o caminho mais robusto pra longo prazo (sobrevive a callers novos), mas o cleanup inline cobre o uso atual sem ops.
+
+**Testes manuais sugeridos**:
+- Excluir projeto com 3 tasks → confirmar tasks com `projectId=null, projectDeleted=true` via fetch.
+- Excluir squad com tasks + projeto multi-squad → task perde squad, projeto perde só esse ID do array.
+- Excluir tipo "Pesquisa" com 5 tasks → tasks com `typeDeletedName='Pesquisa'`, ainda visíveis.
+
+---
+
 ## [4.57.29+20260525-integrations-followup-subtask-advance-calendar] — 2026-05-25
 
 Release **PATCH** — follow-up da auditoria de integrações (#5 + extensão de #2 pra content_calendar).

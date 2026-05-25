@@ -5,7 +5,7 @@
 
 import {
   collection, doc, getDoc, getDocs, addDoc, setDoc,
-  updateDoc, deleteDoc, query, where, orderBy,
+  updateDoc, deleteDoc, query, where, orderBy, limit, writeBatch,
   serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { db }       from '../firebase.js';
@@ -327,6 +327,33 @@ export async function deleteTaskType(typeId) {
 
   store.set('taskTypes', (store.get('taskTypes') || []).filter(t => t.id !== typeId));
   store.invalidateCache('taskTypes');
+
+  // v4.57.30 fix integração: cleanup tasks órfãs apontando pra typeId deletado.
+  // Antes: deleteTaskType não tinha guard de dependência nem cleanup — tasks
+  // ficavam com typeId fantasma; filtros por tipo, regras (blockDuplicate/
+  // maxPerDay), validações SLA do tipo e badge UI todos quebravam silenciosamente.
+  // Zera typeId + flag typeDeleted pro UI poder exibir "tipo excluído".
+  try {
+    const tasksSnap = await getDocs(query(
+      collection(db, 'tasks'),
+      where('typeId', '==', typeId),
+      limit(500),
+    ));
+    if (!tasksSnap.empty) {
+      const batch = writeBatch(db);
+      tasksSnap.forEach(d => {
+        batch.update(d.ref, {
+          typeId: null,
+          typeDeleted: true,
+          typeDeletedAt: serverTimestamp(),
+          typeDeletedName: type.name || null,  // preserva nome p/ UI mostrar "ex-tipo: X"
+        });
+      });
+      await batch.commit();
+    }
+  } catch (e) {
+    console.warn('[deleteTaskType] cleanup tasks.typeId falhou:', e?.message);
+  }
 }
 
 /* ─── Validar regras de negócio ao criar tarefa ──────────── */

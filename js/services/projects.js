@@ -5,7 +5,7 @@
 
 import {
   collection, doc, addDoc, updateDoc, deleteDoc,
-  getDoc, getDocs, query, orderBy, where,
+  getDoc, getDocs, query, orderBy, where, limit, writeBatch,
   serverTimestamp, onSnapshot,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { db }       from '../firebase.js';
@@ -289,8 +289,36 @@ export async function deleteProject(projectId, { force = false } = {}) {
   }
 
   await deleteDoc(doc(db, 'projects', projectId));
-  await auditLog('projects.delete', 'project', projectId, {});
+  await auditLog('projects.delete', 'project', projectId, { force });
   store.invalidateCache('projects');
+
+  // v4.57.30 fix integração: cleanup tasks órfãs (force=true).
+  // UI já avisou "vínculos ficarão órfãos" mas até então nada limpava o FK —
+  // tasks ficavam apontando pra project_id fantasma, filtros/agrupadores quebravam
+  // silenciosamente. Agora: zera projectId + flag projectDeleted=true pro UI poder
+  // exibir chip "Projeto excluído" no card da task. Limite 500 (Firestore batch cap).
+  if (force) {
+    try {
+      const tasksSnap = await getDocs(query(
+        collection(db, 'tasks'),
+        where('projectId', '==', projectId),
+        limit(500),
+      ));
+      if (!tasksSnap.empty) {
+        const batch = writeBatch(db);
+        tasksSnap.forEach(d => {
+          batch.update(d.ref, {
+            projectId: null,
+            projectDeleted: true,
+            projectDeletedAt: serverTimestamp(),
+          });
+        });
+        await batch.commit();
+      }
+    } catch (e) {
+      console.warn('[deleteProject] cleanup tasks.projectId falhou:', e?.message);
+    }
+  }
 }
 
 /* ─── Buscar projeto ─────────────────────────────────────── */

@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 57,
-  patch: 29,
-  build: '20260525-integrations-followup-subtask-advance-calendar',
+  patch: 30,
+  build: '20260525-delete-orphan-cleanup-project-workspace-tasktype',
 };
 
 /** "1.2.0" */
