@@ -289,6 +289,11 @@ export const TASK_TYPES = [
 ];
 
 // Áreas solicitantes
+// @deprecated v4.57.27 — usar `getActiveSectors()` de `services/sectors.js`.
+// Esta lista hardcoded permanece SÓ como fallback técnico pra tasks legadas com
+// `requestingArea` = string que pode não existir mais no módulo Setores
+// (back-compat de migração). Toda UI nova lê via getActiveSectors() pra evitar
+// drift entre código e collection Firestore `sectors`. §7 do CLAUDE.md.
 export const REQUESTING_AREAS = [
   'BTG', 'C&P', 'Célula ICs', 'Centurion', 'CEP',
   'Concierge Bradesco', 'Contabilidade', 'Diretoria',
@@ -521,29 +526,31 @@ export async function bulkCreateTasks(rows, onProgress = null) {
     if (onProgress) onProgress(i + 1, rows.length);
   }
 
-  // Notifications agregadas (1 por user, com lista de tarefas)
+  // v4.57.27 fix #14: Promise.all em vez de await sequencial.
+  // Antes: 100 users → 100 await sequenciais (200+ requests). 500 tasks ficavam
+  // lentas. Agora paraleliza por user. Cada notify continua independente —
+  // erro de 1 não atrapalha os outros (catch interno).
   try {
     const { notify } = await import('./notifications.js');
-    for (const [uid, titles] of assignmentsByUid) {
+    const buildBody = (titles) => {
       const bodyTitles = titles.slice(0, 3).map(t => `• ${t}`).join('\n');
-      const more = titles.length > 3 ? `\n…e mais ${titles.length - 3}` : '';
-      await notify('task.assigned', {
+      return bodyTitles + (titles.length > 3 ? `\n…e mais ${titles.length - 3}` : '');
+    };
+    const assignmentPromises = [...assignmentsByUid].map(([uid, titles]) =>
+      notify('task.assigned', {
         entityType: 'task', recipientIds: [uid],
         title: titles.length === 1 ? 'Nova tarefa atribuída' : `${titles.length} tarefas atribuídas`,
-        body: bodyTitles + more,
-        route: 'tasks',
-      });
-    }
-    for (const [uid, titles] of observationsByUid) {
-      const bodyTitles = titles.slice(0, 3).map(t => `• ${t}`).join('\n');
-      const more = titles.length > 3 ? `\n…e mais ${titles.length - 3}` : '';
-      await notify('task.observing', {
+        body: buildBody(titles), route: 'tasks',
+      }).catch(e => console.warn(`[bulkCreate] notify assigned ${uid} falhou:`, e?.message))
+    );
+    const observationPromises = [...observationsByUid].map(([uid, titles]) =>
+      notify('task.observing', {
         entityType: 'task', recipientIds: [uid],
         title: titles.length === 1 ? 'Você está acompanhando uma tarefa' : `Acompanhando ${titles.length} tarefas novas`,
-        body: bodyTitles + more,
-        route: 'tasks',
-      });
-    }
+        body: buildBody(titles), route: 'tasks',
+      }).catch(e => console.warn(`[bulkCreate] notify observing ${uid} falhou:`, e?.message))
+    );
+    await Promise.all([...assignmentPromises, ...observationPromises]);
   } catch (e) {
     console.warn('[bulkCreateTasks] notif resumo falhou:', e?.message);
   }
@@ -842,6 +849,13 @@ export async function updateTaskStatus(taskId, newStatus) {
       updates.validatedAt = serverTimestamp();
     }
   }
+  // v4.57.27 fix #15: status FINAIS (done/cancelled) limpam slaFrozenAt
+  // mesmo quando NÃO vieram de validation (ex: master pula direto pra done).
+  // Antes: slaFrozenAt podia ficar setado em task done — afeta relatórios SLA.
+  if (['done', 'cancelled'].includes(newStatus) && prev.slaFrozenAt) {
+    updates.slaFrozenAt = null;
+    updates.slaFrozenBy = null;
+  }
 
   await updateTask(taskId, updates);
 
@@ -937,16 +951,34 @@ export async function deleteTask(taskId) {
   // Também captura título pra audit log antes de deletar (humano-friendly).
   let sourceNewsId = null;
   let taskTitle = '';
+  let attachments = [];   // v4.57.27 fix #19: captura attachments pra cleanup Storage
   try {
     const snap = await getDoc(doc(db, 'tasks', taskId));
     if (snap.exists()) {
       const d = snap.data();
       sourceNewsId = d.sourceNewsId || null;
       taskTitle    = d.title || '';
+      attachments  = Array.isArray(d.attachments) ? d.attachments : [];
     }
   } catch (_) { /* segue sem bloquear delete */ }
 
   await deleteDoc(doc(db, 'tasks', taskId));
+
+  // v4.57.27 fix #19: cleanup files do Cloud Storage (best-effort, não bloqueia)
+  // Antes: comments somem com o doc mas anexos no Storage ficavam órfãos.
+  // Custo: lixo digital acumulado em produção.
+  if (attachments.length > 0) {
+    import('https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js')
+      .then(({ getStorage, ref, deleteObject }) => {
+        const storage = getStorage();
+        attachments.forEach(att => {
+          if (!att?.storagePath) return;
+          deleteObject(ref(storage, att.storagePath))
+            .catch(e => console.warn(`[deleteTask] cleanup attachment ${att.storagePath} falhou:`, e?.code));
+        });
+      })
+      .catch(e => console.warn('[deleteTask] storage import falhou:', e?.message));
+  }
   invalidateTasksCache();
   await auditLog('tasks.delete', 'task', taskId, { sourceNewsId, title: taskTitle });
 
@@ -1501,7 +1533,11 @@ export async function updateSubtaskAssignees(taskId, subtaskId, assignees, curre
       const taskSnap = await getDoc(doc(db, 'tasks', taskId));
       const taskData = taskSnap.exists() ? taskSnap.data() : {};
       const taskTitle = taskData.title || 'Tarefa';
-      const subTitle  = prev?.title || updated.find(s => s.id === subtaskId)?.title || 'Subtarefa';
+      // v4.57.27 fix #18: prioriza title FRESH (do snap recente) sobre `prev`
+      // cacheado. Antes: se subtask foi renomeada no mesmo update batch, notif
+      // saía com title antigo. Edge rara mas frágil — agora consistente.
+      const freshSub = (Array.isArray(taskData.subtasks) ? taskData.subtasks : []).find(s => s.id === subtaskId);
+      const subTitle  = freshSub?.title || prev?.title || updated.find(s => s.id === subtaskId)?.title || 'Subtarefa';
       const mod = await import('./notifications.js');
       const notify = mod.notify;
       if (added.length) {
