@@ -6,6 +6,18 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.57.10+20260525-portal-edit-opens-step3] — 2026-05-25
+
+Release **PATCH** — edit mode do wizard abre direto no Step 3 (Detalhes).
+
+Renê: *"qdo peço para alterar uma solicitação já enviada o sistema volta para o passo 1... deveria abrir a descrição da tarefa, nao? assim como era o outro"*.
+
+**Fix**: `_enterEditMode()` setava `_state.step = 1` (Setor+Tipo). Como setor + tipo + data já vieram preenchidos da request original (state pré-populado), forçar o user a re-clicar "Próximo" 2x pra chegar na descrição era retrabalho. Agora abre direto no Step 3 (variação/título/descrição/link) — o que tipicamente o solicitante quer mudar. Pode usar "← Voltar" pra ajustar data (Step 2) ou setor (Step 1) se necessário.
+
+**Arquivos**: js/portal/portalWizard.js, js/portal/portal.js, js/version.js, index.html, solicitar.html, CHANGELOG.md
+
+---
+
 ## [4.57.9+20260525-portal-calendar-fullscreen-reshow-newsletter] — 2026-05-25
 
 Release **PATCH** — 2 melhorias do Portal de Solicitações + confirmação de feature já existente.

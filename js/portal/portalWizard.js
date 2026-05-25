@@ -1982,7 +1982,13 @@ function _enterEditMode(req) {
     urgencyAutoLocked: req.urgencyAutoLocked || false,
     urgencyLockReason: req.urgencyLockReason || '',
   };
-  _state.step = 1;
+  // v4.57.10: Renê — "qdo peço pra alterar uma solicitação já enviada o sistema
+  // volta para o passo 1... deveria abrir a descrição da tarefa".
+  // Setor + tipo + data já estão decididos (vieram da request original).
+  // Abre direto no Step 3 (Detalhes: variação/título/descrição/link), que é
+  // tipicamente o que o solicitante quer mexer. Pode usar "← Voltar" pra
+  // ajustar data (Step 2) ou setor (Step 1) se necessário.
+  _state.step = 3;
   _persistDraft();
   _renderShell(document.querySelector('.pw-root')?.parentElement);
 }
