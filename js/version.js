@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 57,
-  patch: 18,
-  build: '20260525-wizard-calendar-minimal-esc-overlay-guard',
+  patch: 19,
+  build: '20260525-wizard-recent-reqs-onsnapshot-realtime',
 };
 
 /** "1.2.0" */

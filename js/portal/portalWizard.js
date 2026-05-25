@@ -26,6 +26,7 @@
 
 import {
   collection, addDoc, getDoc, getDocs, doc as firestoreDoc, updateDoc, query, where, limit, orderBy, serverTimestamp,
+  onSnapshot,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -134,6 +135,11 @@ export function destroyPortalWizard() {
   // v4.57.9: garante que overlay fullscreen do calendário (se aberto) sai
   if (typeof _calFsCleanup === 'function') {
     try { _calFsCleanup(); } catch {}
+  }
+  // v4.57.19: cleanup do listener real-time de requests (onSnapshot)
+  if (_state?._recentReqsUnsub) {
+    try { _state._recentReqsUnsub(); } catch {}
+    _state._recentReqsUnsub = null;
   }
   _state = null;
 }
@@ -907,6 +913,9 @@ function _openRequestPreview(req) {
   document.getElementById('pw-preview-modal')?.remove();
   const modal = document.createElement('div');
   modal.id = 'pw-preview-modal';
+  // v4.57.19: marca req.id pra _loadRecentRequests onSnapshot poder
+  // detectar deleção externa e fechar o modal automaticamente.
+  modal.dataset.reqId = req.id || '';
   modal.style.cssText = `
     position:fixed;inset:0;z-index:10000;background:rgba(10,22,40,0.55);
     display:flex;align-items:center;justify-content:center;padding:24px;
@@ -1981,30 +1990,62 @@ function _fmtDate(iso) {
 
 /* v4.55.3+ Carrega últimas solicitações do user atual (até 5) pra permitir
  * edição inline a partir do banner do Step 1. */
+/* v4.57.19: onSnapshot real-time substitui getDocs once.
+ * Renê: "exclui a tarefa do dia 26 do sistema, mas o calendário nao atualizou".
+ * Causa raiz: _loadRecentRequests rodava 1x no boot. Quando coord deletava/
+ * mudava status no app principal, portal continuava com state stale.
+ * Agora: listener reativo + re-render do calendar a cada mudança. */
 async function _loadRecentRequests() {
   if (!_state?.user?.email || !_state?.db) return;
+  // Cleanup listener anterior (re-entry safe)
+  if (_state._recentReqsUnsub) {
+    try { _state._recentReqsUnsub(); } catch {}
+    _state._recentReqsUnsub = null;
+  }
   try {
-    // v4.55.4+ Filtra por EMAIL (não uid) — requests antigas (portalLegacy.js)
-    // não gravavam requesterUid, só requesterEmail. Email é estável e robusto.
     const q = query(
       collection(_state.db, 'requests'),
       where('requesterEmail', '==', _state.user.email),
       limit(20)
     );
-    const snap = await getDocs(q);
-    const list = [];
-    snap.forEach(d => list.push({ id: d.id, ...d.data() }));
-    // Filtra editáveis (status pending) e ordena por createdAt desc client-side
-    const editable = list.filter(r => {
-      const st = r.status || 'pending';
-      return ['pending', 'em_andamento'].includes(st);
-    });
-    editable.sort((a, b) => {
-      const ta = a.createdAt?.toMillis?.() || a.createdAt?.seconds * 1000 || 0;
-      const tb = b.createdAt?.toMillis?.() || b.createdAt?.seconds * 1000 || 0;
-      return tb - ta;
-    });
-    _state.recentRequests = editable.slice(0, 5);
+    _state._recentReqsUnsub = onSnapshot(
+      q,
+      (snap) => {
+        const list = [];
+        snap.forEach(d => list.push({ id: d.id, ...d.data() }));
+        // Filtra editáveis (status pending/em_andamento) e ordena desc
+        const editable = list.filter(r => {
+          const st = r.status || 'pending';
+          return ['pending', 'em_andamento'].includes(st);
+        });
+        editable.sort((a, b) => {
+          const ta = a.createdAt?.toMillis?.() || a.createdAt?.seconds * 1000 || 0;
+          const tb = b.createdAt?.toMillis?.() || b.createdAt?.seconds * 1000 || 0;
+          return tb - ta;
+        });
+        _state.recentRequests = editable.slice(0, 5);
+        // Re-render do calendar se estiver no Step 2 (visível pro user).
+        // Fechar preview modal se a request aberta foi deletada externamente.
+        if (_state.step === 2 && document.getElementById('pw-calendar-widget')) {
+          _rerenderCalendar();
+        }
+        const previewModal = document.getElementById('pw-preview-modal');
+        const openReqId = previewModal?.dataset?.reqId;
+        if (openReqId && !editable.find(r => r.id === openReqId) && !list.find(r => r.id === openReqId)) {
+          // Request aberta no preview foi deletada externamente — fecha modal
+          previewModal.remove();
+        }
+        // Re-render do banner do Step 1 (lista de "Suas últimas solicitações")
+        if (_state.step === 1) {
+          const root = document.querySelector('.pw-root')?.parentElement;
+          if (root) _renderStep(1);
+        }
+      },
+      (err) => {
+        console.warn('[wizard] recentReqs onSnapshot error:', err?.message || err);
+        _state.recentRequests = [];
+      }
+    );
   } catch (e) {
     console.warn('[wizard] _loadRecentRequests error:', e?.message || e);
     _state.recentRequests = [];
