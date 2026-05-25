@@ -2023,27 +2023,67 @@ async function _loadRecentRequests() {
           const tb = b.createdAt?.toMillis?.() || b.createdAt?.seconds * 1000 || 0;
           return tb - ta;
         });
+        // Mantém referência completa pra detectar deleção em qualquer status (não só editáveis)
+        _state._allRecentRequests = list;
         _state.recentRequests = editable.slice(0, 5);
+
+        // (B) Se está em edit mode e a request EM EDIÇÃO sumiu/mudou de status,
+        // bloqueia o usuário antes que ele tente "Salvar alterações" num doc inválido.
+        if (_state.editMode && _state.editId) {
+          const stillExists = list.find(r => r.id === _state.editId);
+          if (!stillExists) {
+            console.warn('[wizard] request em edição foi removida externamente — saindo do edit mode');
+            try {
+              alert('⚠ Esta solicitação foi removida pelo coordenador. Voltando ao início.');
+            } catch {}
+            _exitEditMode();
+            return;
+          }
+          // Status mudou pra algo NÃO editável (ex: converted/rejected)
+          const st = stillExists.status || 'pending';
+          if (!['pending', 'em_andamento'].includes(st)) {
+            try {
+              alert(`⚠ Esta solicitação mudou de status pra "${_statusLabel(st)}" — não pode mais ser editada.`);
+            } catch {}
+            _exitEditMode();
+            return;
+          }
+        }
+
         // Re-render do calendar se estiver no Step 2 (visível pro user).
-        // Fechar preview modal se a request aberta foi deletada externamente.
         if (_state.step === 2 && document.getElementById('pw-calendar-widget')) {
           _rerenderCalendar();
         }
+        // Preview modal: fecha se a request aberta foi deletada externamente
         const previewModal = document.getElementById('pw-preview-modal');
         const openReqId = previewModal?.dataset?.reqId;
-        if (openReqId && !editable.find(r => r.id === openReqId) && !list.find(r => r.id === openReqId)) {
-          // Request aberta no preview foi deletada externamente — fecha modal
+        if (openReqId && !list.find(r => r.id === openReqId)) {
           previewModal.remove();
         }
-        // Re-render do banner do Step 1 (lista de "Suas últimas solicitações")
+        // (C) Re-render do banner SÓ se realmente está no Step 1 — antes
+        // chamava _renderStep(1) que sobrescrevia o step atual mesmo se user
+        // já tinha navegado pra outro step.
         if (_state.step === 1) {
-          const root = document.querySelector('.pw-root')?.parentElement;
+          const root = document.querySelector('.pw-root');
           if (root) _renderStep(1);
         }
       },
       (err) => {
+        // (E) Snapshot falhou (permissions/rede) — toast visível, não só warn silencioso
         console.warn('[wizard] recentReqs onSnapshot error:', err?.message || err);
         _state.recentRequests = [];
+        // Toast inline (não quebra UI, só avisa)
+        if (!document.getElementById('pw-snapshot-error-toast')) {
+          const t = document.createElement('div');
+          t.id = 'pw-snapshot-error-toast';
+          t.style.cssText = `position:fixed;bottom:20px;right:20px;z-index:10004;
+            padding:10px 16px;background:#DC2626;color:#fff;font-size:0.8125rem;
+            border-radius:8px;box-shadow:0 4px 16px rgba(0,0,0,0.3);
+            font-family:var(--font-ui);max-width:380px;line-height:1.4;`;
+          t.textContent = '⚠ Sincronização de solicitações falhou. Recarregue a página pra ver dados atualizados.';
+          document.body.appendChild(t);
+          setTimeout(() => t.remove(), 8000);
+        }
       }
     );
   } catch (e) {
@@ -2197,6 +2237,25 @@ function _statusLabel(st) {
 }
 
 function _enterEditMode(req) {
+  // v4.57.20 (A) Race condition: snapshot real-time pode ter removido a req
+  // ENTRE o click do user e o entry no edit mode. Re-valida usando o snapshot
+  // mais fresco (_allRecentRequests inclui TODOS status, não só editáveis).
+  const allRecent = _state?._allRecentRequests || [];
+  const fresh = allRecent.find(r => r.id === req.id);
+  if (allRecent.length > 0 && !fresh) {
+    // Snapshot já chegou (allRecent populado) e request não está mais lá
+    try { alert('⚠ Esta solicitação foi removida pelo coordenador. Não é mais editável.'); } catch {}
+    return;
+  }
+  if (fresh) {
+    const st = fresh.status || 'pending';
+    if (!['pending', 'em_andamento'].includes(st)) {
+      try { alert(`⚠ Esta solicitação mudou de status pra "${_statusLabel(st)}" — não pode mais ser editada.`); } catch {}
+      return;
+    }
+    // Usa dados mais frescos da request (não os cacheados em `req`)
+    req = fresh;
+  }
   _state.editMode = true;
   _state.editId = req.id;
   // Pré-popula state.data com tudo da request

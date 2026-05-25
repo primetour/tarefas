@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 57,
-  patch: 19,
-  build: '20260525-wizard-recent-reqs-onsnapshot-realtime',
+  patch: 20,
+  build: '20260525-wizard-edit-race-snapshot-fallback',
 };
 
 /** "1.2.0" */
