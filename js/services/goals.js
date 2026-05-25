@@ -5,7 +5,7 @@
 
 import {
   collection, doc, addDoc, updateDoc, deleteDoc,
-  getDoc, getDocs, query, where, orderBy, serverTimestamp,
+  getDoc, getDocs, query, where, orderBy, limit, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { db }       from '../firebase.js';
 import { store }    from '../store.js';
@@ -243,10 +243,46 @@ export async function saveGoal(id, data) {
   }
 }
 
-export async function deleteGoal(id) {
+/* v4.57.25 fix #7: deleteGoal cleanup. Antes apagava o doc sem checar
+ * dependências — tasks com metaLinks[].goalId apontando pra ele ficavam
+ * orfãs. UI quebrava ao renderizar badge de meta (fetch retornava undefined).
+ * Agora: conta dependências e bloqueia se houver (similar deleteProject). */
+export async function checkGoalDependencies(goalId) {
+  // Query tasks que tem essa meta nos metaLinks
+  // Firestore não suporta query em campo aninhado de array — fazemos scan
+  // limitado (até 500 tasks ativas). Pra workspaces grandes, virar Cloud Function.
+  const snap = await getDocs(query(
+    collection(db, 'tasks'),
+    where('status', '!=', 'cancelled'),
+    limit(500),
+  ));
+  let count = 0;
+  const samples = [];
+  snap.forEach(d => {
+    const t = d.data();
+    if (Array.isArray(t.metaLinks) && t.metaLinks.some(l => l.goalId === goalId)) {
+      count++;
+      if (samples.length < 3) samples.push({ id: d.id, title: t.title || '(sem título)' });
+    }
+  });
+  return { count, samples };
+}
+
+export async function deleteGoal(id, { force = false } = {}) {
   if (!store.can('goals_manage')) throw new Error('Permissão negada.');
+  if (!force) {
+    const deps = await checkGoalDependencies(id);
+    if (deps.count > 0) {
+      const sampleStr = deps.samples.map(s => `"${s.title}"`).join(', ');
+      throw new Error(
+        `Esta meta está vinculada a ${deps.count} tarefa${deps.count > 1 ? 's' : ''} ` +
+        `(ex: ${sampleStr}). Desvincule antes de excluir, ou chame deleteGoal(id, { force: true }) ` +
+        `pra confirmar exclusão mesmo assim (tasks ficarão com link órfão).`
+      );
+    }
+  }
   await deleteDoc(doc(db, 'goals', id));
-  await auditLog('goals.delete', 'goal', id, {});
+  await auditLog('goals.delete', 'goal', id, { force });
 }
 
 export async function publishGoal(id) {

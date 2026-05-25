@@ -256,6 +256,15 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
   let _isDirty = false;
   let _bypassDirtyCheck = false;
 
+  // v4.57.25 fix #5: AbortController pra TODOS os document.addEventListener
+  // criados no escopo do modal. Antes: cada abertura adicionava 6-8 handlers
+  // globais ao document que NUNCA eram removidos. Reabrir o modal 10x = 60+
+  // listeners ativos no document fechando dropdowns "fantasmas". Sintoma:
+  // performance degrada ao longo da sessão, dropdowns fecham sem motivo.
+  // Agora: ao fechar o modal, _modalAbortCtrl.abort() limpa todos.
+  const _modalAbortCtrl = new AbortController();
+  const _ms = _modalAbortCtrl.signal;  // shortcut
+
   // Dedupe: 1 modal por taskId (ou 1 modal de "criar nova")
   const dedupeKey = isEdit && task.id ? `task-modal:${task.id}` : `task-modal:new`;
 
@@ -362,6 +371,7 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
           _bypassDirtyCheck = true;
           _origManagerClose(id);
           modal.close = _origManagerClose;
+          try { _modalAbortCtrl.abort(); } catch {}   // v4.57.25 cleanup
         }
         // else: continua aberto, user volta ao edit
       });
@@ -370,6 +380,9 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
     _origManagerClose(id);
     if (id === modalId) {
       modal.close = _origManagerClose;
+      // v4.57.25 fix #5: aborta todos os document listeners registrados
+      // com { signal: _ms } — assignee/observer dropdowns + mention autocomplete.
+      try { _modalAbortCtrl.abort(); } catch {}
     }
   };
 
@@ -2648,7 +2661,7 @@ function bindEvents(task, users, currentTags, currentAssignees, currentObservers
       }
     }
   });
-  document.addEventListener('click', () => { const dd=document.getElementById('assignee-dropdown'); if(dd)dd.style.display='none'; });
+  document.addEventListener('click', () => { const dd=document.getElementById('assignee-dropdown'); if(dd)dd.style.display='none'; }, { signal: _ms });
 
   // Observadores — mesma lógica dos assignees, sem checagem de ausência
   document.getElementById('observer-add-btn')?.addEventListener('click', (e) => {
@@ -2699,7 +2712,7 @@ function bindEvents(task, users, currentTags, currentAssignees, currentObservers
       chip.remove();
     }
   });
-  document.addEventListener('click', () => { const dd=document.getElementById('observer-dropdown'); if(dd)dd.style.display='none'; });
+  document.addEventListener('click', () => { const dd=document.getElementById('observer-dropdown'); if(dd)dd.style.display='none'; }, { signal: _ms });
 
   // Quando datas mudam, atualizar indicadores de ausência no dropdown
   const updateAbsenceIndicators = () => {
@@ -3100,7 +3113,7 @@ function bindEvents(task, users, currentTags, currentAssignees, currentObservers
   });
 
   // ── @Mention Autocomplete ──────────────────────────────────
-  setupMentionAutocomplete();
+  setupMentionAutocomplete(_ms);
 }
 
 /* ──────────────────────────────────────────────────────────
@@ -4029,7 +4042,8 @@ function renderCommentItem(c){
 }
 
 /* ─── @Mention Autocomplete ────────────────────────────────── */
-function setupMentionAutocomplete() {
+// v4.57.25: aceita AbortSignal opcional pra cleanup do document listener
+function setupMentionAutocomplete(signal) {
   const input = document.getElementById('comment-input');
   if (!input) return;
 
@@ -4158,12 +4172,12 @@ function setupMentionAutocomplete() {
     }
   });
 
-  // Fechar dropdown ao clicar fora
+  // Fechar dropdown ao clicar fora — v4.57.25: AbortSignal pro cleanup
   document.addEventListener('click', (e) => {
     if (dropdown && !dropdown.contains(e.target) && e.target !== input) {
       removeDropdown();
     }
-  }, { once: false });
+  }, signal ? { signal } : { once: false });
 }
 
 /* ─── Double-check: CSAT + evidência de meta ───────────────── */

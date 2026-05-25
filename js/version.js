@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 57,
-  patch: 24,
-  build: '20260525-tasks-cancel-button-modal-confirm',
+  patch: 25,
+  build: '20260525-tasks-audit-4-more-fixes',
 };
 
 /** "1.2.0" */

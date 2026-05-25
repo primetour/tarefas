@@ -1303,8 +1303,11 @@ export function subscribeToTasks(callback, filters = {}) {
  * anterior antes (ver setupListener acima).
  */
 function createTasksListener(q, callback, filters = {}) {
+  // v4.57.25 fix #17: clearTimeout no unsub — antes, ao re-subscribe
+  // (visibilitychange / online), o debounceTimer de 300ms do snapshot
+  // antigo podia disparar callback órfão sobrescrevendo render novo.
   let debounceTimer = null;
-  return onSnapshot(q, (snap) => {
+  const innerUnsub = onSnapshot(q, (snap) => {
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(() => {
       let tasks = snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -1370,6 +1373,12 @@ function createTasksListener(q, callback, filters = {}) {
       fetchTasks(filters).then(callback).catch(() => callback([]));
     }
   });
+  // v4.57.25 fix #17: retorna wrapper que clearTimeout do debounce ao unsub.
+  // Evita callback órfão disparar 300ms depois do unsub com snap antigo.
+  return () => {
+    clearTimeout(debounceTimer);
+    try { innerUnsub(); } catch {}
+  };
 }
 
 /* ─── Mover task no kanban (atualiza order + status) ────── */
@@ -1594,26 +1603,42 @@ export async function addComment(taskId, text) {
 }
 
 /* ─── Parser de @mentions em texto ───────────────────────── */
+// v4.57.25 fix #13: se @first matches > 1 user, NÃO notifica nenhum dos
+// duplicados (exige disambiguação por sobrenome). Match por nome COMPLETO
+// continua sendo prioridade — só notifica direto se exato.
+// Antes: 2 "João" no sistema → @joão notificava AMBOS. Ruído sério.
 function parseMentions(text, users, currentUid) {
   if (!text || !Array.isArray(users) || !users.length) return [];
   const lower = String(text).toLowerCase();
-  // Só processa se houver pelo menos um '@'
   if (!lower.includes('@')) return [];
+
   const mentioned = new Set();
+  // Pass 1: match por nome COMPLETO (mais específico, sem ambiguidade possível)
   for (const u of users) {
     if (!u || !u.id || u.id === currentUid) continue;
-    const name = String(u.name || '').trim();
+    const name = String(u.name || '').trim().toLowerCase();
     if (!name) continue;
-    const first = name.split(/\s+/)[0];
-    const candidates = [
-      '@' + name.toLowerCase(),
-      '@' + first.toLowerCase(),
-    ];
-    for (const c of candidates) {
-      if (c.length > 1 && lower.includes(c)) {
-        mentioned.add(u.id);
-        break;
-      }
+    if (lower.includes('@' + name)) mentioned.add(u.id);
+  }
+  // Pass 2: match por primeiro nome — só notifica se houver UM ÚNICO match.
+  // Constrói mapa firstName → [users]
+  const byFirst = new Map();
+  for (const u of users) {
+    if (!u || !u.id || u.id === currentUid) continue;
+    if (mentioned.has(u.id)) continue;  // já matched no full-name
+    const first = String(u.name || '').trim().split(/\s+/)[0]?.toLowerCase();
+    if (!first || first.length < 2) continue;
+    if (!byFirst.has(first)) byFirst.set(first, []);
+    byFirst.get(first).push(u);
+  }
+  for (const [first, list] of byFirst.entries()) {
+    if (!lower.includes('@' + first)) continue;
+    if (list.length === 1) {
+      mentioned.add(list[0].id);
+    } else {
+      // Ambíguo: 2+ users com mesmo primeiro nome. Não notifica nenhum.
+      // (User deveria ter mencionado por nome completo). Log pra debug.
+      console.log(`[parseMentions] ambíguo: @${first} bate ${list.length} users. Skip.`);
     }
   }
   return [...mentioned];
