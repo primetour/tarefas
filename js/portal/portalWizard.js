@@ -295,7 +295,9 @@ function _renderStep1() {
       </p>
 
       <div class="form-group">
-        <label class="form-label">Setor responsável <span class="required">*</span></label>
+        <label class="form-label">Setor responsável <span class="required">*</span>
+          <span title="Setor que vai RECEBER esta demanda. Pode ser diferente do seu setor caso esteja solicitando em nome de outro." style="cursor:help;color:var(--text-muted);font-size:0.75rem;margin-left:4px;">ℹ</span>
+        </label>
         <select class="form-select" id="pw-sector">
           <option value="">— Selecione o setor —</option>
           ${REQUESTING_AREAS.map(a => `<option value="${esc(a)}" ${d.sector===a?'selected':''}>${esc(a)}</option>`).join('')}
@@ -375,7 +377,9 @@ function _captureType(typeId) {
   _state.data.typeId    = typeId;
   _state.data.typeName  = t?.name || '';
   _state.data.typeIcon  = t?.icon || '';
-  _state.data.typeColor = t?.color || '#D4A843';
+  // v4.56.1+ Sanitiza cor hex pra evitar style injection (paridade legacy)
+  const raw = t?.color || '';
+  _state.data.typeColor = /^#[0-9A-Fa-f]{3,8}$/.test(raw) ? raw : '#D4A843';
   _state.data.autoAccept = !!t?.autoAccept;
 }
 
@@ -470,8 +474,15 @@ function _wireStep2() {
   const nucleoSel = document.getElementById('pw-nucleo');
 
   dateInput?.addEventListener('change', () => {
-    _state.data.desiredDate = dateInput.value;
-    _checkAutoUrgency();  // v4.54.4+
+    // v4.56.1+ Bloqueio data passada com alert nativo (paridade legacy)
+    const val = dateInput.value;
+    if (val && val < _getMinDate()) {
+      alert('⛔ Data passada — escolha uma data a partir de hoje.');
+      dateInput.value = _state.data.desiredDate || '';
+      return;
+    }
+    _state.data.desiredDate = val;
+    _checkAutoUrgency();
     _persistDraft();
     _refreshCalendarSelection();
   });
@@ -914,8 +925,13 @@ function _renderStep3() {
       </div>
 
       <div class="form-group" style="margin-top:16px;">
-        <label class="form-label">Link de conteúdo <span style="color:var(--text-muted);font-weight:400;">(opcional)</span></label>
+        <label class="form-label">Link de conteúdo <span style="color:var(--text-muted);font-weight:400;">(opcional)</span>
+          <span title="URL de referência: Notion, Google Drive, Figma, brief etc. Ajuda o time a entender o contexto sem reuniões adicionais." style="cursor:help;color:var(--text-muted);font-size:0.75rem;margin-left:4px;">ℹ</span>
+        </label>
         <input type="url" class="form-input" id="pw-link" placeholder="https://… (Notion, Drive, Figma)" value="${esc(d.contentLink)}" />
+        <div class="form-error" id="pw-err-link" style="display:none;color:var(--color-danger);font-size:0.75rem;margin-top:4px;">
+          Informe uma URL válida (começando com http:// ou https://).
+        </div>
       </div>
     </div>
   `;
@@ -983,10 +999,13 @@ function _validateStep3() {
   else          { const e=document.getElementById('pw-err-title'); if(e) e.style.display='none'; }
   if (!d.description) { const e=document.getElementById('pw-err-desc'); if(e) e.style.display='block'; ok=false; }
   else                { const e=document.getElementById('pw-err-desc'); if(e) e.style.display='none'; }
-  // Valida URL se informada
+  // v4.56.1+ Valida URL se informada (inline, sem alert)
+  const errLink = document.getElementById('pw-err-link');
   if (d.contentLink && !/^https?:\/\//i.test(d.contentLink)) {
-    alert('O link de conteúdo deve começar com http:// ou https://');
+    if (errLink) errLink.style.display = 'block';
     ok = false;
+  } else if (errLink) {
+    errLink.style.display = 'none';
   }
   return ok;
 }
