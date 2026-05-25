@@ -868,6 +868,70 @@ Cada hit precisa ser revisado. Se for muito grande, considerar refatorar pra imp
 
 **Auto-correção futura**: criar helper `js/services/statusMaps.js` que exporta `STATUS_COLORS_MAP`, `STATUS_ICONS_MAP`, `STATUS_LABELS_MAP` gerados a partir de `STATUSES` — assim adicionar status novo só requer mexer no array canônico.
 
+### t) Dynamic imports com querystring criam INSTÂNCIAS SEPARADAS (v4.54.2→v4.55.1)
+
+**Sintoma Renê**: "popup 'Sim newsletter' não preenche o wizard" (mesmo após fix da função `prefillWizardData`).
+
+**Bug**: `portal.js` fazia 2 `import('./portalWizard.js')` com querystrings diferentes (`?v=4.54.1` no `renderForm` + `?v=4.54.2` no `prefillNewsletter`). ES modules cacheiam por **URL exata** (com qs). Querystrings diferentes = **2 instâncias separadas** do módulo, cada uma com seu próprio `_state`. A função `prefillWizardData` rodava na instância nova (`_state=null`), early-returnava silenciosamente, enquanto o wizard rodando continuava com `_state` válido na primeira instância.
+
+**Tentativa errada (v4.54.3)**: remover querystrings dos dynamic imports → resolve instância dupla, MAS perde cache-bust pelo GH Pages (max-age=600 = 10min de stale).
+
+**Solução correta (v4.55.1)**: `const WIZARD_VERSION = '4.55.x'` no topo do arquivo + usar a **mesma string** em todos os imports:
+
+```js
+const WIZARD_VERSION = '4.55.x';
+// nos 2+ lugares:
+import(`./portalWizard.js?v=${WIZARD_VERSION}`)
+```
+
+Mesma URL = mesma instância (sem bug v4.54.2). Mudou a const = cache-bust junto. Pattern aplicável pra qualquer dynamic import com versão.
+
+**Princípio**: dynamic imports com versão devem ser CONSISTENTES dentro do mesmo arquivo. Centralize via constante OU omita querystring (e aceite cache stale por TTL).
+
+### u) Auditoria por Agent em background enquanto fixa bugs visuais (v4.55.7+v4.55.8)
+
+**Cenário**: Renê reportou 3 bugs visuais + demandou 100% paridade vs portalLegacy + auditoria de testes. Sozinho seria 1 atrás do outro (bug → 100% → testes).
+
+**Padrão usado**: spawnei Agent (`general-purpose`) com prompt detalhado pra **auditar exaustivamente portalLegacy.js (3588 linhas) vs portalWizard.js (1446 linhas)** em background, enquanto eu corrigia os 3 bugs visuais reportados sequencialmente. Agent rodou ~5 min e retornou:
+- Inventário completo de features
+- Matriz gap com severidade (45 itens mapeados)
+- Estimativa LOC por item
+- Plano de testes E2E (160 cenários)
+
+Resultado: paralelizou planning (Agent) com execução de hotfixes (eu). Quando Agent terminou, eu já tinha v4.55.7 entregue + roadmap pronto pra atacar críticos (v4.55.8: autoCreateTask + notifyAdmins + syncTask).
+
+**Quando aplicar**:
+- Refactor grande com paridade obrigatória (audit de gap fica em background)
+- Reescrita de módulo (mapeia features do original em paralelo)
+- Code review de PR longa (Agent revisa enquanto você responde comments óbvios)
+
+**Cuidados**:
+- Briefar agent com contexto completo (não tem memória da conversa)
+- Pedir output em formato estruturado (matriz, lista numerada) — mais fácil de consumir
+- Limitar tamanho do report (até 3000 palavras) — sub-agent transcrito vai pro context
+
+### v) Wizard pattern: auto-save + AbortController + atalhos + skip auto + WIZARD_VERSION (v4.54.0+)
+
+Pattern estabelecido em `js/portal/portalWizard.js` pra refactor de form único pra wizard multi-step. Reusável em qualquer página com fluxo linear.
+
+**Componentes**:
+1. **State module-scoped** (`let _state = null`) com `{ step, data, db, taskTypes, user, draftKey, submitting, ... }`. Pode crescer com `batchQueue`, `editMode`, `recentRequests`, `calDate`, `calGran`.
+2. **`_renderShell(container)`**: monta layout estável (header progress + content placeholder + footer fixo).
+3. **`_renderStep(n)`**: substitui `innerHTML` do content + re-wire events do step. Chamado em mudança de step OU em re-render forçado por mudança visual (ex: lock urgência).
+4. **`_renderFooter()`**: re-renderiza botões conforme step (Voltar / Próximo / Enviar / +Lote / Salvar e sair). Labels dinâmicos refletindo estado.
+5. **`_renderProgress()`**: dots numerados (✓ feito · ● ativo · ○ pendente) + pills contextuais (ex: "Lote pendente: N") em todos os steps.
+6. **Auto-save em localStorage** por user (`portal-wizard-draft.${uid}`, expira em 7d). Chama `_persistDraft()` em cada mudança. `_loadDraft()` restaura no boot.
+7. **Validação por step** (`_validateStepN`) com optional chaining em `getElementById` (defensivo — `_validateStep4` pode chamar `_validateStep1` quando DOM do Step 1 não existe mais). Bloqueia `_tryAdvance` se inválido.
+8. **Atalhos Enter/Esc** via `_bindKeyboard` (Enter avança, Esc volta). Listener no `document` removido em `destroyXxx`.
+9. **Skip auto**: se setor tem 1 tipo OU tipo tem 1 variação, pre-seleciona automaticamente e pode pular pro próximo step.
+10. **`WIZARD_VERSION` const** no portal.js pra cache-bust + mesma instância (ver §12.t).
+
+**Errors comuns**:
+- Esquecer de criar `_validateStepN` referenciado em array de validators → `ReferenceError` silencioso (v4.54.1).
+- Usar querystring inconsistente nos dynamic imports → instâncias separadas (§12.t).
+- Não centralizar serialização do doc Firestore → batch + single divergem; usar helper `_buildRequestDoc(data, user)` reusado nos 2 caminhos.
+- Edit history sem `requesterEditFlag` no doc Firestore → sistema principal não mostra banner pro assignee. SEMPRE incluir `{requesterEditFlag:true, requesterEditedAt:serverTimestamp()}` em updateDoc de edit mode (e fazer sync da task linked com `withRetry` se request tem `taskId`).
+
 ### j) Em qualquer lista exposta no front-end, sempre prever CRUD
 
 Estabelecido em v4.50.1. Categorias, coleções, tipos, status (que sejam editáveis) viram collection Firestore com defaults + CRUD via UI:

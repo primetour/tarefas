@@ -1,6 +1,8 @@
 # Sistema de Horas de Desenvolvimento
 
-> **Última atualização:** v4.51.3 (23/05/2026) · 110 dias de calendário · ~832h 39min approved · ~R$ 124.917 · 7h 34min/dia médio · 220 releases + 17 phases (237 entradas aprovadas)
+> **Última atualização:** v4.57.2 (24/05/2026) · 111 dias de calendário · ~858h approved · ~R$ 128.728 · 7h 44min/dia médio · 240 releases + 17 phases (257 entradas aprovadas)
+>
+> _Sprint 24/05/2026 — Portal Wizard 100% paridade vs portalLegacy_: **v4.54.0 → v4.57.2** — **+25,41h / +R$ 3.811,50** (20 releases consecutivas). Renê: "nao quero o sistema 95%, quero ele 100%... auditoria para testes de todos os comportamentos possíveis nesse portal e a garantia, via teste, de que tudo funciona... faça tudo e entregue pronto sem perguntar". Cobertura subiu 65% → ~92%. Refator de form único pra wizard 4 passos. Auditoria via Agent em background mapeou 45 gaps; 3 críticos atacados em v4.55.8 (autoCreateTask, notifyAdmins, syncLinkedTask com retry); calendário rico com 3 granularidades; preview modal; pre-fill rico ao clicar slot; banners educativos; urgência monotônica; SLA auto-fill; batch consolidado + batchId metadata. Bateria E2E 40+ cenários executada via Chrome MCP pelo Claude (pegou 1 bug SLA hint). Lições novas CLAUDE.md §12.t/u/v.
 >
 > _Double-check E2E_: testes reais no Chrome MCP revelaram 2 bugs adicionais pós-v4.51.1:
 > - **v4.51.2** (+0,23h): filter de admins ignorava roleId='master'
