@@ -183,12 +183,27 @@ function _renderProgress() {
     <div style="display:flex;align-items:center;gap:6px;padding:4px 10px;
       background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.4);
       border-radius:14px;font-size:0.6875rem;color:#16A34A;font-weight:600;
-      margin-bottom:10px;width:fit-content;">
+      width:fit-content;">
       📦 Lote pendente: ${batchCount}
     </div>` : '';
 
+  // v4.57.3+ Indicador de auto-save (substitui botão "Salvar e sair") —
+  // mostra reassurance que o sistema salva sozinho. Discreto, lado direito.
+  const autoSavePill = `
+    <div style="display:flex;align-items:center;gap:5px;padding:4px 10px;
+      background:rgba(34,197,94,0.06);border:1px solid rgba(34,197,94,0.25);
+      border-radius:14px;font-size:0.6875rem;color:#16A34A;font-weight:500;
+      width:fit-content;" title="O sistema salva automaticamente a cada campo preenchido. Você pode fechar o navegador e voltar depois sem perder nada.">
+      💾 Salvo automaticamente
+    </div>
+  `;
+
   el.innerHTML = `
-    ${batchPill}
+    <div style="display:flex;align-items:center;justify-content:space-between;
+      gap:10px;margin-bottom:10px;flex-wrap:wrap;">
+      <div>${batchPill}</div>
+      <div>${autoSavePill}</div>
+    </div>
     <div style="display:flex;align-items:flex-start;justify-content:space-between;
       margin-bottom:28px;padding:0 8px;">
       ${dots}
@@ -202,26 +217,24 @@ function _renderFooter() {
   const isLast = _state.step === 4;
   const isFirst = _state.step === 1;
   const submitting = _state.submitting;
+  // v4.57.3+ Removido "Salvar e sair" — sistema já tem auto-save a cada campo
+  // (debounce no _persistDraft). Banner "Rascunho em andamento" no Step 1 cuida
+  // de retomar quando o user volta. Footer agora só tem Voltar + Próximo/Enviar.
   el.innerHTML = `
-    <div style="max-width:680px;margin:0 auto;display:flex;gap:10px;align-items:center;">
-      <button class="btn btn-secondary btn-sm" id="pw-save-exit"
-        title="Salva rascunho e fecha o navegador. Você pode voltar depois.">
-        Salvar e sair
-      </button>
-      <div style="flex:1;"></div>
+    <div style="max-width:680px;margin:0 auto;display:flex;gap:10px;align-items:center;justify-content:flex-end;">
       ${isFirst ? '' : `
-        <button class="btn btn-secondary" id="pw-back" ${submitting?'disabled':''}>
+        <button type="button" class="btn btn-secondary" id="pw-back" ${submitting?'disabled':''}>
           ← Voltar
         </button>
       `}
       ${isLast ? `
         ${_state.editMode ? '' : `
-          <button class="btn btn-ghost" id="pw-add-batch" ${submitting?'disabled':''}
+          <button type="button" class="btn btn-secondary" id="pw-add-batch" ${submitting?'disabled':''}
             title="Salva esta solicitação na fila e abre o wizard pra próxima. Você envia tudo de uma vez no fim.">
             + Adicionar outra ao lote
           </button>
         `}
-        <button class="btn btn-primary" id="pw-submit" ${submitting?'disabled':''}>
+        <button type="button" class="btn btn-primary" id="pw-submit" ${submitting?'disabled':''}>
           ${submitting ? '⏳ Salvando…'
             : _state.editMode ? '✏️ Salvar alterações →'
             : _state.batchQueue.length > 0
@@ -229,7 +242,7 @@ function _renderFooter() {
               : 'Enviar solicitação →'}
         </button>
       ` : `
-        <button class="btn btn-primary" id="pw-next">
+        <button type="button" class="btn btn-primary" id="pw-next">
           Próximo →
         </button>
       `}
@@ -240,12 +253,7 @@ function _renderFooter() {
   document.getElementById('pw-next')?.addEventListener('click', () => _tryAdvance());
   document.getElementById('pw-submit')?.addEventListener('click', () => _onSubmit(false));
   document.getElementById('pw-submit-another')?.addEventListener('click', () => _onSubmit(true));
-  // v4.55.5+ Adicionar ao lote — enfileira a solicitação atual e reinicia o wizard
   document.getElementById('pw-add-batch')?.addEventListener('click', () => _addToBatch());
-  document.getElementById('pw-save-exit')?.addEventListener('click', () => {
-    _persistDraft();
-    alert('Rascunho salvo! Volte quando quiser pra continuar de onde parou.');
-  });
 }
 
 /* ─── Steps ─── */
@@ -286,6 +294,7 @@ function _renderStep1() {
       </div>
     ` : ''}
     ${_renderBatchBadge()}
+    ${editing ? '' : _renderDraftResumeBanner()}
     ${editing ? '' : _renderRecentRequestsBanner()}
 
     <div class="portal-card" style="padding:24px;">
@@ -343,6 +352,21 @@ function _wireStep1() {
         _renderShell(document.querySelector('.pw-root')?.parentElement);
       }
     });
+  });
+  // v4.57.3+ Continuar/Descartar rascunho
+  document.getElementById('pw-draft-resume')?.addEventListener('click', () => {
+    const draft = _loadDraft();
+    if (draft?.data) {
+      _state.data = { ..._defaultData(_state.user), ...draft.data };
+      _state.step = draft.step || 1;
+      _renderShell(document.querySelector('.pw-root')?.parentElement);
+    }
+  });
+  document.getElementById('pw-draft-discard')?.addEventListener('click', () => {
+    _clearDraft();
+    _state.data = _defaultData(_state.user);
+    _state.step = 1;
+    _renderShell(document.querySelector('.pw-root')?.parentElement);
   });
 
   const sectorSel = document.getElementById('pw-sector');
@@ -1742,6 +1766,72 @@ function _renderRecentRequestsBanner() {
             <span style="font-size:0.75rem;color:var(--brand-gold);">Editar →</span>
           </div>
         `).join('')}
+      </div>
+    </div>
+  `;
+}
+
+/* v4.57.3+ Banner "Você tem um rascunho em andamento" no Step 1 — só aparece
+ * quando há draft persistido com conteúdo significativo (step > 1 OU campos
+ * preenchidos). Mostra timestamp do último save + 2 botões:
+ * - "Continuar de onde parei" → pula direto pro último step salvo
+ * - "Descartar e começar do zero" → clearDraft + reset
+ *
+ * O draft é persistido AUTOMATICAMENTE em localStorage a cada mudança de
+ * campo (auto-save), por isso não precisa mais do botão "Salvar e sair".
+ * Renê: "o ideal é a pessoa fazer e o sistema ja salvar a cada campo
+ * preenchido. se a pessoa sai, vai encontrar essa solicitacao onde?".
+ */
+function _renderDraftResumeBanner() {
+  if (!_state) return '';
+  // Só mostra se já estamos no Step 1 mas há draft significativo de outra sessão
+  // (step salvo > 1 OU campos importantes preenchidos)
+  const draft = _loadDraft();
+  if (!draft || !draft.data) return '';
+  const hasContent = draft.step > 1
+    || (draft.data.sector && draft.data.typeId)
+    || (draft.data.title && draft.data.title.length > 3);
+  if (!hasContent) return '';
+  // Se já estamos restaurados (state.data === draft.data shape), não mostrar
+  // — usuário já está continuando.
+  if (_state.step === draft.step && _state.data.sector === draft.data.sector
+      && _state.data.title === draft.data.title) return '';
+
+  const savedAt = draft.savedAt;
+  let savedLabel = '';
+  if (savedAt) {
+    const ago = Date.now() - savedAt;
+    if (ago < 60000) savedLabel = 'há menos de 1 minuto';
+    else if (ago < 3600000) savedLabel = `há ${Math.round(ago/60000)} min`;
+    else if (ago < 86400000) savedLabel = `há ${Math.round(ago/3600000)} h`;
+    else savedLabel = `há ${Math.round(ago/86400000)} dia(s)`;
+  }
+  const stepLabels = ['', 'Setor e tipo', 'Quando', 'Detalhes', 'Revisão'];
+  const lastStep = stepLabels[draft.step] || '?';
+  const title = draft.data.title || draft.data.typeName || '(sem título)';
+
+  return `
+    <div class="portal-card" style="padding:14px 18px;margin-bottom:14px;
+      background:rgba(212,168,67,0.10);border:1px solid rgba(212,168,67,0.45);">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap;">
+        <span style="font-size:1.125rem;">📝</span>
+        <div style="flex:1;min-width:0;">
+          <div style="font-weight:600;font-size:0.875rem;color:var(--text-primary);">
+            Você tem um rascunho em andamento
+          </div>
+          <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">
+            Último salvo automático ${esc(savedLabel)} · Parou em <strong>"${esc(lastStep)}"</strong>
+            ${title && title !== '(sem título)' ? ` · Título: <em>"${esc(title.slice(0,60))}${title.length>60?'…':''}"</em>` : ''}
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button type="button" id="pw-draft-resume" class="btn btn-primary btn-sm">
+          Continuar de onde parei →
+        </button>
+        <button type="button" id="pw-draft-discard" class="btn btn-secondary btn-sm">
+          Descartar e começar do zero
+        </button>
       </div>
     </div>
   `;
