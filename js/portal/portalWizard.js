@@ -562,17 +562,54 @@ function _toISODate(date) {
 
 function _renderCalendarGrid(type) {
   const cal = _state.calDate || new Date();
+  const gran = _state.calGran || 'month'; // v4.57.0+ month | week | day
   const y = cal.getFullYear();
   const m = cal.getMonth();
   const today = new Date(); today.setHours(0,0,0,0);
-  const firstDow = new Date(y, m, 1).getDay();
-  const daysInMonth = new Date(y, m+1, 0).getDate();
   const selected = _state.data.desiredDate || '';
 
+  // v4.57.0+ Determina dias a renderizar conforme granularidade
+  let firstDow, daysInMonth, daysToShow;
+  if (gran === 'day') {
+    firstDow = cal.getDay();
+    daysToShow = 1;
+    daysInMonth = cal.getDate();
+  } else if (gran === 'week') {
+    const weekStart = new Date(cal);
+    weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+    firstDow = weekStart.getDay(); // 0
+    daysToShow = 7;
+    daysInMonth = weekStart.getDate();
+  } else {
+    firstDow = new Date(y, m, 1).getDay();
+    daysInMonth = new Date(y, m+1, 0).getDate();
+    daysToShow = daysInMonth;
+  }
+
   let cells = '';
-  for (let i = 0; i < firstDow; i++) cells += '<div></div>';
-  for (let d = 1; d <= daysInMonth; d++) {
-    const date = new Date(y, m, d);
+  // Placeholders só no view de mês
+  if (gran === 'month') {
+    for (let i = 0; i < firstDow; i++) cells += '<div></div>';
+  }
+
+  // Gera array de datas a iterar
+  const dates = [];
+  if (gran === 'day') {
+    dates.push(new Date(y, m, cal.getDate()));
+  } else if (gran === 'week') {
+    const ws = new Date(cal); ws.setDate(ws.getDate() - ws.getDay());
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(ws); d.setDate(ws.getDate() + i);
+      dates.push(d);
+    }
+  } else {
+    for (let d = 1; d <= daysInMonth; d++) {
+      dates.push(new Date(y, m, d));
+    }
+  }
+
+  for (const date of dates) {
+    const d = date.getDate();
     date.setHours(0,0,0,0);
     const iso = _toISODate(date);
     const isPast = date < today;
@@ -654,22 +691,37 @@ function _renderCalendarGrid(type) {
 
   return `
     <div style="border:1px solid var(--border-subtle);border-radius:10px;padding:12px;background:var(--bg-surface);">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:8px;">
-        <button type="button" id="pw-cal-prev" aria-label="Mês anterior"
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:8px;flex-wrap:wrap;">
+        <button type="button" id="pw-cal-prev" aria-label="Anterior"
           style="background:transparent;border:1px solid var(--border-default);border-radius:6px;width:30px;height:30px;cursor:pointer;color:var(--text-secondary);">‹</button>
-        <div style="display:flex;align-items:center;gap:10px;flex:1;justify-content:center;">
-          <div style="font-weight:600;font-size:0.9375rem;color:var(--text-primary);">
-            ${PT_MONTHS[m]} ${y}
+        <div style="display:flex;align-items:center;gap:10px;flex:1;justify-content:center;min-width:0;">
+          <div style="font-weight:600;font-size:0.9375rem;color:var(--text-primary);white-space:nowrap;">
+            ${gran === 'day' ? `${cal.getDate()} ${PT_MONTHS[m]} ${y}`
+              : gran === 'week' ? (() => { const ws=new Date(cal); ws.setDate(ws.getDate()-ws.getDay()); const we=new Date(ws); we.setDate(ws.getDate()+6); return `${ws.getDate()}–${we.getDate()} ${PT_MONTHS[we.getMonth()]} ${we.getFullYear()}`; })()
+              : `${PT_MONTHS[m]} ${y}`}
           </div>
           <button type="button" id="pw-cal-today" class="btn btn-secondary btn-sm" title="Voltar pra hoje">Hoje</button>
         </div>
-        <button type="button" id="pw-cal-next" aria-label="Próximo mês"
+        <!-- v4.57.0+ Granularity switcher -->
+        <div style="display:flex;border:1px solid var(--border-subtle);border-radius:6px;overflow:hidden;">
+          ${[['month','Mês'],['week','Semana'],['day','Dia']].map(([g,l]) => `
+            <button type="button" class="pw-gran-btn" data-gran="${g}"
+              style="padding:4px 10px;border:none;background:${gran===g?'var(--brand-gold)':'transparent'};
+              color:${gran===g?'#0A1628':'var(--text-secondary)'};cursor:pointer;font-size:0.75rem;
+              ${gran===g?'font-weight:700;':''}">
+              ${l}
+            </button>
+          `).join('')}
+        </div>
+        <button type="button" id="pw-cal-next" aria-label="Próximo"
           style="background:transparent;border:1px solid var(--border-default);border-radius:6px;width:30px;height:30px;cursor:pointer;color:var(--text-secondary);">›</button>
       </div>
-      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:4px;">
-        ${PT_DAYS_S.map(d => `<div style="text-align:center;font-size:0.6875rem;color:var(--text-muted);font-weight:600;">${d}</div>`).join('')}
-      </div>
-      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;">
+      ${gran !== 'day' ? `
+        <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:4px;">
+          ${PT_DAYS_S.map(d => `<div style="text-align:center;font-size:0.6875rem;color:var(--text-muted);font-weight:600;">${d}</div>`).join('')}
+        </div>
+      ` : ''}
+      <div style="display:grid;grid-template-columns:repeat(${gran==='day'?1:7},1fr);gap:4px;">
         ${cells}
       </div>
       <div style="margin-top:10px;display:flex;gap:14px;font-size:0.6875rem;color:var(--text-muted);flex-wrap:wrap;">
@@ -702,20 +754,28 @@ function _wireCalendarGrid() {
   const prev = document.getElementById('pw-cal-prev');
   const next = document.getElementById('pw-cal-next');
   const today = document.getElementById('pw-cal-today');
-  prev?.addEventListener('click', () => {
-    _state.calDate = new Date(_state.calDate);
-    _state.calDate.setMonth(_state.calDate.getMonth() - 1);
+  // v4.57.0+ Nav prev/next respeita granularidade ativa
+  const navStep = (dir) => {
+    const gran = _state.calGran || 'month';
+    const d = new Date(_state.calDate);
+    if (gran === 'day')      d.setDate(d.getDate() + dir);
+    else if (gran === 'week') d.setDate(d.getDate() + (dir * 7));
+    else                      d.setMonth(d.getMonth() + dir);
+    _state.calDate = d;
     _rerenderCalendar();
-  });
-  next?.addEventListener('click', () => {
-    _state.calDate = new Date(_state.calDate);
-    _state.calDate.setMonth(_state.calDate.getMonth() + 1);
-    _rerenderCalendar();
-  });
-  // v4.56.0+ Botão "Hoje"
+  };
+  prev?.addEventListener('click', () => navStep(-1));
+  next?.addEventListener('click', () => navStep(1));
   today?.addEventListener('click', () => {
     _state.calDate = new Date();
     _rerenderCalendar();
+  });
+  // v4.57.0+ Trocar granularidade
+  document.querySelectorAll('.pw-gran-btn')?.forEach(btn => {
+    btn.addEventListener('click', () => {
+      _state.calGran = btn.dataset.gran;
+      _rerenderCalendar();
+    });
   });
 
   document.querySelectorAll('.pw-cal-day')?.forEach(cell => {

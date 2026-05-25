@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 56,
-  patch: 1,
-  build: '20260524-portal-wizard-validation-inline-tooltips-sanitize',
+  minor: 57,
+  patch: 0,
+  build: '20260524-portal-wizard-cal-granularidades-week-day',
 };
 
 /** "1.2.0" */
