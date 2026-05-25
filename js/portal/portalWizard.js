@@ -1008,7 +1008,8 @@ function _wireStep3() {
     if (!slaHint) return;
     const type = _state.taskTypes.find(t => t.id === _state.data.typeId);
     const v = type?.variations?.find(x => x.id === _state.data.variationId);
-    slaHint.textContent = v?.sla ? `⏱ SLA de produção: ${(v.slaDays || v.sla)} dia${(v.slaDays || v.sla)>1?'s':''}` : '';
+    const slaVal = v?.slaDays || v?.sla;
+    slaHint.textContent = slaVal ? `⏱ SLA de produção: ${slaVal} dia${slaVal>1?'s':''}` : '';
   };
   refreshSla();
 

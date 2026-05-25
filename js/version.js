@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 57,
-  patch: 1,
-  build: '20260524-portal-wizard-success-dinamica-batchId-consolidado',
+  patch: 2,
+  build: '20260524-portal-wizard-fix-sla-hint-slaDays',
 };
 
 /** "1.2.0" */
