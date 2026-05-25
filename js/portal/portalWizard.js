@@ -25,7 +25,7 @@
  */
 
 import {
-  collection, addDoc, getDocs, doc as firestoreDoc, updateDoc, query, where, limit, orderBy, serverTimestamp,
+  collection, addDoc, getDoc, getDocs, doc as firestoreDoc, updateDoc, query, where, limit, orderBy, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -1467,11 +1467,36 @@ async function _onSubmit(submitAnother) {
         batchTotal: batchCount + 1,
       }).catch(e => console.warn('[wizard] notifyTeam batch falhou:', e?.message || e));
     } else {
-      _notifyTeam({ ...currentDoc, id: refId, isEdit: _state.editMode })
-        .catch(e => console.warn('[wizard] notifyTeam falhou:', e?.message || e));
+      // v4.57.11: email só dispara em create (edit já tem notif in-app dirigida).
+      // _notifyTeam aceitava isEdit mas backend não diferenciava → spam no setor.
+      if (!_state.editMode) {
+        _notifyTeam({ ...currentDoc, id: refId, isEdit: false })
+          .catch(e => console.warn('[wizard] notifyTeam falhou:', e?.message || e));
+      }
     }
-    _notifyAdmins(_state.data, refId)
-      .catch(e => console.warn('[wizard] notify admins falhou:', e?.message || e));
+    // v4.57.11: roteamento de notificações IN-APP — auditoria Renê.
+    // ANTES: _notifyAdmins disparava SEMPRE pra todos admins/master/head do sistema.
+    //   - Em CREATE: ok, admins precisam saber que chegou solicitação.
+    //   - Em EDIT: errado — gente que nem viu a request original recebia notif.
+    //   - Edit com task: assignees/observers da task não recebiam (só viam banner se abrissem).
+    //   - Edit sem task: admins de OUTROS setores recebiam ruído.
+    // AGORA:
+    //   - CREATE: notifica admins (comportamento atual)
+    //   - EDIT + tem taskId: APENAS assignees + observers da task (dedup automático)
+    //   - EDIT sem task (pending): coordenadores DO SETOR específico (não admins globais)
+    if (_state.editMode) {
+      const origReqForNotify = _state.recentRequests.find(r => r.id === _state.editId);
+      if (origReqForNotify?.taskId) {
+        _notifyTaskOnRequesterEdit(origReqForNotify.taskId, currentDoc, refId)
+          .catch(e => console.warn('[wizard] notify task on edit:', e?.message || e));
+      } else {
+        _notifySectorCoordsOnEdit(currentDoc, refId)
+          .catch(e => console.warn('[wizard] notify sector coords on edit:', e?.message || e));
+      }
+    } else {
+      _notifyAdmins(_state.data, refId)
+        .catch(e => console.warn('[wizard] notify admins falhou:', e?.message || e));
+    }
 
     _state.submitting = false;
     if (submitAnother) {
@@ -1539,6 +1564,105 @@ async function _notifyAdmins(d, requestId) {
     });
   } catch (e) {
     console.warn('[wizard] notifyAdmins falhou:', e?.message || e);
+  }
+}
+
+/* v4.57.11+ Notif IN-APP de EDIÇÃO de request que já virou task.
+ * Destina pra assignees + observers da task (dedup via Set). Quem ESTÁ executando
+ * precisa saber que solicitante mudou descrição/título. Antes não havia notif —
+ * só banner ao abrir a task. */
+async function _notifyTaskOnRequesterEdit(taskId, d, requestId) {
+  try {
+    const { notify } = await import('../services/notifications.js');
+    const taskDocSnap = await getDoc(firestoreDoc(_state.db, 'tasks', taskId));
+    if (!taskDocSnap.exists()) {
+      console.warn('[wizard] _notifyTaskOnRequesterEdit: task não encontrada', taskId);
+      return;
+    }
+    const task = { id: taskDocSnap.id, ...taskDocSnap.data() };
+    const recipientIds = [...new Set([
+      ...(Array.isArray(task.assignees) ? task.assignees : []),
+      ...(Array.isArray(task.observers) ? task.observers : []),
+    ])].filter(Boolean).filter(uid => uid !== _state.user?.uid);
+    if (!recipientIds.length) {
+      console.log('[wizard] _notifyTaskOnRequesterEdit: sem assignees/observers, skip');
+      return;
+    }
+    await notify('task.requesterEdit', {
+      entityType: 'task', entityId: taskId,
+      recipientIds,
+      title: 'Solicitante editou a tarefa',
+      body: `${_state.user?.name || d.requesterName || 'Solicitante'} alterou "${d.title || d.typeName || 'tarefa'}". Veja o banner ao abrir.`,
+      route: `tasks/${taskId}`,
+      category: 'task',
+      priority: d.urgency ? 'high' : 'normal',
+      actorId: _state.user?.uid,
+      actorName: _state.user?.name || d.requesterName,
+    });
+  } catch (e) {
+    console.warn('[wizard] _notifyTaskOnRequesterEdit falhou:', e?.message || e);
+  }
+}
+
+/* v4.57.11+ Notif IN-APP de EDIÇÃO em request AINDA pending (sem task linkada).
+ * Vai SÓ pros coordenadores DO SETOR específico — não pros admins globais.
+ * Antes _notifyAdmins disparava pra todos master/admin/head do sistema → ruído. */
+async function _notifySectorCoordsOnEdit(d, requestId) {
+  try {
+    const { notify } = await import('../services/notifications.js');
+    const sector = d.sector || '';
+    if (!sector) {
+      console.warn('[wizard] _notifySectorCoordsOnEdit: sem sector, skip');
+      return;
+    }
+    const usersSnap = await getDocs(query(
+      collection(_state.db, 'users'),
+      where('active', '==', true),
+    ));
+    // Coords do setor: department === sector E (isMaster || roleId/role admin/master/head/coord)
+    const coords = usersSnap.docs
+      .map(doc => ({ id: doc.id, ...doc.data() }))
+      .filter(u => u.department === sector)
+      .filter(u => u.isMaster
+        || ['master','admin','head','coord','coordenador'].includes(u.roleId)
+        || ['master','admin','head','coord','coordenador'].includes(u.role))
+      .map(u => u.id)
+      .filter(uid => uid !== _state.user?.uid);
+    if (!coords.length) {
+      // Fallback defensivo: se setor não tem coord, vai pros admins globais (não perder o aviso)
+      const admins = usersSnap.docs
+        .map(doc => ({ id: doc.id, ...doc.data() }))
+        .filter(u => u.isMaster || ['master','admin','head'].includes(u.roleId) || ['master','admin','head'].includes(u.role))
+        .map(u => u.id)
+        .filter(uid => uid !== _state.user?.uid);
+      if (!admins.length) return;
+      console.log('[wizard] _notifySectorCoordsOnEdit: setor sem coord, fallback p/ admins globais');
+      await notify('request.updated', {
+        entityType: 'request', entityId: requestId,
+        recipientIds: admins,
+        title: 'Solicitação editada (sem coord do setor)',
+        body: `${_state.user?.name || d.requesterName || 'Solicitante'} editou "${d.title || d.typeName || 'solicitação'}" do setor ${sector}.`,
+        route: 'requests',
+        category: 'request',
+        priority: d.urgency ? 'high' : 'normal',
+        actorId: _state.user?.uid,
+        actorName: _state.user?.name || d.requesterName,
+      });
+      return;
+    }
+    await notify('request.updated', {
+      entityType: 'request', entityId: requestId,
+      recipientIds: coords,
+      title: 'Solicitação editada pelo solicitante',
+      body: `${_state.user?.name || d.requesterName || 'Solicitante'} alterou "${d.title || d.typeName || 'solicitação'}"${d.urgency ? ' (URGENTE)' : ''}.`,
+      route: 'requests',
+      category: 'request',
+      priority: d.urgency ? 'high' : 'normal',
+      actorId: _state.user?.uid,
+      actorName: _state.user?.name || d.requesterName,
+    });
+  } catch (e) {
+    console.warn('[wizard] _notifySectorCoordsOnEdit falhou:', e?.message || e);
   }
 }
 

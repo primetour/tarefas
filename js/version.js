@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 57,
-  patch: 10,
-  build: '20260525-portal-edit-opens-step3',
+  patch: 11,
+  build: '20260525-portal-edit-notify-routing',
 };
 
 /** "1.2.0" */

@@ -6,6 +6,31 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.57.11+20260525-portal-edit-notify-routing] — 2026-05-25
+
+Release **PATCH** — auditoria do fluxo de notificações de edição.
+
+Renê: *"ta funcionando na camada do sistema principal, com aviso de alteracao? pra quais users ta indo o aviso? pra todos do setor? se eu atualizo a tarefa e destino um ou mais responsaveis, acrescendo observador... o aviso de alteracao continua indo pro setor todo?"*.
+
+**Auditoria revelou 3 bugs** no caminho de notificação `requesterEditFlag`:
+1. Edit disparava `notify('request.created')` pra **TODOS** admins/master/head do sistema — mesmo gente de outros setores recebia spam
+2. Quando request já virou task com assignees/observers, `updateDoc(tasks/{id}, requesterEditFlag:true)` não disparava notif — quem ESTAVA executando não sabia da alteração (só via banner se abrisse)
+3. `_notifyTeam` (email) recebia `isEdit:true` mas backend não diferenciava — mandava email "nova solicitação" idêntico em edit
+
+**Roteamento novo (v4.57.11+)**:
+- **CREATE**: `_notifyAdmins` → admins globais (comportamento mantido) + email `_notifyTeam`
+- **EDIT + tem `taskId`** (já virou task): `_notifyTaskOnRequesterEdit` → notif IN-APP `task.requesterEdit` SÓ pros `assignees + observers` da task (dedup via Set, exclui o ator/solicitante). Email pulado.
+- **EDIT sem task** (ainda pending): `_notifySectorCoordsOnEdit` → notif IN-APP `request.updated` SÓ pros coordenadores DO SETOR específico (`u.department === sector` E role admin/master/head/coord). Fallback pros admins globais se setor não tem coord. Email pulado.
+
+**Garantias**:
+- Ator (solicitante) nunca recebe notif dele mesmo (filter `uid !== _state.user?.uid`)
+- Observers + assignees dedup-eados via `new Set([...assignees, ...observers])`
+- Categoria + priority + route corretos pra abrir direto no recurso certo
+
+**Arquivos**: js/portal/portalWizard.js (+2 funções, ~100 LOC), js/portal/portal.js, js/version.js, index.html, solicitar.html, CHANGELOG.md
+
+---
+
 ## [4.57.10+20260525-portal-edit-opens-step3] — 2026-05-25
 
 Release **PATCH** — edit mode do wizard abre direto no Step 3 (Detalhes).
