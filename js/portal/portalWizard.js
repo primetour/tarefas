@@ -1324,37 +1324,59 @@ async function _onSubmit(submitAnother) {
       }
 
       // v4.55.5+ Se há lote, submete cada item enfileirado sequencialmente
+      // v4.57.1+ Adiciona batchId/batchIndex/batchTotal aos docs do lote (paridade legacy)
       if (_state.batchQueue.length > 0) {
-        for (const batchData of _state.batchQueue) {
+        const batchId = 'b_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+        const batchTotal = _state.batchQueue.length + 1; // +1 = current
+        // Atualiza current pra ter batchId/batchTotal também (já foi criada acima)
+        try {
+          await updateDoc(firestoreDoc(_state.db, 'requests', refId), {
+            batchId, batchIndex: 1, batchTotal,
+          });
+        } catch (e) { console.warn('[wizard] backfill batchId em current falhou:', e?.message); }
+
+        for (let i = 0; i < _state.batchQueue.length; i++) {
+          const batchData = _state.batchQueue[i];
           try {
             const bDoc = _buildRequestDoc(batchData, user);
             const bRef = await addDoc(collection(_state.db, 'requests'), {
               ...bDoc,
               status: 'pending',
               createdAt: serverTimestamp(),
+              batchId,
+              batchIndex: i + 2,   // +2 pq current é 1
+              batchTotal,
             });
-            // v4.55.8+ autoCreateTask por item do lote também
             const bType = _state.taskTypes.find(t => t.id === bDoc.typeId);
             if (bType?.autoAccept) {
               await _autoCreateTask(bRef.id, bDoc, bType);
             }
-            // v4.55.8+ notify admins por item também (legacy faz 1 por request)
             _notifyAdmins(batchData, bRef.id).catch(e => console.warn('[wizard] batch notifyAdmins:', e?.message));
             batchCount++;
           } catch (err) {
             console.warn('[wizard] batch item falhou:', err?.message || err);
           }
         }
-        _state.batchQueue = [];   // limpa fila
+        _state.batchQueue = [];
       }
     }
 
     _clearDraft();
 
-    // Notifica time + admins (best-effort) — pra o item atual; lote completo gera
-    // 1 email por item (mantém compat com pipeline antigo)
-    _notifyTeam({ ...currentDoc, id: refId, isEdit: _state.editMode })
-      .catch(e => console.warn('[wizard] notifyTeam falhou:', e?.message || e));
+    // Notifica time + admins (best-effort). v4.57.1+: se houver batch, manda 1
+    // email consolidado com description "N solicitações em conjunto" (paridade legacy).
+    if (batchCount > 0) {
+      _notifyTeam({
+        ...currentDoc,
+        id: refId,
+        description: `${batchCount + 1} solicitações enviadas em conjunto pelo solicitante.`,
+        isBatch: true,
+        batchTotal: batchCount + 1,
+      }).catch(e => console.warn('[wizard] notifyTeam batch falhou:', e?.message || e));
+    } else {
+      _notifyTeam({ ...currentDoc, id: refId, isEdit: _state.editMode })
+        .catch(e => console.warn('[wizard] notifyTeam falhou:', e?.message || e));
+    }
     _notifyAdmins(_state.data, refId)
       .catch(e => console.warn('[wizard] notify admins falhou:', e?.message || e));
 
@@ -1362,7 +1384,12 @@ async function _onSubmit(submitAnother) {
     if (submitAnother) {
       _renderSuccessAndRestart();
     } else {
-      _renderSuccess(batchCount);
+      // v4.57.1+ Passa flags pra success view variar a mensagem
+      const currentType = _state.taskTypes.find(t => t.id === currentDoc.typeId);
+      _renderSuccess(batchCount, {
+        autoAccepted: !!currentType?.autoAccept && !_state.editMode,
+        urgent: !!currentDoc.urgency,
+      });
     }
   } catch (err) {
     console.error('[wizard] submit falhou:', err);
@@ -1490,16 +1517,27 @@ async function _autoCreateTask(reqRef, reqDoc, typeData) {
   }
 }
 
-function _renderSuccess(batchCount = 0) {
+function _renderSuccess(batchCount = 0, opts = {}) {
   const root = document.querySelector('.pw-root');
   if (!root) return;
   document.getElementById('pw-footer').innerHTML = '';
-  // v4.55.5+ Mensagem dinâmica pra lote
+  // v4.55.5+ Mensagem dinâmica pra lote + v4.57.1+ pra auto-aceito + urgência
   const totalSent = 1 + (batchCount || 0);
-  const title = totalSent > 1 ? `${totalSent} solicitações enviadas!` : 'Solicitação enviada!';
-  const subtitle = totalSent > 1
-    ? `Recebemos ${totalSent} solicitações do seu lote. Equipe vai analisar e responder em breve.`
-    : 'Recebemos sua solicitação. Nossa equipe vai analisar e responder em breve.';
+  const { autoAccepted = false, urgent = false } = opts || {};
+  let title, subtitle;
+  if (totalSent > 1) {
+    title = `${totalSent} solicitações enviadas!`;
+    subtitle = `Recebemos ${totalSent} solicitações do seu lote. Equipe vai analisar e responder em breve.`;
+  } else if (autoAccepted) {
+    title = '✓ Tarefa criada automaticamente!';
+    subtitle = 'Sua solicitação foi aceita automaticamente e já virou uma tarefa pro time. Você vai receber updates do progresso.';
+  } else if (urgent) {
+    title = '🔴 Solicitação URGENTE enviada!';
+    subtitle = 'Recebemos sua solicitação marcada como urgente. O time vai priorizar a análise.';
+  } else {
+    title = 'Solicitação enviada!';
+    subtitle = 'Recebemos sua solicitação. Nossa equipe vai analisar e responder em breve.';
+  }
   root.innerHTML = `
     <div style="text-align:center;padding:60px 20px;">
       <div style="font-size:4rem;color:var(--brand-gold);margin-bottom:16px;">✓</div>

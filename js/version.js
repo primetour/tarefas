@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 57,
-  patch: 0,
-  build: '20260524-portal-wizard-cal-granularidades-week-day',
+  patch: 1,
+  build: '20260524-portal-wizard-success-dinamica-batchId-consolidado',
 };
 
 /** "1.2.0" */
