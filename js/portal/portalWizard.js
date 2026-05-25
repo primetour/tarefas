@@ -25,7 +25,7 @@
  */
 
 import {
-  collection, addDoc, getDocs, query, where, limit, serverTimestamp,
+  collection, addDoc, getDocs, doc as firestoreDoc, updateDoc, query, where, limit, orderBy, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -76,6 +76,10 @@ export function renderPortalWizard(container, opts) {
     db, taskTypes, user, onSuccess,
     draftKey: `portal-wizard-draft.${user?.uid || 'anon'}`,
     submitting: false,
+    // v4.55.3+ Edit mode: quando user clica numa solicitação enviada pra editar
+    editMode: false,
+    editId: null,
+    recentRequests: [],   // populated async
   };
 
   // Tenta restaurar rascunho
@@ -87,6 +91,12 @@ export function renderPortalWizard(container, opts) {
 
   _renderShell(container);
   _bindKeyboard();
+
+  // v4.55.3+ Carrega solicitações recentes do user pra permitir edição inline
+  _loadRecentRequests().then(() => {
+    // Re-render se ainda estamos no Step 1 e popula banner
+    if (_state.step === 1) _renderStep(1);
+  }).catch(e => console.warn('[wizard] loadRecentRequests falhou:', e?.message));
 }
 
 /* ─── Pre-preencher campos do wizard externamente (v4.54.2+) ───
@@ -192,12 +202,14 @@ function _renderFooter() {
         </button>
       `}
       ${isLast ? `
-        <button class="btn btn-ghost" id="pw-submit-another" ${submitting?'disabled':''}
-          title="Envia esta solicitação e abre o wizard pra outra similar (mantém setor + tipo)">
-          Enviar + Outra similar
-        </button>
+        ${_state.editMode ? '' : `
+          <button class="btn btn-ghost" id="pw-submit-another" ${submitting?'disabled':''}
+            title="Envia esta solicitação e abre o wizard pra outra similar (mantém setor + tipo)">
+            Enviar + Outra similar
+          </button>
+        `}
         <button class="btn btn-primary" id="pw-submit" ${submitting?'disabled':''}>
-          ${submitting ? '⏳ Enviando…' : 'Enviar solicitação →'}
+          ${submitting ? '⏳ Salvando…' : (_state.editMode ? '✏️ Salvar alterações →' : 'Enviar solicitação →')}
         </button>
       ` : `
         <button class="btn btn-primary" id="pw-next">
@@ -239,7 +251,22 @@ function _renderStep(n) {
 /* === Passo 1: Setor responsável + Tipo === */
 function _renderStep1() {
   const d = _state.data;
+  const editing = _state.editMode;
   return `
+    ${editing ? `
+      <div class="portal-card" style="padding:14px 18px;margin-bottom:14px;
+        background:rgba(212,168,67,0.08);border:1px solid rgba(212,168,67,0.4);">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+          <div style="font-size:0.875rem;color:var(--text-primary);">
+            ✏️ <strong>Editando solicitação</strong> já enviada — alterações serão sinalizadas no sistema da equipe.
+          </div>
+          <button type="button" id="pw-cancel-edit" class="btn btn-ghost" style="font-size:0.75rem;">
+            Cancelar edição
+          </button>
+        </div>
+      </div>
+    ` : _renderRecentRequestsBanner()}
+
     <div class="portal-card" style="padding:24px;">
       <h2 style="margin:0 0 6px;font-size:1.25rem;color:var(--text-primary);">Pra quem é a demanda?</h2>
       <p style="margin:0 0 20px;color:var(--text-muted);font-size:0.875rem;">
@@ -272,6 +299,18 @@ function _renderStep1() {
 }
 
 function _wireStep1() {
+  // v4.55.3+ Cancelar edit mode + Editar request existente
+  document.getElementById('pw-cancel-edit')?.addEventListener('click', () => {
+    _exitEditMode();
+  });
+  document.querySelectorAll('.pw-recent-req-card')?.forEach(card => {
+    card.addEventListener('click', () => {
+      const id = card.dataset.reqId;
+      const req = _state.recentRequests.find(r => r.id === id);
+      if (req) _enterEditMode(req);
+    });
+  });
+
   const sectorSel = document.getElementById('pw-sector');
   const typeWrap  = document.getElementById('pw-type-wrap');
   const typeSel   = document.getElementById('pw-type');
@@ -485,6 +524,7 @@ function _renderCalendarGrid(type) {
     const slotTitle = hasSlots ? slots[0].title || 'Slot' : '';
     const slotColor = hasSlots ? (slots[0].color || 'var(--brand-gold)') : '';
     const slotId = hasSlots ? slots[0].id : '';
+    const extraSlots = slots.length > 1 ? slots.length - 1 : 0;
 
     const bg = isSelected ? 'rgba(212,168,67,0.25)'
              : hasSlots   ? `${slotColor}22`
@@ -512,8 +552,8 @@ function _renderCalendarGrid(type) {
         </div>
         ${hasSlots ? `
           <div style="font-size:0.625rem;color:${slotColor};font-weight:600;margin-top:auto;line-height:1.1;
-            overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-            ${esc(slotTitle)}
+            overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${esc(slots.map(s=>s.title||'Slot').join(' · '))}">
+            ${esc(slotTitle)}${extraSlots ? ` <span style="background:${slotColor};color:#fff;padding:0 4px;border-radius:8px;font-size:0.5625rem;margin-left:2px;">+${extraSlots}</span>` : ''}
           </div>
         ` : ''}
       </div>
@@ -872,21 +912,39 @@ async function _onSubmit(submitAnother) {
       urgencyLockReason: d.urgencyLockReason || '',
       isPartnership:  d.isPartnership,
       outOfCalendar:  d.outOfCalendar,
-      // Sistema
-      status:         'pending',
-      createdAt:      serverTimestamp(),
-      source:         'portal-wizard-v4.54.4',
+      // Sistema (v4.55.3+ separa create vs update — source vai com versão real)
+      source:         'portal-wizard-v4.55.3' + (_state.editMode ? '-edit' : ''),
     };
 
-    const ref = await addDoc(collection(_state.db, 'requests'), doc);
+    let refId;
+    if (_state.editMode && _state.editId) {
+      // v4.55.3+ Update: mantém status original, marca requesterEditFlag pra banner no sistema
+      const { requesterUid, requesterName, requesterEmail, requestingArea, ...editableFields } = doc;
+      const editPayload = {
+        ...editableFields,
+        requesterEditFlag: true,        // banner no sistema principal pro assignee
+        requesterEditedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      };
+      await updateDoc(firestoreDoc(_state.db, 'requests', _state.editId), editPayload);
+      refId = _state.editId;
+    } else {
+      // Create
+      const ref = await addDoc(collection(_state.db, 'requests'), {
+        ...doc,
+        status: 'pending',
+        createdAt: serverTimestamp(),
+      });
+      refId = ref.id;
+    }
 
     // Limpa rascunho
     _clearDraft();
 
     // Notifica time via email (best-effort, não bloqueia o sucesso) — v4.54.4+
-    _notifyTeam({ ...doc, id: ref.id }).catch(e => console.warn('[wizard] notifyTeam falhou:', e?.message || e));
+    _notifyTeam({ ...doc, id: refId, isEdit: _state.editMode }).catch(e => console.warn('[wizard] notifyTeam falhou:', e?.message || e));
     // Notifica admins via in-app notification (Firestore — também best-effort)
-    _notifyAdmins(d, ref.id).catch(e => console.warn('[wizard] notify admins falhou:', e?.message || e));
+    _notifyAdmins(d, refId).catch(e => console.warn('[wizard] notify admins falhou:', e?.message || e));
 
     _state.submitting = false;
     if (submitAnother) {
@@ -1054,6 +1112,120 @@ function _fmtDate(iso) {
   const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (m) return `${m[3]}/${m[2]}/${m[1]}`;
   try { return new Date(iso).toLocaleDateString('pt-BR'); } catch { return iso; }
+}
+
+/* v4.55.3+ Carrega últimas solicitações do user atual (até 5) pra permitir
+ * edição inline a partir do banner do Step 1. */
+async function _loadRecentRequests() {
+  if (!_state?.user?.uid || !_state?.db) return;
+  try {
+    // Filtra requests do user, status pending OU em_andamento (editáveis)
+    const q = query(
+      collection(_state.db, 'requests'),
+      where('requesterUid', '==', _state.user.uid),
+      limit(20)
+    );
+    const snap = await getDocs(q);
+    const list = [];
+    snap.forEach(d => list.push({ id: d.id, ...d.data() }));
+    // Filtra editáveis (status pending) e ordena por createdAt desc client-side
+    const editable = list.filter(r => {
+      const st = r.status || 'pending';
+      return ['pending', 'em_andamento'].includes(st);
+    });
+    editable.sort((a, b) => {
+      const ta = a.createdAt?.toMillis?.() || a.createdAt?.seconds * 1000 || 0;
+      const tb = b.createdAt?.toMillis?.() || b.createdAt?.seconds * 1000 || 0;
+      return tb - ta;
+    });
+    _state.recentRequests = editable.slice(0, 5);
+  } catch (e) {
+    console.warn('[wizard] _loadRecentRequests error:', e?.message || e);
+    _state.recentRequests = [];
+  }
+}
+
+function _renderRecentRequestsBanner() {
+  const list = _state?.recentRequests || [];
+  if (!list.length) return '';
+  return `
+    <div class="portal-card" style="padding:14px 18px;margin-bottom:14px;background:var(--bg-surface);">
+      <div style="font-size:0.8125rem;color:var(--text-secondary);font-weight:600;margin-bottom:8px;">
+        📋 Suas últimas solicitações <span style="color:var(--text-muted);font-weight:400;font-size:0.75rem;">(clique pra editar)</span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        ${list.map(r => `
+          <div class="pw-recent-req-card" data-req-id="${esc(r.id)}"
+            style="display:flex;align-items:center;justify-content:space-between;gap:10px;
+              padding:8px 12px;border:1px solid var(--border-subtle);border-radius:6px;
+              cursor:pointer;background:var(--bg-card);transition:background 0.12s;"
+            onmouseover="this.style.background='rgba(212,168,67,0.08)'"
+            onmouseout="this.style.background='var(--bg-card)'">
+            <div style="flex:1;min-width:0;">
+              <div style="font-weight:500;font-size:0.8125rem;color:var(--text-primary);
+                white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
+                ${esc(r.title || r.typeName || 'Sem título')}
+              </div>
+              <div style="font-size:0.6875rem;color:var(--text-muted);margin-top:1px;">
+                ${esc(r.sector || '?')} · ${esc(_fmtDate(r.desiredDate))} · ${esc(_statusLabel(r.status))}
+              </div>
+            </div>
+            <span style="font-size:0.75rem;color:var(--brand-gold);">Editar →</span>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function _statusLabel(st) {
+  return ({
+    pending:       'Pendente',
+    em_andamento:  'Em andamento',
+    converted:     'Convertida',
+    rejected:      'Rejeitada',
+    archived:      'Arquivada',
+  })[st || 'pending'] || st;
+}
+
+function _enterEditMode(req) {
+  _state.editMode = true;
+  _state.editId = req.id;
+  // Pré-popula state.data com tudo da request
+  _state.data = {
+    ..._defaultData(_state.user),
+    requestingArea: req.requestingArea || _state.data.requestingArea,
+    sector:         req.sector || '',
+    typeId:         req.typeId || '',
+    typeName:       req.typeName || '',
+    typeIcon:       req.typeIcon || '',
+    typeColor:      req.typeColor || '',
+    autoAccept:     req.autoAccept || false,
+    desiredDate:    req.desiredDate || '',
+    nucleo:         req.nucleo || '',
+    outOfCalendar:  req.outOfCalendar || false,
+    variationId:    req.variationId || '',
+    variationName:  req.variationName || '',
+    title:          req.title || '',
+    description:    req.description || '',
+    contentLink:    req.contentLink || '',
+    urgency:        req.urgency || false,
+    isPartnership:  req.isPartnership || false,
+    urgencyAutoLocked: req.urgencyAutoLocked || false,
+    urgencyLockReason: req.urgencyLockReason || '',
+  };
+  _state.step = 1;
+  _persistDraft();
+  _renderShell(document.querySelector('.pw-root')?.parentElement);
+}
+
+function _exitEditMode() {
+  _state.editMode = false;
+  _state.editId = null;
+  _state.data = _defaultData(_state.user);
+  _state.step = 1;
+  _clearDraft();
+  _renderShell(document.querySelector('.pw-root')?.parentElement);
 }
 
 /* v4.54.4+ Conta dias úteis entre duas datas (exclusivo, ignora sáb/dom).

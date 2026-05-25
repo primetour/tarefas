@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 55,
-  patch: 1,
-  build: '20260524-portal-wizard-cache-bust-fix',
+  patch: 3,
+  build: '20260524-portal-wizard-fase-C-edit-existing-request',
 };
 
 /** "1.2.0" */
