@@ -277,7 +277,22 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
       }] : []),
       { label:'Cancelar', class:'btn-secondary', closeOnClick:false,
         onClick: () => {
-          if (_isDirty && !confirm('Você tem alterações não salvas. Deseja descartar?')) return;
+          // v4.57.24: confirm() nativo → modal customizado (§11.k)
+          if (_isDirty) {
+            modal.confirm({
+              title: 'Descartar alterações?',
+              message: 'Você tem alterações não salvas. Se sair agora, elas serão perdidas.',
+              confirmText: 'Descartar',
+              cancelText: 'Continuar editando',
+              danger: true,
+              icon: '⚠️',
+            }).then(ok => {
+              if (!ok) return;
+              _bypassDirtyCheck = true;
+              m.close();
+            });
+            return;
+          }
           _bypassDirtyCheck = true;
           m.close();
         } },
