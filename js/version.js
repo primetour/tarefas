@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 55,
-  patch: 0,
-  build: '20260524-portal-wizard-fase-B-calendario-visual',
+  patch: 1,
+  build: '20260524-portal-wizard-cache-bust-fix',
 };
 
 /** "1.2.0" */

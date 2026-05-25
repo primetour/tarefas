@@ -14,6 +14,11 @@ import {
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 import { renderPickerButton, refreshPickerButton, bindOptionPicker } from '../components/optionPicker.js';
 
+/* v4.55.1+ Versão única do portalWizard.js usada em TODOS os dynamic imports
+ * deste arquivo. Sempre que portalWizard.js mudar, atualizar esta constante.
+ * Mesma string em ambos os imports → mesma instância (ES module cache por URL). */
+const WIZARD_VERSION = '4.55.1';
+
 /* ─── Estado do usuário autenticado ─────────────────────────── */
 // v4.51.0+ `sector` é o campo canônico (setor formal); `department` é legado
 // mantido pra compat. UI mostra `sector || department`.
@@ -676,11 +681,11 @@ async function renderForm(db, taskTypes, auth) {
   const formView = document.getElementById('form-view');
   if (formView) {
     try {
-      // v4.54.3+ Import SEM querystring pra garantir mesma instância do módulo
-      // entre renderPortalWizard (init) e prefillWizardData (popup newsletter).
-      // Diferentes querystrings criavam 2 instâncias com _state separados.
-      // Cache-bust principal está no <script> tag de solicitar.html.
-      const { renderPortalWizard } = await import('./portalWizard.js');
+      // v4.55.1+ Import com mesma querystring de versão em todos os imports
+      // do portalWizard.js. ES modules cacheiam por URL exata — usar a MESMA
+      // string garante mesma instância (evita bug v4.54.2: 2 instâncias com
+      // _state separados). Cache-bust funciona porque a string muda junto.
+      const { renderPortalWizard } = await import('./portalWizard.js?v=' + WIZARD_VERSION);
       formView.innerHTML = '<div id="pw-host"></div>';
       renderPortalWizard(document.getElementById('pw-host'), {
         db, taskTypes,
@@ -792,7 +797,7 @@ async function prefillNewsletter(db, taskTypes) {
   if (document.getElementById('pw-host')) {
     try {
       const nlType = taskTypes.find(t => t.id === 'newsletter' || t.name?.toLowerCase() === 'newsletter');
-      const { prefillWizardData } = await import('./portalWizard.js');
+      const { prefillWizardData } = await import('./portalWizard.js?v=' + WIZARD_VERSION);
       prefillWizardData({ sector: 'Marketing', typeId: nlType?.id });
       return;
     } catch (e) {
