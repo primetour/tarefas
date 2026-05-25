@@ -17,7 +17,7 @@ import { renderPickerButton, refreshPickerButton, bindOptionPicker } from '../co
 /* v4.55.1+ Versão única do portalWizard.js usada em TODOS os dynamic imports
  * deste arquivo. Sempre que portalWizard.js mudar, atualizar esta constante.
  * Mesma string em ambos os imports → mesma instância (ES module cache por URL). */
-const WIZARD_VERSION = '4.55.5';
+const WIZARD_VERSION = '4.55.6';
 
 /* ─── Estado do usuário autenticado ─────────────────────────── */
 // v4.51.0+ `sector` é o campo canônico (setor formal); `department` é legado

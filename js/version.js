@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 55,
-  patch: 5,
-  build: '20260524-portal-wizard-fase-C2-batch-envio-lote',
+  patch: 6,
+  build: '20260524-portal-wizard-batch-pill-all-steps',
 };
 
 /** "1.2.0" */

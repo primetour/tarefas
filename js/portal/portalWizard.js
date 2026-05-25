@@ -176,7 +176,19 @@ function _renderProgress() {
   }).join(`
     <div style="flex:0 0 24px;height:2px;background:var(--border-subtle);margin-top:15px;"></div>
   `);
+  // v4.55.6+ Pill discreto mostrando contador do lote em TODOS os steps
+  // (badge completo só fica no Step 1, mas user precisa lembrar a qualquer momento)
+  const batchCount = _state?.batchQueue?.length || 0;
+  const batchPill = batchCount > 0 ? `
+    <div style="display:flex;align-items:center;gap:6px;padding:4px 10px;
+      background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.4);
+      border-radius:14px;font-size:0.6875rem;color:#16A34A;font-weight:600;
+      margin-bottom:10px;width:fit-content;">
+      📦 Lote pendente: ${batchCount}
+    </div>` : '';
+
   el.innerHTML = `
+    ${batchPill}
     <div style="display:flex;align-items:flex-start;justify-content:space-between;
       margin-bottom:28px;padding:0 8px;">
       ${dots}
