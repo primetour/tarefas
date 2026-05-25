@@ -581,6 +581,59 @@ function _toISODate(date) {
   return `${y}-${m}-${d}`;
 }
 
+/* v4.57.17+ Visual de cell do calendário do wizard (Step 2).
+ * Renê: "não está claro o que já está preenchido e o que ainda precisa
+ * ser feito. é tudo muito sutil. precisamos de clareza pro usuario bater
+ * o olho e entender. traga outra solucao visual + ajuste de legenda".
+ *
+ * Estados (precedência): selected > req.pending/converted/rejected > batch >
+ * slot vazio > hoje vazio > vazio. Cores sólidas com badge no número do dia. */
+const WIZARD_CELL_STYLES = {
+  empty:     { bg:'transparent',  border:'1px solid var(--border-subtle)',   fg:'var(--text-muted)',  icon:'',   label:'',          showBadge:false, chipLabel:'',                tooltipBase:'Fora do calendário editorial' },
+  today:     { bg:'var(--bg-surface)', border:'1px dashed var(--brand-gold)', fg:'var(--text-primary)', icon:'', label:'HOJE',       showBadge:true,  chipLabel:'',                tooltipBase:'Hoje (sem slot)' },
+  slot:      { bg:'rgba(212,168,67,0.10)', border:'2px dashed var(--brand-gold)', fg:'var(--brand-gold)', icon:'+', label:'',         showBadge:false, chipLabel:'',                tooltipBase:'Slot disponível — clique pra solicitar' },
+  pending:   { bg:'#FEF3C7',  border:'2px solid #F59E0B',                    fg:'#92400E',            icon:'⏳', label:'AGUARDA',    showBadge:true,  chipLabel:'⏳ Sua solicitação', tooltipBase:'Sua solicitação aguardando triagem' },
+  converted: { bg:'#DBEAFE',  border:'2px solid #3B82F6',                    fg:'#1E40AF',            icon:'▶',  label:'EM PROD',    showBadge:true,  chipLabel:'▶ Em produção',     tooltipBase:'Sua solicitação convertida em tarefa' },
+  rejected:  { bg:'#FEE2E2',  border:'2px solid #EF4444',                    fg:'#991B1B',            icon:'✕',  label:'RECUSADA',   showBadge:true,  chipLabel:'✕ Recusada',         tooltipBase:'Sua solicitação foi recusada' },
+  done:      { bg:'#DCFCE7',  border:'2px solid #22C55E',                    fg:'#166534',            icon:'✓',  label:'CONCLUÍDA',  showBadge:true,  chipLabel:'✓ Concluída',        tooltipBase:'Solicitação concluída' },
+  batch:     { bg:'#EDE9FE',  border:'2px dashed #A78BFA',                   fg:'#5B21B6',            icon:'✦',  label:'NO LOTE',    showBadge:true,  chipLabel:'✦ No lote',          tooltipBase:'Pendente no seu lote (não enviado)' },
+  selected:  { bg:'rgba(212,168,67,0.30)', border:'3px solid var(--brand-gold)', fg:'var(--brand-gold)', icon:'', label:'SELECIONADO', showBadge:true,  chipLabel:'',                tooltipBase:'Data selecionada' },
+};
+function _wizardCellVisual({ existingReq, batchItem, hasSlots, slotColor, isToday, isSelected, isPast }) {
+  // Precedência:
+  // 1) existingReq (com status)
+  // 2) batchItem (lote local)
+  // 3) selected (override visual de borda forte, mantém estado)
+  // 4) slot vazio disponível
+  // 5) hoje sem slot
+  // 6) dia comum vazio
+  let v;
+  if (existingReq) {
+    const st = existingReq.status || 'pending';
+    if (st === 'converted')       v = { ...WIZARD_CELL_STYLES.converted };
+    else if (st === 'rejected')   v = { ...WIZARD_CELL_STYLES.rejected };
+    else if (st === 'done')       v = { ...WIZARD_CELL_STYLES.done };
+    else if (st === 'em_andamento') v = { ...WIZARD_CELL_STYLES.converted, label:'EM ANDAM' };
+    else                          v = { ...WIZARD_CELL_STYLES.pending };
+  } else if (batchItem) {
+    v = { ...WIZARD_CELL_STYLES.batch };
+  } else if (hasSlots) {
+    v = { ...WIZARD_CELL_STYLES.slot };
+  } else if (isToday) {
+    v = { ...WIZARD_CELL_STYLES.today };
+  } else {
+    v = { ...WIZARD_CELL_STYLES.empty };
+  }
+  // Selected override: borda dourada GROSSA por cima, mantendo bg do estado.
+  if (isSelected) {
+    v.border = '3px solid var(--brand-gold)';
+    v.bg = v === WIZARD_CELL_STYLES.empty || v.bg === 'transparent'
+      ? 'rgba(212,168,67,0.30)'
+      : v.bg;
+  }
+  return v;
+}
+
 function _renderCalendarGrid(type) {
   const cal = _state.calDate || new Date();
   const gran = _state.calGran || 'month'; // v4.57.0+ month | week | day
@@ -647,63 +700,47 @@ function _renderCalendarGrid(type) {
     const batchItem   = (_state.batchQueue || []).find(b => b.desiredDate === iso);
     const filled = !!existingReq || !!batchItem;
 
-    const bg = isSelected ? 'rgba(212,168,67,0.25)'
-             : hasSlots   ? `${slotColor}22`
-             : isToday    ? 'var(--bg-surface)'
-             : 'transparent';
-    const border = isSelected ? '2px solid var(--brand-gold)'
-                 : hasSlots   ? `1px solid ${slotColor}`
-                 : isToday    ? '1px dashed var(--border-default)'
-                 : '1px solid var(--border-subtle)';
-    const cursor = isPast ? 'not-allowed' : 'pointer';
-    const opacity = isPast ? '0.35' : '1';
+    // v4.57.17: visual padronizado por ESTADO (Renê — clareza no calendar).
+    // Antes era tudo translúcido sutil; agora cores SÓLIDAS de alto contraste
+    // + ícone grande + label do status (no modo expandido).
+    const vis = _wizardCellVisual({ existingReq, batchItem, hasSlots, slotColor, isToday, isSelected, isPast });
 
-    // v4.56.0+ Render rico: prefix com ◌ (vazio) ou ✓ (preenchido) e cor de status pra requests
-    let displayText = hasSlots ? slotTitle : '';
-    let displayColor = hasSlots ? slotColor : '';
-    let cellExtraBg = bg;
-    let cellExtraBorder = border;
-    let cellTitle = hasSlots ? esc(slotTitle) + (isPast?' (passado)':'') : (isPast?'Data passada':'Fora do calendário editorial');
+    const cursor = isPast ? 'not-allowed' : 'pointer';
+    const opacity = isPast ? '0.4' : '1';
+
+    let chipText  = vis.chipLabel;  // texto do chip dentro da cell
+    let cellTitle = vis.tooltipBase;
     if (existingReq) {
-      const st = existingReq.status || 'pending';
-      const statusColor = ({ pending:'#F59E0B', converted:'#16A34A', rejected:'#EF4444', em_andamento:'#0EA5E9' })[st] || '#6B7280';
-      displayText = `✓ ${existingReq.title || existingReq.typeName || 'Sua solicitação'}`;
-      displayColor = statusColor;
-      cellExtraBorder = `2px solid ${statusColor}`;
-      cellExtraBg = `${statusColor}15`;
-      cellTitle = `Sua solicitação: ${existingReq.title || existingReq.typeName || ''} (${_statusLabel(st)}). Clique pra ver.`;
+      cellTitle = `${vis.tooltipBase}: ${existingReq.title || existingReq.typeName || ''}. Clique pra ver.`;
     } else if (batchItem) {
-      displayText = `✦ No seu lote`;
-      displayColor = '#16A34A';
-      cellExtraBorder = '1px dashed #16A34A';
-      cellExtraBg = 'rgba(34,197,94,0.10)';
-      cellTitle = `${batchItem.title || '(sem título)'} — pendente no lote local`;
+      cellTitle = `${vis.tooltipBase}: ${batchItem.title || '(sem título)'} — pendente envio.`;
     } else if (hasSlots) {
-      displayText = `◌ ${slotTitle}`;
-    }
-    // Tooltip rico — adiciona contexto extra do tipo + área se houver slot
-    if (hasSlots && !existingReq && !batchItem) {
       cellTitle = `Slot: ${esc(slots.map(s=>s.title||'').join(' · '))} | ${esc(type?.name||'')}${isPast?' (passado)':''}`;
+      chipText = `${vis.icon} ${slotTitle}`;
+    } else if (isPast) {
+      cellTitle = 'Data passada';
     }
+
     cells += `
       <div class="pw-cal-day" data-date="${iso}" data-has-slot="${hasSlots?'1':'0'}" data-slot-id="${esc(slotId)}"
         data-filled="${filled?'1':'0'}" data-req-id="${esc(existingReq?.id||'')}"
         ${isPast?'data-disabled="1"':''}
         title="${cellTitle}"
         style="
-          background:${cellExtraBg};border:${cellExtraBorder};border-radius:6px;
+          background:${vis.bg};border:${vis.border};border-radius:6px;
           padding:6px 4px;cursor:${cursor};opacity:${opacity};
-          min-height:54px;min-width:0;display:flex;flex-direction:column;
+          min-height:60px;min-width:0;display:flex;flex-direction:column;
           overflow:hidden;box-sizing:border-box;
           font-size:0.75rem;line-height:1.2;transition:all 0.12s;
           ${isPast?'':'user-select:none;'}">
-        <div style="font-weight:${isToday?'700':'500'};color:${isToday?'var(--brand-gold)':'var(--text-primary)'};min-width:0;">
+        <div style="font-weight:${isToday?'700':'500'};color:${isToday?'var(--brand-gold)':'var(--text-primary)'};min-width:0;display:flex;align-items:center;gap:4px;">
           ${d}
+          ${vis.showBadge ? `<span style="background:${vis.fg};color:#fff;font-size:0.5rem;font-weight:700;padding:1px 5px;border-radius:8px;text-transform:uppercase;letter-spacing:0.04em;line-height:1.2;">${vis.label}</span>` : ''}
         </div>
-        ${displayText ? `
-          <div style="font-size:0.625rem;color:${displayColor};font-weight:600;margin-top:auto;line-height:1.1;
+        ${chipText ? `
+          <div style="font-size:0.625rem;color:${vis.fg};font-weight:700;margin-top:auto;line-height:1.15;
             overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;max-width:100%;" title="${esc(slots.map(s=>s.title||'Slot').join(' · '))}">
-            ${esc(displayText)}${extraSlots && !existingReq && !batchItem ? ` <span style="background:${slotColor};color:#fff;padding:0 4px;border-radius:8px;font-size:0.5625rem;margin-left:2px;">+${extraSlots}</span>` : ''}
+            ${esc(chipText)}${extraSlots && !existingReq && !batchItem ? ` <span style="background:${slotColor};color:#fff;padding:0 4px;border-radius:8px;font-size:0.5625rem;margin-left:2px;">+${extraSlots}</span>` : ''}
           </div>
         ` : ''}
       </div>
@@ -742,27 +779,23 @@ function _renderCalendarGrid(type) {
       <div style="display:grid;grid-template-columns:repeat(${gran==='day'?1:7},1fr);gap:4px;">
         ${cells}
       </div>
-      <div style="margin-top:10px;display:flex;gap:14px;font-size:0.6875rem;color:var(--text-muted);flex-wrap:wrap;">
-        <div style="display:flex;align-items:center;gap:5px;">
-          <span style="width:12px;height:12px;border-radius:3px;background:rgba(212,168,67,0.25);border:2px solid var(--brand-gold);display:inline-block;"></span>
-          Selecionado
-        </div>
-        <div style="display:flex;align-items:center;gap:5px;">
-          <span style="width:12px;height:12px;border-radius:3px;background:#44d54122;border:1px solid #44d541;display:inline-block;"></span>
-          ◌ Slot vazio
-        </div>
-        <div style="display:flex;align-items:center;gap:5px;">
-          <span style="width:12px;height:12px;border-radius:3px;background:#F59E0B15;border:2px solid #F59E0B;display:inline-block;"></span>
-          ✓ Sua solicitação
-        </div>
-        <div style="display:flex;align-items:center;gap:5px;">
-          <span style="width:12px;height:12px;border-radius:3px;background:rgba(34,197,94,0.10);border:1px dashed #16A34A;display:inline-block;"></span>
-          ✦ No lote
-        </div>
-        <div style="display:flex;align-items:center;gap:5px;">
-          <span style="width:12px;height:12px;border-radius:3px;background:transparent;border:1px solid var(--border-subtle);display:inline-block;"></span>
-          Dia vazio (= fora do calendário)
-        </div>
+      <!-- v4.57.17: legenda nova — badges com a MESMA cor dos chips do calendar -->
+      <div style="margin-top:12px;display:flex;gap:6px;font-size:0.6875rem;flex-wrap:wrap;align-items:center;">
+        <span style="color:var(--text-muted);font-weight:600;margin-right:4px;">Como ler:</span>
+        ${[
+          ['slot',      'Slot vazio (solicitar)'],
+          ['pending',   'Aguardando'],
+          ['converted', 'Em produção'],
+          ['done',      'Concluída'],
+          ['rejected',  'Recusada'],
+          ['batch',     'No lote (não enviado)'],
+          ['empty',     'Fora do calendário'],
+        ].map(([state, label]) => {
+          const v = WIZARD_CELL_STYLES[state];
+          return `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:10px;
+            background:${v.bg};border:${v.border};color:${v.fg};font-weight:600;font-size:0.6875rem;line-height:1.4;">
+            ${v.icon ? `<span>${v.icon}</span>` : ''}${label}</span>`;
+        }).join('')}
       </div>
     </div>
   `;
