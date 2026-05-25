@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 57,
-  patch: 3,
-  build: '20260524-portal-wizard-draft-resume-banner-no-save-exit',
+  patch: 4,
+  build: '20260524-portal-wizard-no-auto-restore-explicit-banner',
 };
 
 /** "1.2.0" */

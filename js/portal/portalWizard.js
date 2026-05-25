@@ -84,12 +84,12 @@ export function renderPortalWizard(container, opts) {
     batchQueue: [],
   };
 
-  // Tenta restaurar rascunho
-  const draft = _loadDraft();
-  if (draft && _hasDraftContent(draft)) {
-    _state.data = { ..._state.data, ...draft.data };
-    _state.step = draft.step || 1;
-  }
+  // v4.57.3+ NÃO auto-restora silenciosamente — em vez disso, sempre começa no
+  // Step 1 e o banner "Você tem um rascunho em andamento" oferece a escolha de
+  // continuar ou descartar. Mais explícito (Renê: "vai encontrar essa solicitacao
+  // onde? vai ter uma pendencia no portal pra ela seguir?"). O draft fica intacto
+  // em localStorage e é lido por _renderDraftResumeBanner.
+  _state.step = 1;
 
   _renderShell(container);
   _bindKeyboard();
@@ -1784,18 +1784,18 @@ function _renderRecentRequestsBanner() {
  */
 function _renderDraftResumeBanner() {
   if (!_state) return '';
-  // Só mostra se já estamos no Step 1 mas há draft significativo de outra sessão
-  // (step salvo > 1 OU campos importantes preenchidos)
+  // v4.57.3+ Só mostra no Step 1 (cabeçalho de retomada) E quando há draft com
+  // conteúdo significativo (step > 1 OU campos importantes preenchidos).
+  if (_state.step !== 1) return '';
+  // Se o user já clicou "Continuar" e está editando, suprime (state.sector pode
+  // ter mudado em relação ao draft).
+  if (_state.data.sector || _state.data.title) return '';
   const draft = _loadDraft();
   if (!draft || !draft.data) return '';
   const hasContent = draft.step > 1
     || (draft.data.sector && draft.data.typeId)
     || (draft.data.title && draft.data.title.length > 3);
   if (!hasContent) return '';
-  // Se já estamos restaurados (state.data === draft.data shape), não mostrar
-  // — usuário já está continuando.
-  if (_state.step === draft.step && _state.data.sector === draft.data.sector
-      && _state.data.title === draft.data.title) return '';
 
   const savedAt = draft.savedAt;
   let savedLabel = '';
