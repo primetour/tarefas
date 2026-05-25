@@ -6,6 +6,25 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.57.6+20260525-portal-btn-classes-in-portal-css] — 2026-05-25
+
+Release **PATCH** — root-cause fix dos "botões fora do padrão" no portal de solicitações.
+
+**Sintoma Renê (3ª vez no sprint)**: "os botões seguem fora do padrão de design do sistema. o botão 'hoje', no calendário, está na mesma situação".
+
+**Causa raiz descoberta**: `solicitar.html` carrega APENAS `css/portal.css`. As classes `.btn`, `.btn-primary`, `.btn-secondary`, `.btn-sm` vivem em `css/components.css`, que o portal **não importa**. Todas as tentativas anteriores (v4.55.7, v4.57.3) trocaram `style="..."` por `class="btn ..."` — mas como a classe não existia no CSS carregado, o resultado era botão **default do browser** (cinza outset, fonte 400, padding 0). Trocar custom feio por browser feio.
+
+**Fix**:
+1. `css/portal.css` ganha definição própria de `.btn` + `.btn-primary` (gold filled, igual `.portal-submit`) + `.btn-secondary` (transparent + border-subtle, igual `.portal-submit-alt`) + `.btn-sm` + `.btn-icon` + `.btn-ghost` + `.btn-danger` + `.btn-segment` (segmented control). Usa SÓ tokens do portal — não importa `components.css` (risco de cascata).
+2. `portalWizard.js`: calendar prev/next/Hoje/granularity refatorados pra usar `.btn .btn-secondary .btn-icon .btn-sm` + `.btn-segment`. Antes eram inline com `var(--border-default)` que nem existia no portal.
+3. Aliases defensivos em `:root` do portal.css: `--border-default`, `--border-accent`, `--bg-hover` pra evitar `var(undefined)` em outros inline styles.
+
+**Lição CLAUDE.md §12.w**: pages standalone (`solicitar.html`, view públicas, landings) NÃO herdam CSS do app principal. Antes de usar `class="btn ..."` em qualquer CSS isolado, confirmar via `grep "^.btn" css/<page>.css` que a classe existe ali. Se não existe, ou define ou usa o helper inline da página.
+
+**Arquivos**: css/portal.css, js/portal/portalWizard.js, js/portal/portal.js, js/version.js, index.html, solicitar.html, CLAUDE.md, CHANGELOG.md, functions/add-dev-hours-4.57.6.cjs
+
+---
+
 ## [4.54.3+20260524-portal-wizard-same-module-instance] — 2026-05-24
 
 Release **PATCH** — fix do fix anterior: import com querystrings diferentes criava 2 instâncias do módulo.

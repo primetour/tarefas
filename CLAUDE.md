@@ -932,6 +932,34 @@ Pattern estabelecido em `js/portal/portalWizard.js` pra refactor de form único 
 - Não centralizar serialização do doc Firestore → batch + single divergem; usar helper `_buildRequestDoc(data, user)` reusado nos 2 caminhos.
 - Edit history sem `requesterEditFlag` no doc Firestore → sistema principal não mostra banner pro assignee. SEMPRE incluir `{requesterEditFlag:true, requesterEditedAt:serverTimestamp()}` em updateDoc de edit mode (e fazer sync da task linked com `withRetry` se request tem `taskId`).
 
+### w) Pages standalone (solicitar.html, login, etc.) NÃO herdam CSS do app (v4.57.6)
+
+**Sintoma Renê**: "os botões seguem fora do padrão de design do sistema. o botão 'hoje' no calendário está na mesma situação" — repetido 3 vezes em sprints distintos (v4.55.7, v4.57.3, v4.57.5). Cada tentativa eu trocava `style="background:linear-gradient..."` → `class="btn btn-secondary btn-sm"`, mas continuava feio.
+
+**Causa raiz** (descoberta v4.57.6): `solicitar.html` carrega APENAS `<link rel="stylesheet" href="css/portal.css">`. As classes `.btn`, `.btn-primary`, `.btn-secondary`, `.btn-sm` vivem em `css/components.css`, que o portal NÃO importa. Resultado: todos os `<button class="btn ...">` renderizavam como botão **default do browser** (cinza outset, fonte 400, 0 padding) — visualmente idênticos a `<button>` sem classe nenhuma.
+
+Sintoma falso-positivo: trocar `style="..."` por `class="btn"` parecia "padronizar", mas era trocar "botão custom feio" por "botão browser feio". Ambos errados visualmente.
+
+**Fix definitivo**:
+1. **Portal.css ganha definição PRÓPRIA de `.btn` + variantes**, usando SÓ tokens do portal (`--brand-gold`, `--text-secondary`, `--border-subtle`, `--bg-surface`). Não importa `components.css` (risco de cascata + colisão com `--text-inverse`, dark mode próprio, etc.).
+2. Estilo SE INSPIRA no sistema principal mas reproduz com tokens do portal: `.btn-primary` = gold filled (igual `.portal-submit`), `.btn-secondary` = transparent + border-subtle (igual `.portal-submit-alt`).
+3. `.btn-segment` pra segmented control (granularity month/week/day).
+4. Refator dos botões inline (calendar prev/next/Hoje + granularity) pra usar `.btn .btn-icon .btn-sm` + `.btn-segment` — antes usavam `var(--border-default)` que nem existia no portal.
+5. **Aliases defensivos** em `:root` do portal.css: `--border-default`, `--border-accent`, `--bg-hover` pra evitar `var(undefined)` em outros inline styles legados.
+
+**Princípio mestre — quem audita pages standalone**:
+- ✅ Antes de usar `class="btn ..."` em qualquer página fora do app principal (`index.html`), CONFIRMAR via `grep "^.btn" css/<page>.css` que a classe existe ali.
+- ✅ Se não existe: ou define `.btn` no CSS standalone OU usa o helper inline próprio da página (`.portal-submit`, `.login-btn`, etc.).
+- ✅ Ao **adicionar página standalone** (auth.html, public-view.html, etc.), DOCUMENTAR no topo do CSS: `/* CSS isolado — não herda app. Reusable classes definidas aqui: .btn, .form-input, ... */`.
+
+**Anti-padrão a evitar futuramente**: copiar `class="btn btn-primary"` de uma page do app pra uma standalone "porque parece o padrão" — sem auditoria de CSS herdado. Visualmente parece OK no review do código, mas no browser é botão default.
+
+**Pages standalone identificadas no projeto (a auditar individualmente se cresceram com `.btn`)**:
+- `solicitar.html` (portal de solicitações) — ✅ corrigido v4.57.6
+- `roteiro-view.html` (visualizador público de roteiro) — auditar
+- `landing-*.html` (se houver) — auditar
+- (Login não é standalone — é parte do `index.html`)
+
 ### j) Em qualquer lista exposta no front-end, sempre prever CRUD
 
 Estabelecido em v4.50.1. Categorias, coleções, tipos, status (que sejam editáveis) viram collection Firestore com defaults + CRUD via UI:
