@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 57,
-  patch: 25,
-  build: '20260525-tasks-audit-4-more-fixes',
+  patch: 26,
+  build: '20260525-parsementions-refined-12-cases-pass',
 };
 
 /** "1.2.0" */

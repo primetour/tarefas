@@ -1603,42 +1603,58 @@ export async function addComment(taskId, text) {
 }
 
 /* ─── Parser de @mentions em texto ───────────────────────── */
-// v4.57.25 fix #13: se @first matches > 1 user, NÃO notifica nenhum dos
-// duplicados (exige disambiguação por sobrenome). Match por nome COMPLETO
-// continua sendo prioridade — só notifica direto se exato.
-// Antes: 2 "João" no sistema → @joão notificava AMBOS. Ruído sério.
+// v4.57.25 fix #13 (refinado): tokeniza o texto pra evitar substring match
+// errado. Antes: '@joão silva' → matchava u1 (full) E u2 (first 'joão').
+// Agora: extrai tokens '@palavra1 palavra2' do texto e compara contra
+// (full name) ou (first name único) dos users.
 function parseMentions(text, users, currentUid) {
   if (!text || !Array.isArray(users) || !users.length) return [];
-  const lower = String(text).toLowerCase();
-  if (!lower.includes('@')) return [];
+  if (!String(text).includes('@')) return [];
+  // Mapa de firstName → count (pra detectar ambiguidade)
+  const firstCount = new Map();
+  for (const u of users) {
+    if (!u || !u.id || u.id === currentUid) continue;
+    const first = String(u.name || '').trim().split(/\s+/)[0]?.toLowerCase();
+    if (!first) continue;
+    firstCount.set(first, (firstCount.get(first) || 0) + 1);
+  }
+  // Extrai todas as menções do texto. Regex: @palavra (opcionalmente seguida
+  // de outra palavra). Captura "@joão silva" inteiro OU "@maria" sozinho.
+  // Pega ATÉ 2 palavras (suficiente pros nomes pt-BR mais comuns).
+  // Stopwords pt-BR + en — não fazem parte de nome próprio
+  const STOP = new Set(['e','ou','o','a','os','as','de','da','do','das','dos','para','pra','que','com','um','uma','no','na','em','&','and','or','to','that']);
+  const mentions = new Set();
+  const re = /@([a-zà-ú]+)(?:\s+([a-zà-ú]+))?/gi;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    const first = m[1].toLowerCase();
+    const second = m[2]?.toLowerCase();
+    if (second && !STOP.has(second)) {
+      // Menção de NOME COMPOSTO — só adiciona o composto. Não cai pra first
+      // isolado (evita match cruzado com outro user de mesmo first name).
+      mentions.add(`${first} ${second}`);
+    } else {
+      // Menção de NOME ÚNICO — adiciona só first
+      mentions.add(first);
+    }
+  }
+  if (!mentions.size) return [];
 
   const mentioned = new Set();
-  // Pass 1: match por nome COMPLETO (mais específico, sem ambiguidade possível)
   for (const u of users) {
     if (!u || !u.id || u.id === currentUid) continue;
-    const name = String(u.name || '').trim().toLowerCase();
-    if (!name) continue;
-    if (lower.includes('@' + name)) mentioned.add(u.id);
-  }
-  // Pass 2: match por primeiro nome — só notifica se houver UM ÚNICO match.
-  // Constrói mapa firstName → [users]
-  const byFirst = new Map();
-  for (const u of users) {
-    if (!u || !u.id || u.id === currentUid) continue;
-    if (mentioned.has(u.id)) continue;  // já matched no full-name
-    const first = String(u.name || '').trim().split(/\s+/)[0]?.toLowerCase();
-    if (!first || first.length < 2) continue;
-    if (!byFirst.has(first)) byFirst.set(first, []);
-    byFirst.get(first).push(u);
-  }
-  for (const [first, list] of byFirst.entries()) {
-    if (!lower.includes('@' + first)) continue;
-    if (list.length === 1) {
-      mentioned.add(list[0].id);
-    } else {
-      // Ambíguo: 2+ users com mesmo primeiro nome. Não notifica nenhum.
-      // (User deveria ter mencionado por nome completo). Log pra debug.
-      console.log(`[parseMentions] ambíguo: @${first} bate ${list.length} users. Skip.`);
+    const fullName = String(u.name || '').trim().toLowerCase();
+    if (!fullName) continue;
+    const first = fullName.split(/\s+/)[0];
+
+    // Match por full name (sempre OK — usa palavra-chave única)
+    if (mentions.has(fullName)) { mentioned.add(u.id); continue; }
+    // Match por "first second" do user (ex: user "João Silva" mencionado como "@joão silva")
+    const firstTwo = fullName.split(/\s+/).slice(0, 2).join(' ');
+    if (mentions.has(firstTwo)) { mentioned.add(u.id); continue; }
+    // Match por primeiro nome — só se NÃO houver duplicata
+    if (mentions.has(first) && firstCount.get(first) === 1) {
+      mentioned.add(u.id);
     }
   }
   return [...mentioned];
