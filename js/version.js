@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 57,
-  patch: 12,
-  build: '20260525-e2e-bugs-reminder-overdue-esc-fs-pwnew-reset',
+  patch: 13,
+  build: '20260525-vacation-absences-off-by-one',
 };
 
 /** "1.2.0" */

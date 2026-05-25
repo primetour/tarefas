@@ -276,13 +276,16 @@ function absenceTable(absences, uid, showActions) {
       const start   = a.startDate?.toDate ? a.startDate.toDate() : new Date(a.startDate);
       const end     = a.endDate?.toDate   ? a.endDate.toDate()   : new Date(a.endDate);
       const isPartial = !!a.partial;
+      // v4.57.13: Renê — "fiquei fora por 1h e o sistema contou como 2 dias".
+      // Bug: +1 fixo no cálculo de dias. Em ausência full o end é 23:59:59 →
+      // (end-start)/86400000 ≈ 0.999, ceil=1, +1=2. Fix: sem +1, com Math.max(1).
       // Duração: dias inteiros OU horas (parcial)
       let durationLabel;
       if (isPartial) {
         const hrs = Math.max(0, Math.round(((end - start) / 3600000) * 10) / 10);
         durationLabel = `${hrs}h`;
       } else {
-        const days = Math.ceil((end - start) / 86400000) + 1;
+        const days = Math.max(1, Math.ceil((end - start) / 86400000));
         durationLabel = `${days} dia${days!==1?'s':''}`;
       }
       const fmtH = (d) => formatTimePart(d);
@@ -939,13 +942,23 @@ function getExportData() {
     const user    = users.find(u => u.id === a.userId);
     const start   = a.startDate?.toDate ? a.startDate.toDate() : new Date(a.startDate);
     const end     = a.endDate?.toDate   ? a.endDate.toDate()   : new Date(a.endDate);
-    const days    = Math.ceil((end - start) / (1000*60*60*24)) + 1;
+    // v4.57.13: fix off-by-one + respeita partial (1h não pode virar 2 dias no export)
+    let dias, duracao;
+    if (a.partial) {
+      const hrs = Math.max(0, Math.round(((end - start) / 3600000) * 10) / 10);
+      dias = Math.round((hrs / 24) * 100) / 100;  // fração de dia, ex: 0.04 pra 1h
+      duracao = `${hrs}h`;
+    } else {
+      dias = Math.max(1, Math.ceil((end - start) / (1000*60*60*24)));
+      duracao = `${dias} dia${dias!==1?'s':''}`;
+    }
     return {
       nome:      user?.name || a.userId,
       tipo:      typeDef.label,
       inicio:    fmtDate(a.startDate),
       fim:       fmtDate(a.endDate),
-      dias:      days,
+      dias,
+      duracao,
       observacao: a.note || '',
     };
   });
@@ -1390,12 +1403,17 @@ function openVacationRequestModal({ periods, balance }) {
     if (!s || !e || !info) return;
     const sd = new Date(s), ed = new Date(e);
     if (ed < sd) { info.innerHTML = '<span style="color:#EF4444;">⚠ Fim deve ser após o início.</span>'; return; }
-    const days = Math.round((ed - sd) / 86400000) + 1;
+    // v4.57.13: alinhado com vacation.js (sem +1). 10/06 a 20/06 = 10 dias.
+    const days = Math.max(1, Math.round((ed - sd) / 86400000));
     const total = days + ab;
     const status = days >= MIN_FRACTION_DAYS
       ? (days >= MIN_LARGE_FRACTION ? '✅ Período válido (>= 14 dias).' : `⚠ Período < ${MIN_LARGE_FRACTION} dias — só permitido se outro período for >= ${MIN_LARGE_FRACTION}.`)
       : `❌ Mínimo ${MIN_FRACTION_DAYS} dias.`;
-    info.innerHTML = `📅 <strong>${days}</strong> dias de descanso${ab?` + <strong>${ab}</strong> dias de abono = <strong>${total}</strong> dias do saldo`:''}. ${status}`;
+    // v4.57.13: hint explícito da semântica (sem +1 inclusivo)
+    info.innerHTML = `📅 <strong>${days}</strong> dias de descanso${ab?` + <strong>${ab}</strong> dias de abono = <strong>${total}</strong> dias do saldo`:''}. ${status}
+      <div style="font-size:0.6875rem;color:var(--text-muted);margin-top:4px;">
+        ℹ Contagem: da data de início até o dia antes da volta. Pra incluir o último dia como folga, selecione o dia seguinte como fim.
+      </div>`;
   };
   setTimeout(() => {
     document.getElementById('vac-start')?.addEventListener('change', updateDaysInfo);

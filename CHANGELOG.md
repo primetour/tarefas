@@ -6,6 +6,39 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.57.13+20260525-vacation-absences-off-by-one] — 2026-05-25
+
+Release **PATCH** — fix off-by-one no cálculo de duração de ausências e férias.
+
+Renê (relato usuário): *"eu fiquei fora por 1h e o sistema contou como se fossem 2 dias... e as ferias tb, que são 10 dias, ele marca 11"*.
+
+**Causa raiz**: 4 ocorrências de `(end - start) / 86400000 + 1` espalhadas pelo módulo equipe/ausências. O `+1` foi copiado entre arquivos assumindo "férias inclusivas dos dois lados". Mas:
+- Para ausência full-day (sem `partial`), `endDate` é gravado como `23:59:59` do dia final → `(end-start)/86400000 ≈ 0.999` → `ceil=1` → `+1 = 2` ❌
+- Para férias com ambos midnight, `(20/06 - 10/06)/86400000 = 10` → `+1 = 11` quando user esperava 10
+
+**Fixes em 4 lugares**:
+1. `js/services/vacation.js:226` — `createVacationRequest` calcula `days` no save. Removido `+1`, adicionado `Math.max(1, ...)`.
+2. `js/pages/team.js:285` — render da tabela de ausências. Mesmo fix.
+3. `js/pages/team.js:942` — `getExportData` (CSV/Excel). Agora também respeita `partial` (1h não vira "1 dia" no export) — colunas `dias` (decimal pra parcial) + nova `duracao` (`"1h"` ou `"10 dias"`).
+4. `js/pages/team.js:1393` — hint dinâmico no modal de nova férias. Mesmo fix.
+
+**Convenção documentada**: end date é EXCLUSIVO (dia de retorno). Hint visual adicionado abaixo do contador: *"Contagem: da data de início até o dia antes da volta. Pra incluir o último dia como folga, selecione o dia seguinte como fim."*
+
+**Impacto retroativo**: registros já gravados no Firestore mantêm o `days` antigo (com +1). Novos cadastros + edições usam fórmula nova. Pra alinhar valores antigos: backfill manual quando necessário (não automático pra evitar mudar histórico sem visibilidade).
+
+**Cenários validados (manualmente)**:
+| Cenário | Antes | Agora | ✓ |
+|---|---|---|---|
+| Ausência 1h não-partial | 2 dias | 1 dia | ✅ |
+| Ausência 1h partial | 1h | 1h | ✅ (já estava OK) |
+| Ausência 1 dia full | 2 dias | 1 dia | ✅ |
+| Férias 10/06 → 20/06 | 11 dias | 10 dias | ✅ |
+| Mesma data start/end (full) | 2 dias | 1 dia | ✅ (Math.max guard) |
+
+**Arquivos**: js/services/vacation.js, js/pages/team.js, js/version.js, index.html, solicitar.html, CHANGELOG.md
+
+---
+
 ## [4.57.12+20260525-e2e-bugs-reminder-overdue-esc-fs-pwnew-reset] — 2026-05-25
 
 Release **PATCH** — 3 bugs descobertos via teste E2E real no Chrome MCP do Renê.

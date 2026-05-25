@@ -223,7 +223,11 @@ export async function createVacationRequest({ periodId, startDate, endDate, abon
   const end   = new Date(endDate);   end.setHours(0,0,0,0);
   if (end < start) throw new Error('Data de fim deve ser posterior à de início.');
 
-  const days = Math.round((end - start) / 86400000) + 1;
+  // v4.57.13: Renê — "férias de 10 dias, ele marca 11". Off-by-one clássico.
+  // Antes: + 1 (assumindo inclusivo dos 2 lados). Agora: diff direto em dias.
+  // Convenção: férias de 10/06 a 20/06 = 10 dias (excluindo dia final). Se user
+  // quer incluir o dia 20 também, escolhe 21 como fim.
+  const days = Math.max(1, Math.round((end - start) / 86400000));
   if (days < MIN_FRACTION_DAYS) {
     throw new Error(`Cada período de férias deve ter no mínimo ${MIN_FRACTION_DAYS} dias.`);
   }
