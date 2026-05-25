@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 57,
-  patch: 13,
-  build: '20260525-vacation-absences-off-by-one',
+  patch: 14,
+  build: '20260525-date-picker-light-palettes',
 };
 
 /** "1.2.0" */

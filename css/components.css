@@ -846,13 +846,16 @@ textarea.portal-field { resize: vertical; }
   box-shadow: 0 0 0 3px rgba(212,168,67,0.12);
 }
 
-/* ─── DATE/TIME INPUTS — picker visível (v4.57.7) ─────────────
-   Sintoma user: "ter um calendário para escolha" (Meu Painel
-   lembrete). Causa: <input type="date"> renderiza picker indicator
-   via ::-webkit-calendar-picker-indicator, mas no dark mode o
-   ícone fica preto-em-preto = invisível. Fix: invert filter no
-   dark theme, hover destaca, e o input INTEIRO vira clicável
-   (delegado pra datepickerEnhance.js que chama showPicker()). */
+/* ─── DATE/TIME INPUTS — picker visível em todas as paletas (v4.57.14) ─────
+   v4.57.7: cobria só [data-theme="light"] (que só vale no portal). O app
+   principal usa [data-palette="..."] — palettes claras (platinum, sand)
+   ficavam com color-scheme:dark default → picker branco em fundo branco =
+   invisível. Renê: "picker calendário em lembretes está em branco qdo a
+   paleta é clara... precisa ter essa diferenciação pensando nas multiplas
+   paletas de cores do sistema".
+
+   Estratégia: default dark (cobre 7 das 9 palettes do app + portal padrão);
+   override explícito pra TODAS as paletas claras + theme="light" do portal. */
 input[type="date"],
 input[type="datetime-local"],
 input[type="time"],
@@ -860,12 +863,24 @@ input[type="month"] {
   cursor: pointer;
   color-scheme: dark;
 }
+
+/* Light palettes do app principal (base.css define): platinum + sand */
+:root[data-palette="platinum"] input[type="date"],
+:root[data-palette="platinum"] input[type="datetime-local"],
+:root[data-palette="platinum"] input[type="time"],
+:root[data-palette="platinum"] input[type="month"],
+:root[data-palette="sand"] input[type="date"],
+:root[data-palette="sand"] input[type="datetime-local"],
+:root[data-palette="sand"] input[type="time"],
+:root[data-palette="sand"] input[type="month"],
+/* Portal solicitar.html — toggle via data-theme */
 [data-theme="light"] input[type="date"],
 [data-theme="light"] input[type="datetime-local"],
 [data-theme="light"] input[type="time"],
 [data-theme="light"] input[type="month"] {
   color-scheme: light;
 }
+
 input[type="date"]::-webkit-calendar-picker-indicator,
 input[type="datetime-local"]::-webkit-calendar-picker-indicator,
 input[type="time"]::-webkit-calendar-picker-indicator,
