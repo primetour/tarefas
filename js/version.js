@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 57,
-  patch: 22,
-  build: '20260525-tasks-audit-7-fixes',
+  patch: 23,
+  build: '20260525-tasks-popover-transitions-confirm',
 };
 
 /** "1.2.0" */

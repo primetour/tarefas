@@ -328,14 +328,31 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
 
   // Intercept all close paths (X button, backdrop, ESC) with dirty check
   // by monkey-patching modal.close for this modal's ID
+  // v4.57.23 fix #6: confirm() nativo (anti-padrão §11.k) → modal customizado.
+  // Antes: window.confirm() bloqueia thread, não estilizável, screen reader sofre.
   const _origManagerClose = modal.close.bind(modal);
   const modalId = m.id;
   modal.close = (id) => {
     if (id === modalId && !_bypassDirtyCheck && _isDirty) {
-      if (!confirm('Você tem alterações não salvas. Deseja descartar?')) return;
+      // API real de modal.confirm é Promise<boolean>
+      modal.confirm({
+        title: 'Descartar alterações?',
+        message: 'Você tem alterações não salvas. Se sair agora, elas serão perdidas.',
+        confirmText: 'Descartar',
+        cancelText: 'Continuar editando',
+        danger: true,
+        icon: '⚠️',
+      }).then(ok => {
+        if (ok) {
+          _bypassDirtyCheck = true;
+          _origManagerClose(id);
+          modal.close = _origManagerClose;
+        }
+        // else: continua aberto, user volta ao edit
+      });
+      return;  // NÃO fecha agora — espera user decidir no modal de confirmação
     }
     _origManagerClose(id);
-    // Restore original close once this modal is closed
     if (id === modalId) {
       modal.close = _origManagerClose;
     }

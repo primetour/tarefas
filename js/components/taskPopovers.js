@@ -16,6 +16,7 @@
  */
 
 import { store } from '../store.js';
+import { getValidTransitions } from '../services/workflowEngine.js';   // v4.57.23: filtro de transições
 import { userAvatarInner } from './userAvatar.js';
 import {
   STATUSES, PRIORITIES, NUCLEOS, REQUESTING_AREAS,
@@ -163,16 +164,21 @@ export function openDueDatePopover(anchor, { onPick, currentValue = null } = {})
 
 export function openStatusPopover(anchor, { onPick, currentValue = null } = {}) {
   // 4.49.10+ SECURITY: filtra opção 'done' se user não tem task_complete.
-  // Antes: popover oferecia TODAS as 6 opções (incluindo 'done') pra qualquer
-  // user. Backend bloqueava via updateTask mas o user via a opção + recebia
-  // toast de erro depois — UX confusa + caminho de bypass (bulkActionBar
-  // usava o mesmo popover, mas chamava bulkUpdateTasks que não tinha guard).
-  // Agora filtra na origem.
+  // v4.57.23 fix #4: filtra TAMBÉM por workflowEngine.getValidTransitions —
+  // antes oferecia TODAS as 6 opções sem checar transições válidas. User
+  // pulava de 'not_started' direto pra 'validation' ou 'rework' (ilegal
+  // segundo DEFAULT_TRANSITIONS). Backend NÃO bloqueia (workflowEngine só
+  // decora, não enforça). Resultado: estado inconsistente passava.
   const canComplete = store.isMaster?.() || store.can?.('task_complete') || false;
+  // getValidTransitions já considera master/admin (retorna todos status)
+  const validSet = new Set(getValidTransitions(currentValue));
   const allowedStatuses = STATUSES.filter(s => {
-    // Sempre permite o status atual (pra não esconder "done" se a task já está done)
+    // Sempre mostra o status ATUAL (marcado como ✓)
     if (s.value === currentValue) return true;
+    // Filtra por permissão (done exige task_complete)
     if (s.value === 'done' && !canComplete) return false;
+    // Filtra por transição válida do workflowEngine
+    if (!validSet.has(s.value)) return false;
     return true;
   });
 
