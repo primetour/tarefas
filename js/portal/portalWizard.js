@@ -61,6 +61,9 @@ function _defaultData(user) {
     // Step 4
     urgency: false,
     isPartnership: false,
+    // v4.54.4+ Lock states (urgency auto-locked quando prazo < SLA)
+    urgencyAutoLocked: false,
+    urgencyLockReason: '',
   };
 }
 
@@ -384,6 +387,7 @@ function _wireStep2() {
 
   dateInput?.addEventListener('change', () => {
     _state.data.desiredDate = dateInput.value;
+    _checkAutoUrgency();  // v4.54.4+
     _persistDraft();
   });
   oocCb?.addEventListener('change', () => {
@@ -517,6 +521,7 @@ function _wireStep3() {
     const opt = varSel.options[varSel.selectedIndex];
     _state.data.variationName = opt?.text?.split('·')[0]?.trim() || '';
     refreshSla();
+    _checkAutoUrgency();  // v4.54.4+ Re-checa lock pq SLA pode ter mudado
     _persistDraft();
   });
   titleI?.addEventListener('input', () => { _state.data.title = titleI.value.trim(); _persistDraft(); });
@@ -556,6 +561,7 @@ function _renderStep4() {
   const d = _state.data;
   const type = _state.taskTypes.find(x => x.id === d.typeId);
   const variation = type?.variations?.find(v => v.id === d.variationId);
+  const urgencyLocked = !!d.urgencyAutoLocked;
   return `
     <div class="portal-card" style="padding:24px;">
       <h2 style="margin:0 0 6px;font-size:1.25rem;color:var(--text-primary);">Última revisão</h2>
@@ -564,13 +570,16 @@ function _renderStep4() {
       </p>
 
       <div class="form-group">
-        <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:12px;
-          border:1px solid ${d.urgency?'rgba(239,68,68,0.4)':'var(--border-subtle)'};border-radius:8px;background:var(--bg-surface);">
-          <input type="checkbox" id="pw-urgency" ${d.urgency?'checked':''} style="margin-top:3px;" />
+        <label style="display:flex;align-items:flex-start;gap:10px;cursor:${urgencyLocked?'not-allowed':'pointer'};padding:12px;
+          border:1px solid ${d.urgency?'rgba(239,68,68,0.4)':'var(--border-subtle)'};border-radius:8px;background:var(--bg-surface);
+          ${urgencyLocked?'opacity:0.85;':''}">
+          <input type="checkbox" id="pw-urgency" ${d.urgency?'checked':''} ${urgencyLocked?'disabled':''} style="margin-top:3px;" />
           <div>
-            <div style="font-weight:500;color:var(--text-primary);">🔴 Marcar como urgente</div>
+            <div style="font-weight:500;color:var(--text-primary);">🔴 Marcar como urgente ${urgencyLocked?'<span style="color:var(--brand-gold);font-size:0.75rem;font-weight:600;">🔒 automático</span>':''}</div>
             <div style="font-size:0.75rem;color:var(--text-muted);margin-top:2px;">
-              Só quando há prazo real e inegociável. Urgências injustificadas prejudicam o time.
+              ${urgencyLocked
+                ? esc(d.urgencyLockReason || 'Prazo apertado — urgência definida automaticamente pelo sistema.')
+                : 'Só quando há prazo real e inegociável. Urgências injustificadas prejudicam o time.'}
             </div>
           </div>
         </label>
@@ -614,6 +623,8 @@ function _wireStep4() {
   const urg = document.getElementById('pw-urgency');
   const par = document.getElementById('pw-partnership');
   urg?.addEventListener('change', () => {
+    // v4.54.4+ Se está auto-locked, ignora toggle manual (defesa em profundidade)
+    if (_state.data.urgencyAutoLocked) { urg.checked = true; return; }
     _state.data.urgency = urg.checked;
     _persistDraft();
     // Re-render pra mudar borda visual
@@ -684,12 +695,14 @@ async function _onSubmit(submitAnother) {
       contentLink:    d.contentLink || '',
       desiredDate:    d.desiredDate,
       urgency:        d.urgency,
+      urgencyAutoLocked: d.urgencyAutoLocked || false,
+      urgencyLockReason: d.urgencyLockReason || '',
       isPartnership:  d.isPartnership,
       outOfCalendar:  d.outOfCalendar,
       // Sistema
       status:         'pending',
       createdAt:      serverTimestamp(),
-      source:         'portal-wizard-v4.54.0',
+      source:         'portal-wizard-v4.54.4',
     };
 
     const ref = await addDoc(collection(_state.db, 'requests'), doc);
@@ -697,7 +710,9 @@ async function _onSubmit(submitAnother) {
     // Limpa rascunho
     _clearDraft();
 
-    // Notifica admins do setor responsável (best-effort, não bloqueia)
+    // Notifica time via email (best-effort, não bloqueia o sucesso) — v4.54.4+
+    _notifyTeam({ ...doc, id: ref.id }).catch(e => console.warn('[wizard] notifyTeam falhou:', e?.message || e));
+    // Notifica admins via in-app notification (Firestore — também best-effort)
     _notifyAdmins(d, ref.id).catch(e => console.warn('[wizard] notify admins falhou:', e?.message || e));
 
     _state.submitting = false;
@@ -866,4 +881,107 @@ function _fmtDate(iso) {
   const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (m) return `${m[3]}/${m[2]}/${m[1]}`;
   try { return new Date(iso).toLocaleDateString('pt-BR'); } catch { return iso; }
+}
+
+/* v4.54.4+ Conta dias úteis entre duas datas (exclusivo, ignora sáb/dom).
+ * Idêntico ao countBusinessDays do portalLegacy. */
+function _countBusinessDays(startDate, endDate) {
+  let count = 0;
+  const cur = new Date(startDate);
+  cur.setHours(0, 0, 0, 0);
+  const end = new Date(endDate);
+  end.setHours(0, 0, 0, 0);
+  while (cur < end) {
+    cur.setDate(cur.getDate() + 1);
+    const dow = cur.getDay();
+    if (dow !== 0 && dow !== 6) count++;
+  }
+  return count;
+}
+
+/* v4.54.4+ Lock automático de urgência quando prazo é apertado.
+ * Regras:
+ *   - Se prazo está a < 24h: força urgência + lock
+ *   - Se dias úteis até o prazo < SLA da variação: força urgência + lock
+ *   - Senão: desbloqueia (mas mantém escolha manual do user)
+ */
+function _checkAutoUrgency() {
+  if (!_state) return;
+  const d = _state.data;
+  if (!d.desiredDate) {
+    // Reset se ainda não tem data
+    if (d.urgencyAutoLocked) {
+      d.urgencyAutoLocked = false;
+      d.urgencyLockReason = '';
+    }
+    return;
+  }
+  const deadline = new Date(d.desiredDate + 'T23:59:59');
+  const now = new Date();
+  const hoursUntil = (deadline - now) / 3600000;
+
+  // SLA da variação selecionada
+  const type = _state.taskTypes.find(t => t.id === d.typeId);
+  const variation = type?.variations?.find(v => v.id === d.variationId);
+  const slaDays = variation?.sla ? parseInt(variation.sla, 10) : NaN;
+  const bizDays = _countBusinessDays(now, deadline);
+
+  let shouldLock = false;
+  let reason = '';
+  if (hoursUntil <= 24) {
+    shouldLock = true;
+    reason = 'Prazo inferior a 24h. Urgência definida automaticamente.';
+  } else if (!isNaN(slaDays) && bizDays < slaDays) {
+    shouldLock = true;
+    reason = `Prazo (${bizDays} dia${bizDays!==1?'s':''} útil) inferior ao SLA da variação (${slaDays} dia${slaDays!==1?'s':''}). Urgência definida automaticamente.`;
+  }
+
+  if (shouldLock) {
+    d.urgency = true;
+    d.urgencyAutoLocked = true;
+    d.urgencyLockReason = reason;
+  } else if (d.urgencyAutoLocked) {
+    // Estava locked, agora não precisa mais — desbloqueia mas mantém urgency
+    // como false (user pode marcar manualmente se quiser).
+    d.urgencyAutoLocked = false;
+    d.urgencyLockReason = '';
+    d.urgency = false;
+  }
+}
+
+/* v4.54.4+ Notifica o time via Cloud Function de email após envio bem-sucedido.
+ * Best-effort: não bloqueia o fluxo de sucesso se falhar. */
+async function _notifyTeam(reqDoc) {
+  try {
+    const { APP_CONFIG } = await import('../config.js');
+    const url = APP_CONFIG?.functions?.sendEmailUrl;
+    if (!url) {
+      console.warn('[wizard] sendEmailUrl não configurada — skip notifyTeam');
+      return;
+    }
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'new_request',
+        to: null,
+        data: {
+          requesterName:  reqDoc.requesterName,
+          requesterEmail: reqDoc.requesterEmail,
+          requestingArea: reqDoc.requestingArea || '',
+          sector:         reqDoc.sector         || '',
+          typeName:       reqDoc.typeName        || '',
+          variationName:  reqDoc.variationName   || '',
+          description:    reqDoc.description     || '',
+          urgency:        reqDoc.urgency         || false,
+          outOfCalendar:  reqDoc.outOfCalendar   || false,
+          desiredDate:    reqDoc.desiredDate
+            ? _fmtDate(reqDoc.desiredDate) : '',
+        },
+      }),
+    });
+    if (!res.ok) console.warn('[wizard] notifyTeam HTTP', res.status, await res.text().catch(() => ''));
+  } catch (e) {
+    console.warn('[wizard] notifyTeam error:', e?.message || e);
+  }
 }

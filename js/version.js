@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 54,
-  patch: 3,
-  build: '20260524-portal-wizard-same-module-instance',
+  patch: 4,
+  build: '20260524-portal-wizard-fase-A-notify-lock-urgency',
 };
 
 /** "1.2.0" */
