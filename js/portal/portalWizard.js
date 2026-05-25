@@ -581,57 +581,52 @@ function _toISODate(date) {
   return `${y}-${m}-${d}`;
 }
 
-/* v4.57.17+ Visual de cell do calendário do wizard (Step 2).
- * Renê: "não está claro o que já está preenchido e o que ainda precisa
- * ser feito. é tudo muito sutil. precisamos de clareza pro usuario bater
- * o olho e entender. traga outra solucao visual + ajuste de legenda".
+/* v4.57.18+ Visual MINIMALISTA do calendário do wizard.
+ * Renê (após v4.57.17 ficar visualmente sobrecarregado): "essa alternativa
+ * visual nao tem nada a ver com o design do sistema... todos os titulos de
+ * slots estao cortados, a sua ideia visual de status também. nao é melhor
+ * ir para algo minimalista, mas que funcione, que seja claro, objetivo?"
  *
- * Estados (precedência): selected > req.pending/converted/rejected > batch >
- * slot vazio > hoje vazio > vazio. Cores sólidas com badge no número do dia. */
-const WIZARD_CELL_STYLES = {
-  empty:     { bg:'transparent',  border:'1px solid var(--border-subtle)',   fg:'var(--text-muted)',  icon:'',   label:'',          showBadge:false, chipLabel:'',                tooltipBase:'Fora do calendário editorial' },
-  today:     { bg:'var(--bg-surface)', border:'1px dashed var(--brand-gold)', fg:'var(--text-primary)', icon:'', label:'HOJE',       showBadge:true,  chipLabel:'',                tooltipBase:'Hoje (sem slot)' },
-  slot:      { bg:'rgba(212,168,67,0.10)', border:'2px dashed var(--brand-gold)', fg:'var(--brand-gold)', icon:'+', label:'',         showBadge:false, chipLabel:'',                tooltipBase:'Slot disponível — clique pra solicitar' },
-  pending:   { bg:'#FEF3C7',  border:'2px solid #F59E0B',                    fg:'#92400E',            icon:'⏳', label:'AGUARDA',    showBadge:true,  chipLabel:'⏳ Sua solicitação', tooltipBase:'Sua solicitação aguardando triagem' },
-  converted: { bg:'#DBEAFE',  border:'2px solid #3B82F6',                    fg:'#1E40AF',            icon:'▶',  label:'EM PROD',    showBadge:true,  chipLabel:'▶ Em produção',     tooltipBase:'Sua solicitação convertida em tarefa' },
-  rejected:  { bg:'#FEE2E2',  border:'2px solid #EF4444',                    fg:'#991B1B',            icon:'✕',  label:'RECUSADA',   showBadge:true,  chipLabel:'✕ Recusada',         tooltipBase:'Sua solicitação foi recusada' },
-  done:      { bg:'#DCFCE7',  border:'2px solid #22C55E',                    fg:'#166534',            icon:'✓',  label:'CONCLUÍDA',  showBadge:true,  chipLabel:'✓ Concluída',        tooltipBase:'Solicitação concluída' },
-  batch:     { bg:'#EDE9FE',  border:'2px dashed #A78BFA',                   fg:'#5B21B6',            icon:'✦',  label:'NO LOTE',    showBadge:true,  chipLabel:'✦ No lote',          tooltipBase:'Pendente no seu lote (não enviado)' },
-  selected:  { bg:'rgba(212,168,67,0.30)', border:'3px solid var(--brand-gold)', fg:'var(--brand-gold)', icon:'', label:'SELECIONADO', showBadge:true,  chipLabel:'',                tooltipBase:'Data selecionada' },
-};
+ * Estratégia: cell limpa (sem fundo colorido pesado, sem badges duplos).
+ * Status sinalizado por UMA bolinha colorida + texto em cor neutra. Borda
+ * sutil. Selected = borda gold 2px. Igual padrão Linear/Asana.
+ *
+ * Estados retornam só { dot, dotColor, statusText, accent }. O template
+ * monta tudo igual, com mesma altura, mesma fonte, sem variação carregada. */
 function _wizardCellVisual({ existingReq, batchItem, hasSlots, slotColor, isToday, isSelected, isPast }) {
-  // Precedência:
-  // 1) existingReq (com status)
-  // 2) batchItem (lote local)
-  // 3) selected (override visual de borda forte, mantém estado)
-  // 4) slot vazio disponível
-  // 5) hoje sem slot
-  // 6) dia comum vazio
-  let v;
+  // Defaults: cell neutra do sistema
+  let dot       = '';
+  let dotColor  = 'var(--text-muted)';
+  let statusTxt = '';   // texto curto em itálico (opcional)
+  let accent    = '';   // cor da borda lateral esquerda (deixa o bg neutro)
+  let title     = 'Fora do calendário editorial';
+
   if (existingReq) {
     const st = existingReq.status || 'pending';
-    if (st === 'converted')       v = { ...WIZARD_CELL_STYLES.converted };
-    else if (st === 'rejected')   v = { ...WIZARD_CELL_STYLES.rejected };
-    else if (st === 'done')       v = { ...WIZARD_CELL_STYLES.done };
-    else if (st === 'em_andamento') v = { ...WIZARD_CELL_STYLES.converted, label:'EM ANDAM' };
-    else                          v = { ...WIZARD_CELL_STYLES.pending };
+    if (st === 'converted')        { dot='●'; dotColor='#3B82F6'; statusTxt='em produção'; accent='#3B82F6'; title='Sua solicitação convertida em tarefa'; }
+    else if (st === 'em_andamento'){ dot='●'; dotColor='#3B82F6'; statusTxt='em andamento'; accent='#3B82F6'; title='Sua solicitação em andamento'; }
+    else if (st === 'rejected')    { dot='●'; dotColor='#EF4444'; statusTxt='recusada';    accent='#EF4444'; title='Sua solicitação foi recusada'; }
+    else if (st === 'done')        { dot='●'; dotColor='#22C55E'; statusTxt='concluída';   accent='#22C55E'; title='Solicitação concluída'; }
+    else                           { dot='●'; dotColor='#F59E0B'; statusTxt='aguardando';  accent='#F59E0B'; title='Sua solicitação aguardando triagem'; }
   } else if (batchItem) {
-    v = { ...WIZARD_CELL_STYLES.batch };
+    dot='●'; dotColor='#A78BFA'; statusTxt='no lote'; accent='#A78BFA';
+    title = 'Pendente no seu lote (não enviado)';
   } else if (hasSlots) {
-    v = { ...WIZARD_CELL_STYLES.slot };
+    dot='○'; dotColor='var(--brand-gold)'; statusTxt=''; accent='';
+    title = 'Slot disponível — clique pra solicitar';
   } else if (isToday) {
-    v = { ...WIZARD_CELL_STYLES.today };
-  } else {
-    v = { ...WIZARD_CELL_STYLES.empty };
+    title = 'Hoje (fora do calendário)';
   }
-  // Selected override: borda dourada GROSSA por cima, mantendo bg do estado.
-  if (isSelected) {
-    v.border = '3px solid var(--brand-gold)';
-    v.bg = v === WIZARD_CELL_STYLES.empty || v.bg === 'transparent'
-      ? 'rgba(212,168,67,0.30)'
-      : v.bg;
-  }
-  return v;
+
+  return {
+    bg:     isSelected ? 'rgba(212,168,67,0.10)' : 'var(--bg-card)',
+    border: isSelected ? '2px solid var(--brand-gold)' : '1px solid var(--border-subtle)',
+    accent,
+    dot, dotColor, statusTxt,
+    fg: 'var(--text-primary)',
+    title,
+    isToday,
+  };
 }
 
 function _renderCalendarGrid(type) {
@@ -721,28 +716,34 @@ function _renderCalendarGrid(type) {
       cellTitle = 'Data passada';
     }
 
+    // v4.57.18 layout MINIMALISTA:
+    // - cell limpa do sistema (bg-card + border-subtle)
+    // - barra lateral colorida 3px só quando há status (accent)
+    // - número do dia em cima (com hoje dourado se for today)
+    // - 1 chip por slot com [bolinha colorida] [título]
+    // - status texto pequeno em itálico abaixo (só quando há status)
+    const slotChipText = hasSlots ? slotTitle : '';
     cells += `
       <div class="pw-cal-day" data-date="${iso}" data-has-slot="${hasSlots?'1':'0'}" data-slot-id="${esc(slotId)}"
         data-filled="${filled?'1':'0'}" data-req-id="${esc(existingReq?.id||'')}"
         ${isPast?'data-disabled="1"':''}
         title="${cellTitle}"
-        style="
-          background:${vis.bg};border:${vis.border};border-radius:6px;
-          padding:6px 4px;cursor:${cursor};opacity:${opacity};
-          min-height:60px;min-width:0;display:flex;flex-direction:column;
-          overflow:hidden;box-sizing:border-box;
-          font-size:0.75rem;line-height:1.2;transition:all 0.12s;
+        style="position:relative;background:${vis.bg};border:${vis.border};border-radius:6px;
+          padding:5px 6px 5px ${vis.accent ? '8px' : '6px'};cursor:${cursor};opacity:${opacity};
+          min-height:62px;min-width:0;display:flex;flex-direction:column;gap:3px;
+          overflow:hidden;box-sizing:border-box;font-size:0.75rem;line-height:1.25;
+          transition:background 0.12s, border-color 0.12s;
           ${isPast?'':'user-select:none;'}">
-        <div style="font-weight:${isToday?'700':'500'};color:${isToday?'var(--brand-gold)':'var(--text-primary)'};min-width:0;display:flex;align-items:center;gap:4px;">
-          ${d}
-          ${vis.showBadge ? `<span style="background:${vis.fg};color:#fff;font-size:0.5rem;font-weight:700;padding:1px 5px;border-radius:8px;text-transform:uppercase;letter-spacing:0.04em;line-height:1.2;">${vis.label}</span>` : ''}
-        </div>
-        ${chipText ? `
-          <div style="font-size:0.625rem;color:${vis.fg};font-weight:700;margin-top:auto;line-height:1.15;
-            overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;max-width:100%;" title="${esc(slots.map(s=>s.title||'Slot').join(' · '))}">
-            ${esc(chipText)}${extraSlots && !existingReq && !batchItem ? ` <span style="background:${slotColor};color:#fff;padding:0 4px;border-radius:8px;font-size:0.5625rem;margin-left:2px;">+${extraSlots}</span>` : ''}
+        ${vis.accent ? `<span style="position:absolute;left:0;top:0;bottom:0;width:3px;background:${vis.accent};border-radius:6px 0 0 6px;"></span>` : ''}
+        <div style="font-weight:${isToday?'700':'500'};color:${isToday?'var(--brand-gold)':'var(--text-primary)'};font-size:0.8125rem;">${d}</div>
+        ${slotChipText ? `
+          <div style="display:flex;align-items:center;gap:4px;font-size:0.6875rem;color:var(--text-primary);min-width:0;">
+            ${vis.dot ? `<span style="color:${vis.dotColor};font-size:0.625rem;line-height:1;flex-shrink:0;">${vis.dot}</span>` : ''}
+            <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;flex:1;">${esc(slotChipText)}</span>
+            ${extraSlots && !existingReq && !batchItem ? `<span style="color:var(--text-muted);font-size:0.5625rem;flex-shrink:0;">+${extraSlots}</span>` : ''}
           </div>
         ` : ''}
+        ${vis.statusTxt ? `<div style="font-size:0.625rem;color:${vis.accent || vis.dotColor};font-style:italic;line-height:1.1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${vis.statusTxt}</div>` : ''}
       </div>
     `;
   }
@@ -779,23 +780,21 @@ function _renderCalendarGrid(type) {
       <div style="display:grid;grid-template-columns:repeat(${gran==='day'?1:7},1fr);gap:4px;">
         ${cells}
       </div>
-      <!-- v4.57.17: legenda nova — badges com a MESMA cor dos chips do calendar -->
-      <div style="margin-top:12px;display:flex;gap:6px;font-size:0.6875rem;flex-wrap:wrap;align-items:center;">
-        <span style="color:var(--text-muted);font-weight:600;margin-right:4px;">Como ler:</span>
+      <!-- v4.57.18: legenda minimalista — bolinha colorida + label texto -->
+      <div style="margin-top:10px;display:flex;gap:14px;font-size:0.6875rem;flex-wrap:wrap;align-items:center;color:var(--text-secondary);">
         ${[
-          ['slot',      'Slot vazio (solicitar)'],
-          ['pending',   'Aguardando'],
-          ['converted', 'Em produção'],
-          ['done',      'Concluída'],
-          ['rejected',  'Recusada'],
-          ['batch',     'No lote (não enviado)'],
-          ['empty',     'Fora do calendário'],
-        ].map(([state, label]) => {
-          const v = WIZARD_CELL_STYLES[state];
-          return `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:10px;
-            background:${v.bg};border:${v.border};color:${v.fg};font-weight:600;font-size:0.6875rem;line-height:1.4;">
-            ${v.icon ? `<span>${v.icon}</span>` : ''}${label}</span>`;
-        }).join('')}
+          ['○', 'var(--brand-gold)', 'Slot vazio'],
+          ['●', '#F59E0B',           'Aguardando'],
+          ['●', '#3B82F6',           'Em produção'],
+          ['●', '#22C55E',           'Concluída'],
+          ['●', '#EF4444',           'Recusada'],
+          ['●', '#A78BFA',           'No lote'],
+        ].map(([dot, color, label]) => `
+          <span style="display:inline-flex;align-items:center;gap:5px;">
+            <span style="color:${color};font-size:0.625rem;line-height:1;">${dot}</span>
+            ${label}
+          </span>
+        `).join('')}
       </div>
     </div>
   `;
@@ -1904,6 +1903,12 @@ function _hasDraftContent(draft) {
 function _bindKeyboard() {
   _keyHandler = (e) => {
     if (!_state) return;
+    // v4.57.18: GUARD — se qualquer overlay/modal estiver aberto, NÃO interferir.
+    // Esc/Enter pertencem ao overlay (que cuida do próprio fechamento).
+    // CLAUDE.md §6: handlers globais de teclado precisam checar overlays empilhados.
+    // Bug histórico (Renê 25/05): Esc em modal de edit fechava modal E voltava step.
+    if (_isAnyOverlayOpen()) return;
+
     // Ignora se foco está em input/textarea (exceto Esc)
     const tag = (e.target?.tagName || '').toLowerCase();
     const inField = ['input','textarea','select'].includes(tag);
@@ -1923,6 +1928,19 @@ function _bindKeyboard() {
     }
   };
   document.addEventListener('keydown', _keyHandler);
+}
+
+/* v4.57.18: detector de overlay/modal aberto. Inclui:
+ * - fullscreen do calendário (#pw-cal-fs-overlay)
+ * - preview modal de request (#pw-preview-modal)
+ * - newsletter prompt do portal (#nl-quick-prompt)
+ * - modal genérico do sistema (.modal.open, [role=dialog][open])
+ * - data attribute custom (data-overlay-open="1") pra futuros
+ */
+function _isAnyOverlayOpen() {
+  return !!document.querySelector(
+    '#pw-cal-fs-overlay, #pw-preview-modal, #nl-quick-prompt, .modal.open, [role="dialog"][open], [data-overlay-open="1"]'
+  );
 }
 
 /* ─── Helpers ─── */

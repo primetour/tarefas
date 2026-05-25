@@ -227,6 +227,50 @@ Só perguntar antes se:
 
 **Caminho feliz não é teste.** O Renê reclama com razão: *"você não prevê todas as ações possíveis... eu, em dois cliques, acho bug"*.
 
+> **Renê 25/05/2026** (após o N-ésimo bug encontrado em 2 cliques): *"vc nao esta testando todos os cenários de uso. ex: se eu dou esc em um modal de edicao no passo 2, ele não só fecha o modal como volta pro passo 1... perco muito tempo olhando essas coisas. agora vamos fazer assim: vc vai colocar no claude.md que vc sempre tem que trazer todos os possíveis cenários e comportamentos de uso para o modulo q esta mexendo no intuito de cobrir todas as possibilidades e ter certeza de que tudo funciona perfeitamente... boa parte do meu tempo aqui contigo é corrigindo bug... nao consigo avançar em desenvolvimento"*.
+
+### Contrato obrigatório (não negociável)
+
+**Antes de tocar em qualquer arquivo de um módulo**, escrever (mentalmente OU explicitamente em comentário/markdown rascunho) a **MATRIZ DE CENÁRIOS** do módulo. Cobertura mínima:
+
+1. **Estados de dados**: vazio · 1 item · N itens · valor degenerado (0, null, string vazia, emoji, 10k chars)
+2. **Estados de usuário**: novo · com rascunho · admin · membro · sem permissão · deslogado
+3. **Estados de UI**: primeira render · re-render · após cancelar · após erro · após auto-save · em loading
+4. **Interações de teclado**: Tab · Enter · Esc · Cmd/Ctrl+S · Cmd+Z (se aplicável)
+5. **Overlays empilhados**: modal sobre modal · popup sobre overlay · Esc em cada camada
+6. **Navegação**: voltar (Back) · refresh (F5) · trocar tab/módulo no meio · fechar e reabrir
+7. **Edge de timing**: clique duplo rápido · submit durante save · network lento (>5s)
+8. **Persistência**: o que grava no Firestore? · o que fica só no state? · auto-save passa por aqui?
+9. **Reversibilidade**: tudo o que adiciona, tem caminho pra remover? estado fica coerente?
+10. **Acessibilidade**: foco vai onde? leitor de tela anuncia mudança?
+
+### O bug ESC do v4.57.18 — exemplo canônico
+
+Caso real onde eu falhei: implementei `_openCalendarFullscreen` (v4.57.9) com Esc fechando. Adicionei `capture:true + stopPropagation` em v4.57.12. **Mas não testei**: Esc com **OUTRO modal aberto sobre o Step 2** (ex: `_openRequestPreview`). Esse modal fecha mas o `_keyHandler` global do wizard captura o Esc DEPOIS e dispara "voltar step". Renê encontrou em 2 cliques.
+
+**Lição estrutural**: quando um módulo tem um listener global (keydown, click, etc.), ANTES de fazer push, listar TODOS os overlays/modais que aquele módulo abre. Pra cada um, testar a interação com o handler global. Se houver +1 overlay possível, o handler global PRECISA checar se algum overlay está aberto antes de agir (escape hatch).
+
+### Pattern obrigatório pra handlers globais de teclado
+
+```js
+function _keyHandler(e) {
+  // Guard: se há QUALQUER overlay/modal aberto, não interferir
+  const overlayOpen = document.querySelector(
+    '#pw-cal-fs-overlay, #pw-preview-modal, [role="dialog"][open], .modal.open, [data-overlay-open="1"]'
+  );
+  if (overlayOpen) return;  // overlay tem precedência — ele cuida do Esc
+  // ... lógica do handler ...
+}
+```
+
+### Quando chego pra fazer um sprint, primeiro digo:
+
+> "Cenários que vou testar nesse módulo: A, B, C, D, E, F. Vou rodar E2E nos críticos antes de declarar pronto."
+
+Renê pode então adicionar/remover cenários ANTES de eu codar. Isso evita o ciclo "entrego → ele acha bug → eu volto → repita 3×".
+
+### Como testar SEM o Renê
+
 Antes de dizer "pronto/testado/funcionando":
 
 ### Cenários OBRIGATÓRIOS por feature

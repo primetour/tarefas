@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 57,
-  patch: 17,
-  build: '20260525-wizard-calendar-clarity-states',
+  patch: 18,
+  build: '20260525-wizard-calendar-minimal-esc-overlay-guard',
 };
 
 /** "1.2.0" */
