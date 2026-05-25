@@ -9,6 +9,32 @@ import { store } from '../store.js';
 const SLA_CHECK_KEY = 'primetour-sla-last-check';
 const SLA_CHECK_INTERVAL = 60 * 60 * 1000; // 1 hour
 
+/* v4.57.22 helper: normaliza dueDate em qualquer formato pra string YYYY-MM-DD
+ * em fuso LOCAL. Suporta:
+ *  - Firestore Timestamp ({ toDate: () => Date }) — formato comum quando salvo via UI
+ *  - Date object
+ *  - string YYYY-MM-DD (parse manual pra evitar UTC shift §12.a)
+ *  - string ISO com hora
+ *  - número (epoch ms)
+ * Retorna '' se inválido. */
+function _normalizeToISODate(val) {
+  if (!val) return '';
+  let d;
+  if (val?.toDate) d = val.toDate();
+  else if (val instanceof Date) d = val;
+  else if (typeof val === 'string') {
+    const m = val.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return `${m[1]}-${m[2]}-${m[3]}`;  // já tá no formato certo, retorna direto
+    d = new Date(val);
+  } else if (typeof val === 'number') d = new Date(val);
+  else return '';
+  if (!d || isNaN(d.getTime())) return '';
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 export async function checkSlaAlerts() {
   const lastCheck = parseInt(localStorage.getItem(SLA_CHECK_KEY) || '0');
   if (Date.now() - lastCheck < SLA_CHECK_INTERVAL) return;
@@ -47,9 +73,13 @@ export async function checkSlaAlerts() {
     const dueTomorrow = [];
     const dueToday = [];
 
+    // v4.57.22 fix crítico #2: aceita Date/Timestamp/string. Antes só string —
+    // tasks criadas via UI (que grava como Date→Timestamp no Firestore) eram
+    // silenciosamente descartadas dos alertas. Notif inconsistente: SLA de hoje
+    // não disparava pra quem criou via modal.
     for (const t of myTasks) {
       if (!t.dueDate) continue;
-      const due = typeof t.dueDate === 'string' ? t.dueDate : '';
+      const due = _normalizeToISODate(t.dueDate);
       if (!due) continue;
 
       if (due < todayStr) overdue.push(t);

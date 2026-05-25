@@ -9,6 +9,23 @@ import { store } from '../store.js';
 
 const SUMMARY_KEY = 'primetour-summary-last';
 
+/* v4.57.22 — normaliza dueDate em Timestamp/Date/string pra YYYY-MM-DD local */
+function _normISO(val) {
+  if (!val) return '';
+  let d;
+  if (val?.toDate) d = val.toDate();
+  else if (val instanceof Date) d = val;
+  else if (typeof val === 'string') {
+    const m = val.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+    d = new Date(val);
+  } else if (typeof val === 'number') d = new Date(val);
+  else return '';
+  if (!d || isNaN(d.getTime())) return '';
+  const y = d.getFullYear(), mo = String(d.getMonth()+1).padStart(2,'0'), da = String(d.getDate()).padStart(2,'0');
+  return `${y}-${mo}-${da}`;
+}
+
 export async function generateDailySummary() {
   const uid = store.get('currentUser')?.uid;
   if (!uid) return;
@@ -38,8 +55,10 @@ export async function generateDailySummary() {
 
     if (myTasks.length === 0) return;
 
-    const overdue = myTasks.filter(t => t.dueDate && t.dueDate < todayStr);
-    const dueToday = myTasks.filter(t => t.dueDate === todayStr);
+    // v4.57.22: normaliza pra aceitar Timestamp/Date/string. Antes comparava
+    // string direto — tasks com Timestamp eram ignoradas em overdue/today.
+    const overdue = myTasks.filter(t => { const d = _normISO(t.dueDate); return d && d < todayStr; });
+    const dueToday = myTasks.filter(t => _normISO(t.dueDate) === todayStr);
     const inProgress = myTasks.filter(t => t.status === 'in_progress');
     const inReview = myTasks.filter(t => t.status === 'review');
 

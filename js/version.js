@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 57,
-  patch: 21,
-  build: '20260525-task-setor-solicitante-todos-setores',
+  patch: 22,
+  build: '20260525-tasks-audit-7-fixes',
 };
 
 /** "1.2.0" */

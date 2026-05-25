@@ -49,6 +49,16 @@ function playCompletionSound() {
  * na sessão (evita re-render flicker quando snapshot reaplica).
  */
 let _editBannerShownKeys = new Set();
+// v4.57.22 fix #11: cap em 500 + eviction LRU pra evitar leak indefinido.
+// Antes: Set crescia infinitamente — task que recebe edit + reload → +1 key/sempre.
+const _EDIT_BANNER_KEYS_MAX = 500;
+function _trimEditBannerKeys() {
+  if (_editBannerShownKeys.size <= _EDIT_BANNER_KEYS_MAX) return;
+  // Remove os mais antigos (insertion order do Set)
+  const excess = _editBannerShownKeys.size - _EDIT_BANNER_KEYS_MAX;
+  const it = _editBannerShownKeys.values();
+  for (let i = 0; i < excess; i++) _editBannerShownKeys.delete(it.next().value);
+}
 
 function _isAckedByMe(task) {
   const me = store.get('currentUser')?.uid;
@@ -107,6 +117,7 @@ function showRequesterEditBanners(tasks) {
     const ts = t.requesterEditAt?.toMillis ? t.requesterEditAt.toMillis() : 0;
     const key = `${t.id}:${ts}`;
     _editBannerShownKeys.add(key);
+    _trimEditBannerKeys();   // v4.57.22: previne leak (cap em 500)
     const bannerId = `req-edit-banner-${t.id}-${ts}`;
     if (document.getElementById(bannerId)) return;
 
@@ -838,7 +849,17 @@ export async function updateTaskStatus(taskId, newStatus) {
   if (newStatus === 'validation' && prev.status !== 'validation') {
     try {
       const { notify } = await import('./notifications.js');
-      const users = store.get('users') || [];
+      // v4.57.22 fix #10: fallback Firestore se store.users estiver vazio
+      // (acontece em páginas standalone tipo kanban portal/cron jobs).
+      // Antes: managers vazio → ninguém notificado → task fica em validation
+      // sem alguém saber, indefinidamente.
+      let users = store.get('users') || [];
+      if (!users.length) {
+        try {
+          const usersSnap = await getDocs(query(collection(db, 'users'), where('active', '==', true)));
+          users = usersSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+        } catch (fe) { console.warn('[updateTaskStatus] fallback users fetch falhou:', fe.message); }
+      }
       const managers = users
         .filter(u => u.isMaster
                   || ['master','admin','head'].includes(u.roleId)
@@ -963,13 +984,39 @@ export async function bulkUpdateTasks(items, onProgress) {
   if (!Array.isArray(items) || !items.length) return { total: 0, updated: 0, failed: 0 };
 
   // 4.49.10+ SECURITY: bloqueia conclusão em massa sem permissão.
-  // Antes esse método permitia que qualquer user com task_create marcasse
-  // várias tasks como 'done' via bulkActionBar → popover de status,
-  // contornando o guard de updateTask (que SÓ valida em single-update).
-  // Caso documentado: Beatriz Arantes (analista) concluiu task via bulk.
   const wantsDone = items.some(it => it?.data?.status === 'done');
   if (wantsDone && !store.can('task_complete')) {
     throw new Error('Você não tem permissão para concluir tarefas em massa. Peça a um coordenador para homologar.');
+  }
+
+  // v4.57.22 fix #8: filtra items pra tasks que user PODE editar.
+  // Antes: comentário "não faz checagem por documento" — qualquer user com
+  // task_create podia alterar sector/projectId/assignees/tags de TODAS as
+  // tasks selecionadas via bulkActionBar, mesmo as que não eram dele.
+  // Agora: master/admin/head/coord (com task_edit_any) processa tudo.
+  // Demais users: só processa tasks onde é criador/assignee/observer.
+  if (!store.can('task_edit_any')) {
+    const allowedIds = new Set();
+    const checks = await Promise.all(items.map(async ({ id }) => {
+      try {
+        const snap = await getDoc(doc(db, 'tasks', id));
+        if (!snap.exists()) return null;
+        const t = snap.data();
+        const isOwn = t.createdBy === user.uid
+          || (Array.isArray(t.assignees) && t.assignees.includes(user.uid))
+          || (Array.isArray(t.observers) && t.observers.includes(user.uid));
+        return isOwn ? id : null;
+      } catch { return null; }
+    }));
+    checks.forEach(id => id && allowedIds.add(id));
+    const blocked = items.length - allowedIds.size;
+    items = items.filter(it => allowedIds.has(it.id));
+    if (blocked > 0 && items.length === 0) {
+      throw new Error(`Você não tem permissão pra editar nenhuma das ${blocked} tarefas selecionadas.`);
+    }
+    if (blocked > 0) {
+      console.warn(`[bulkUpdate] ${blocked} de ${blocked + items.length} tarefas filtradas por permissão.`);
+    }
   }
 
   const total = items.length;
@@ -1331,6 +1378,25 @@ export async function moveTaskKanban(taskId, newStatus, newOrder) {
     throw new Error('Você não tem permissão para concluir tarefas. Peça a um coordenador para homologar.');
   }
   const user = store.get('currentUser');
+  // v4.57.22 fix #9: valida permissão de EDIT por doc (criador/assignee/observer ou
+  // task_edit_any). Antes: bypass via drag — qualquer user com acesso ao kanban
+  // arrastava tarefa de outro sem ter permissão.
+  if (!store.can('task_edit_any')) {
+    try {
+      const snap = await getDoc(doc(db, 'tasks', taskId));
+      if (!snap.exists()) throw new Error('Tarefa não encontrada.');
+      const t = snap.data();
+      const isOwn = t.createdBy === user.uid
+        || (Array.isArray(t.assignees) && t.assignees.includes(user.uid))
+        || (Array.isArray(t.observers) && t.observers.includes(user.uid));
+      if (!isOwn) {
+        throw new Error('Você não pode mover tarefas que não são suas (e onde não é observador).');
+      }
+    } catch (e) {
+      if (e.message?.startsWith('Você não pode')) throw e;
+      // erro de fetch: deixa o updateDoc abaixo lidar (rules vão validar)
+    }
+  }
   const updates = {
     status:    newStatus,
     order:     newOrder,
@@ -1495,10 +1561,14 @@ export async function addComment(taskId, text) {
     const taskSnap = await getDoc(doc(db, 'tasks', taskId));
     if (!taskSnap.exists()) return;
     const task = taskSnap.data();
+    // v4.57.22 fix #12: inclui observers (consistência com status_changed).
+    // Antes: observer não recebia notif de comment — quem acompanha
+    // deveria ser notificado de qualquer movimentação relevante.
     const recipients = [...new Set([
       task.createdBy,
       ...(task.assignees || []),
-    ])].filter(Boolean);
+      ...(task.observers || []),
+    ])].filter(Boolean).filter(uid => uid !== user.uid);   // exclui o autor do comment
     notify('task.commented', {
       entityType: 'task', entityId: taskId,
       recipientIds: recipients,

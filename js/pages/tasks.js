@@ -31,7 +31,7 @@ let allProjects  = [];
 let pageTaskTypes = [];
 let filteredTasks = [];
 let unsubscribe  = null;
-let _delegationAttached = false;
+let _delegationCtrl = null;   // v4.57.22: AbortController substitui flag (re-attach idempotente)
 let groupBy      = 'dueDate';   // 'dueDate' | 'status' | 'priority' | 'project' | 'none'
 // 4.34.7+ Ordenação dentro do grupo (ou da lista inteira se groupBy='none').
 // Persistido em localStorage pra manter entre sessões.
@@ -2178,22 +2178,24 @@ function openFilterConfigModal() {
 }
 
 function _attachListEvents() {
-  // Event delegation: attach ONE set of listeners to the container, not per-element.
-  // The flag ensures we never add duplicate listeners across re-renders.
-  if (_delegationAttached) return;
+  // v4.57.22: AbortController pattern (idempotente em re-render do container).
+  // Antes: flag _delegationAttached bloqueava re-attach. Bug: renderTasks(host)
+  // recriava o #tasks-container mas a flag impedia attach no novo elemento →
+  // click/keydown/drag&drop deixavam de funcionar até reload.
+  // Agora: abort cancela listeners antigos (mesmo se o elemento antigo foi
+  // garbage-collected) + cria novos no container atual.
   const container = document.getElementById('tasks-container');
   if (!container) return;
+  if (_delegationCtrl) { try { _delegationCtrl.abort(); } catch {} }
+  _delegationCtrl = new AbortController();
+  const sig = _delegationCtrl.signal;
 
-  container.addEventListener('click', _handleDelegatedClick);
-  container.addEventListener('keydown', _handleDelegatedKeydown);
-
-  // Drag and drop
-  container.addEventListener('dragstart', _handleDragStart);
-  container.addEventListener('dragend', _handleDragEnd);
-  container.addEventListener('dragover', _handleDragOver);
-  container.addEventListener('drop', _handleDrop);
-
-  _delegationAttached = true;
+  container.addEventListener('click',     _handleDelegatedClick,    { signal: sig });
+  container.addEventListener('keydown',   _handleDelegatedKeydown,  { signal: sig });
+  container.addEventListener('dragstart', _handleDragStart,         { signal: sig });
+  container.addEventListener('dragend',   _handleDragEnd,           { signal: sig });
+  container.addEventListener('dragover',  _handleDragOver,          { signal: sig });
+  container.addEventListener('drop',      _handleDrop,              { signal: sig });
 }
 
 async function _handleDelegatedClick(e) {
@@ -2976,7 +2978,7 @@ function _refreshBulkUi() {
 /* \u2500\u2500\u2500 Cleanup \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
 export function destroyTasksPage() {
   if (unsubscribe) { unsubscribe(); unsubscribe = null; }
-  _delegationAttached = false;
+  if (_delegationCtrl) { try { _delegationCtrl.abort(); } catch {} _delegationCtrl = null; }
   _selectedTaskIds.clear();
   if (_bulkBar) { _bulkBar.destroy(); _bulkBar = null; }
 }
