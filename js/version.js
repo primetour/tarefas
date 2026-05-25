@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 55,
-  patch: 4,
-  build: '20260524-portal-wizard-edit-query-by-email',
+  patch: 5,
+  build: '20260524-portal-wizard-fase-C2-batch-envio-lote',
 };
 
 /** "1.2.0" */

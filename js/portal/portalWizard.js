@@ -80,6 +80,8 @@ export function renderPortalWizard(container, opts) {
     editMode: false,
     editId: null,
     recentRequests: [],   // populated async
+    // v4.55.5+ Batch / envio em lote: user enfileira N solicitações e submete tudo junto
+    batchQueue: [],
   };
 
   // Tenta restaurar rascunho
@@ -203,13 +205,17 @@ function _renderFooter() {
       `}
       ${isLast ? `
         ${_state.editMode ? '' : `
-          <button class="btn btn-ghost" id="pw-submit-another" ${submitting?'disabled':''}
-            title="Envia esta solicitação e abre o wizard pra outra similar (mantém setor + tipo)">
-            Enviar + Outra similar
+          <button class="btn btn-ghost" id="pw-add-batch" ${submitting?'disabled':''}
+            title="Salva esta solicitação na fila e abre o wizard pra próxima. Você envia tudo de uma vez no fim.">
+            + Adicionar outra ao lote
           </button>
         `}
         <button class="btn btn-primary" id="pw-submit" ${submitting?'disabled':''}>
-          ${submitting ? '⏳ Salvando…' : (_state.editMode ? '✏️ Salvar alterações →' : 'Enviar solicitação →')}
+          ${submitting ? '⏳ Salvando…'
+            : _state.editMode ? '✏️ Salvar alterações →'
+            : _state.batchQueue.length > 0
+              ? `Enviar lote (${_state.batchQueue.length + 1} solicitações) →`
+              : 'Enviar solicitação →'}
         </button>
       ` : `
         <button class="btn btn-primary" id="pw-next">
@@ -223,6 +229,8 @@ function _renderFooter() {
   document.getElementById('pw-next')?.addEventListener('click', () => _tryAdvance());
   document.getElementById('pw-submit')?.addEventListener('click', () => _onSubmit(false));
   document.getElementById('pw-submit-another')?.addEventListener('click', () => _onSubmit(true));
+  // v4.55.5+ Adicionar ao lote — enfileira a solicitação atual e reinicia o wizard
+  document.getElementById('pw-add-batch')?.addEventListener('click', () => _addToBatch());
   document.getElementById('pw-save-exit')?.addEventListener('click', () => {
     _persistDraft();
     alert('Rascunho salvo! Volte quando quiser pra continuar de onde parou.');
@@ -265,7 +273,9 @@ function _renderStep1() {
           </button>
         </div>
       </div>
-    ` : _renderRecentRequestsBanner()}
+    ` : ''}
+    ${_renderBatchBadge()}
+    ${editing ? '' : _renderRecentRequestsBanner()}
 
     <div class="portal-card" style="padding:24px;">
       <h2 style="margin:0 0 6px;font-size:1.25rem;color:var(--text-primary);">Pra quem é a demanda?</h2>
@@ -308,6 +318,17 @@ function _wireStep1() {
       const id = card.dataset.reqId;
       const req = _state.recentRequests.find(r => r.id === id);
       if (req) _enterEditMode(req);
+    });
+  });
+  // v4.55.5+ Remover item do lote pendente
+  document.querySelectorAll('.pw-remove-batch')?.forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const idx = parseInt(btn.dataset.batchIdx, 10);
+      if (Number.isInteger(idx) && idx >= 0 && idx < _state.batchQueue.length) {
+        _state.batchQueue.splice(idx, 1);
+        _renderShell(document.querySelector('.pw-root')?.parentElement);
+      }
     });
   });
 
@@ -876,6 +897,53 @@ function _gotoStep(n) {
   _renderStep(n);
 }
 
+/* v4.55.5+ Constrói o doc Firestore a partir de uma data (atual ou de batch).
+ * Extraído pra ser reusado em submit single + submit batch. */
+function _buildRequestDoc(d, user) {
+  return {
+    requestingArea: d.requestingArea,
+    requesterName:  user?.name || '',
+    requesterEmail: user?.email || '',
+    requesterUid:   user?.uid || null,
+    sector:         d.sector,
+    typeId:         d.typeId,
+    typeName:       d.typeName,
+    typeIcon:       d.typeIcon,
+    typeColor:      d.typeColor,
+    autoAccept:     d.autoAccept,
+    variationId:    d.variationId || null,
+    variationName:  d.variationName || '',
+    nucleo:         d.nucleo || '',
+    title:          d.title,
+    description:    d.description,
+    contentLink:    d.contentLink || '',
+    desiredDate:    d.desiredDate,
+    urgency:        d.urgency,
+    urgencyAutoLocked: d.urgencyAutoLocked || false,
+    urgencyLockReason: d.urgencyLockReason || '',
+    isPartnership:  d.isPartnership,
+    outOfCalendar:  d.outOfCalendar,
+    source:         'portal-wizard-v4.55.5',
+  };
+}
+
+/* v4.55.5+ Adiciona solicitação atual ao lote + reinicia wizard mantendo setor+tipo.
+ * Validação completa antes de enfileirar. */
+function _addToBatch() {
+  if (!_validateStep4()) return;
+  const d = _state.data;
+  _state.batchQueue.push({ ...d });
+  // Reinicia mantendo setor+tipo (mesma UX do "Outra similar" do v4.54.0)
+  const keep = {
+    sector: d.sector, typeId: d.typeId, typeName: d.typeName,
+    typeIcon: d.typeIcon, typeColor: d.typeColor, autoAccept: d.autoAccept,
+  };
+  _state.data = { ..._defaultData(_state.user), ...keep };
+  _state.step = 2;  // pula direto pro Quando — setor+tipo já decididos
+  _persistDraft();
+  _renderShell(document.querySelector('.pw-root')?.parentElement);
+}
+
 /* ─── Submit ─── */
 async function _onSubmit(submitAnother) {
   if (_state.submitting) return;
@@ -885,72 +953,65 @@ async function _onSubmit(submitAnother) {
   _renderFooter();
 
   try {
-    const d = _state.data;
     const user = _state.user;
-    const doc = {
-      // Identificação do solicitante
-      requestingArea: d.requestingArea,
-      requesterName:  user?.name || '',
-      requesterEmail: user?.email || '',
-      requesterUid:   user?.uid || null,
-      // Demanda
-      sector:         d.sector,
-      typeId:         d.typeId,
-      typeName:       d.typeName,
-      typeIcon:       d.typeIcon,
-      typeColor:      d.typeColor,
-      autoAccept:     d.autoAccept,
-      variationId:    d.variationId || null,
-      variationName:  d.variationName || '',
-      nucleo:         d.nucleo || '',
-      title:          d.title,
-      description:    d.description,
-      contentLink:    d.contentLink || '',
-      desiredDate:    d.desiredDate,
-      urgency:        d.urgency,
-      urgencyAutoLocked: d.urgencyAutoLocked || false,
-      urgencyLockReason: d.urgencyLockReason || '',
-      isPartnership:  d.isPartnership,
-      outOfCalendar:  d.outOfCalendar,
-      // Sistema (v4.55.3+ separa create vs update — source vai com versão real)
-      source:         'portal-wizard-v4.55.3' + (_state.editMode ? '-edit' : ''),
-    };
+    const currentDoc = _buildRequestDoc(_state.data, user);
 
     let refId;
+    let batchCount = 0;
     if (_state.editMode && _state.editId) {
       // v4.55.3+ Update: mantém status original, marca requesterEditFlag pra banner no sistema
-      const { requesterUid, requesterName, requesterEmail, requestingArea, ...editableFields } = doc;
+      const { requesterUid, requesterName, requesterEmail, requestingArea, ...editableFields } = currentDoc;
       const editPayload = {
         ...editableFields,
-        requesterEditFlag: true,        // banner no sistema principal pro assignee
+        source: 'portal-wizard-v4.55.5-edit',
+        requesterEditFlag: true,
         requesterEditedAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       };
       await updateDoc(firestoreDoc(_state.db, 'requests', _state.editId), editPayload);
       refId = _state.editId;
     } else {
-      // Create
+      // Create current
       const ref = await addDoc(collection(_state.db, 'requests'), {
-        ...doc,
+        ...currentDoc,
         status: 'pending',
         createdAt: serverTimestamp(),
       });
       refId = ref.id;
+
+      // v4.55.5+ Se há lote, submete cada item enfileirado sequencialmente
+      if (_state.batchQueue.length > 0) {
+        for (const batchData of _state.batchQueue) {
+          try {
+            const bDoc = _buildRequestDoc(batchData, user);
+            await addDoc(collection(_state.db, 'requests'), {
+              ...bDoc,
+              status: 'pending',
+              createdAt: serverTimestamp(),
+            });
+            batchCount++;
+          } catch (err) {
+            console.warn('[wizard] batch item falhou:', err?.message || err);
+          }
+        }
+        _state.batchQueue = [];   // limpa fila
+      }
     }
 
-    // Limpa rascunho
     _clearDraft();
 
-    // Notifica time via email (best-effort, não bloqueia o sucesso) — v4.54.4+
-    _notifyTeam({ ...doc, id: refId, isEdit: _state.editMode }).catch(e => console.warn('[wizard] notifyTeam falhou:', e?.message || e));
-    // Notifica admins via in-app notification (Firestore — também best-effort)
-    _notifyAdmins(d, refId).catch(e => console.warn('[wizard] notify admins falhou:', e?.message || e));
+    // Notifica time + admins (best-effort) — pra o item atual; lote completo gera
+    // 1 email por item (mantém compat com pipeline antigo)
+    _notifyTeam({ ...currentDoc, id: refId, isEdit: _state.editMode })
+      .catch(e => console.warn('[wizard] notifyTeam falhou:', e?.message || e));
+    _notifyAdmins(_state.data, refId)
+      .catch(e => console.warn('[wizard] notify admins falhou:', e?.message || e));
 
     _state.submitting = false;
     if (submitAnother) {
       _renderSuccessAndRestart();
     } else {
-      _renderSuccess();
+      _renderSuccess(batchCount);
     }
   } catch (err) {
     console.error('[wizard] submit falhou:', err);
@@ -967,17 +1028,21 @@ async function _notifyAdmins(d, requestId) {
   }
 }
 
-function _renderSuccess() {
+function _renderSuccess(batchCount = 0) {
   const root = document.querySelector('.pw-root');
   if (!root) return;
   document.getElementById('pw-footer').innerHTML = '';
+  // v4.55.5+ Mensagem dinâmica pra lote
+  const totalSent = 1 + (batchCount || 0);
+  const title = totalSent > 1 ? `${totalSent} solicitações enviadas!` : 'Solicitação enviada!';
+  const subtitle = totalSent > 1
+    ? `Recebemos ${totalSent} solicitações do seu lote. Equipe vai analisar e responder em breve.`
+    : 'Recebemos sua solicitação. Nossa equipe vai analisar e responder em breve.';
   root.innerHTML = `
     <div style="text-align:center;padding:60px 20px;">
       <div style="font-size:4rem;color:var(--brand-gold);margin-bottom:16px;">✓</div>
-      <h2 style="margin:0 0 8px;color:var(--text-primary);">Solicitação enviada!</h2>
-      <p style="color:var(--text-muted);margin:0 0 32px;">
-        Recebemos sua solicitação. Nossa equipe vai analisar e responder em breve.
-      </p>
+      <h2 style="margin:0 0 8px;color:var(--text-primary);">${esc(title)}</h2>
+      <p style="color:var(--text-muted);margin:0 0 32px;">${esc(subtitle)}</p>
       <button class="btn btn-primary" id="pw-new">Fazer nova solicitação</button>
       <button class="btn btn-secondary" id="pw-call-success" style="margin-left:8px;">Voltar ao início</button>
     </div>
@@ -1172,6 +1237,41 @@ function _renderRecentRequestsBanner() {
               </div>
             </div>
             <span style="font-size:0.75rem;color:var(--brand-gold);">Editar →</span>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+}
+
+/* v4.55.5+ Badge de lote pendente no Step 1 — mostra quantas solicitações já
+ * foram enfileiradas e permite remover qualquer item antes do envio final. */
+function _renderBatchBadge() {
+  const list = _state?.batchQueue || [];
+  if (!list.length) return '';
+  return `
+    <div class="portal-card" style="padding:12px 16px;margin-bottom:14px;
+      background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.35);">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:6px;">
+        <div style="font-size:0.875rem;font-weight:600;color:var(--text-primary);">
+          📦 Lote pendente: ${list.length} solicitação${list.length>1?'ões':''}
+        </div>
+        <span style="font-size:0.6875rem;color:var(--text-muted);">
+          Será enviado junto com a próxima
+        </span>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:4px;">
+        ${list.map((item, i) => `
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;
+            padding:6px 10px;border:1px solid rgba(34,197,94,0.25);border-radius:5px;
+            background:var(--bg-card);font-size:0.75rem;">
+            <div style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+              <strong>${esc(item.title || '(sem título)')}</strong>
+              <span style="color:var(--text-muted);"> · ${esc(item.sector||'?')} · ${esc(_fmtDate(item.desiredDate))}</span>
+            </div>
+            <button type="button" class="pw-remove-batch" data-batch-idx="${i}"
+              style="background:transparent;border:none;color:var(--color-danger);cursor:pointer;font-size:0.875rem;padding:0 4px;"
+              title="Remover do lote">×</button>
           </div>
         `).join('')}
       </div>
