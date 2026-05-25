@@ -716,8 +716,7 @@ function _renderCalendarGrid(type) {
   return `
     <div style="border:1px solid var(--border-subtle);border-radius:10px;padding:12px;background:var(--bg-surface);">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;gap:8px;flex-wrap:wrap;">
-        <button type="button" id="pw-cal-prev" aria-label="Anterior"
-          style="background:transparent;border:1px solid var(--border-default);border-radius:6px;width:30px;height:30px;cursor:pointer;color:var(--text-secondary);">‹</button>
+        <button type="button" id="pw-cal-prev" aria-label="Anterior" class="btn btn-secondary btn-icon btn-sm">‹</button>
         <div style="display:flex;align-items:center;gap:10px;flex:1;justify-content:center;min-width:0;">
           <div style="font-weight:600;font-size:0.9375rem;color:var(--text-primary);white-space:nowrap;">
             ${gran === 'day' ? `${cal.getDate()} ${PT_MONTHS[m]} ${y}`
@@ -726,19 +725,13 @@ function _renderCalendarGrid(type) {
           </div>
           <button type="button" id="pw-cal-today" class="btn btn-secondary btn-sm" title="Voltar pra hoje">Hoje</button>
         </div>
-        <!-- v4.57.0+ Granularity switcher -->
-        <div style="display:flex;border:1px solid var(--border-subtle);border-radius:6px;overflow:hidden;">
+        <!-- v4.57.0+ Granularity switcher (v4.57.6: usa .btn-segment do sistema) -->
+        <div class="btn-segment">
           ${[['month','Mês'],['week','Semana'],['day','Dia']].map(([g,l]) => `
-            <button type="button" class="pw-gran-btn" data-gran="${g}"
-              style="padding:4px 10px;border:none;background:${gran===g?'var(--brand-gold)':'transparent'};
-              color:${gran===g?'#0A1628':'var(--text-secondary)'};cursor:pointer;font-size:0.75rem;
-              ${gran===g?'font-weight:700;':''}">
-              ${l}
-            </button>
+            <button type="button" class="btn btn-sm pw-gran-btn ${gran===g?'active':''}" data-gran="${g}">${l}</button>
           `).join('')}
         </div>
-        <button type="button" id="pw-cal-next" aria-label="Próximo"
-          style="background:transparent;border:1px solid var(--border-default);border-radius:6px;width:30px;height:30px;cursor:pointer;color:var(--text-secondary);">›</button>
+        <button type="button" id="pw-cal-next" aria-label="Próximo" class="btn btn-secondary btn-icon btn-sm">›</button>
       </div>
       ${gran !== 'day' ? `
         <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:4px;">

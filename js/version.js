@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 57,
-  patch: 5,
-  build: '20260524-portal-wizard-persistDraft-skip-empty',
+  patch: 6,
+  build: '20260525-portal-btn-classes-in-portal-css',
 };
 
 /** "1.2.0" */

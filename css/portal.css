@@ -12,6 +12,9 @@
   --bg-surface:    #152540;
   --bg-elevated:   #1C2E4A;
   --border-subtle: rgba(255,255,255,0.08);
+  --border-default:rgba(255,255,255,0.14);
+  --border-accent: var(--brand-gold);
+  --bg-hover:      rgba(212,168,67,0.08);
   --text-primary:  #F1F3F7;
   --text-secondary:#94A3B8;
   --text-muted:    #64748B;
@@ -88,6 +91,140 @@ body {
   color: var(--text-primary);
   min-height: 100vh;
   line-height: 1.5;
+}
+
+/* ─── BUTTONS (4.57.6+) ───────────────────────────────────────
+   Espelha o sistema (.btn em components.css) mas usa SÓ tokens
+   definidos no portal-tokens. Antes desta release, os botões do
+   wizard usavam classes `.btn .btn-primary/-secondary/-sm` que
+   não existiam no portal.css → renderizavam sem estilo (botão
+   default do browser). Pareciam "fora do padrão" porque eram
+   literalmente um botão nu. */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 9px 18px;
+  border-radius: var(--radius-md);
+  font-size: 0.875rem;
+  font-weight: 500;
+  font-family: var(--font-ui);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  line-height: 1;
+  text-decoration: none;
+  user-select: none;
+}
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+.btn-sm {
+  padding: 6px 12px;
+  font-size: 0.8125rem;
+}
+.btn-icon {
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+}
+.btn-icon.btn-sm {
+  width: 28px;
+  height: 28px;
+  min-width: 28px;
+}
+
+/* Primary — gold filled (alinhado com .portal-submit) */
+.btn-primary {
+  background: var(--brand-gold);
+  color: #0A1628;
+  border-color: var(--brand-gold);
+  font-weight: 600;
+}
+.btn-primary:hover:not(:disabled) {
+  background: #E8B94A;
+  border-color: #E8B94A;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(212,168,67,0.25);
+}
+.btn-primary:active:not(:disabled) { transform: translateY(0); }
+[data-theme="light"] .btn-primary { color: #fff; }
+[data-theme="light"] .btn-primary:hover:not(:disabled) { color: #fff; }
+
+/* Secondary — bordered transparent (alinhado com .portal-submit-alt) */
+.btn-secondary {
+  background: transparent;
+  color: var(--text-secondary);
+  border-color: var(--border-subtle);
+}
+.btn-secondary:hover:not(:disabled) {
+  border-color: var(--brand-gold);
+  color: var(--brand-gold);
+  background: rgba(212,168,67,0.06);
+}
+
+/* Ghost — sem borda */
+.btn-ghost {
+  background: transparent;
+  color: var(--text-secondary);
+  border-color: transparent;
+}
+.btn-ghost:hover:not(:disabled) {
+  background: rgba(212,168,67,0.08);
+  color: var(--brand-gold);
+}
+
+/* Danger */
+.btn-danger {
+  background: transparent;
+  color: var(--color-danger);
+  border-color: rgba(239,68,68,0.35);
+}
+.btn-danger:hover:not(:disabled) {
+  background: var(--color-danger);
+  color: #fff;
+  border-color: var(--color-danger);
+}
+
+/* Active state (uso em segmented controls / pills) */
+.btn.active,
+.btn-secondary.active {
+  background: var(--brand-gold);
+  border-color: var(--brand-gold);
+  color: #0A1628;
+  font-weight: 600;
+}
+[data-theme="light"] .btn.active,
+[data-theme="light"] .btn-secondary.active { color: #fff; }
+
+/* Segmented control container */
+.btn-segment {
+  display: inline-flex;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.btn-segment > .btn {
+  border-radius: 0;
+  border: none;
+  border-right: 1px solid var(--border-subtle);
+  background: transparent;
+}
+.btn-segment > .btn:last-child { border-right: none; }
+.btn-segment > .btn.active {
+  background: var(--brand-gold);
+  color: #0A1628;
+  font-weight: 600;
+}
+[data-theme="light"] .btn-segment > .btn.active { color: #fff; }
+.btn-segment > .btn:not(.active):hover:not(:disabled) {
+  background: rgba(212,168,67,0.08);
+  color: var(--brand-gold);
 }
 
 /* ─── Layout ──────────────────────────────────────────────── */
