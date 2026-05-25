@@ -69,11 +69,14 @@ function _defaultData(user) {
 
 /* ─── Entry-point ─── */
 export function renderPortalWizard(container, opts) {
-  const { db, taskTypes, user, onSuccess } = opts;
+  // v4.57.12+ onNewRequest: callback opcional disparado quando user clica
+  // "Fazer nova solicitação" na tela de sucesso interna do wizard. Permite
+  // o portal mostrar newsletter prompt sem mexer no fluxo do wizard.
+  const { db, taskTypes, user, onSuccess, onNewRequest } = opts;
   _state = {
     step: 1,
     data: _defaultData(user),
-    db, taskTypes, user, onSuccess,
+    db, taskTypes, user, onSuccess, onNewRequest,
     draftKey: `portal-wizard-draft.${user?.uid || 'anon'}`,
     submitting: false,
     // v4.55.3+ Edit mode: quando user clica numa solicitação enviada pra editar
@@ -1011,11 +1014,20 @@ function _openCalendarFullscreen() {
       placeholder.parentElement.insertBefore(widget, placeholder);
       placeholder.remove();
     }
-    document.removeEventListener('keydown', escHandler);
+    document.removeEventListener('keydown', escHandler, true);
     _calFsCleanup = null;
   };
-  const escHandler = (e) => { if (e.key === 'Escape') close(); };
-  document.addEventListener('keydown', escHandler);
+  // v4.57.12: capture phase + stopPropagation impede que o _keyHandler global
+  // do wizard (Esc → voltar step) também capture o Esc usado pra fechar a
+  // tela cheia. Antes: Esc fechava o overlay E voltava o step (bug E2E MCP).
+  const escHandler = (e) => {
+    if (e.key === 'Escape') {
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      close();
+    }
+  };
+  document.addEventListener('keydown', escHandler, true);
   document.getElementById('pw-cal-fs-close')?.addEventListener('click', close);
   _calFsCleanup = close;
 }
@@ -1767,9 +1779,21 @@ function _renderSuccess(batchCount = 0, opts = {}) {
     </div>
   `;
   document.getElementById('pw-new')?.addEventListener('click', () => {
+    // v4.57.12: bug E2E MCP — após edit submit, click "Fazer nova solicitação"
+    // mantinha banner "✏ Editando solicitação" e popup newsletter não vinha.
+    // Causa: reset omitia editMode/editId/clearDraft + nunca chamava callback
+    // do portal que mostra newsletter prompt.
+    _state.editMode = false;
+    _state.editId = null;
+    _clearDraft();
     _state.data = _defaultData(_state.user);
     _state.step = 1;
     _renderShell(document.querySelector('.pw-root').parentElement);
+    // Mostra popup newsletter se o portal expôs o callback (paridade com
+    // o handler #new-request-btn do portal.js)
+    if (typeof _state.onNewRequest === 'function') {
+      try { _state.onNewRequest(); } catch (e) { console.warn('[wizard] onNewRequest cb falhou:', e); }
+    }
   });
   document.getElementById('pw-call-success')?.addEventListener('click', () => {
     if (_state.onSuccess) _state.onSuccess();

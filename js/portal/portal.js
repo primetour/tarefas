@@ -17,7 +17,7 @@ import { renderPickerButton, refreshPickerButton, bindOptionPicker } from '../co
 /* v4.55.1+ Versão única do portalWizard.js usada em TODOS os dynamic imports
  * deste arquivo. Sempre que portalWizard.js mudar, atualizar esta constante.
  * Mesma string em ambos os imports → mesma instância (ES module cache por URL). */
-const WIZARD_VERSION = '4.57.11';
+const WIZARD_VERSION = '4.57.12';
 
 /* ─── Estado do usuário autenticado ─────────────────────────── */
 // v4.51.0+ `sector` é o campo canônico (setor formal); `department` é legado
@@ -698,6 +698,10 @@ async function renderForm(db, taskTypes, auth) {
           document.getElementById('form-view')?.style.setProperty('display', 'none');
           document.getElementById('success-view')?.classList.add('visible');
         },
+        // v4.57.12+ callback chamado pelo wizard quando user clica "Fazer
+        // nova solicitação" na tela de sucesso interna. Mostra popup
+        // newsletter (paridade com handler #new-request-btn do success-view).
+        onNewRequest: () => showNewsletterPrompt(db, taskTypes),
       });
     } catch (e) {
       console.error('[portal] wizard failed, fallback pro form antigo:', e);

@@ -6,6 +6,39 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.57.12+20260525-e2e-bugs-reminder-overdue-esc-fs-pwnew-reset] — 2026-05-25
+
+Release **PATCH** — 3 bugs descobertos via teste E2E real no Chrome MCP do Renê.
+
+Cada um foi caçado clicando o fluxo de verdade (não só leitura de código):
+
+### Bug A — Lembrete hoje marcado como "vencido"
+`dashboard.js:1162` tinha `overdue = d < new Date()`. `d` é meia-noite local do dia, `new Date()` é AGORA (ex: 17h). Qualquer lembrete cuja data fosse HOJE virava "vencido" porque 00:00 < 17:00. Fix: `overdue = diff < 0` (só dia ANTERIOR é vencido).
+
+### Bug B — Esc na tela cheia também voltava o step
+`portalWizard.js _openCalendarFullscreen` ouvia Esc pra fechar overlay, mas o `_keyHandler` global do wizard (Esc → voltar step) também capturava. Resultado: ao fechar fullscreen no Step 2, user pulava pra Step 1. Fix: usa `capture: true` no addEventListener + `e.stopPropagation()/stopImmediatePropagation()`.
+
+### Bug C — "Fazer nova solicitação" não resetava editMode + sem newsletter prompt
+Após edit submit, o `pw-new` handler do `_renderSuccess` interno do wizard:
+- Resetava `_state.data` mas mantinha `_state.editMode=true, _state.editId='xyz'` → banner "✏ Editando solicitação" continuava aparecendo no Step 1
+- Não chamava `showNewsletterPrompt` do portal → popup nunca aparecia (mesmo o user clicando o botão equivalente ao `#new-request-btn` do portal HTML)
+
+Fix:
+- `pw-new` reseta `editMode=false`, `editId=null`, chama `_clearDraft()` + opcional `_state.onNewRequest()` callback
+- Wizard expõe `onNewRequest` em `renderPortalWizard(opts)` (junto com `onSuccess`)
+- `portal.js` passa `onNewRequest: () => showNewsletterPrompt(db, taskTypes)`
+
+**Validação E2E pré-deploy** (Chrome MCP logado como Renê):
+- ✅ Bug Edit Step 3 (v4.57.10) — confirmado abre direto em Detalhes pré-populado
+- ✅ Squad removido (v4.57.8) — Step 2 sem o campo
+- ✅ Calendário tela cheia (v4.57.9) — overlay full-screen, slots de Maio 2026 todos visíveis
+- ✅ Notif routing (v4.57.11) — log capturado: `type=request.updated, recipients=[coord do setor Marketing apenas]`. Sem spam pra admins globais.
+- ❌ → ✅ Bugs A, B, C corrigidos nesta release
+
+**Arquivos**: js/pages/dashboard.js, js/portal/portalWizard.js, js/portal/portal.js, js/version.js, index.html, solicitar.html, CHANGELOG.md
+
+---
+
 ## [4.57.11+20260525-portal-edit-notify-routing] — 2026-05-25
 
 Release **PATCH** — auditoria do fluxo de notificações de edição.

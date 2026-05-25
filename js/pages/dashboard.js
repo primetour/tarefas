@@ -1159,7 +1159,11 @@ async function mountUserPanels(container) {
       if (isNaN(d.getTime())) return '';
       const today = new Date(); today.setHours(0,0,0,0);
       const diff = Math.floor((d - today) / 86400000);
-      const overdue = d < new Date();
+      // v4.57.12: overdue só é true se a data passou (diff < 0). Antes:
+      // overdue = d < new Date() — d é meia-noite local, new Date() é AGORA
+      // (ex: 17h), então qualquer lembrete pra HOJE virava "vencido". Bug
+      // descoberto via E2E MCP do v4.57.7.
+      const overdue = diff < 0;
       const color = overdue ? '#EF4444' : diff <= 1 ? '#F59E0B' : 'var(--text-muted)';
       const label = overdue ? 'vencido' :
                     diff === 0 ? 'hoje' :

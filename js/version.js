@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 57,
-  patch: 11,
-  build: '20260525-portal-edit-notify-routing',
+  patch: 12,
+  build: '20260525-e2e-bugs-reminder-overdue-esc-fs-pwnew-reset',
 };
 
 /** "1.2.0" */
