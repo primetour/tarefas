@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 57,
-  patch: 7,
-  build: '20260525-validation-modal-periodo-datepickers-reminder-tz',
+  patch: 8,
+  build: '20260525-portal-remove-squad-field',
 };
 
 /** "1.2.0" */

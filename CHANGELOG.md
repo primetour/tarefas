@@ -6,6 +6,23 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.57.8+20260525-portal-remove-squad-field] — 2026-05-25
+
+Release **PATCH** — remove campo "Squad responsável" do Portal de Solicitações (Step 2).
+
+Renê: *"usuário que pede algo nao sabe do fluxo interno do setor... entao é melhor só deixar o setor e, no portal de solicitações, coordenadores finalizam preenchimento da tarefa"*.
+
+**Mudanças**:
+- `portalWizard.js`: bloco `<div id="pw-nucleo-wrap">` + handler `nucleoSel.change` + chamada `_loadSquadsForSector` removidos. Função `_loadSquadsForSector` mantida em arquivo (unused) — pode ser apagada em sweep futura.
+- **Compat preservado**: `_state.data.nucleo` segue inicializado como `''`. `_buildRequestDoc` continua incluindo `nucleo: d.nucleo || ''` (sempre `''` agora). Renderização condicional no summary do Step 4 + recent cards (`req.nucleo ? ...`) continua funcionando se algum request legado tiver squad gravado. Edit mode também respeita.
+- `WIZARD_VERSION` bump (4.57.6 → 4.57.8) — regra §12.t.
+
+**Fluxo novo**: solicitante escolhe setor (Step 1) + data (Step 2) + descreve (Step 3) + revisa (Step 4) → request entra na fila do setor. **Coordenadores** do setor atribuem squad/responsável dentro do app principal (módulo Solicitações > Validar/Atribuir).
+
+**Arquivos**: js/portal/portalWizard.js, js/portal/portal.js, js/version.js, index.html, solicitar.html, CHANGELOG.md
+
+---
+
 ## [4.57.7+20260525-validation-modal-periodo-datepickers-reminder-tz] — 2026-05-25
 
 Release **PATCH** — 3 bugs reportados pelo Renê em sequência.

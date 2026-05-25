@@ -8,7 +8,7 @@
  *
  * Estrutura:
  *   Passo 1 — Setor responsável + Tipo de demanda
- *   Passo 2 — Quando (calendário/data/squad)
+ *   Passo 2 — Quando (calendário/data; squad removido em v4.57.8)
  *   Passo 3 — Detalhes (variação, título, descrição, link)
  *   Passo 4 — Sinalizações (urgência, parceria) + Revisão + Enviar
  *
@@ -450,15 +450,11 @@ function _renderStep2() {
         </div>
       </div>
 
-      <div class="form-group" id="pw-nucleo-wrap" style="margin-top:16px;">
-        <label class="form-label">Squad responsável <span style="color:var(--text-muted);font-weight:400;">(opcional)</span></label>
-        <select class="form-select" id="pw-nucleo">
-          <option value="">— Sem squad específico —</option>
-        </select>
-        <small style="display:block;margin-top:4px;color:var(--text-muted);font-size:0.75rem;">
-          Carregando squads do setor…
-        </small>
-      </div>
+      <!-- v4.57.8: campo "Squad responsável (opcional)" removido. Solicitante
+           externo não conhece fluxo interno do setor — coordenadores finalizam
+           o assignment depois, no app principal. Compat: _state.data.nucleo
+           segue no state como '' (não quebra _buildRequestDoc nem edit de
+           requests antigas que tinham squad). -->
 
       <div class="form-group" style="margin-top:16px;">
         <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:12px;
@@ -495,7 +491,6 @@ function _renderStep2() {
 function _wireStep2() {
   const dateInput = document.getElementById('pw-date');
   const oocCb     = document.getElementById('pw-ooc');
-  const nucleoSel = document.getElementById('pw-nucleo');
 
   dateInput?.addEventListener('change', () => {
     // v4.56.1+ Bloqueio data passada com alert nativo (paridade legacy)
@@ -514,21 +509,11 @@ function _wireStep2() {
     _state.data.outOfCalendar = oocCb.checked;
     _persistDraft();
   });
-  nucleoSel?.addEventListener('change', () => {
-    _state.data.nucleo = nucleoSel.value;
-    _persistDraft();
-  });
 
   // v4.54.6+ Calendário visual — handlers
   _wireCalendarGrid();
 
-  // Carrega squads do setor (async)
-  _loadSquadsForSector(_state.data.sector, _state.data.nucleo).then(html => {
-    if (nucleoSel) nucleoSel.innerHTML = html;
-    if (nucleoSel) nucleoSel.value = _state.data.nucleo || '';
-    const hint = nucleoSel?.parentElement?.querySelector('small');
-    if (hint) hint.textContent = '';
-  });
+  // v4.57.8: _loadSquadsForSector removido — coordenador atribui squad no app principal.
 }
 
 function _validateStep2() {
