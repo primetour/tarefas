@@ -6,6 +6,33 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.57.9+20260525-portal-calendar-fullscreen-reshow-newsletter] — 2026-05-25
+
+Release **PATCH** — 2 melhorias do Portal de Solicitações + confirmação de feature já existente.
+
+Renê: 3 pedidos em ordem:
+1. *"calendário - ter a opção tela cheia"* ✅
+2. *"permitir fazer solicitações em lote"* — JÁ EXISTE (`_state.batchQueue`, botão "+ Adicionar outra ao lote" no footer do Step 4, pill "📦 Lote pendente: N" em todos os steps). Sem mudança nesta release.
+3. *"quando usuário finaliza envio e clica em solicitar outra tarefa, sistema tem q exibir o banner 'se é newsletter' novamente"* ✅
+
+### Item 1 — Calendário tela cheia
+- Botão "⤢ Tela cheia" no header do calendário (Step 2), ao lado do "Próximo ›"
+- Click abre overlay full-screen (z-index 9999) com o widget atual MOVIDO pra dentro (sem reclonar — listeners e ids preservados)
+- Botão "✕ Fechar (Esc)" + tecla Esc fecham e devolvem widget ao container do Step 2 via placeholder comment
+- Cleanup automático em `destroyPortalWizard` + ao mudar de step
+- Padrão de UX: replica o "Tela cheia" do calendário do app principal (v4.51.7)
+
+### Item 3 — Re-show newsletter prompt
+- Handler `#new-request-btn` do success-view portal (HTML estático) agora:
+  - Detecta wizard montado (`#pw-host` existe) → re-renderiza wizard do zero (state limpo, Step 1)
+  - Chama `showNewsletterPrompt(db, taskTypes)` em cima do wizard
+  - Antes: só resetava inputs do form legado (sem efeito) → user ficava na tela ✓ do wizard sem ver o popup
+- Fallback pro fluxo legado preservado
+
+**Arquivos**: js/portal/portalWizard.js, js/portal/portal.js, js/version.js, index.html, solicitar.html, CHANGELOG.md
+
+---
+
 ## [4.57.8+20260525-portal-remove-squad-field] — 2026-05-25
 
 Release **PATCH** — remove campo "Squad responsável" do Portal de Solicitações (Step 2).

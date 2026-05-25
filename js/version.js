@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 57,
-  patch: 8,
-  build: '20260525-portal-remove-squad-field',
+  patch: 9,
+  build: '20260525-portal-calendar-fullscreen-reshow-newsletter',
 };
 
 /** "1.2.0" */

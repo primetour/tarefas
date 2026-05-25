@@ -17,7 +17,7 @@ import { renderPickerButton, refreshPickerButton, bindOptionPicker } from '../co
 /* v4.55.1+ Versão única do portalWizard.js usada em TODOS os dynamic imports
  * deste arquivo. Sempre que portalWizard.js mudar, atualizar esta constante.
  * Mesma string em ambos os imports → mesma instância (ES module cache por URL). */
-const WIZARD_VERSION = '4.57.8';
+const WIZARD_VERSION = '4.57.9';
 
 /* ─── Estado do usuário autenticado ─────────────────────────── */
 // v4.51.0+ `sector` é o campo canônico (setor formal); `department` é legado
@@ -3301,9 +3301,38 @@ function bindFormEvents(db, taskTypes) {
 
   // Single submit
   document.getElementById('portal-submit-btn')?.addEventListener('click', () => handleSubmit(db, taskTypes));
-  document.getElementById('new-request-btn')?.addEventListener('click', () => {
+  document.getElementById('new-request-btn')?.addEventListener('click', async () => {
     document.getElementById('success-view')?.classList.remove('visible');
-    document.getElementById('form-view').style.display = 'block';
+    const formView = document.getElementById('form-view');
+    if (formView) formView.style.display = 'block';
+
+    // v4.57.9+ Wizard path: se #pw-host existe, re-renderiza o wizard
+    // do zero (state limpo, Step 1) e mostra o popup "é newsletter?" de
+    // novo. Antes: handler resetava só os inputs do form legado (sem
+    // efeito no wizard) e user ficava preso na tela de ✓ do wizard
+    // mesmo após fechar o popup.
+    if (document.getElementById('pw-host')) {
+      try {
+        const { renderPortalWizard } = await import('./portalWizard.js?v=' + WIZARD_VERSION);
+        document.getElementById('pw-host').innerHTML = '';
+        renderPortalWizard(document.getElementById('pw-host'), {
+          db: window._portalDb, taskTypes: window._portalTaskTypes,
+          user: portalUser,
+          onSuccess: () => {
+            document.getElementById('form-view')?.style.setProperty('display', 'none');
+            document.getElementById('success-view')?.classList.add('visible');
+          },
+        });
+        // Re-shows newsletter prompt em CIMA do wizard recém-aberto.
+        // Renê: "quando usuário finaliza envio e clica em solicitar outra
+        // tarefa, sistema tem q exibir o banner 'se é newsletter' novamente".
+        showNewsletterPrompt(db, taskTypes);
+        return;
+      } catch (e) {
+        console.warn('[portal] re-render wizard falhou, fallback legacy:', e?.message || e);
+      }
+    }
+
     // Reset submit button state
     const submitBtn = document.getElementById('portal-submit-btn');
     if (submitBtn) { submitBtn.disabled = false; submitBtn.classList.remove('loading'); submitBtn.textContent = 'Enviar apenas esta solicitação →'; }

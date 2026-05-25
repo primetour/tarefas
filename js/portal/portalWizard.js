@@ -128,6 +128,10 @@ export function destroyPortalWizard() {
     document.removeEventListener('keydown', _keyHandler);
     _keyHandler = null;
   }
+  // v4.57.9: garante que overlay fullscreen do calendário (se aberto) sai
+  if (typeof _calFsCleanup === 'function') {
+    try { _calFsCleanup(); } catch {}
+  }
   _state = null;
 }
 
@@ -260,6 +264,11 @@ function _renderFooter() {
 function _renderStep(n) {
   _state.step = n;
   _persistDraft();
+  // v4.57.9: ao mudar de step, fecha o overlay fullscreen do calendário (se aberto).
+  // O widget tá em outro container — se o user voltar pro Step 2 ele renderiza normal.
+  if (typeof _calFsCleanup === 'function') {
+    try { _calFsCleanup(); } catch {}
+  }
   _renderProgress();
   const el = document.getElementById('pw-step');
   if (!el) return;
@@ -717,6 +726,10 @@ function _renderCalendarGrid(type) {
           `).join('')}
         </div>
         <button type="button" id="pw-cal-next" aria-label="Próximo" class="btn btn-secondary btn-icon btn-sm">›</button>
+        <!-- v4.57.9: botão tela cheia (Renê) -->
+        <button type="button" id="pw-cal-fullscreen" aria-label="Tela cheia"
+          title="Abrir calendário em tela cheia (Esc fecha)"
+          class="btn btn-secondary btn-sm" style="margin-left:4px;">⤢ Tela cheia</button>
       </div>
       ${gran !== 'day' ? `
         <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:4px;">
@@ -779,6 +792,10 @@ function _wireCalendarGrid() {
       _rerenderCalendar();
     });
   });
+
+  // v4.57.9: botão tela cheia (re-wired após cada _rerenderCalendar)
+  const fs = document.getElementById('pw-cal-fullscreen');
+  if (fs) fs.addEventListener('click', _openCalendarFullscreen);
 
   document.querySelectorAll('.pw-cal-day')?.forEach(cell => {
     cell.addEventListener('click', () => {
@@ -928,6 +945,79 @@ function _rerenderCalendar() {
   const type = _state.taskTypes.find(x => x.id === _state.data.typeId);
   widget.innerHTML = _renderCalendarGrid(type);
   _wireCalendarGrid();
+}
+
+/* v4.57.9 — Tela cheia do calendário do Step 2.
+ * Renê: "calendário - ter a opção tela cheia".
+ *
+ * Estratégia: MOVE o widget existente pra dentro de um overlay full-screen
+ * (sem reclonar) — assim listeners e ids continuam válidos. Quando fecha,
+ * devolve o widget pro lugar original via placeholder comment node.
+ *
+ * Esc + botão ✕ fecham. Não persiste estado de "fullscreen" — é só visual. */
+let _calFsCleanup = null;
+function _openCalendarFullscreen() {
+  const widget = document.getElementById('pw-calendar-widget');
+  if (!widget || document.getElementById('pw-cal-fs-overlay')) return;
+
+  const originalParent = widget.parentElement;
+  const placeholder = document.createComment('pw-cal-fs-placeholder');
+  originalParent.insertBefore(placeholder, widget);
+
+  // Save inline style pra restaurar
+  const savedStyle = widget.getAttribute('style') || '';
+
+  const overlay = document.createElement('div');
+  overlay.id = 'pw-cal-fs-overlay';
+  overlay.style.cssText = `
+    position:fixed;inset:0;z-index:9999;
+    background:var(--brand-dark);
+    padding:20px;
+    display:flex;flex-direction:column;gap:12px;
+    overflow:auto;
+    font-family:var(--font-ui);
+  `;
+  const header = document.createElement('div');
+  header.style.cssText = `
+    display:flex;align-items:center;justify-content:space-between;gap:12px;
+    padding-bottom:8px;border-bottom:1px solid var(--border-subtle);
+  `;
+  header.innerHTML = `
+    <div style="font-size:1rem;font-weight:600;color:var(--text-primary);
+      display:flex;align-items:center;gap:8px;">
+      <span style="font-size:1.25rem;">📅</span>
+      Calendário editorial — tela cheia
+    </div>
+    <button type="button" id="pw-cal-fs-close" class="btn btn-secondary btn-sm">✕ Fechar (Esc)</button>
+  `;
+  const stage = document.createElement('div');
+  stage.style.cssText = `
+    flex:1;display:flex;flex-direction:column;
+    max-width:1400px;width:100%;margin:0 auto;
+  `;
+
+  overlay.appendChild(header);
+  overlay.appendChild(stage);
+
+  // Aumenta widget visualmente no fullscreen
+  widget.style.cssText = `${savedStyle};padding:18px;flex:1;font-size:1.05em;`;
+  stage.appendChild(widget);
+  document.body.appendChild(overlay);
+
+  const close = () => {
+    overlay.remove();
+    widget.setAttribute('style', savedStyle);
+    if (placeholder.parentElement) {
+      placeholder.parentElement.insertBefore(widget, placeholder);
+      placeholder.remove();
+    }
+    document.removeEventListener('keydown', escHandler);
+    _calFsCleanup = null;
+  };
+  const escHandler = (e) => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', escHandler);
+  document.getElementById('pw-cal-fs-close')?.addEventListener('click', close);
+  _calFsCleanup = close;
 }
 
 function _refreshCalendarSelection() {
