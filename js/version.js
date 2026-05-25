@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 57,
-  patch: 6,
-  build: '20260525-portal-btn-classes-in-portal-css',
+  patch: 7,
+  build: '20260525-validation-modal-periodo-datepickers-reminder-tz',
 };
 
 /** "1.2.0" */

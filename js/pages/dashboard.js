@@ -1142,9 +1142,20 @@ async function mountUserPanels(container) {
       </div>`;
       return;
     }
+    // v4.57.7: parse local-safe pra string YYYY-MM-DD (clássico bug
+    // §12.a do CLAUDE.md — new Date('2026-05-25') é UTC midnight,
+    // browser em UTC-3 renderiza dia anterior).
+    const parseDueLocal = (val) => {
+      if (val?.toDate) return val.toDate();
+      if (typeof val === 'string') {
+        const m = val.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (m) return new Date(+m[1], +m[2]-1, +m[3], 0, 0, 0, 0);
+      }
+      return new Date(val);
+    };
     const fmtDue = (r) => {
       if (!r.dueAt) return '';
-      const d = r.dueAt?.toDate?.() || new Date(r.dueAt);
+      const d = parseDueLocal(r.dueAt);
       if (isNaN(d.getTime())) return '';
       const today = new Date(); today.setHours(0,0,0,0);
       const diff = Math.floor((d - today) / 86400000);
@@ -1206,8 +1217,16 @@ async function mountUserPanels(container) {
             title: r.title,
             description: '',
             assignees: [store.get('currentUser')?.uid].filter(Boolean),
+            // v4.57.7: usa parseDueLocal pra evitar UTC shift quando r.dueAt
+            // é string YYYY-MM-DD. .toISOString().slice(0,10) também voltaria
+            // 1 dia se o Date estivesse em UTC-3 23h. Reconverte pra local.
             dueDate: r.dueAt
-              ? (r.dueAt.toDate?.() || new Date(r.dueAt)).toISOString().slice(0,10)
+              ? (() => {
+                  const d = parseDueLocal(r.dueAt);
+                  if (isNaN(d.getTime())) return null;
+                  const y = d.getFullYear(), mo = String(d.getMonth()+1).padStart(2,'0'), dd = String(d.getDate()).padStart(2,'0');
+                  return `${y}-${mo}-${dd}`;
+                })()
               : null,
             status: 'not_started',
             tags: ['lembrete'],

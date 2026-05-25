@@ -140,7 +140,9 @@ function renderValidationList() {
         if (action === 'open-task') {
           const { getTask } = await import('../services/tasks.js');
           const task = await getTask(id);
-          if (task) openTaskModal({ task, onSave: () => renderValidationList() });
+          // v4.57.7 bug fix: era `{ task }` mas openTaskModal espera `{ taskData }` —
+          // modal abria em branco pro coordenador validar.
+          if (task) openTaskModal({ taskData: task, onSave: () => renderValidationList() });
         } else if (action === 'validate-done') {
           if (!confirm('Validar e concluir esta tarefa? CSAT será disparado pro solicitante.')) return;
           const { toggleTaskComplete, getTask } = await import('../services/tasks.js');

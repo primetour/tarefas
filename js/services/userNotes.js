@@ -161,9 +161,21 @@ export async function checkDueReminders() {
   try {
     const list = await fetchReminders({ includeDone: false });
     const now = Date.now();
+    // v4.57.7: parse local-safe pra string YYYY-MM-DD (CLAUDE.md §12.a).
+    // new Date('2026-05-25').getTime() em UTC-3 vira "2026-05-24 21:00" →
+    // dispara notif 3h cedo. Parse manual como meia-noite local.
     const due = list.filter(r => {
       if (!r.dueAt || r.notified) return false;
-      const t = r.dueAt?.toMillis?.() || new Date(r.dueAt).getTime();
+      let t;
+      if (r.dueAt?.toMillis) {
+        t = r.dueAt.toMillis();
+      } else if (typeof r.dueAt === 'string') {
+        const m = r.dueAt.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        t = m ? new Date(+m[1], +m[2]-1, +m[3], 23, 59, 59).getTime()
+              : new Date(r.dueAt).getTime();
+      } else {
+        t = new Date(r.dueAt).getTime();
+      }
       return t <= now;
     });
     if (!due.length) return [];

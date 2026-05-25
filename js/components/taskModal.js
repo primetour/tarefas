@@ -4489,10 +4489,16 @@ function showEvidenceModal(taskId, taskData) {
                   ${periods.map(p => `<option value="${esc2(p.label)}">${esc2(p.label)}</option>`).join('')}
                   <option value="__custom__">Informar manualmente…</option>
                 </select>
-                <input type="text" id="dc-periodo-txt" class="portal-field"
-                  style="${F2};margin-top:6px;display:none;"
-                  placeholder="Ex: Abril 2025"
-                  value="${esc2(taskData.periodoRef||'')}">
+                <!-- v4.57.7: era input text livre. Agora 2 date pickers (início + fim)
+                     que geram label "dd/mm/yyyy – dd/mm/yyyy" igual ao formato dos
+                     periods predefinidos. dc-periodo-txt mantido (hidden) pra serializar
+                     o label final que vai pro Firestore. -->
+                <div id="dc-periodo-custom" style="display:none;gap:8px;margin-top:6px;align-items:center;">
+                  <input type="date" id="dc-periodo-ini" class="portal-field" style="${F2};flex:1;cursor:pointer;" />
+                  <span style="color:var(--text-muted);font-size:0.875rem;">até</span>
+                  <input type="date" id="dc-periodo-fim" class="portal-field" style="${F2};flex:1;cursor:pointer;" />
+                </div>
+                <input type="hidden" id="dc-periodo-txt" value="${esc2(taskData.periodoRef||'')}">
               </div>
               <div>
                 <label style="${LBL2}">Link de comprovação <span style="font-weight:400;">(opcional)</span></label>
@@ -4618,10 +4624,36 @@ function showEvidenceModal(taskId, taskData) {
       });
     });
 
+    // v4.57.7: select toggle entre periods predefinidos e 2 date pickers (custom)
     document.getElementById('dc-periodo-sel')?.addEventListener('change', e => {
-      const txt = document.getElementById('dc-periodo-txt');
-      if (txt) txt.style.display = e.target.value === '__custom__' ? 'block' : 'none';
+      const wrap = document.getElementById('dc-periodo-custom');
+      const txt  = document.getElementById('dc-periodo-txt');
+      if (wrap) wrap.style.display = e.target.value === '__custom__' ? 'flex' : 'none';
+      if (e.target.value !== '__custom__') {
+        // sincroniza hidden com label do period selecionado (já é o próprio value)
+        if (txt) txt.value = e.target.value || '';
+      } else {
+        // recalcula label dos date pickers se já preenchidos
+        _syncCustomPeriodoLabel();
+      }
     });
+    // Helper: parse YYYY-MM-DD local-safe (evita bug timezone UTC) + monta label
+    function _fmtBrDate(iso) {
+      if (!iso) return '';
+      const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})/);
+      return m ? `${m[3]}/${m[2]}/${m[1]}` : '';
+    }
+    function _syncCustomPeriodoLabel() {
+      const ini = document.getElementById('dc-periodo-ini')?.value;
+      const fim = document.getElementById('dc-periodo-fim')?.value;
+      const txt = document.getElementById('dc-periodo-txt');
+      if (!txt) return;
+      if (ini && fim) txt.value = `${_fmtBrDate(ini)} – ${_fmtBrDate(fim)}`;
+      else if (ini)   txt.value = _fmtBrDate(ini);
+      else            txt.value = '';
+    }
+    document.getElementById('dc-periodo-ini')?.addEventListener('change', _syncCustomPeriodoLabel);
+    document.getElementById('dc-periodo-fim')?.addEventListener('change', _syncCustomPeriodoLabel);
 
     document.getElementById('dc-skip')?.addEventListener('click', () => { overlay.remove(); resolveOverlay(); });
 

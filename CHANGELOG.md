@@ -6,6 +6,25 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.57.7+20260525-validation-modal-periodo-datepickers-reminder-tz] — 2026-05-25
+
+Release **PATCH** — 3 bugs reportados pelo Renê em sequência.
+
+### Bug 1 — Modal de validação aparece em branco
+`js/pages/requests.js:143` chamava `openTaskModal({ task, onSave })` — mas a função espera `{ taskData }`. Resultado: `taskData = undefined`, modal renderizava em branco como se fosse nova tarefa. Coordenador não conseguia avaliar histórico. **Fix**: renomeia pra `taskData: task`.
+
+### Bug 2 — Popup de evidência de meta: período de referência sem calendário
+`js/components/taskModal.js:4492` tinha `<input type="text" placeholder="Ex: Abril 2025">` pra entrada manual. **Fix**: substituído por 2 `<input type="date">` (início + fim) inline com label "até". Quando user escolhe ambas as datas, hidden field gera label `"dd/mm/yyyy – dd/mm/yyyy"` (consistente com formato dos periods predefinidos via `generatePendingPeriods`). Parse local-safe pra evitar timezone shift.
+
+### Bug 3 — Meu Painel: lembrete data registra dia anterior + sem calendário visível
+**Causa 1 (timezone shift)**: `dashboard.js:1147` fazia `new Date(r.dueAt)` quando `dueAt` é string YYYY-MM-DD — clássico bug §12.a (UTC midnight em UTC-3 = dia anterior). **Fix**: helper `parseDueLocal()` parseia manual via regex. Aplicado também em `js/services/userNotes.js:checkDueReminders()` (mesma armadilha) e na conversão pra task (linha 1210, evita `.toISOString().slice(0,10)` que perde 1 dia).
+
+**Causa 2 (calendário "invisível")**: `<input type="date">` já existia (linha 1335), mas no dark mode o `::-webkit-calendar-picker-indicator` ficava preto-em-preto. User pensava que era input manual. **Fix**: `css/components.css` ganha regras globais pra `input[type="date|datetime-local|time|month"]`: `color-scheme: dark/light`, `cursor: pointer`, picker indicator com `opacity: 0.7 → 1 on hover`. Espelha o que `portal.css` já fazia.
+
+**Arquivos**: js/pages/requests.js, js/components/taskModal.js, js/pages/dashboard.js, js/services/userNotes.js, css/components.css, js/version.js, index.html, solicitar.html, CHANGELOG.md
+
+---
+
 ## [4.57.6+20260525-portal-btn-classes-in-portal-css] — 2026-05-25
 
 Release **PATCH** — root-cause fix dos "botões fora do padrão" no portal de solicitações.
