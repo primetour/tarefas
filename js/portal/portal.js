@@ -1050,14 +1050,27 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
         border:1px solid ${isToday?'var(--brand-gold)':hasTasks?'rgba(212,168,67,0.3)':hasSlots?'rgba(212,168,67,0.15)':'transparent'};">
         <div style="font-size:${cellFont};font-weight:${isToday?700:400};
           color:${isToday?'var(--brand-gold)':hasTasks?'var(--text-primary)':'var(--text-muted)'};">${d}</div>
-        ${slots.map(s=>{const maxChars=portalCalExpanded?40:12;const fillInfo=getSlotFillInfo(s.title,dateISO,tasks);const filled=fillInfo.filled;const displayTitle=filled?fillInfo.title:s.title;return`<div class="${filled?'pcal-filled-click':'pcal-slot-click'}" ${filled?`data-req-date="${dateISO}" data-fill-source="${fillInfo.source}"`:`data-slot-date="${dateISO}"
+        ${slots.map(s=>{
+          // v4.57.16: visual de alto contraste por estado (Renê — clareza)
+          const maxChars = portalCalExpanded ? 40 : 12;
+          const fillInfo = getSlotFillInfo(s.title, dateISO, tasks);
+          const state    = _slotStateFrom(fillInfo);
+          const vis      = _slotVisual(state);
+          const filled   = fillInfo.filled;
+          const baseTitle = filled ? fillInfo.title : s.title;
+          // Modo compacto: ícone + título; expandido: ícone + status + título
+          const labelText = portalCalExpanded
+            ? `${vis.icon} ${vis.label.toUpperCase()} · ${baseTitle.slice(0,maxChars)}${baseTitle.length>maxChars?'…':''}`
+            : `${vis.icon} ${baseTitle.slice(0,maxChars)}${baseTitle.length>maxChars?'…':''}`;
+          return `<div class="${filled?'pcal-filled-click':'pcal-slot-click'}" ${filled?`data-req-date="${dateISO}" data-fill-source="${fillInfo.source}"`:`data-slot-date="${dateISO}"
           data-slot-title="${esc(s.title)}" data-slot-variation="${s.variationId||''}"
           data-slot-area="${esc(s.requestingArea||'')}"`}
-          style="font-size:${slotFont};color:${filled?'var(--color-success)':s.color||'var(--brand-gold)'};
-          ${filled?`background:rgba(34,197,94,0.1);border-radius:2px;padding:${portalCalExpanded?'1px 3px':'0 2px'};`:`border-bottom:1px dashed ${s.color||'var(--brand-gold)'};padding:${portalCalExpanded?'1px 0':'0'};`}
+          style="font-size:${slotFont};color:${vis.fg};background:${vis.bg};border:${vis.border};
+          border-radius:4px;padding:${portalCalExpanded?'2px 5px':'1px 3px'};font-weight:600;
           margin-bottom:${portalCalExpanded?'2px':'1px'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
           cursor:pointer;"
-          title="${filled?'✓ Clique para ver/editar':'Clique para adicionar'}: ${esc(displayTitle)}">${filled?'✓':'◌'} ${displayTitle.slice(0,maxChars)}${displayTitle.length>maxChars?'…':''}</div>`;}).join('')}
+          title="${vis.label} · ${esc(baseTitle)}${filled?' — clique para ver/editar':' — clique para criar solicitação'}">${labelText}</div>`;
+        }).join('')}
         ${(()=>{if(hasSlots)return'';return tasks.map((t,ti)=>{if(convertedTaskIds.has(t.id))return'';const maxChars=portalCalExpanded?40:12;return`<div class="pcal-task-click" data-task-idx="${ti}" data-task-date="${dateISO}"
           style="font-size:${slotFont};color:var(--brand-gold);cursor:pointer;
           overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:${portalCalExpanded?'1px 0':0};
@@ -1103,14 +1116,23 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
         border:1px solid ${isToday?'var(--brand-gold)':'var(--border-subtle)'};">
         <div style="font-size:${wkFont};color:${isToday?'var(--brand-gold)':'var(--text-muted)'};
           font-weight:${isToday?700:400};margin-bottom:3px;">${PT_DAYS_S[d.getDay()]} ${d.getDate()}</div>
-        ${(()=>{const wkHasSlots=slots.length>0;return slots.map(s=>{const fillInfo=getSlotFillInfo(s.title,dateISO,dayTasks);const filled=fillInfo.filled;const displayTitle=filled?fillInfo.title:s.title;return`<div class="${filled?'pcal-filled-click':'pcal-slot-click'}" ${filled?`data-req-date="${dateISO}" data-fill-source="${fillInfo.source}"`:`data-slot-date="${dateISO}"
+        ${(()=>{const wkHasSlots=slots.length>0;return slots.map(s=>{
+          // v4.57.16: visual padronizado via _slotVisual
+          const fillInfo = getSlotFillInfo(s.title, dateISO, dayTasks);
+          const state    = _slotStateFrom(fillInfo);
+          const vis      = _slotVisual(state);
+          const filled   = fillInfo.filled;
+          const baseTitle = filled ? fillInfo.title : s.title;
+          const labelText = portalCalExpanded
+            ? `${vis.icon} ${vis.label.toUpperCase()} · ${baseTitle.slice(0,wkMaxChars)}${baseTitle.length>wkMaxChars?'…':''}`
+            : `${vis.icon} ${baseTitle.slice(0,wkMaxChars)}${baseTitle.length>wkMaxChars?'…':''}`;
+          return `<div class="${filled?'pcal-filled-click':'pcal-slot-click'}" ${filled?`data-req-date="${dateISO}" data-fill-source="${fillInfo.source}"`:`data-slot-date="${dateISO}"
           data-slot-title="${esc(s.title)}" data-slot-variation="${s.variationId||''}"
           data-slot-area="${esc(s.requestingArea||'')}"`}
-          style="font-size:${wkSlotFont};${filled?`border:1px solid rgba(34,197,94,0.4);background:rgba(34,197,94,0.1);`:`border:1px dashed ${s.color||'var(--brand-gold)'};`}
-          color:${filled?'var(--color-success)':s.color||'var(--brand-gold)'};border-radius:2px;padding:${portalCalExpanded?'2px 4px':'1px 3px'};margin-bottom:2px;
+          style="font-size:${wkSlotFont};background:${vis.bg};border:${vis.border};color:${vis.fg};font-weight:600;
+          border-radius:4px;padding:${portalCalExpanded?'3px 6px':'2px 4px'};margin-bottom:2px;
           overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;"
-          title="${filled?'✓ Clique para ver/editar':'Clique para adicionar'}: ${esc(displayTitle)}">
-          ${filled?'✓':'◌'} ${displayTitle.slice(0,wkMaxChars)}${displayTitle.length>wkMaxChars?'…':''}</div>`;}).join('')+
+          title="${vis.label} · ${esc(baseTitle)}${filled?' — clique para ver/editar':' — clique para criar solicitação'}">${labelText}</div>`;}).join('')+
           (!wkHasSlots?dayTasks.map((t,ti)=>{if(convertedTaskIds.has(t.id))return'';return`<div class="pcal-task-click" data-task-idx="${ti}" data-task-date="${dateISO}"
           style="font-size:${wkSlotFont};background:rgba(212,168,67,0.12);cursor:pointer;
           color:var(--brand-gold);border-radius:2px;padding:${portalCalExpanded?'2px 4px':'1px 3px'};margin-bottom:2px;
@@ -1147,16 +1169,25 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
       ${slots.length?`
         <div style="margin-bottom:10px;">
           <div style="font-size:0.75rem;font-weight:600;color:var(--brand-gold);margin-bottom:6px;">◌ Agenda do dia</div>
-          ${slots.map(s=>{const fillInfo=getSlotFillInfo(s.title,dateISO,dTasks);const filled=fillInfo.filled;const displayTitle=filled?fillInfo.title:s.title;return`<div class="${filled?'pcal-filled-click':(!filled&&clickable?'pcal-slot-click':'')}" ${filled?`data-req-date="${dateISO}" data-fill-source="${fillInfo.source}"`:(clickable?`data-slot-date="${dateISO}"
+          ${slots.map(s=>{
+            // v4.57.16: visual padronizado via _slotVisual
+            const fillInfo = getSlotFillInfo(s.title, dateISO, dTasks);
+            const state    = _slotStateFrom(fillInfo);
+            const vis      = _slotVisual(state);
+            const filled   = fillInfo.filled;
+            const baseTitle = filled ? fillInfo.title : s.title;
+            return `<div class="${filled?'pcal-filled-click':(!filled&&clickable?'pcal-slot-click':'')}" ${filled?`data-req-date="${dateISO}" data-fill-source="${fillInfo.source}"`:(clickable?`data-slot-date="${dateISO}"
             data-slot-title="${esc(s.title)}" data-slot-variation="${s.variationId||''}"
             data-slot-area="${esc(s.requestingArea||'')}"`:'')}
-            style="padding:8px 10px;border-radius:4px;margin-bottom:4px;cursor:${filled||clickable?'pointer':'default'};
-            ${filled?`border:1.5px solid rgba(34,197,94,0.4);background:rgba(34,197,94,0.08);`:`border:1.5px dashed ${s.color||'var(--brand-gold)'};background:${s.color||'var(--brand-gold)'}08;`}">
-            <div style="font-size:0.8125rem;font-weight:500;color:${filled?'var(--color-success)':s.color||'var(--brand-gold)'};">${filled?'✓':'◌'} ${esc(displayTitle)}</div>
-            ${s.requestingArea?`<div style="font-size:0.6875rem;color:var(--text-muted);">📍 ${s.requestingArea}</div>`:''}
-            ${filled?`<div style="font-size:0.625rem;color:var(--color-success);margin-top:2px;">Clique para ver/editar</div>`
-            :clickable?`<div style="font-size:0.625rem;color:var(--text-muted);margin-top:2px;">Clique para adicionar ao formulário</div>`:''
-            }
+            style="padding:10px 12px;border-radius:6px;margin-bottom:6px;cursor:${filled||clickable?'pointer':'default'};
+            background:${vis.bg};border:${vis.border};">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span style="font-size:1rem;color:${vis.fg};font-weight:700;">${vis.icon}</span>
+              <span style="background:${vis.fg};color:#fff;font-size:0.625rem;padding:2px 6px;border-radius:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;">${vis.label}</span>
+              <span style="font-size:0.875rem;font-weight:600;color:${vis.fg};flex:1;">${esc(baseTitle)}</span>
+            </div>
+            ${s.requestingArea?`<div style="font-size:0.6875rem;color:var(--text-muted);margin-top:4px;">📍 ${s.requestingArea}</div>`:''}
+            <div style="font-size:0.625rem;color:var(--text-muted);margin-top:4px;">${filled?'Clique para ver/editar':clickable?'Clique para criar solicitação':'(data passada)'}</div>
           </div>`;}).join('')}
         </div>
       `:''}
@@ -1284,12 +1315,22 @@ async function renderPortalCalendar(db, taskTypes, initialNewsletterDates) {
       <!-- Nav title -->
       <div style="font-size:0.8125rem;font-weight:600;color:var(--text-primary);margin-bottom:8px;">${navLabel()}</div>
 
-      <!-- Legend -->
-      <div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:8px;font-size:0.6875rem;color:var(--text-muted);">
-        <span>◌ Agenda (referência)</span>
-        <span>● Tarefa agendada</span>
-        <span style="color:#F59E0B;">◌ Aguardando triagem</span>
-        <span style="color:#22C55E;">✓ Convertida</span>
+      <!-- Legend v4.57.16: badges visuais com a mesma cor dos chips do calendar -->
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;font-size:0.6875rem;align-items:center;">
+        <span style="color:var(--text-muted);font-weight:600;margin-right:4px;">Legenda:</span>
+        ${[
+          ['empty',     'Vazio (solicitar)'],
+          ['pending',   'Aguardando'],
+          ['converted', 'Em produção'],
+          ['done',      'Concluída'],
+          ['batch',     'No lote'],
+          ['task',      'Tarefa agendada'],
+        ].map(([state,label]) => {
+          const v = _slotVisual(state);
+          return `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:10px;
+            background:${v.bg};border:${v.border};color:${v.fg};font-weight:600;font-size:0.6875rem;">
+            <span>${v.icon}</span>${label}</span>`;
+        }).join('')}
       </div>
 
       <!-- Grid -->
@@ -3684,6 +3725,47 @@ function _toLocalISO(date) {
   const m = String(date.getMonth() + 1).padStart(2, '0');
   const d = String(date.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
+}
+
+/* v4.57.16+ Helper de visual dos chips de slot no calendário do portal.
+ * Renê: "não está claro o que já está preenchido e o que ainda precisa ser
+ * feito. é tudo muito sutil. precisamos de clareza pro usuario bater o olho
+ * e entender". Cores sólidas com contraste alto + ícones grandes.
+ *
+ * Estados:
+ *   empty       → slot vazio (precisa ser preenchido)
+ *   pending     → request aguardando triagem do coordenador
+ *   converted   → request virou task (em produção)
+ *   rejected    → request recusada
+ *   batch       → no lote local (pendente envio)
+ *   task        → task agendada (sem request linkado)
+ *   done        → task concluída
+ */
+function _slotVisual(state) {
+  const map = {
+    empty:     { bg:'transparent',         border:'2px dashed var(--brand-gold)',  fg:'var(--brand-gold)', icon:'+',  label:'Solicitar' },
+    pending:   { bg:'#FEF3C7',             border:'2px solid #F59E0B',             fg:'#92400E',          icon:'⏳', label:'Aguardando' },
+    converted: { bg:'#DBEAFE',             border:'2px solid #3B82F6',             fg:'#1E40AF',          icon:'▶',  label:'Em produção' },
+    done:      { bg:'#DCFCE7',             border:'2px solid #22C55E',             fg:'#166534',          icon:'✓',  label:'Concluída' },
+    rejected:  { bg:'#FEE2E2',             border:'2px solid #EF4444',             fg:'#991B1B',          icon:'✕',  label:'Recusada' },
+    batch:     { bg:'#EDE9FE',             border:'2px dashed #A78BFA',            fg:'#5B21B6',          icon:'✦',  label:'No lote' },
+    task:      { bg:'rgba(212,168,67,0.12)', border:'1px solid rgba(212,168,67,0.45)', fg:'var(--brand-gold)', icon:'●',  label:'Agendada' },
+  };
+  return map[state] || map.empty;
+}
+/* Deriva estado do slot a partir do getSlotFillInfo + status do doc. */
+function _slotStateFrom(fillInfo) {
+  if (!fillInfo?.filled) return 'empty';
+  if (fillInfo.source === 'batch')   return 'batch';
+  if (fillInfo.source === 'task')    return (fillInfo.data?.status === 'done' ? 'done' : 'task');
+  if (fillInfo.source === 'request') {
+    const st = fillInfo.data?.status;
+    if (st === 'converted') return 'converted';
+    if (st === 'rejected')  return 'rejected';
+    if (st === 'done')      return 'done';
+    return 'pending';
+  }
+  return 'empty';
 }
 
 /**

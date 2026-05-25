@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 57,
-  patch: 15,
-  build: '20260525-portal-calendar-tz-shift-fix',
+  patch: 16,
+  build: '20260525-portal-calendar-clarity-states',
 };
 
 /** "1.2.0" */
