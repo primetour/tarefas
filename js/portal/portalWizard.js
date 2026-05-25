@@ -322,37 +322,34 @@ function _validateStep1() {
   return ok;
 }
 
-/* === Passo 2: Quando (data + squad + fora-do-cal) === */
+/* === Passo 2: Quando (calendário visual + data + squad + fora-do-cal) === */
 function _renderStep2() {
   const d = _state.data;
   const type = _state.taskTypes.find(x => x.id === d.typeId);
   const hasSlots = !!type?.scheduleSlots?.length;
   const minDate = _getMinDate();
+  // v4.54.6+ Estado do calendário (mês visualizado) — inicializa se ainda não tem
+  if (!_state.calDate) {
+    _state.calDate = d.desiredDate ? new Date(d.desiredDate + 'T12:00:00') : new Date();
+  }
   return `
     <div class="portal-card" style="padding:24px;">
       <h2 style="margin:0 0 6px;font-size:1.25rem;color:var(--text-primary);">Quando você precisa?</h2>
       <p style="margin:0 0 20px;color:var(--text-muted);font-size:0.875rem;">
-        ${hasSlots ? 'Escolha uma data ou clique num slot pré-agendado abaixo.' : 'Defina a data desejada de entrega.'}
+        ${hasSlots ? 'Clique em um <strong>slot pré-agendado</strong> (colorido) ou em um <strong>dia vazio</strong>. Slot = dentro do calendário editorial; dia vazio = fora do calendário (impacta performance).' : 'Escolha a data desejada de entrega.'}
       </p>
 
-      <div class="form-group">
-        <label class="form-label">Data desejada de entrega <span class="required">*</span></label>
+      <!-- Calendário visual -->
+      <div id="pw-calendar-widget">${_renderCalendarGrid(type)}</div>
+
+      <!-- Data selecionada (input pra ajuste fino + fallback) -->
+      <div class="form-group" style="margin-top:16px;">
+        <label class="form-label">Data selecionada <span class="required">*</span></label>
         <input type="date" class="form-input" id="pw-date" min="${minDate}" value="${esc(d.desiredDate)}" />
         <div class="form-error" id="pw-err-date" style="display:none;color:var(--color-danger);font-size:0.75rem;margin-top:4px;">
           A data não pode ser anterior a hoje.
         </div>
       </div>
-
-      ${hasSlots ? `
-        <div class="form-group" style="margin-top:16px;">
-          <label class="form-label" style="font-size:0.8125rem;color:var(--text-muted);">Slots pré-agendados (opcional)</label>
-          <div id="pw-slots" style="
-            display:grid;grid-template-columns:repeat(auto-fill, minmax(140px, 1fr));
-            gap:8px;margin-top:6px;">
-            ${_renderSlotChips(type)}
-          </div>
-        </div>
-      ` : ''}
 
       <div class="form-group" id="pw-nucleo-wrap" style="margin-top:16px;">
         <label class="form-label">Squad responsável <span style="color:var(--text-muted);font-weight:400;">(opcional)</span></label>
@@ -389,6 +386,7 @@ function _wireStep2() {
     _state.data.desiredDate = dateInput.value;
     _checkAutoUrgency();  // v4.54.4+
     _persistDraft();
+    _refreshCalendarSelection();
   });
   oocCb?.addEventListener('change', () => {
     _state.data.outOfCalendar = oocCb.checked;
@@ -399,22 +397,8 @@ function _wireStep2() {
     _persistDraft();
   });
 
-  // Slots: clique pré-preenche data + variação
-  document.querySelectorAll('.pw-slot-chip')?.forEach(chip => {
-    chip.addEventListener('click', () => {
-      const date = chip.dataset.date;
-      const variationId = chip.dataset.variationId;
-      _state.data.desiredDate = date;
-      _state.data.variationId = variationId;
-      const type = _state.taskTypes.find(t => t.id === _state.data.typeId);
-      const variation = type?.variations?.find(v => v.id === variationId);
-      _state.data.variationName = variation?.name || '';
-      if (dateInput) dateInput.value = date;
-      document.querySelectorAll('.pw-slot-chip').forEach(c => c.style.background = 'var(--bg-surface)');
-      chip.style.background = 'rgba(212,168,67,0.2)';
-      _persistDraft();
-    });
-  });
+  // v4.54.6+ Calendário visual — handlers
+  _wireCalendarGrid();
 
   // Carrega squads do setor (async)
   _loadSquadsForSector(_state.data.sector, _state.data.nucleo).then(html => {
@@ -433,6 +417,7 @@ function _validateStep2() {
 }
 
 function _renderSlotChips(type) {
+  // v4.54.6+ Mantido pra retrocompat se algum lugar chamar — não é mais usado no Step 2.
   const slots = type?.scheduleSlots || [];
   if (!slots.length) return '<div style="color:var(--text-muted);font-size:0.75rem;">Nenhum slot pré-agendado.</div>';
   return slots.slice(0, 12).map(s => {
@@ -447,6 +432,194 @@ function _renderSlotChips(type) {
       </button>
     `;
   }).join('');
+}
+
+/* v4.54.6+ Calendário visual mensal pro Step 2.
+ * Mostra slots pré-agendados (recurrence weekly/monthly_days/custom) marcados
+ * coloridos; dias vazios clicáveis com "fora do calendário" auto-marcado.
+ */
+const PT_DAYS_S = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+const PT_MONTHS = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+
+function _getSlotsForDate(type, date) {
+  if (!type?.scheduleSlots) return [];
+  const y = date.getFullYear(), m = date.getMonth(), d = date.getDate();
+  const dow = date.getDay();
+  const iso = _toISODate(date);
+  return (type.scheduleSlots || []).filter(s => {
+    if (s.active === false) return false;
+    if (s.recurrence === 'weekly')        return s.weekDay === dow;
+    if (s.recurrence === 'monthly_days')  return (s.monthDays || []).includes(d);
+    if (s.recurrence === 'custom')        return (s.customDates || []).includes(iso);
+    return false;
+  });
+}
+
+function _toISODate(date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function _renderCalendarGrid(type) {
+  const cal = _state.calDate || new Date();
+  const y = cal.getFullYear();
+  const m = cal.getMonth();
+  const today = new Date(); today.setHours(0,0,0,0);
+  const firstDow = new Date(y, m, 1).getDay();
+  const daysInMonth = new Date(y, m+1, 0).getDate();
+  const selected = _state.data.desiredDate || '';
+
+  let cells = '';
+  for (let i = 0; i < firstDow; i++) cells += '<div></div>';
+  for (let d = 1; d <= daysInMonth; d++) {
+    const date = new Date(y, m, d);
+    date.setHours(0,0,0,0);
+    const iso = _toISODate(date);
+    const isPast = date < today;
+    const isToday = +date === +today;
+    const isSelected = iso === selected;
+    const slots = _getSlotsForDate(type, date);
+    const hasSlots = slots.length > 0;
+    const slotTitle = hasSlots ? slots[0].title || 'Slot' : '';
+    const slotColor = hasSlots ? (slots[0].color || 'var(--brand-gold)') : '';
+    const slotId = hasSlots ? slots[0].id : '';
+
+    const bg = isSelected ? 'rgba(212,168,67,0.25)'
+             : hasSlots   ? `${slotColor}22`
+             : isToday    ? 'var(--bg-surface)'
+             : 'transparent';
+    const border = isSelected ? '2px solid var(--brand-gold)'
+                 : hasSlots   ? `1px solid ${slotColor}`
+                 : isToday    ? '1px dashed var(--border-default)'
+                 : '1px solid var(--border-subtle)';
+    const cursor = isPast ? 'not-allowed' : 'pointer';
+    const opacity = isPast ? '0.35' : '1';
+
+    cells += `
+      <div class="pw-cal-day" data-date="${iso}" data-has-slot="${hasSlots?'1':'0'}" data-slot-id="${esc(slotId)}"
+        ${isPast?'data-disabled="1"':''}
+        title="${hasSlots ? esc(slotTitle) + (isPast?' (passado)':'') : (isPast?'Data passada':'Fora do calendário editorial')}"
+        style="
+          background:${bg};border:${border};border-radius:6px;
+          padding:6px 4px;cursor:${cursor};opacity:${opacity};
+          min-height:54px;display:flex;flex-direction:column;
+          font-size:0.75rem;line-height:1.2;transition:all 0.12s;
+          ${isPast?'':'user-select:none;'}">
+        <div style="font-weight:${isToday?'700':'500'};color:${isToday?'var(--brand-gold)':'var(--text-primary)'};">
+          ${d}
+        </div>
+        ${hasSlots ? `
+          <div style="font-size:0.625rem;color:${slotColor};font-weight:600;margin-top:auto;line-height:1.1;
+            overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+            ${esc(slotTitle)}
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }
+
+  return `
+    <div style="border:1px solid var(--border-subtle);border-radius:10px;padding:12px;background:var(--bg-surface);">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <button type="button" id="pw-cal-prev" aria-label="Mês anterior"
+          style="background:transparent;border:1px solid var(--border-default);border-radius:6px;width:30px;height:30px;cursor:pointer;color:var(--text-secondary);">‹</button>
+        <div style="font-weight:600;font-size:0.9375rem;color:var(--text-primary);">
+          ${PT_MONTHS[m]} ${y}
+        </div>
+        <button type="button" id="pw-cal-next" aria-label="Próximo mês"
+          style="background:transparent;border:1px solid var(--border-default);border-radius:6px;width:30px;height:30px;cursor:pointer;color:var(--text-secondary);">›</button>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:4px;">
+        ${PT_DAYS_S.map(d => `<div style="text-align:center;font-size:0.6875rem;color:var(--text-muted);font-weight:600;">${d}</div>`).join('')}
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:4px;">
+        ${cells}
+      </div>
+      <div style="margin-top:10px;display:flex;gap:14px;font-size:0.6875rem;color:var(--text-muted);flex-wrap:wrap;">
+        <div style="display:flex;align-items:center;gap:5px;">
+          <span style="width:12px;height:12px;border-radius:3px;background:rgba(212,168,67,0.25);border:2px solid var(--brand-gold);display:inline-block;"></span>
+          Selecionado
+        </div>
+        <div style="display:flex;align-items:center;gap:5px;">
+          <span style="width:12px;height:12px;border-radius:3px;background:#44d54122;border:1px solid #44d541;display:inline-block;"></span>
+          Slot pré-agendado
+        </div>
+        <div style="display:flex;align-items:center;gap:5px;">
+          <span style="width:12px;height:12px;border-radius:3px;background:transparent;border:1px solid var(--border-subtle);display:inline-block;"></span>
+          Dia vazio (= fora do calendário)
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function _wireCalendarGrid() {
+  const prev = document.getElementById('pw-cal-prev');
+  const next = document.getElementById('pw-cal-next');
+  prev?.addEventListener('click', () => {
+    _state.calDate = new Date(_state.calDate);
+    _state.calDate.setMonth(_state.calDate.getMonth() - 1);
+    _rerenderCalendar();
+  });
+  next?.addEventListener('click', () => {
+    _state.calDate = new Date(_state.calDate);
+    _state.calDate.setMonth(_state.calDate.getMonth() + 1);
+    _rerenderCalendar();
+  });
+
+  document.querySelectorAll('.pw-cal-day')?.forEach(cell => {
+    if (cell.dataset.disabled === '1') return;
+    cell.addEventListener('click', () => {
+      const iso = cell.dataset.date;
+      const hasSlot = cell.dataset.hasSlot === '1';
+      const slotId = cell.dataset.slotId;
+      const type = _state.taskTypes.find(t => t.id === _state.data.typeId);
+
+      _state.data.desiredDate = iso;
+      const dateInput = document.getElementById('pw-date');
+      if (dateInput) dateInput.value = iso;
+
+      if (hasSlot) {
+        // Dentro do calendário editorial: desmarca OOC
+        _state.data.outOfCalendar = false;
+        const slot = (type?.scheduleSlots || []).find(s => s.id === slotId);
+        // Se slot tem requestingArea, pre-prenche
+        if (slot?.requestingArea) _state.data.requestingArea = slot.requestingArea;
+      } else {
+        // Dia vazio: força fora do calendário
+        _state.data.outOfCalendar = true;
+      }
+
+      const oocCb = document.getElementById('pw-ooc');
+      if (oocCb) oocCb.checked = _state.data.outOfCalendar;
+
+      _checkAutoUrgency();
+      _persistDraft();
+      _rerenderCalendar();
+    });
+  });
+}
+
+function _rerenderCalendar() {
+  const widget = document.getElementById('pw-calendar-widget');
+  if (!widget) return;
+  const type = _state.taskTypes.find(x => x.id === _state.data.typeId);
+  widget.innerHTML = _renderCalendarGrid(type);
+  _wireCalendarGrid();
+}
+
+function _refreshCalendarSelection() {
+  // Quando a data muda via input manual, re-render calendar pra refletir seleção
+  // Se a data está em mês diferente, ajusta calDate
+  if (_state.data.desiredDate) {
+    const d = new Date(_state.data.desiredDate + 'T12:00:00');
+    if (d.getMonth() !== _state.calDate?.getMonth() || d.getFullYear() !== _state.calDate?.getFullYear()) {
+      _state.calDate = d;
+    }
+  }
+  _rerenderCalendar();
 }
 
 /* === Passo 3: Detalhes (variação, título, descrição, link) === */

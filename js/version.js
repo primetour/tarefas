@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 54,
-  patch: 5,
-  build: '20260524-portal-wizard-fase-A-sla-field-fix',
+  minor: 55,
+  patch: 0,
+  build: '20260524-portal-wizard-fase-B-calendario-visual',
 };
 
 /** "1.2.0" */
