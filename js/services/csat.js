@@ -5,7 +5,7 @@
 
 import {
   collection, doc, addDoc, setDoc, updateDoc, deleteDoc, getDoc, getDocs,
-  query, where, orderBy, limit, serverTimestamp, onSnapshot,
+  query, where, orderBy, limit, writeBatch, serverTimestamp, onSnapshot,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { db }       from '../firebase.js';
 import { store }    from '../store.js';
@@ -299,6 +299,32 @@ export async function deleteCsatSurvey(surveyId) {
   }
   await deleteDoc(doc(db, 'csat_surveys', surveyId));
   await auditLog('csat.delete', 'survey', surveyId, {});
+
+  // v4.57.31 fix integração: cleanup tasks.csatSurveyId órfão.
+  // Antes: deletar survey deixava tasks (CSAT periódico/multi-task) com
+  // csatSurveyId apontando pra doc inexistente — chip "Pesquisa enviada"
+  // virava fantasma e relinks/reenvios falhavam silenciosamente.
+  try {
+    const tasksSnap = await getDocs(query(
+      collection(db, 'tasks'),
+      where('csatSurveyId', '==', surveyId),
+      limit(500),
+    ));
+    if (!tasksSnap.empty) {
+      const batch = writeBatch(db);
+      tasksSnap.forEach(d => {
+        batch.update(d.ref, {
+          csatSurveyId: null,
+          csatSurveyDeleted: true,
+          csatSurveyDeletedAt: serverTimestamp(),
+          // mantém csatPool ('sent', etc.) pra histórico
+        });
+      });
+      await batch.commit();
+    }
+  } catch (e) {
+    console.warn('[deleteCsatSurvey] cleanup tasks.csatSurveyId falhou:', e?.message);
+  }
 }
 
 /* ─── Cancelar survey ────────────────────────────────────── */

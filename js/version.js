@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 57,
-  patch: 30,
-  build: '20260525-delete-orphan-cleanup-project-workspace-tasktype',
+  patch: 31,
+  build: '20260525-delete-orphan-cleanup-goal-csat',
 };
 
 /** "1.2.0" */

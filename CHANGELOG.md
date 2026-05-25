@@ -6,6 +6,34 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.57.31+20260525-delete-orphan-cleanup-goal-csat] — 2026-05-25
+
+Release **PATCH** — completa o ciclo de cleanup de FKs em deletes (v4.57.28→31). Mais 2 fontes: goals e csat_surveys.
+
+**Fix — `deleteGoal(force=true)` limpa `tasks.metaLinks[].goalId`.**
+
+v4.57.25 introduziu `checkGoalDependencies` + `force` flag mas, quando forçado, deixava tasks com `metaLinks` apontando pra meta fantasma (UI renderizava "(meta excluída)" ou undefined). `metaLinks` é array de objetos `{goalId, metaId, ...}` — não dá pra usar `arrayRemove` direto (perderia outros links). Read-modify-write: scan limit 500, filtra array por task, batch update + flag `goalDeleted`. Espelho legado `tasks.goalId` (que aponta pro primeiro link) é reescrito pro novo primeiro item do array filtrado, ou zerado se array vazio.
+
+**Fix — `deleteCsatSurvey` limpa `tasks.csatSurveyId`.**
+
+CSAT periódico/multi-task grava `csatSurveyId` nas tasks agrupadas. Deletar survey deixava chip "Pesquisa enviada" virando fantasma + relinks/reenvios falhando silenciosamente. Cleanup: query inversa + batch zera `csatSurveyId` + flag `csatSurveyDeleted` + timestamp. `csatPool` (estado `'sent'`/etc.) preservado pra histórico.
+
+**Sprint final — padrão consolidado em 4 releases (v4.57.28→31)**:
+
+| Entidade deletada | FK em tasks zerado | Flag |
+|---|---|---|
+| `tasks` | `requests.taskId`, `content_calendar.taskId` | `taskDeleted` |
+| `requests` | `tasks.requestId` | `requestDeleted` |
+| `projects` | `tasks.projectId` (force) | `projectDeleted` |
+| `workspaces` | `tasks.workspaceId` + `projects.workspaceIds[]` (force) | `workspaceDeleted` |
+| `task_types` | `tasks.typeId` (+ `typeDeletedName`) | `typeDeleted` |
+| `goals` | `tasks.metaLinks[]` + `tasks.goalId` espelho (force) | `goalDeleted` |
+| `csat_surveys` | `tasks.csatSurveyId` | `csatSurveyDeleted` |
+
+**Total**: 8 caminhos de cleanup implementados. UI pode agora detectar referências mortas via flag `xxxDeleted` e exibir chip "X excluído" no card da task — implementação futura, dado/contrato pronto.
+
+---
+
 ## [4.57.30+20260525-delete-orphan-cleanup-project-workspace-tasktype] — 2026-05-25
 
 Release **PATCH** — extensão sistemática do padrão de cleanup (v4.57.28/29) pra 3 deletes que deixavam tasks órfãs silenciosamente.

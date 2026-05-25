@@ -5,7 +5,7 @@
 
 import {
   collection, doc, addDoc, updateDoc, deleteDoc,
-  getDoc, getDocs, query, where, orderBy, limit, serverTimestamp,
+  getDoc, getDocs, query, where, orderBy, limit, writeBatch, serverTimestamp,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { db }       from '../firebase.js';
 import { store }    from '../store.js';
@@ -283,6 +283,48 @@ export async function deleteGoal(id, { force = false } = {}) {
   }
   await deleteDoc(doc(db, 'goals', id));
   await auditLog('goals.delete', 'goal', id, { force });
+
+  // v4.57.31 fix integração: cleanup tasks.metaLinks órfãos quando force=true.
+  // Antes (v4.57.25): força delete deixava tasks com metaLinks apontando pra
+  // goalId fantasma — badge "Meta X" no card da task renderizava "(meta excluída)"
+  // ou quebrava com undefined. metaLinks é array de objetos {goalId, metaId, ...} —
+  // não dá pra usar arrayRemove direto (perderíamos outros links). Read-modify-write.
+  if (force) {
+    try {
+      const tasksSnap = await getDocs(query(
+        collection(db, 'tasks'),
+        where('status', '!=', 'cancelled'),
+        limit(500),
+      ));
+      const dirty = [];
+      tasksSnap.forEach(d => {
+        const t = d.data();
+        const links = Array.isArray(t.metaLinks) ? t.metaLinks : [];
+        if (!links.some(l => l && l.goalId === id)) return;
+        dirty.push({ ref: d.ref, current: t, filtered: links.filter(l => l && l.goalId !== id) });
+      });
+      if (dirty.length) {
+        const batch = writeBatch(db);
+        dirty.forEach(({ ref, current, filtered }) => {
+          const updates = {
+            metaLinks: filtered,
+            goalDeleted: true,
+            goalDeletedAt: serverTimestamp(),
+          };
+          // Espelho legado: tasks.goalId aponta pro PRIMEIRO link (vide tasks.js
+          // syncLegacyFields). Reescreve baseado no filtered ou zera.
+          if (current.goalId === id) {
+            updates.goalId      = filtered[0]?.goalId      || null;
+            updates.goalMetaRef = filtered[0]?.metaId      || null;
+          }
+          batch.update(ref, updates);
+        });
+        await batch.commit();
+      }
+    } catch (e) {
+      console.warn('[deleteGoal] cleanup tasks.metaLinks falhou:', e?.message);
+    }
+  }
 }
 
 export async function publishGoal(id) {
