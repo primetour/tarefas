@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 58,
-  patch: 3,
-  build: '20260526-envision-images-backslash-fix',
+  patch: 4,
+  build: '20260526-csp-envision-gcs-images',
 };
 
 /** "1.2.0" */
