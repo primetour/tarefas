@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 58,
-  patch: 8,
-  build: '20260526-banco-filters-double-check-fixes',
+  patch: 9,
+  build: '20260526-fix-africa-country-normalization',
 };
 
 /** "1.2.0" */

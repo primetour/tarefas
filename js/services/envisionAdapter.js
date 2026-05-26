@@ -252,7 +252,10 @@ const COUNTRY_NORMALIZATIONS = {
   'escocia': 'Escócia',
   'irlanda': 'Irlanda',
   'india': 'Índia',
-  'africa': 'África do Sul',  // observado 3 docs com "África" isolado — provável typo "África do Sul"
+  // v4.58.8: Envision retorna "África" sozinho (com acento) em 3 docs — typo
+  // "África do Sul". Mapa precisa key COM acento (toLowerCase preserva acentos).
+  'áfrica': 'África do Sul',
+  'africa': 'África do Sul',
   'sri lanka': 'Sri Lanka',
 };
 function normalizeCountry(raw) {
