@@ -1,0 +1,674 @@
+{
+  "title": "Japão, 12 noites: Tóquio, Hakone, Kyoto e Osaka",
+  "subtitle": "",
+  "code": "",
+  "slug": "",
+  "collectionLabel": "Envision",
+  "status": "review",
+  "validity": {
+    "startDate": "",
+    "endDate": "",
+    "notes": ""
+  },
+  "shortDescription": "",
+  "longDescription": "<p>Descubra o lado mais t&iacute;pico da cultura japonesa! Quimonos, tatames, cerim&ocirc;nias do ch&aacute;... Vivencie o contraste entre tradi&ccedil;&atilde;o e tecnologia que torna T&oacute;quio uma cidade &uacute;nica no mundo. Ap&oacute;s visitar bairros vibrantes e templos budistas na floresta, seus pr&oacute;ximos destinos ser&atilde;o Hakone (vista magn&iacute;fica do Monte Fuji!) e Kyoto (a antiga capital imperial, terra das gueixas). Sua viagem ser&aacute; encerrada em Osaka, com um tour gastron&ocirc;mico guiado!</p>\n",
+  "geo": {
+    "continents": [],
+    "countries": [
+      "Japão"
+    ],
+    "cities": [
+      {
+        "city": "Tóquio",
+        "country": "Japão",
+        "continent": "",
+        "nights": 4,
+        "locationId": 1223338,
+        "iata": "TYO"
+      },
+      {
+        "city": "Hakone",
+        "country": "Japão",
+        "continent": "",
+        "nights": 2,
+        "locationId": 1210627,
+        "iata": ""
+      },
+      {
+        "city": "Quioto",
+        "country": "Japão",
+        "continent": "",
+        "nights": 3,
+        "locationId": 1215865,
+        "iata": "UKY"
+      },
+      {
+        "city": "Nara",
+        "country": "",
+        "continent": "",
+        "nights": 0,
+        "locationId": 2517,
+        "iata": ""
+      },
+      {
+        "city": "Osaka",
+        "country": "Japão",
+        "continent": "",
+        "nights": 3,
+        "locationId": 1219667,
+        "iata": "OSA"
+      }
+    ],
+    "destinationIds": []
+  },
+  "durationDays": 13,
+  "durationNights": 12,
+  "days": [
+    {
+      "dayNumber": 1,
+      "city": "Tóquio",
+      "title": "Tóquio",
+      "narrative": "<p>Chegada ao aeroporto de T&oacute;quio, encontro com nosso representante e traslado privativo ao hotel. Restante do dia livre.</p>\n",
+      "overnightCity": "Tóquio",
+      "flightLeg": null
+    },
+    {
+      "dayNumber": 2,
+      "city": "Tóquio",
+      "title": "Tóquio",
+      "narrative": "<p>Em hor&aacute;rio apropriado, sa&iacute;da para passeio de dia inteiro pela cidade, passando pelo Pal&aacute;cio Imperial, resid&ecirc;ncia da fam&iacute;lia imperial japonesa. Ocupando o lugar do antigo Castelo de Edo, sede do xogunato Tokugawa&nbsp;(um sistema social semelhante ao feudalismo, que dominou a cena pol&iacute;tica japonesa entre 1603 e 1867), o pal&aacute;cio possui uma enorme &aacute;rea verde cercada por fossos e muros de pedra maci&ccedil;a. Em seguida, visita ao Mercado Tsukiji, o lugar ideal para comprar ingredientes locais e ver sua variedade de peixes e frutos do mar. O passeio continua pelos Jardins Hamarikyu, um grande parque caracterizado pela sua tranquilidade no meio de T&oacute;quio, e pelo cruzeiro atrav&eacute;s do Rio Sumida em dire&ccedil;&atilde;o a Asakusa;&nbsp;o &quot;bairro das gueixas&quot; &eacute;&nbsp;um dos mais antigos e bem preservados distritos de T&oacute;quio, onde fica a rua de compras Nakamise-dori, repleta de lojas de souvenires, e o Templo Sensoji. Em seguida, visita a Ginza, bairro conhecido por suas&nbsp;boutiques internacionais.<br />\n&nbsp;</p>\n",
+      "overnightCity": "Tóquio",
+      "flightLeg": null
+    },
+    {
+      "dayNumber": 3,
+      "city": "Tóquio - Nikko - Tóquio",
+      "title": "Tóquio - Nikko - Tóquio",
+      "narrative": "<p>Ap&oacute;s o caf&eacute; da manh&atilde; no hotel, sa&iacute;da para a cidade hist&oacute;rica de Nikko (155 km - 2h12min). A primeira parada ser&aacute; no grande templo de Toshogu, Patrim&ocirc;nio UNESCO constru&iacute;do como um mausol&eacute;u para Tokugawa Ieyasu &ndash; fundador do xogunato Tokugawa, que&nbsp;perdurou no Jap&atilde;o por mais de 250 anos. Em seguida, passaremos pelo Santu&aacute;rio Futarasan;&nbsp; este&nbsp;importante local, dedicado aos deuses xinto&iacute;stas das tr&ecirc;s montanhas mais sagradas de Nikko, foi fundado em 782 por Shodo Shonin, monge que desempenhou um papel significativo na introdu&ccedil;&atilde;o do Budismo em Nikko. Cercado por uma floresta de cedros altos, este santu&aacute;rio &eacute;&nbsp;perfeito para aprender sobre como o Xinto&iacute;smo venera a natureza. Outro lugar de descanso &eacute; o complexo do Templo Taiyuin - seus&nbsp;sal&otilde;es dourados s&atilde;o acentuados com arquitetura chinesa e lindos trabalhos em laca. Em seguida, passeio at&eacute; o Lago Chuzenji, que est&aacute; situado a uma altitude de 1.269 metros, um belo lago com margens arborizadas no sop&eacute; do vulc&atilde;o sagrado Mt. Nantai. Logo ap&oacute;s, visita &agrave;s magn&iacute;ficas Quedas de Kegon, de 97 metros de altura, uma das tr&ecirc;s cachoeiras mais altas do Jap&atilde;o, com vista tamb&eacute;m para cachoeiras menores, que escapam atrav&eacute;s das muitas rachaduras criadas na montanha por antigos fluxos de lava. Retorno ao hotel.</p>\n",
+      "overnightCity": "Tóquio",
+      "flightLeg": null
+    },
+    {
+      "dayNumber": 4,
+      "city": "Tóquio",
+      "title": "Tóquio",
+      "narrative": "<p>Ap&oacute;s caf&eacute; da manh&atilde; no hotel, dia livre para atividades independentes.<br />\n<br />\n<strong>Sugerimos:&nbsp;</strong>Passeio de dia inteiro pela cidade (passeio n&atilde;o inclu&iacute;do; valores abaixo, no campo de passeios opcionais).&nbsp;Ap&oacute;s caf&eacute; da manh&atilde;, sa&iacute;da para passeio de dia inteiro pela cidade, incluindo o&nbsp;Santu&aacute;rio Hie, onde ocorre uma introdu&ccedil;&atilde;o ao xinto&iacute;smo, a religi&atilde;o tradicional do Jap&atilde;o, e o Templo Zojoji, importante templo budista ao lado da ic&ocirc;nica Tokyo Tower.&nbsp;O passeio continua pelos Jardins Hamarikyu, um grande parque caracterizado pela sua tranquilidade no meio de T&oacute;quio, e pelo bairro de Nezu, conhecido por suas lojas, galerias de arte e caf&eacute;s. Seguiremos ao&nbsp;Cemit&eacute;rio de Yanaka, que abriga templos discretos e uma antiga casa de banhos no estilo <em>sento</em>, hoje transformada em galeria de arte contempor&acirc;nea, e ao distrito Yanaka, conhecido por escapar da moderniza&ccedil;&atilde;o intensa e manter o charme de &eacute;pocas passadas. Retorno ao hotel.&nbsp;<br />\n<br />\n<strong>OU</strong><br />\n<br />\nExperi&ecirc;ncia Samurai&nbsp; com guia em ingl&ecirc;s (passeio n&atilde;o inclu&iacute;do; valores abaixo, no campo de passeios opcionais).&nbsp;Conhe&ccedil;a um dos legados culturais do Jap&atilde;o &ndash; a luta com espada samurai &ndash; na companhia de especialistas durante um workshop interativo. Voc&ecirc; aprender&aacute; mais sobre esses guerreiros e o seu papel na hist&oacute;ria militar do Jap&atilde;o. Em seguida, os instrutores compartilhar&atilde;o suas hist&oacute;rias pessoais, como se envolveram no desempenho dessa verdadeira arte e como ela evoluiu ao longo dos anos (alguns dos instrutores ajudaram at&eacute; a coreografar cenas de luta em filmes de Hollywood). Ap&oacute;s assistir a uma breve demonstra&ccedil;&atilde;o, voc&ecirc; ter&aacute; a oportunidade de pegar uma espada e aprender alguns movimentos b&aacute;sicos. O instrutor mostrar&aacute; a maneira correta de retirar a espada da bainha, como posar de maneira tradicional e como balan&ccedil;ar a espada, usando uma combina&ccedil;&atilde;o de movimentos para manobrar graciosamente a l&acirc;mina. Armado com este conjunto de habilidades, escolha um parceiro para uma r&aacute;pida sess&atilde;o de esgrima.<br />\n<br />\n<strong>OU</strong><br />\n<br />\nPasseio gastron&ocirc;mico por T&oacute;quio, com guia em ingl&ecirc;s (passeio n&atilde;o inclu&iacute;do; valores abaixo, no campo de passeios opcionais). Ao final da tarde, encontro com&nbsp;guia&nbsp;na esta&ccedil;&atilde;o de trem para passeio por ruas repletas de barracas e pequenos restaurantes. Ao longo do caminho, ser&atilde;o feitas paradas para degustar carnes grelhadas, petiscos e sobremesas t&iacute;picas.&nbsp;Ap&oacute;s, visita a um izakaya, tradicional bar japon&ecirc;s, onde os pratos s&atilde;o compartilhados e acompanhados de cerveja local. Durante o jantar, o guia compartilha curiosidades e hist&oacute;rias sobre a cultura culin&aacute;ria japonesa. O passeio percorre 4 ou 5 estabelecimentos diferentes e encerra com retorno ao hotel.</p>\n",
+      "overnightCity": "Tóquio",
+      "flightLeg": null
+    },
+    {
+      "dayNumber": 5,
+      "city": "Tóquio - Kamakura - Hakone ",
+      "title": "Tóquio - Kamakura - Hakone ",
+      "narrative": "<p>Ap&oacute;s caf&eacute; da manh&atilde; no hotel, por volta das 10 h, sa&iacute;da em dire&ccedil;&atilde;o &agrave; cidade de Hakone (88 km - 1h10min) com parada na cidade de Kamakura, antiga capital do Jap&atilde;o e sede do xogunato Kamakura &ndash; o primeiro dos tr&ecirc;s xogunatos ocorreu durante o Per&iacute;odo Kamakura (1185-1333). Naquela &eacute;poca, essa era a maior cidade do pa&iacute;s. Hoje, &eacute; pequena e pacata, e tem v&aacute;rios templos e santu&aacute;rios. A visita iniciar&aacute; no Templo Kotokuin, lar do Daibutsu, um gigantesco Buda de bronze com 13,35 m de altura. Tamb&eacute;m conheceremos o Templo Hasedera, famoso por sua est&aacute;tua da Deusa da Miseric&oacute;rdia Kannon; cada uma das onze cabe&ccedil;as representa uma de suas caracter&iacute;sticas. Com 9,18 m de altura, &eacute; considerada uma das maiores esculturas de madeira do Jap&atilde;o. Em seguida, embarque na centen&aacute;ria ferrovia Enoden para uma viagem ao centro de Kamakura: tenha um vislumbre da vida local enquanto viaja neste trem hist&oacute;rico. Ap&oacute;s o desembarque, caminhe pela movimentada &aacute;rea de Komachi-dori, repleta de lojas de artesanato e barracas de comida, e pare para um almo&ccedil;o (n&atilde;o inclu&iacute;do) antes de seguir para o Santu&aacute;rio Tsurugaoka Hachimangu. O guia ir&aacute; te contar sobre Hachiman, divindade xinto&iacute;sta protetora dos famosos guerreiros samurais do Jap&atilde;o. Termine o dia com uma visita ao Engaku-ji, um dos cinco grandes templos zen da cidade. O guia explicar&aacute; como o Budismo se espalhou pelo Jap&atilde;o enquanto Kamakura era o centro pol&iacute;tico do pa&iacute;s. Admire o edif&iacute;cio principal deste templo e &quot;navegue&quot; pela cole&ccedil;&atilde;o de artefatos em exibi&ccedil;&atilde;o. Ap&oacute;s nos despedirmos do guia, continuaremos de carro at&eacute; Hakone, um popular destino de &aacute;guas termais que oferece a chance de vislumbrar o Monte Fuji. Chegada ao hotel.</p>\n",
+      "overnightCity": "Hakone",
+      "flightLeg": null
+    },
+    {
+      "dayNumber": 6,
+      "city": "Hakone ",
+      "title": "Hakone ",
+      "narrative": "<p>Ap&oacute;s caf&eacute; da manh&atilde; no hotel, encontro com o guia e sa&iacute;da para passeio pelo Parque Nacional de Hakone. A aventura come&ccedil;a com um passeio de telef&eacute;rico;&nbsp;em dire&ccedil;&atilde;o ao pico do Monte Owakudani, a fonte da &aacute;gua quente nas termas de Hakone. Fa&ccedil;a uma breve parada e aproveite para provar uma das especialidades locais, o kuro-tamago, um ovo cozido nas fontes termais sulf&uacute;ricas (n&atilde;o inclu&iacute;do). Retorno ao telef&eacute;rico e continua&ccedil;&atilde;o at&eacute; Togendai. No Lago Ashinoko, formado por uma erup&ccedil;&atilde;o vulc&acirc;nica h&aacute; 3 mil anos, voc&ecirc; encontrar&aacute; uma r&eacute;plica majestosa de um navio pirata. Ap&oacute;s o cruzeiro, a pr&oacute;xima parada ser&aacute; no Hakone Open-Air Museum, que cria um equil&iacute;brio harm&ocirc;nico entre natureza e arte exibindo v&aacute;rias esculturas em seus amplos terrenos, al&eacute;m de ter galerias internas, incluindo uma consider&aacute;vel cole&ccedil;&atilde;o de Picasso. Ao longo do dia, haver&aacute; v&aacute;rias oportunidades de vislumbrar o Monte Fuji. Lembre-se, no entanto, que a montanha &eacute; bastante &ldquo;t&iacute;mida&rdquo; e &eacute; necess&aacute;rio um dia claro para ver seu esplendor por completo. &Agrave; noite, relaxe usando um yukata (quimono leve) no hotel enquanto aprecia um jantar de <em>kaiseki ryori</em>, uma refei&ccedil;&atilde;o japonesa com v&aacute;rios pratos.</p>\n",
+      "overnightCity": "Hakone",
+      "flightLeg": null
+    },
+    {
+      "dayNumber": 7,
+      "city": "Hakone - Kyoto",
+      "title": "Hakone - Kyoto",
+      "narrative": "<p>Ap&oacute;s caf&eacute; da manh&atilde; no hotel, em hor&aacute;rio apropriado, sa&iacute;da para a esta&ccedil;&atilde;o de trem Odawara (46 min) para embarque no trem com destino a Kyoto (1h43min), sem guia acompanhante, antiga capital imperial. Chegada, encontro com nosso assistente e traslado ao hotel. Restante do dia livre.<br />\n<br />\n<strong>Sugerimos: </strong>Cerim&ocirc;nia do ch&aacute;&nbsp;(passeio n&atilde;o inclu&iacute;do; valores abaixo, no campo de passeios opcionais). Vivencie a tradicional cerim&ocirc;nia do ch&aacute; japonesa em uma resid&ecirc;ncia privada, guiada por um mestre que apresenta a hist&oacute;ria, os rituais e a liga&ccedil;&atilde;o da pr&aacute;tica com o budismo Zen. Acompanhe o preparo do matcha, entendendo o significado de cada gesto, e finalize a experi&ecirc;ncia com a degusta&ccedil;&atilde;o do ch&aacute;, precedida por delicados doces tradicionais.<br />\n<br />\n<b>OU</b><br />\n<br />\nCaminhada noturna pelo bairro de Gion, com dura&ccedil;&atilde;o m&eacute;dia de 3 h (passeio n&atilde;o inclu&iacute;do; valores abaixo, no campo de passeios opcionais). Voc&ecirc; poder&aacute; ver a vibrante vida noturna da regi&atilde;o, com sua variedade de bares e restaurantes &nbsp;(refei&ccedil;&otilde;es e bebidas n&atilde;o inclu&iacute;das).<br />\n&nbsp;<br />\nNo check-in em Hakone, voc&ecirc; poder&aacute; contratar localmente o servi&ccedil;o de transporte de bagagem desde o hotel em Hakone at&eacute; o hotel em Kyoto; para o dia em que fizer a viagem de&nbsp;trem.</p>\n",
+      "overnightCity": "Kyoto",
+      "flightLeg": null
+    },
+    {
+      "dayNumber": 8,
+      "city": "Kyoto",
+      "title": "Kyoto",
+      "narrative": "<p>Ap&oacute;s caf&eacute; da manh&atilde; no hotel, encontro com o guia para passeio de dia inteiro, incluindo visita aos templos Kinkakuji (Pavilh&atilde;o&nbsp;Dourado) e Ryoanji, que guarda o jardim zen mais famoso do Jap&atilde;o, e ao Castelo Nijo, um Patrim&ocirc;nio da UNESCO conhecido pela incompar&aacute;vel beleza de seu interior. Em seguida, visita ao Templo Sanjusangendo, fundado em 1164 e com 1.001 est&aacute;tuas de Kannon, a Deusa da Miseric&oacute;rdia. Visita a Gion,&nbsp;o bairro das gueixas, com suas ruas t&iacute;picas e casas de madeira, onde &eacute; poss&iacute;vel encontrar as geikos e gueixas, e passeio pelas ruas movimentadas do distrito de Higashiyama, uma cole&ccedil;&atilde;o de becos estreitos repletos de lojas, pequenos restaurantes e centros de cer&acirc;mica, finalizando com a&nbsp;experi&ecirc;ncia&nbsp;sensorial da cerim&ocirc;nia do ch&aacute;. Retorno ao hotel.<br />\n&nbsp;</p>\n",
+      "overnightCity": "Kyoto",
+      "flightLeg": null
+    },
+    {
+      "dayNumber": 9,
+      "city": "Kyoto",
+      "title": "Kyoto",
+      "narrative": "<p>Ap&oacute;s caf&eacute; da manh&atilde; no hotel, encontro com guia para passeio&nbsp;por Kyoto em transporte p&uacute;blico. Visita ao&nbsp;remoto Templo Otagi Nenbutsuji, famoso por suas 1.200 est&aacute;tuas de pedra cobertas de musgo. Ap&oacute;s,&nbsp;caminhada pelas ruas tranquilas de Arashiyama, conhecendo o Templo Adashi no Nenbutsuji, o Templo Gio-ji, com seu delicado jardim de musgo, e a r&uacute;stica Rakushisha, antiga casa de um poeta de haicai do s&eacute;culo 17. Ao longo do percurso, haver&aacute; tempo para visitar lojas de artesanato local, e parada para ch&aacute; matcha (n&atilde;o inclu&iacute;do) na Villa Okochi Sanso. O passeio termina&nbsp;conhecendo a famosa floresta de bambu de Arashiyama. Retorno ao hotel.&nbsp;<br />\n<br />\n<strong>Passeio alternativo:</strong> Passeio privativo de dia inteiro a Nara (passeio n&atilde;o inclu&iacute;do; valores abaixo, no campo de passeios opcionais). Ap&oacute;s caf&eacute; da manh&atilde; no hotel, encontro com o guia e sa&iacute;da para passeio de dia inteiro a Nara, a primeira capital permanente do Jap&atilde;o. Visita ao Parque de Nara, tamb&eacute;m conhecido como Parque dos Cervos Sagrados. Em seguida, visita ao Santu&aacute;rio Kasuga Taisha, com suas 3 mil lanternas coloridas, e ao templo Todaiji, que hospeda o Grande Buda (&eacute; o maior buda de bronze do Jap&atilde;o). Por fim, visita a Naramachi, o antigo distrito comercial de Nara. Retorno ao hotel.</p>\n",
+      "overnightCity": "Kyoto",
+      "flightLeg": null
+    },
+    {
+      "dayNumber": 10,
+      "city": "Kyoto - Osaka",
+      "title": "Kyoto - Osaka",
+      "narrative": "<p>Ap&oacute;s caf&eacute; da manh&atilde; no hotel, em hor&aacute;rio apropriado,&nbsp;traslado privativo ao hotel em Osaka (56,4 km - 54min). Chegada e restante do dia livre.</p>\n",
+      "overnightCity": "Osaka",
+      "flightLeg": null
+    },
+    {
+      "dayNumber": 11,
+      "city": "Osaka",
+      "title": "Osaka",
+      "narrative": "<p>Ap&oacute;s caf&eacute; da manh&atilde; no hotel, sa&iacute;da para passeio privativo de dia inteiro por Osaka. Seguiremos ao Castelo de Osaka, um dos lugares mais visitados da cidade e conhecido por sua hist&oacute;ria e sua arquitetura. Al&eacute;m dos artefatos expostos e da vista incr&iacute;vel para a cidade a partir do &uacute;ltimo piso do castelo, seus jardins e fossos circundantes tornam a visita memor&aacute;vel. &quot;Retornaremos&quot; &agrave; era moderna com passeio por Dotonbori, que re&uacute;ne op&ccedil;&otilde;es de compras, restaurantes e entretenimento. Iremos desbravar as ruas secund&aacute;rias, incluindo parada em um pequeno museu que mostra a longa hist&oacute;ria das xilogravuras ukiyo-e. Uma grande atra&ccedil;&atilde;o desta &aacute;rea &eacute; a culin&aacute;ria (n&atilde;o inclu&iacute;da); o guia pode sugerir um restaurante para almo&ccedil;ar. Ap&oacute;s curta viagem de metr&ocirc;, chegaremos ao distrito de Shinsekai, outro centro de entretenimento com toque mais retr&ocirc;. Continuaremos a p&eacute; por um templo budista futurista e um espl&ecirc;ndido jardim tradicional com lago, onde o Abeno Harukas, edif&iacute;cio mais alto do Jap&atilde;o, reflete-se nas &aacute;guas. Terminaremos o passeio subindo o arranha-c&eacute;u para mais vistas maravilhosas. Retorno ao hotel.&nbsp;</p>\n",
+      "overnightCity": "Osaka",
+      "flightLeg": null
+    },
+    {
+      "dayNumber": 12,
+      "city": "Osaka",
+      "title": "Osaka",
+      "narrative": "<p>Ap&oacute;s caf&eacute; da manh&atilde; no hotel, manh&atilde; livre para atividades independentes. No final do dia, em hor&aacute;rio determinado, encontro com guia para passeio gastron&ocirc;mico. A primeira parada ser&aacute; para experimentar um novo estilo de tempur&aacute; em restaurante &quot;escondido&quot; em um pequeno beco. Favoritos como o tempur&aacute; de camar&atilde;o e combina&ccedil;&otilde;es mais experimentais, como aspargos e queijo, podem ser encontrados no menu. Em seguida, seguiremos a um restaurante especializado em carne wagyu. Muitas vezes referenciada como a carne bovina mais cara do mundo, &eacute; de excelente qualidade e est&aacute; na lista de desejos de muitos gourmands &ndash; aprecie as texturas da carne, que &quot;derrete&quot; na boca, com um drink refrescante. Depois de caminharmos por ruas secund&aacute;rias, nossa parada final ser&aacute; em um pequeno restaurante de teppanyaki para experimentar os deliciosos gyoza e negiyaki cozidos em uma placa de metal bem na frente dos clientes. Daremos adeus ao guia e retornaremos ao hotel (traslado n&atilde;o inclu&iacute;do) &ndash; voc&ecirc; tamb&eacute;m pode estender o passeio pelo bairro para apreciar sua paisagem.<br />\n&nbsp;</p>\n",
+      "overnightCity": "Osaka",
+      "flightLeg": null
+    },
+    {
+      "dayNumber": 13,
+      "city": "Osaka",
+      "title": "Osaka",
+      "narrative": "<p>Ap&oacute;s caf&eacute; da manh&atilde; no hotel, em hor&aacute;rio apropriado, traslado ao aeroporto de Osaka.</p>\n",
+      "overnightCity": "",
+      "flightLeg": null
+    }
+  ],
+  "categories": [
+    {
+      "key": "envision-1308",
+      "label": "Opção 1",
+      "hotels": [
+        {
+          "city": "Tóquio",
+          "name": "PARK HOTEL TOKYO",
+          "roomType": "",
+          "nights": 4,
+          "supplierUrl": "",
+          "notes": "",
+          "address": {
+            "street": "1 7 1 Higashi Shimbashi",
+            "number": "",
+            "district": "",
+            "postalCode": "",
+            "complement": ""
+          },
+          "phone": "",
+          "email": "",
+          "chainCode": "",
+          "rating": null,
+          "coords": {
+            "lat": 35.685,
+            "lng": 139.7513
+          },
+          "iata": "TYO",
+          "locationId": 1223338,
+          "distanceToCenter": 0,
+          "distanceToAirport": 0,
+          "nearestAirport": "",
+          "envisionProductId": 7666,
+          "envisionRoomId": 9085631,
+          "optional": false
+        },
+        {
+          "city": "Hakone",
+          "name": "HOTEL HATSUHANA",
+          "roomType": "",
+          "nights": 2,
+          "supplierUrl": "",
+          "notes": "",
+          "address": {
+            "street": "Sukumogawa",
+            "number": "20-1 ",
+            "district": ".",
+            "postalCode": "250-0313",
+            "complement": "."
+          },
+          "phone": "",
+          "email": "",
+          "chainCode": "",
+          "rating": null,
+          "coords": {
+            "lat": 35.1833,
+            "lng": 139.0333
+          },
+          "iata": "",
+          "locationId": 1210627,
+          "distanceToCenter": 0,
+          "distanceToAirport": 0,
+          "nearestAirport": "",
+          "envisionProductId": 12351,
+          "envisionRoomId": 11097101,
+          "optional": false
+        },
+        {
+          "city": "Quioto",
+          "name": "HOTEL GRANVIA KYOTO",
+          "roomType": "",
+          "nights": 3,
+          "supplierUrl": "",
+          "notes": "",
+          "address": {
+            "street": "Shimogyo Ward, Higashishiokojicho, Kyoto Station Building",
+            "number": "0",
+            "district": "",
+            "postalCode": "",
+            "complement": ""
+          },
+          "phone": "",
+          "email": "",
+          "chainCode": "",
+          "rating": null,
+          "coords": {
+            "lat": 0,
+            "lng": 0
+          },
+          "iata": "UKY",
+          "locationId": 1215865,
+          "distanceToCenter": 0,
+          "distanceToAirport": 0,
+          "nearestAirport": "",
+          "envisionProductId": 7672,
+          "envisionRoomId": 9085657,
+          "optional": false
+        },
+        {
+          "city": "Osaka",
+          "name": "ZENTIS OSAKA",
+          "roomType": "",
+          "nights": 3,
+          "supplierUrl": "",
+          "notes": "",
+          "address": {
+            "street": "?530-0004 Osaka, Kita Ward, Dojimahama, 1 Chome-4-26 Zentis Osaka",
+            "number": "",
+            "district": "",
+            "postalCode": "",
+            "complement": ""
+          },
+          "phone": "",
+          "email": "",
+          "chainCode": "",
+          "rating": null,
+          "coords": {
+            "lat": 34.6666,
+            "lng": 135.5
+          },
+          "iata": "OSA",
+          "locationId": 1219667,
+          "distanceToCenter": 0,
+          "distanceToAirport": 0,
+          "nearestAirport": "",
+          "envisionProductId": 7674,
+          "envisionRoomId": 9585439,
+          "optional": false
+        }
+      ],
+      "pricing": [],
+      "notes": "",
+      "envisionFareCategoryId": 1308
+    },
+    {
+      "key": "envision-1309",
+      "label": "Opção 2",
+      "hotels": [
+        {
+          "city": "Tóquio",
+          "name": "MANDARIN ORIENTAL TOKYO",
+          "roomType": "",
+          "nights": 4,
+          "supplierUrl": "",
+          "notes": "",
+          "address": {
+            "street": "2 Chome-1-1 Nihonbashimuromachi, Chuo City",
+            "number": ".",
+            "district": ".",
+            "postalCode": "1038328",
+            "complement": "."
+          },
+          "phone": "",
+          "email": "",
+          "chainCode": "",
+          "rating": null,
+          "coords": {
+            "lat": 35.685,
+            "lng": 139.7513
+          },
+          "iata": "TYO",
+          "locationId": 1223338,
+          "distanceToCenter": 0,
+          "distanceToAirport": 0,
+          "nearestAirport": "",
+          "envisionProductId": 7667,
+          "envisionRoomId": 9085658,
+          "optional": false
+        },
+        {
+          "city": "Hakone",
+          "name": "GORA KADAN",
+          "roomType": "",
+          "nights": 2,
+          "supplierUrl": "",
+          "notes": "",
+          "address": {
+            "street": "1300 Gora, Hakone, Ashigarashimo District, Kanagawa",
+            "number": "",
+            "district": "",
+            "postalCode": "",
+            "complement": ""
+          },
+          "phone": "",
+          "email": "",
+          "chainCode": "",
+          "rating": null,
+          "coords": {
+            "lat": 35.1833,
+            "lng": 139.0333
+          },
+          "iata": "",
+          "locationId": 1210627,
+          "distanceToCenter": 0,
+          "distanceToAirport": 0,
+          "nearestAirport": "",
+          "envisionProductId": 7671,
+          "envisionRoomId": 9085659,
+          "optional": false
+        },
+        {
+          "city": "Quioto",
+          "name": "FOUR SEASONS HOTEL KYOTO",
+          "roomType": "",
+          "nights": 3,
+          "supplierUrl": "",
+          "notes": "",
+          "address": {
+            "street": " 445-3, Myohoin, Myohoin Maekawacho, Higashiyama Ward",
+            "number": "",
+            "district": "",
+            "postalCode": "",
+            "complement": ""
+          },
+          "phone": "",
+          "email": "",
+          "chainCode": "",
+          "rating": null,
+          "coords": {
+            "lat": 35,
+            "lng": 135.75
+          },
+          "iata": "UKY",
+          "locationId": 1215865,
+          "distanceToCenter": 0,
+          "distanceToAirport": 0,
+          "nearestAirport": "",
+          "envisionProductId": 7673,
+          "envisionRoomId": 9085660,
+          "optional": false
+        },
+        {
+          "city": "Osaka",
+          "name": "CENTARA GRAND HOTEL OSAKA",
+          "roomType": "",
+          "nights": 3,
+          "supplierUrl": "",
+          "notes": "",
+          "address": {
+            "street": "2 Chome-11-50 Nanbanaka, Naniwa Ward, Osaka, 556-0011, Japan",
+            "number": "",
+            "district": "",
+            "postalCode": "",
+            "complement": ""
+          },
+          "phone": "",
+          "email": "",
+          "chainCode": "",
+          "rating": null,
+          "coords": {
+            "lat": 34.6666,
+            "lng": 135.5
+          },
+          "iata": "OSA",
+          "locationId": 1219667,
+          "distanceToCenter": 0,
+          "distanceToAirport": 0,
+          "nearestAirport": "",
+          "envisionProductId": 12357,
+          "envisionRoomId": 11097110,
+          "optional": false
+        }
+      ],
+      "pricing": [],
+      "notes": "",
+      "envisionFareCategoryId": 1309
+    }
+  ],
+  "services": [
+    {
+      "category": "mini-roteiro",
+      "categoryLabel": "Mini Roteiro",
+      "name": "Opção 1 - Complete Japan (Park Hotel-Hyatt-Granvia)",
+      "descriptionHtml": "<p><strong>HOSPEDAGEM</strong><br />\n4 noites&nbsp;com caf&eacute; da manh&atilde; em T&oacute;quio.<br />\n2 noites&nbsp;com caf&eacute; da manh&atilde; e jantar em Hakone.<br />\n3 noites com caf&eacute; da manh&atilde; em Kyoto.<br />\n<br />\n<strong>TRASLADOS</strong><br />\nPrivativo&nbsp;de chegada entre&nbsp;o aeroporto e o hotel em&nbsp;de T&oacute;quio&nbsp;com motorista em ingl&ecirc;s.<br />\nPrivativo entre o hotel em T&oacute;quio&nbsp;e o hotel em Hakone com motorista em ingl&ecirc;s.<br />\nPrivativo de sa&iacute;da entre o hotel em Hakone e a esta&ccedil;&atilde;o de trem de Odawara com motorista em ingl&ecirc;s.<br />\nPrivativo de chegada entre a&nbsp;esta&ccedil;&atilde;o de trem e&nbsp;o hotel em Kyoto com motorista em ingl&ecirc;s.<br />\nPrivativo de sa&iacute;da entre o hotel em Kyoto e o aeroporto de Osaka&nbsp;com motorista em ingl&ecirc;s.<br />\n<br />\n<strong>TREM</strong><br />\nEntre Hakone e Kyoto em green class.<br />\n<br />\n<strong>PASSEIOS</strong><br />\nPrivativo de dia inteiro em T&oacute;quio com guia em ingl&ecirc;s.<br />\nPrivativo de dia inteiro em Nikko com guia em ingl&ecirc;s.<br />\nPrivativo de dia inteiro em Kamakura com guia em ingl&ecirc;s.<br />\nPrivativo de dia inteiro em Hakone com guia em ingl&ecirc;s.<br />\nPrivativo de dia inteiro em Kyoto com guia em ingl&ecirc;s.</p>\n",
+      "day": 1,
+      "consumableDays": 1,
+      "optional": false,
+      "ageGroups": [],
+      "cancellationPolicyHtml": "",
+      "supplier": "",
+      "locationId": 1223338,
+      "locationName": "Tóquio",
+      "envisionProductId": 7668,
+      "online": false,
+      "maxQuantity": 0
+    },
+    {
+      "category": "mini-roteiro",
+      "categoryLabel": "Mini Roteiro",
+      "name": "Opção 2 - Complete Japan (Mandarin -Gora Kadan - Four Seasons",
+      "descriptionHtml": "<p><strong>HOSPEDAGEM</strong><br />\n4 noites&nbsp;com caf&eacute; da manh&atilde; em T&oacute;quio.<br />\n2 noites&nbsp;com caf&eacute; da manh&atilde; e jantar em Hakone.<br />\n3 noites com caf&eacute; da manh&atilde; em Kyoto.<br />\n<br />\n<strong>TRASLADOS</strong><br />\nPrivativo&nbsp;de chegada entre&nbsp;o aeroporto e o hotel em&nbsp;de T&oacute;quio&nbsp;com motorista em ingl&ecirc;s.<br />\nPrivativo entre o hotel em T&oacute;quio&nbsp;e o hotel em Hakone com motorista em ingl&ecirc;s.<br />\nPrivativo de sa&iacute;da entre o hotel em Hakone e a esta&ccedil;&atilde;o de trem de Odawara com motorista em ingl&ecirc;s.<br />\nPrivativo de chegada entre a&nbsp;esta&ccedil;&atilde;o de trem e&nbsp;o hotel em Kyoto com motorista em ingl&ecirc;s.<br />\nPrivativo de sa&iacute;da entre o hotel em Kyoto e o aeroporto de Osaka&nbsp;com motorista em ingl&ecirc;s.<br />\n<br />\n<strong>TREM</strong><br />\nEntre Hakone e Kyoto em green class.<br />\n<br />\n<strong>PASSEIOS</strong><br />\nPrivativo de dia inteiro em T&oacute;quio com guia em ingl&ecirc;s.<br />\nPrivativo de dia inteiro em Nikko com guia em ingl&ecirc;s.<br />\nPrivativo de dia inteiro em Kamakura com guia em ingl&ecirc;s.<br />\nPrivativo de dia inteiro em Hakone com guia em ingl&ecirc;s.<br />\nPrivativo de dia inteiro em Kyoto com guia em ingl&ecirc;s.</p>\n",
+      "day": 1,
+      "consumableDays": 1,
+      "optional": false,
+      "ageGroups": [],
+      "cancellationPolicyHtml": "",
+      "supplier": "",
+      "locationId": 1223338,
+      "locationName": "Tóquio",
+      "envisionProductId": 7669,
+      "online": false,
+      "maxQuantity": 0
+    },
+    {
+      "category": "passeio",
+      "categoryLabel": "Passeio",
+      "name": "Tour gastronômico em Tóquio",
+      "descriptionHtml": "<p>Ao final da tarde, encontro com&nbsp;guia&nbsp;na esta&ccedil;&atilde;o de trem para passeio por ruas repletas de barracas e pequenos restaurantes. Ao longo do caminho, ser&atilde;o feitas paradas para degustar carnes grelhadas, petiscos e sobremesas t&iacute;picas.&nbsp;Ap&oacute;s, visita a um izakaya, tradicional bar japon&ecirc;s, onde os pratos s&atilde;o compartilhados e acompanhados de cerveja local. Durante o jantar, o guia compartilha curiosidades e hist&oacute;rias sobre a cultura culin&aacute;ria japonesa. O tour passa por 4 ou 5 estabelecimentos diferentes e encerra com retorno ao hotel.</p>\n",
+      "day": 4,
+      "consumableDays": 1,
+      "optional": true,
+      "ageGroups": [],
+      "cancellationPolicyHtml": "",
+      "supplier": "",
+      "locationId": 1223338,
+      "locationName": "Tóquio",
+      "envisionProductId": 12354,
+      "online": false,
+      "maxQuantity": 0
+    },
+    {
+      "category": "passeio",
+      "categoryLabel": "Passeio",
+      "name": "Tour gastronômico em Tóquio",
+      "descriptionHtml": "<p>Ap&oacute;s caf&eacute; da manh&atilde;, sa&iacute;da para passeio de dia inteiro pela cidade, incluindo o&nbsp;Santu&aacute;rio Hie, onde ocorre uma introdu&ccedil;&atilde;o ao xinto&iacute;smo, a religi&atilde;o tradicional do Jap&atilde;o, e o Templo Zojoji, importante templo budista ao lado da ic&ocirc;nica Tokyo Tower.&nbsp;O passeio continua pelos Jardins Hamarikyu, um grande parque caracterizado pela sua tranquilidade no meio de T&oacute;quio, e pelo bairro de Nezu, conhecido por suas lojas, galerias de arte e caf&eacute;s. Seguiremos ao&nbsp;Cemit&eacute;rio de Yanaka, que abriga templos discretos e uma antiga casa de banhos no estilo <em>sento</em>, hoje transformada em galeria de arte contempor&acirc;nea, e ao distrito Yanaka, conhecido por escapar da moderniza&ccedil;&atilde;o intensa e manter o charme de &eacute;pocas passadas. Retorno ao hotel.&nbsp;</p>\n",
+      "day": 4,
+      "consumableDays": 1,
+      "optional": true,
+      "ageGroups": [],
+      "cancellationPolicyHtml": "",
+      "supplier": "",
+      "locationId": 1223338,
+      "locationName": "Tóquio",
+      "envisionProductId": 12355,
+      "online": false,
+      "maxQuantity": 0
+    },
+    {
+      "category": "passeio",
+      "categoryLabel": "Passeio",
+      "name": "Passeio noturno privativo pelo bairro de Gion, com guia em inglês",
+      "descriptionHtml": "<p>Passeio noturno privativo pelo bairro de Gion, o famoso bairro das gueixas da cidade (passeio n&atilde;o inclu&iacute;do; valores abaixo, no campo de passeios opcionais). Caminhada pelo bairro de Gion, para conhecer a vida noturna e diversidade de bares e restaurantes (refei&ccedil;&otilde;es e bebidas n&atilde;o inclu&iacute;das).<br />\n<br />\n<strong>Importante:</strong> O passeio n&atilde;o acontece entre 23 de dezembro e 09 de janeiro.</p>\n",
+      "day": 7,
+      "consumableDays": 1,
+      "optional": true,
+      "ageGroups": [],
+      "cancellationPolicyHtml": "",
+      "supplier": "",
+      "locationId": 1215865,
+      "locationName": "Quioto",
+      "envisionProductId": 7921,
+      "online": false,
+      "maxQuantity": 0
+    },
+    {
+      "category": "passeio",
+      "categoryLabel": "Passeio",
+      "name": "Passeio privativo de meio dia a Arashiyama com guia em inglês",
+      "descriptionHtml": "<p>Passeio privativo de meio dia a Arashiyama.&nbsp;Encontro com o guia e passeio para visitar Arashiyama, regi&atilde;o que abriga lugares cercados pela natureza, possibilitando uma pausa da agita&ccedil;&atilde;o da cidade. Visita ao Tenryu-ji, templo Zen Budista, rodeado pela famosa floresta de bambus. Em seguida, visita ao Adashino Nembutsu-ji, templo com mais de 8 mil est&aacute;tuas de Buda, e ao calmo Templo Otagi Nembutsu-ji. No retorno a Kyoto, vamos viver a experiencia do Kimono -vestir-se tradicionalmente de acordo com a cultura milenar japonesa.&nbsp;</p>\n",
+      "day": 7,
+      "consumableDays": 1,
+      "optional": true,
+      "ageGroups": [],
+      "cancellationPolicyHtml": "",
+      "supplier": "",
+      "locationId": 1215865,
+      "locationName": "Quioto",
+      "envisionProductId": 12356,
+      "online": false,
+      "maxQuantity": 0
+    },
+    {
+      "category": "passeio",
+      "categoryLabel": "Passeio",
+      "name": "Passeio privativo de dia inteiro a Nara, com guia em inglês",
+      "descriptionHtml": "<p>Ap&oacute;s caf&eacute; da manh&atilde; no hotel, encontro com o guia e sa&iacute;da para passeio de dia inteiro a Nara, a primeira capital permanente do Jap&atilde;o. Visita ao Parque de Nara, tamb&eacute;m conhecido como Parque dos Cervos Sagrados. Em seguida, visita ao Santu&aacute;rio Kasuga Taisha, com suas 3 mil lanternas coloridas, e ao templo Todaiji, que hospeda o Grande Buda (&eacute; o maior buda de bronze do Jap&atilde;o). Por fim, visita a Naramachi, o antigo distrito comercial de Nara. Retorno ao hotel.</p>\n",
+      "day": 9,
+      "consumableDays": 1,
+      "optional": true,
+      "ageGroups": [],
+      "cancellationPolicyHtml": "",
+      "supplier": "",
+      "locationId": 2517,
+      "locationName": "Nara",
+      "envisionProductId": 7924,
+      "online": false,
+      "maxQuantity": 0
+    },
+    {
+      "category": "mini-roteiro",
+      "categoryLabel": "Mini Roteiro",
+      "name": "Opção 1 - Experience Osaka - Primetour - 4D/3N",
+      "descriptionHtml": "<p><strong>HOSPEDAGEM</strong><br />\n3 noites com caf&eacute; da manh&atilde; em Osaka.<br />\n<br />\n<strong>TRASLADOS</strong><br />\nPrivativo de sa&iacute;da entre o hotel em Kyoto e o hotel em&nbsp;Osaka&nbsp;com motorista em ingl&ecirc;s.<br />\nPrivativo de sa&iacute;da entre o hotel e o aeroporto de&nbsp;Osaka&nbsp;com motorista em ingl&ecirc;s.<br />\n<br />\n<strong>PASSEIOS</strong><br />\nPrivativo de dia inteiro em Osaka com guia em ingl&ecirc;s.<br />\nPrivativo de meio dia em Osaka (food tour)&nbsp;com guia em ingl&ecirc;s.<br />\n&nbsp;</p>\n",
+      "day": 10,
+      "consumableDays": 1,
+      "optional": false,
+      "ageGroups": [],
+      "cancellationPolicyHtml": "",
+      "supplier": "",
+      "locationId": 1219667,
+      "locationName": "Osaka",
+      "envisionProductId": 7676,
+      "online": false,
+      "maxQuantity": 0
+    },
+    {
+      "category": "mini-roteiro",
+      "categoryLabel": "Mini Roteiro",
+      "name": "Opção 2 - Experience Osaka - Primetour - 4D/3N",
+      "descriptionHtml": "<p><strong>HOSPEDAGEM</strong><br />\n3 noites com caf&eacute; da manh&atilde; em Osaka.<br />\n<br />\n<strong>TRASLADOS</strong><br />\nPrivativo de sa&iacute;da entre o hotel em Kyoto e o hotel em&nbsp;Osaka&nbsp;com motorista em ingl&ecirc;s.<br />\nPrivativo de sa&iacute;da entre o hotel e o aeroporto de&nbsp;Osaka&nbsp;com motorista em ingl&ecirc;s.<br />\n<br />\n<strong>PASSEIOS</strong><br />\nPrivativo de dia inteiro em Osaka com guia em ingl&ecirc;s.<br />\nPrivativo de meio dia em Osaka (food tour)&nbsp;com guia em ingl&ecirc;s.<br />\n&nbsp;</p>\n",
+      "day": 10,
+      "consumableDays": 1,
+      "optional": false,
+      "ageGroups": [],
+      "cancellationPolicyHtml": "",
+      "supplier": "",
+      "locationId": 1219667,
+      "locationName": "Osaka",
+      "envisionProductId": 7677,
+      "online": false,
+      "maxQuantity": 0
+    }
+  ],
+  "includes": {
+    "hospedagem": [],
+    "traslados": [],
+    "passeios": [],
+    "assistencia": [],
+    "aereoInterno": [],
+    "trem": [],
+    "outros": []
+  },
+  "excludes": [],
+  "payment": {
+    "terrestrial": "",
+    "aerial": "",
+    "deposit": {
+      "amount": 0,
+      "currency": "USD",
+      "perPerson": true,
+      "notes": ""
+    },
+    "settlement": ""
+  },
+  "cancellation": [],
+  "documentation": {
+    "passport": "",
+    "minors": "",
+    "visas": [],
+    "vaccines": ""
+  },
+  "generalInfo": {
+    "timezone": "",
+    "currency": "",
+    "climate": "",
+    "gratuities": "",
+    "voltage": "",
+    "gastronomy": "",
+    "telecom": "",
+    "tips": ""
+  },
+  "travelNotes": [],
+  "images": {
+    "hero": "dd09ae23-baa4-4100-9107-e6ddbc332a54.png",
+    "gallery": [
+      "a4f91a3e-cfe7-4f5c-9535-56fa7bc6968b.png",
+      "0af418f6-06f8-40ec-ae29-286c7661b42e.png"
+    ],
+    "overrides": {}
+  },
+  "source": {
+    "type": "envision",
+    "originalFile": "",
+    "importedAt": "2026-05-26T19:58:18.822Z",
+    "importedBy": "test-runner",
+    "llmTokens": {
+      "input": 0,
+      "output": 0
+    }
+  },
+  "tags": [],
+  "aiUsable": true,
+  "envision": {
+    "id": 1017,
+    "url": null,
+    "loginInformationId": 3,
+    "supplierId": 90537,
+    "syncedAt": "2026-05-26T19:58:18.822Z"
+  },
+  "envisionRaw": {
+    "includes": "<p><strong>HOSPEDAGEM</strong><br />\n4 noites&nbsp;com caf&eacute; da manh&atilde; em T&oacute;quio.<br />\n2 noites&nbsp;com caf&eacute; da manh&atilde; e jantar em Hakone.<br />\n3 noites com caf&eacute; da manh&atilde; em Kyoto.<br />\n3 noites com caf&eacute; da manh&atilde; em Osaka.<br />\n<br />\n<strong>TRASLADOS</strong><br />\nPrivativo&nbsp;de chegada entre&nbsp;o aeroporto e o hotel em&nbsp;de T&oacute;quio&nbsp;com motorista em ingl&ecirc;s.<br />\nPrivativo entre o hotel em T&oacute;quio&nbsp;e o hotel em Hakone com motorista em ingl&ecirc;s.<br />\nPrivativo de sa&iacute;da entre o hotel em Hakone e a esta&ccedil;&atilde;o de trem de Odawara com motorista em ingl&ecirc;s.<br />\nPrivativo de chegada entre a&nbsp;esta&ccedil;&atilde;o de trem e&nbsp;o hotel em Kyoto com motorista em ingl&ecirc;s.<br />\nPrivativo de sa&iacute;da entre o hotel em Kyoto e o hotel em&nbsp;Osaka&nbsp;com motorista em ingl&ecirc;s.<br />\nPrivativo de sa&iacute;da entre o hotel e o aeroporto de&nbsp;Osaka&nbsp;com motorista em ingl&ecirc;s.<br />\n<br />\n<strong>TREM</strong><br />\nEntre Hakone e Kyoto em green class.<br />\n<br />\n<strong>PASSEIOS</strong><br />\nPrivativo de dia inteiro em T&oacute;quio com guia em ingl&ecirc;s.<br />\nPrivativo de dia inteiro em Nikko com guia em ingl&ecirc;s.<br />\nPrivativo de dia inteiro em Kamakura com guia em ingl&ecirc;s.<br />\nPrivativo de dia inteiro em Hakone com guia em ingl&ecirc;s.<br />\nPrivativo de dia inteiro em Kyoto com guia em ingl&ecirc;s.<br />\nPrivativo de dia inteiro em Osaka com guia em ingl&ecirc;s.<br />\nPrivativo de meio dia em Osaka (food tour)&nbsp;com guia em ingl&ecirc;s.<br />\n<br />\n<b>N&Atilde;O INCLUI</b><br />\nImpostos de remessa internacional IRRF e IOF sobre o valor total do pacote.<br />\nPassagens a&eacute;reas internacionais de chegada, de sa&iacute;da no Jap&atilde;o e/ou&nbsp;quaisquer passagens (bilhetes internos) n&atilde;o mencionadas como inclu&iacute;das.<br />\nTaxas de embarque, combust&iacute;vel, seguran&ccedil;a e governamentais.<br />\nPassaportes e vistos consulares.<br />\nSeguro viagem.<br />\nRefei&ccedil;&otilde;es e bebidas n&atilde;o mencionadas.<br />\nPasseios opcionais e/ou sugeridos.<br />\nDespesas de car&aacute;ter pessoal como telefonemas, lavanderia e gorjetas.<br />\nQuaisquer itens que n&atilde;o estejam mencionados como inclu&iacute;dos.<br />\n<br />\n<strong>IMPORTANTE</strong><br />\nEste roteiro &eacute; uma sugest&atilde;o e pode ser totalmente adequado para atender &agrave;s suas expectativas. Os valores expressam apenas uma cota&ccedil;&atilde;o e ser&atilde;o fixados somente no ato da confirma&ccedil;&atilde;o de reservas. Est&atilde;o, portanto, sujeitos a altera&ccedil;&otilde;es sem aviso pr&eacute;vio &ndash; tamb&eacute;m devido &agrave; oscila&ccedil;&atilde;o cambial entre as moedas. Caso n&atilde;o haja disponibilidade para algum dos hot&eacute;is e/ou servi&ccedil;os mencionados, outros similares ser&atilde;o sugeridos para avalia&ccedil;&atilde;o e aprova&ccedil;&atilde;o final antes da confirma&ccedil;&atilde;o e do pagamento. Apenas o pagamento integral garante valores, lugares e disponibilidade. At&eacute; o momento, nenhuma reserva foi efetuada.</p>\n",
+    "generalInfo": "<p><strong>DOCUMENTA&Ccedil;&Atilde;O: PASSAPORTE</strong><br />\nO passaporte precisa ter validade m&iacute;nima de 6 meses contada a partir da data de entrada no&nbsp;pa&iacute;s, com folhas suficientes para carimbo (inclusive no caso das crian&ccedil;as). As companhias a&eacute;reas podem se reservar o direito de proibir o embarque de passageiros que n&atilde;o respeitem essas orienta&ccedil;&otilde;es e regras, mesmo que possuam passagem e passaporte v&aacute;lidos. N&atilde;o s&atilde;o aceitos como documento de viagem a Certid&atilde;o de Nascimento (inclusive para rec&eacute;m-nascidos ou menores de idade) nem qualquer outro documento, mesmo aqueles que tenham aceita&ccedil;&atilde;o como documento de identidade no Brasil.<br />\n<br />\n<strong>VISTO</strong><br />\nA partir de 30/09/2023, passageiros brasileiros a turismo n&atilde;o precisam de visto para at&eacute; 90 dias de perman&ecirc;ncia (portadores de passaporte comum com chip-IC).&nbsp;Para maiores informa&ccedil;&otilde;es acesse <a href=\"https://www.sp.br.emb-japan.go.jp/itpr_ja/ptnot_10_08_2023_isencao_de_visto.html\">aqui</a>.<br />\n<br />\n<strong>VACINA DE FEBRE AMARELA</strong><br />\nN&atilde;o &eacute; necess&aacute;rio apresentar o Certificado Internacional de Vacina&ccedil;&atilde;o ou Profilaxia (CIVP) contra febre amarela emitido pela Anvisa. Mas, devido a recentes casos confirmados no Brasil, pa&iacute;ses que at&eacute; ent&atilde;o n&atilde;o exigiam a apresenta&ccedil;&atilde;o do certificado poder&atilde;o passar a faz&ecirc;-lo a qualquer momento, sem aviso pr&eacute;vio. Por isso, recomendamos que, para todas as viagens internacionais, o passageiro tenha a vacina e o Certificado Internacional de Vacina&ccedil;&atilde;o ou Profilaxia (CIVP).</p>\n\n<p>A vacina contra a febre amarela deve ser tomada com no m&iacute;nimo 14 dias de anteced&ecirc;ncia &agrave; data de embarque. O certificado ser&aacute; apresentado no momento do embarque e na chegada ao pa&iacute;s, inclusive para crian&ccedil;as a partir de nove meses de idade.</p>\n\n<p>&Eacute; poss&iacute;vel fazer a solicita&ccedil;&atilde;o do Certificado Internacional de Vacina&ccedil;&atilde;o ou Profilaxia (CIVP) online. Para isso, &eacute; necess&aacute;rio ter o comprovante de vacina&ccedil;&atilde;o emitido pela cl&iacute;nica em que se tomou a vacina contra a febre amarela e fazer seu cadastro no site <a aria-label=\"Link GOV.BR\" href=\"https://www.gov.br/pt-br/servicos/obter-o-certificado-internacional-de-vacinacao-e-profilaxia\" id=\"menur1ts\" rel=\"noreferrer noopener\" target=\"_blank\" title=\"https://www.gov.br/pt-br/servicos/obter-o-certificado-internacional-de-vacinacao-e-profilaxia\">GOV.BR</a>. Ao finalizar sua solicita&ccedil;&atilde;o do Certificado Internacional de Vacina&ccedil;&atilde;o ou Profilaxia (CIVP), o prazo de an&aacute;lise da Anvisa &eacute; de at&eacute; dez dias &uacute;teis. Quando receber o Certificado Internacional de Vacina&ccedil;&atilde;o ou Profilaxia (CIVP) online, basta imprimi-lo e t&ecirc;-lo consigo entre seus documentos de viagem antes de embarcar.</p>\n\n<p>Sobre a validade do Certificado Internacional de Vacina&ccedil;&atilde;o ou Profilaxia (CIVP): desde 11 de julho de 2016, os certificados passaram a ser emitidos com validade &ldquo;LIFE&rdquo;. Ou seja, s&atilde;o v&aacute;lidos para toda a vida, isentando da necessidade de refor&ccedil;o da vacina a cada 10 anos. Caso tenha o Certificado Internacional de Vacina&ccedil;&atilde;o ou Profilaxia (CIVP) anterior a essa data, n&atilde;o &eacute; necess&aacute;rio tomar nova vacina; basta solicitar um novo documento online.</p>\n\n<p>IMPORTANTE: O passageiro &eacute; inteiramente respons&aacute;vel pela obten&ccedil;&atilde;o dos documentos necess&aacute;rios para a viagem.<br />\n<br />\n<strong>MENORES DE IDADE</strong><br />\nS&oacute; poder&atilde;o viajar com autoriza&ccedil;&atilde;o do pai e da m&atilde;e. Na falta de um, dever&aacute; ser apresentada uma autoriza&ccedil;&atilde;o com firma reconhecida em cart&oacute;rio; na aus&ecirc;ncia dos pais, deve-se providenciar uma autoriza&ccedil;&atilde;o do juizado de menores; e, em caso de um ou ambos os pais falecidos, &eacute; indispens&aacute;vel a apresenta&ccedil;&atilde;o de atestado de &oacute;bito. Para informa&ccedil;&otilde;es completas sobre documenta&ccedil;&atilde;o necess&aacute;ria para menores viajando desacompanhados de um ou ambos os pais, acesse o seguinte manual: <a aria-label=\"Link Manual Viagens de Crianças e Adolescentes ao Exterior\" href=\"https://www.cnj.jus.br/wp-content/uploads/2024/04/cartilha-viagem-de-menor-ao-exterior-correcao-2024-04-05.pdf\" id=\"menur1tv\" rel=\"noreferrer noopener\" target=\"_blank\" title=\"https://www.cnj.jus.br/wp-content/uploads/2024/04/cartilha-viagem-de-menor-ao-exterior-correcao-2024-04-05.pdf\">Manual Viagens de Crian&ccedil;as e Adolescentes ao Exterior</a>.<br />\n<br />\n<strong>NOTAS SOBRE ESTA VIAGEM</strong><br />\nVOOS: N&atilde;o h&aacute; voos diretos para o Jap&atilde;o. Fale com seu consultor de viagens para escolher a melhor rota e cia. a&eacute;rea para esta viagem.<br />\n<br />\nCLIMA: As esta&ccedil;&otilde;es do ano s&atilde;o bem definidas, e as temperaturas dependem da regi&atilde;o do pa&iacute;s;&nbsp;geralmente variam entre m&iacute;nima de -8&deg;C no inverno e m&aacute;xima de 30&deg;C no ver&atilde;o.<br />\n<br />\nENTRADA NO JAP&Atilde;O: Para mais informa&ccedil;&otilde;es, acesse o link:&nbsp;<a href=\"https://business.jnto.go.jp/news/1663.html\">https://business.jnto.go.jp/news/1663.html</a>.<br />\n<br />\nImagens meramente ilustrativas. Valores e ofertas sujeitos a altera&ccedil;&otilde;es, disponibilidade de lugares e cancelamentos sem qualquer aviso pr&eacute;vio. &nbsp;Consulte-nos para mais informa&ccedil;&otilde;es, restri&ccedil;&otilde;es, reservas e para saber os hor&aacute;rios de check-in e check-out de cada hotel. A PRIMETOUR Ag&ecirc;ncia de Viagens e Turismo Ltda. n&atilde;o se responsabiliza por eventuais mudan&ccedil;as, fechamentos e demais informa&ccedil;&otilde;es dos estabelecimentos e servi&ccedil;os citados nesta comunica&ccedil;&atilde;o. Os itens mencionados podem ser cancelados, suspensos ou alterados sem aviso pr&eacute;vio e est&atilde;o sujeitos a disponibilidade, condi&ccedil;&otilde;es clim&aacute;ticas e legisla&ccedil;&otilde;es locais. Novas regras e protocolos de seguran&ccedil;a e higieniza&ccedil;&atilde;o, com poss&iacute;vel limita&ccedil;&atilde;o do n&uacute;mero de visitantes e do acesso a turistas brasileiros, restri&ccedil;&otilde;es relativas &agrave; liberdade de circula&ccedil;&atilde;o e outras podem estar ou entrar em vigor, sem quaisquer notifica&ccedil;&otilde;es pr&eacute;vias, inclusive durante o per&iacute;odo da viagem, de acordo com o que definir a legisla&ccedil;&atilde;o local, e dever&atilde;o ser seguidas e respeitadas pelos clientes. &Eacute; expressamente proibida a reprodu&ccedil;&atilde;o total ou parcial deste roteiro, seja por qualquer meio ou forma de comunica&ccedil;&atilde;o, sem a pr&eacute;via autoriza&ccedil;&atilde;o por escrito da PRIMETOUR Ag&ecirc;ncia de Viagens e Turismo Ltda.</p>\n",
+    "cancellationPolicy": "<p><strong>POL&Iacute;TCAS DE CANCELAMENTO</strong><br />\nA partir da data da confirma&ccedil;&atilde;o da reserva at&eacute; 90 dias antes da viagem: multa no valor de 25% do total da viagem.<br />\nEntre 89 e 45 dias antes da viagem: multa no valor de 80% do total da viagem.<br />\nA partir de 44 dias antes da viagem: multa no valor de 100% do total da viagem.<br />\n<br />\nSolicita&ccedil;&otilde;es de cancelamento estar&atilde;o sujeitas a multas e/ou taxas aplicadas pelos fornecedores envolvidos neste roteiro, podendo ser adicionais &agrave;s multas acima mencionadas. Tenha em mente que, para casos de cancelamento, o Imposto de Renda Retido na Fonte (IRRF) incidente sobre remessas internacionais n&atilde;o &eacute; reembols&aacute;vel.</p>\n",
+    "formOfPayment": "<p><p><strong>FORMA DE PAGAMENTO DA PARTE TERRESTRE </strong>(Usar para PRIMETOUR)<br />\n&Agrave; vista ou 40% de entrada em dep&oacute;sito banc&aacute;rio + saldo parcelado em at&eacute; 2x em cart&atilde;o de cr&eacute;dito emitido no Brasil.<br />\n&nbsp;<br />\n<strong>FORMA DE PAGAMENTO DA PARTE TERRESTRE </strong>(Cart&otilde;es)<br />\nEm at&eacute; 3x nos cart&otilde;es de cr&eacute;dito emitidos no Brasil.&nbsp;</p>\n\n<p><strong>FORMA DE PAGAMENTO E POL&Iacute;TICAS DE CANCELAMENTO DA PARTE A&Eacute;REA </strong><br />\n(Usar em caso de voo interno inclu&iacute;do)<br />\nDe acordo com a pol&iacute;tica estabelecida pela companhia a&eacute;rea.</p>\n\n<p><strong>SOLICITA&Ccedil;&Atilde;O DE RESERVA</strong><br />\nSer&aacute; cobrado um sinal de US$ 300 por pessoa para solicita&ccedil;&otilde;es de reservas da parte terrestre. O valor do sinal ser&aacute; deduzido do montante total da viagem no momento do pagamento, mas ser&aacute; retido em caso de cancelamento. O valor somente ser&aacute; reembolsado integralmente caso a viagem n&atilde;o seja confirmada. Em caso de solicita&ccedil;&atilde;o de reserva feita em data pr&oacute;xima ao embarque, ou em caso de fornecedores que exijam uma quantia diferente, o valor do sinal poder&aacute; sofrer altera&ccedil;&atilde;o.</p>\n\n<p><strong>PRAZO PARA PAGAMENTO</strong><br />\nO pagamento total da viagem, descontado o sinal, dever&aacute; ser efetuado em at&eacute; 48h depois do envio da confirma&ccedil;&atilde;o de reserva.</p>\n</p>\n"
+  },
+  "_envisionCurrency": "USD",
+  "createdAt": null,
+  "createdBy": "",
+  "updatedAt": null,
+  "updatedBy": "",
+  "approvedAt": null,
+  "approvedBy": ""
+}

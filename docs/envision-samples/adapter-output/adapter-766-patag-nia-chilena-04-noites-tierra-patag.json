@@ -1,0 +1,238 @@
+{
+  "title": "Patagônia Chilena, 04 noites: Tierra Patagonia",
+  "subtitle": "",
+  "code": "",
+  "slug": "",
+  "collectionLabel": "Envision",
+  "status": "review",
+  "validity": {
+    "startDate": "",
+    "endDate": "",
+    "notes": ""
+  },
+  "shortDescription": "",
+  "longDescription": "<p>Torres del Paine: no mais incr&iacute;vel parque nacional do Chile, montanhas, lagos e geleiras criam um cen&aacute;rio fascinante que s&oacute; poderia ser encontrado na remota Patag&ocirc;nia Chilena. Desperte o seu lado aventureiro e saia a p&eacute; (pode ser a cavalo ou de bike!) pela paisagem patag&ocirc;nica &ndash; que tal conhecer a Laguna Azul ou seguir, de <em>trekking</em>, at&eacute; a base dos maci&ccedil;os que trazem fama a este parque?</p>\n",
+  "geo": {
+    "continents": [],
+    "countries": [
+      "Chile"
+    ],
+    "cities": [
+      {
+        "city": "Torres del Paine",
+        "country": "Chile",
+        "continent": "",
+        "nights": 4,
+        "locationId": 2703977,
+        "iata": "   "
+      }
+    ],
+    "destinationIds": []
+  },
+  "durationDays": 5,
+  "durationNights": 4,
+  "days": [
+    {
+      "dayNumber": 1,
+      "city": "Puerto Natales ou Cerro Castillo - Torres del Paine",
+      "title": "Puerto Natales ou Cerro Castillo - Torres del Paine",
+      "narrative": "<p>Chegada ao aeroporto de Puerto Natales, encontro com o receptivo do hotel e traslado at&eacute; o&nbsp;Tierra Patagonia (95 km - 1h20min). Restante do dia livre.<br />\n<br />\n<strong>Importante: </strong>o hotel Tierra Patagonia possui hor&aacute;rios fixos para a opera&ccedil;&atilde;o de seus traslados regulares, que devem ser consultados antes da confirma&ccedil;&atilde;o de reserva. Caso os hor&aacute;rios n&atilde;o atendam &agrave;s necessidades do seu itiner&aacute;rio, ser&aacute; necess&aacute;rio reservar o traslado em servi&ccedil;o privativo, com custos adicionais.</p>\n",
+      "overnightCity": "Torres del Paine",
+      "flightLeg": null
+    },
+    {
+      "dayNumber": 2,
+      "city": "Torres del Paine",
+      "title": "Torres del Paine",
+      "narrative": "<p>Em hor&aacute;rio determinado, sa&iacute;da para realiza&ccedil;&atilde;o de atividade escolhida no menu de excurs&otilde;es do hotel.</p>\n",
+      "overnightCity": "Torres del Paine",
+      "flightLeg": null
+    },
+    {
+      "dayNumber": 3,
+      "city": "Torres del Paine",
+      "title": "Torres del Paine",
+      "narrative": "<p>Em hor&aacute;rio determinado, sa&iacute;da para realiza&ccedil;&atilde;o de atividade escolhida no menu de excurs&otilde;es do hotel.</p>\n",
+      "overnightCity": "Torres del Paine",
+      "flightLeg": null
+    },
+    {
+      "dayNumber": 4,
+      "city": "Torres del Paine",
+      "title": "Torres del Paine",
+      "narrative": "<p>Em hor&aacute;rio determinado, sa&iacute;da para realiza&ccedil;&atilde;o de atividade escolhida no menu de excurs&otilde;es do hotel.</p>\n",
+      "overnightCity": "Torres del Paine",
+      "flightLeg": null
+    },
+    {
+      "dayNumber": 5,
+      "city": "Torres del Paine - Puerto Natales ou Cerro Castillo",
+      "title": "Torres del Paine - Puerto Natales ou Cerro Castillo",
+      "narrative": "<p>Em hor&aacute;rio determinado, traslado ao aeroporto de Puerto Natales&nbsp;ou Cerro Castillo.</p>\n\n<p><strong>Importante:</strong> o hotel Tierra Patagonia possui hor&aacute;rios fixos para a opera&ccedil;&atilde;o de seus traslados regulares, que devem ser consultados antes da emiss&atilde;o dos bilhetes a&eacute;reos.</p>\n",
+      "overnightCity": "",
+      "flightLeg": null
+    }
+  ],
+  "categories": [
+    {
+      "key": "envision-1009",
+      "label": "Opção 1",
+      "hotels": [
+        {
+          "city": "Torres del Paine",
+          "name": "TIERRA PATAGONIA",
+          "roomType": "",
+          "nights": 4,
+          "supplierUrl": "",
+          "notes": "",
+          "address": {
+            "street": "on the edge of Torres del Paine National Park",
+            "number": "",
+            "district": "torres de Paine",
+            "postalCode": "",
+            "complement": ""
+          },
+          "phone": "",
+          "email": "",
+          "chainCode": "",
+          "rating": null,
+          "coords": {
+            "lat": -51.2584,
+            "lng": -72.3451
+          },
+          "iata": "   ",
+          "locationId": 2703977,
+          "distanceToCenter": 0,
+          "distanceToAirport": 0,
+          "nearestAirport": "",
+          "envisionProductId": 5279,
+          "envisionRoomId": 7394649,
+          "optional": false
+        }
+      ],
+      "pricing": [],
+      "notes": "",
+      "envisionFareCategoryId": 1009
+    },
+    {
+      "key": "envision-1115",
+      "label": "Opção 2",
+      "hotels": [
+        {
+          "city": "Torres del Paine",
+          "name": "TIERRA PATAGONIA",
+          "roomType": "",
+          "nights": 4,
+          "supplierUrl": "",
+          "notes": "",
+          "address": {
+            "street": "on the edge of Torres del Paine National Park",
+            "number": "",
+            "district": "torres de Paine",
+            "postalCode": "",
+            "complement": ""
+          },
+          "phone": "",
+          "email": "",
+          "chainCode": "",
+          "rating": null,
+          "coords": {
+            "lat": -51.2584,
+            "lng": -72.3451
+          },
+          "iata": "   ",
+          "locationId": 2703977,
+          "distanceToCenter": 0,
+          "distanceToAirport": 0,
+          "nearestAirport": "",
+          "envisionProductId": 5279,
+          "envisionRoomId": 7394649,
+          "optional": false
+        }
+      ],
+      "pricing": [],
+      "notes": "",
+      "envisionFareCategoryId": 1115
+    }
+  ],
+  "services": [],
+  "includes": {
+    "hospedagem": [],
+    "traslados": [],
+    "passeios": [],
+    "assistencia": [],
+    "aereoInterno": [],
+    "trem": [],
+    "outros": []
+  },
+  "excludes": [],
+  "payment": {
+    "terrestrial": "",
+    "aerial": "",
+    "deposit": {
+      "amount": 0,
+      "currency": "USD",
+      "perPerson": true,
+      "notes": ""
+    },
+    "settlement": ""
+  },
+  "cancellation": [],
+  "documentation": {
+    "passport": "",
+    "minors": "",
+    "visas": [],
+    "vaccines": ""
+  },
+  "generalInfo": {
+    "timezone": "",
+    "currency": "",
+    "climate": "",
+    "gratuities": "",
+    "voltage": "",
+    "gastronomy": "",
+    "telecom": "",
+    "tips": ""
+  },
+  "travelNotes": [],
+  "images": {
+    "hero": "fdd1f375-64a0-44c6-a718-f9daeab89be2.png",
+    "gallery": [
+      "320ce1b9-3d75-40c9-90de-a384a6a58bfe.png",
+      "1b70b54c-435d-4bdc-90f4-146450b0062e.png"
+    ],
+    "overrides": {}
+  },
+  "source": {
+    "type": "envision",
+    "originalFile": "",
+    "importedAt": "2026-05-26T19:58:18.821Z",
+    "importedBy": "test-runner",
+    "llmTokens": {
+      "input": 0,
+      "output": 0
+    }
+  },
+  "tags": [],
+  "aiUsable": true,
+  "envision": {
+    "id": 766,
+    "url": null,
+    "loginInformationId": 3,
+    "supplierId": 90610,
+    "syncedAt": "2026-05-26T19:58:18.821Z"
+  },
+  "envisionRaw": {
+    "includes": "<p><strong>HOSPEDAGEM</strong><br />\n4 noites&nbsp;com&nbsp;pens&atilde;o&nbsp;completa (bebidas de acordo com o menu do hotel escolhido inclu&iacute;das) em Torres de Paine.<br />\n<br />\n<strong>TRASLADOS</strong><br />\nRegulares de chegada e sa&iacute;da desde e at&eacute; o aeroporto de&nbsp;Puerto Natales ou Cerro&nbsp;Castillo&nbsp;(servi&ccedil;o oferecido pelo Tierra Patagonia, poder&aacute; ser compartilhado com outros h&oacute;spedes).<br />\n<br />\n<strong>PASSEIOS</strong><br />\nRegulares de meio dia ou de dia inteiro de acordo com o menu de excurs&otilde;es do hotel com guia&nbsp;bilingue em espanhol e ingl&ecirc;s (servi&ccedil;o oferecido pelo, poder&aacute; ser com outros h&oacute;spedes).<br />\n<br />\n<strong>Observa&ccedil;&atilde;o:</strong><br />\nO menu de passeios dispon&iacute;vel no hotel pode ser visualizado por meio do&nbsp;link&nbsp;abaixo e est&aacute; sujeito a disponibilidade e altera&ccedil;&atilde;o sem aviso pr&eacute;vio.<br />\n<a href=\"https://tierrapatagonia.com/excursions/\">Tierra Patagonia</a><br />\n<strong>Importante:&nbsp;</strong>Alguns passeios podem ter custos adicionais que dever&atilde;o ser pagos localmente, pois envolvem servi&ccedil;os terceirizados. As condi&ccedil;&otilde;es dever&atilde;o ser consultadas diretamente com o hotel, de acordo com o menu de atividades oferecido na data da viagem.<br />\n<br />\n<strong>N&Atilde;O INCLUI</strong><br />\nImpostos de remessa internacional IRRF e IOF sobre o valor total do pacote.<br />\nPassagens a&eacute;reas internacionais de chegada a e sa&iacute;da de Puerto Natales&nbsp;e quaisquer passagens n&atilde;o mencionadas como inclu&iacute;das.<br />\nTaxas de embarque, combust&iacute;vel, seguran&ccedil;a e governamentais.<br />\nPassaportes e vistos consulares.<br />\nSeguro viagem.<br />\nRefei&ccedil;&otilde;es e bebidas n&atilde;o mencionadas.<br />\nPasseios opcionais e/ou sugeridos.<br />\nDespesas de car&aacute;ter pessoal como telefonemas, lavanderia e gorjetas.<br />\nQuaisquer itens que n&atilde;o estejam mencionados como inclu&iacute;dos.<br />\n<br />\nEste roteiro &eacute; uma sugest&atilde;o e pode ser totalmente adequado para atender &agrave;s suas expectativas. Os valores expressam apenas uma cota&ccedil;&atilde;o e ser&atilde;o fixados somente no ato da confirma&ccedil;&atilde;o de reservas. Est&atilde;o, portanto, sujeitos a altera&ccedil;&otilde;es sem aviso pr&eacute;vio &ndash; tamb&eacute;m devido &agrave; oscila&ccedil;&atilde;o cambial entre as moedas. Caso n&atilde;o haja disponibilidade para algum dos hot&eacute;is e/ou servi&ccedil;os mencionados, outros similares ser&atilde;o sugeridos para avalia&ccedil;&atilde;o e aprova&ccedil;&atilde;o final antes da confirma&ccedil;&atilde;o e do pagamento. Apenas o pagamento integral garante valores, lugares e disponibilidade. At&eacute; o momento, nenhuma reserva foi efetuada.</p>\n",
+    "generalInfo": "<div>\n<p><strong>DOCUMENTA&Ccedil;&Atilde;O PARA EMBARQUE: PASSAPORTE OU CARTEIRA DE IDENTIDADE (RG)</strong><br />\nCarteira de Identidade (RG) original com menos de 10 anos de emiss&atilde;o e em bom estado ou passaporte com validade m&iacute;nima de 06 meses a partir da data de entrada nos pa&iacute;ses a serem visitados e com folhas necess&aacute;rias para carimbo dos pa&iacute;ses visitados (inclusive crian&ccedil;as). N&atilde;o s&atilde;o aceitos como documento de viagem: Certid&atilde;o de Nascimento (mesmo para rec&eacute;m- nascidos ou para menores de idade) e/ou qualquer outro documento, mesmo aqueles que tenham aceita&ccedil;&atilde;o como documento de identidade no Brasil, como Carteira Nacional de Habilita&ccedil;&atilde;o, carteira de identidade de associa&ccedil;&otilde;es profissionais, de Minist&eacute;rios, inclusive militares, ou emitidos pelos poderes Executivo, Legislativo ou Judici&aacute;rio da Uni&atilde;o e dos estados.<br />\n<br />\n<strong>VISTO</strong><br />\nBrasileiros viajando a turismo n&atilde;o precisam de visto para at&eacute; 90 dias de perman&ecirc;ncia.<br />\n<br />\n<strong>VACINA DE FEBRE AMARELA</strong><br />\nN&atilde;o &eacute; necess&aacute;rio apresentar o Certificado Internacional de Vacina&ccedil;&atilde;o ou Profilaxia (CIVP) contra febre amarela emitido pela Anvisa. Mas, devido a recentes casos confirmados no Brasil, pa&iacute;ses que at&eacute; ent&atilde;o n&atilde;o exigiam a apresenta&ccedil;&atilde;o do certificado poder&atilde;o passar a faz&ecirc;-lo a qualquer momento, sem aviso pr&eacute;vio. Por isso, recomendamos que, para todas as viagens internacionais, o passageiro tenha a vacina e o Certificado Internacional de Vacina&ccedil;&atilde;o ou Profilaxia (CIVP).</p>\n\n<p>A vacina contra a febre amarela deve ser tomada com no m&iacute;nimo 14 dias de anteced&ecirc;ncia &agrave; data de embarque. O certificado ser&aacute; apresentado no momento do embarque e na chegada ao pa&iacute;s, inclusive para crian&ccedil;as a partir de nove meses de idade.</p>\n\n<p>&Eacute; poss&iacute;vel fazer a solicita&ccedil;&atilde;o do Certificado Internacional de Vacina&ccedil;&atilde;o ou Profilaxia (CIVP) online. Para isso, &eacute; necess&aacute;rio ter o comprovante de vacina&ccedil;&atilde;o emitido pela cl&iacute;nica em que se tomou a vacina contra a febre amarela e fazer seu cadastro no site <a href=\"https://www.gov.br/pt-br/servicos/obter-o-certificado-internacional-de-vacinacao-e-profilaxia\">GOV.BR</a>. Ao finalizar sua solicita&ccedil;&atilde;o do Certificado Internacional de Vacina&ccedil;&atilde;o ou Profilaxia (CIVP), o prazo de an&aacute;lise da Anvisa &eacute; de at&eacute; dez dias &uacute;teis. Quando receber o Certificado Internacional de Vacina&ccedil;&atilde;o ou Profilaxia (CIVP) online, basta imprimi-lo e t&ecirc;-lo consigo entre seus documentos de viagem antes de embarcar.</p>\n\n<p>Sobre a validade do Certificado Internacional de Vacina&ccedil;&atilde;o ou Profilaxia (CIVP): desde 11 de julho de 2016, os certificados passaram a ser emitidos com validade &ldquo;LIFE&rdquo;. Ou seja, s&atilde;o v&aacute;lidos para toda a vida, isentando da necessidade de refor&ccedil;o da vacina a cada 10 anos. Caso tenha o Certificado Internacional de Vacina&ccedil;&atilde;o ou Profilaxia (CIVP) anterior a essa data, n&atilde;o &eacute; necess&aacute;rio tomar nova vacina; basta solicitar um novo documento online.</p>\n\n<p>IMPORTANTE: O passageiro &eacute; inteiramente respons&aacute;vel pela obten&ccedil;&atilde;o dos documentos necess&aacute;rios para a viagem.<br />\n<br />\n<strong>MENORES DE IDADE</strong><br />\nS&oacute; poder&atilde;o viajar com autoriza&ccedil;&atilde;o do pai e da m&atilde;e. Na falta de um, dever&aacute; ser apresentada uma autoriza&ccedil;&atilde;o com firma reconhecida em cart&oacute;rio; na aus&ecirc;ncia dos pais, deve-se providenciar uma autoriza&ccedil;&atilde;o do juizado de menores; e, em caso de um ou ambos os pais falecidos, &eacute; indispens&aacute;vel a apresenta&ccedil;&atilde;o de atestado de &oacute;bito. Para informa&ccedil;&otilde;es completas sobre documenta&ccedil;&atilde;o necess&aacute;ria para menores viajando desacompanhados de um ou ambos os pais, acesse o seguinte manual: <a href=\"https://www.cnj.jus.br/wp-content/uploads/2024/04/cartilha-viagem-de-menor-ao-exterior-correcao-2024-04-05.pdf\">Manual Viagens de Crian&ccedil;as e Adolescentes ao Exterior</a>.<br />\n<br />\n<strong>NOTAS SOBRE ESTA VIAGEM</strong><br />\nVOOS: &nbsp;Os voos devem chegar e partir do aeroporto de Puerto Natales. A dist&acirc;ncia entre o aeroporto Puerto Natales&nbsp;e o hotel Tierra Patag&ocirc;nia &eacute; de 95 km (aproximadamente 1h20min).</p>\n\n<p>CLIMA: A temperatura m&eacute;dia varia entre 7&deg;C e 19&deg;C. No ver&atilde;o, os ventos s&atilde;o fortes e constantes.</p>\n\n<p>REGRAS LOCAIS: As atividades do menu de excurs&otilde;es&nbsp;do hotel acontecem dentro de um Parque Nacional; &eacute; importante respeitar as orienta&ccedil;&otilde;es do hotel referente &agrave;s regras vigentes e definidas pelo Parque.</p>\n\n<p>ISEN&Ccedil;&Atilde;O DE IMPOSTO: Os visitantes estrangeiros (n&atilde;o residentes no Chile) est&atilde;o isentos dos 19% do IVA (Imposto de Valor Agregado) na hospedagem com caf&eacute; da manh&atilde;, sempre que o pagamento for realizado por meio de um cart&atilde;o de cr&eacute;dito/d&eacute;bito emitido no exterior ou por transfer&ecirc;ncia banc&aacute;ria originada fora dos limites do Chile. Os valores informados j&aacute; est&atilde;o isentos de IVA. Os impostos relacionados aos demais servi&ccedil;os, refei&ccedil;&otilde;es, passeios e outros ser&atilde;o cobrados normalmente.</p>\n\n<p>POL&Iacute;TICA DE CRIAN&Ccedil;AS: O hotel permite a hospedagem de crian&ccedil;as com idade m&iacute;nima de 10 anos. Tarifa reduzida para menores entre 10 e 17 anos, desde que acomodados no mesmo quarto dos pais (em cama extra). Para mais informa&ccedil;&otilde;es, consulte-nos.</p>\n\n<p>CART&Atilde;O DE INGRESSO: &Eacute; necess&aacute;rio guardar o cart&atilde;o de ingresso no Chile. Ele dever&aacute; ser apresentado no momento de sa&iacute;da do pa&iacute;s junto com o passaporte ou a carteira de identidade. A n&atilde;o apresenta&ccedil;&atilde;o do cart&atilde;o de entrada poder&aacute; gerar contratempos&nbsp;no momento da sa&iacute;da do pa&iacute;s.&nbsp;<br />\n<br />\nImagens meramente ilustrativas. Valores e ofertas sujeitos a altera&ccedil;&otilde;es, disponibilidade de lugares e cancelamentos sem qualquer aviso pr&eacute;vio. &nbsp;Consulte-nos para mais informa&ccedil;&otilde;es, restri&ccedil;&otilde;es, reservas e para saber os hor&aacute;rios de check-in e check-out de cada hotel. A PRIMETOUR Ag&ecirc;ncia de Viagens e Turismo Ltda. n&atilde;o se responsabiliza por eventuais mudan&ccedil;as, fechamentos e demais informa&ccedil;&otilde;es dos estabelecimentos e servi&ccedil;os citados nesta comunica&ccedil;&atilde;o. Os itens mencionados podem ser cancelados, suspensos ou alterados sem aviso pr&eacute;vio e est&atilde;o sujeitos a disponibilidade, condi&ccedil;&otilde;es clim&aacute;ticas e legisla&ccedil;&otilde;es locais. Novas regras e protocolos de seguran&ccedil;a e higieniza&ccedil;&atilde;o, com poss&iacute;vel limita&ccedil;&atilde;o do n&uacute;mero de visitantes e do acesso a turistas brasileiros, restri&ccedil;&otilde;es relativas &agrave; liberdade de circula&ccedil;&atilde;o e outras podem estar ou entrar em vigor, sem quaisquer notifica&ccedil;&otilde;es pr&eacute;vias, inclusive durante o per&iacute;odo da viagem, de acordo com o que definir a legisla&ccedil;&atilde;o local, e dever&atilde;o ser seguidas e respeitadas pelos clientes. &Eacute; expressamente proibida a reprodu&ccedil;&atilde;o total ou parcial deste roteiro, seja por qualquer meio ou forma de comunica&ccedil;&atilde;o, sem a pr&eacute;via autoriza&ccedil;&atilde;o por escrito da PRIMETOUR Ag&ecirc;ncia de Viagens e Turismo Ltda.</p>\n</div>\n\n<p><br />\n<br />\n&nbsp;</p>\n",
+    "cancellationPolicy": "<p><strong>POL&Iacute;TICAS DE CANCELAMENTO</strong><br />\nA partir da data da confirma&ccedil;&atilde;o da reserva at&eacute; 90 dias antes da viagem: multa no valor de 25% do total da viagem.<br />\nEntre 89 e 45 dias antes da viagem: multa no valor de 80% do total da viagem.<br />\nA partir de 44 dias antes da viagem: multa no valor de 100% do total da viagem.<br />\n<br />\nSolicita&ccedil;&otilde;es de cancelamento estar&atilde;o sujeitas a multas e/ou taxas aplicadas pelos fornecedores envolvidos neste roteiro, podendo ser adicionais &agrave;s multas acima mencionadas. Tenha em mente que, para casos de cancelamento, o Imposto de Renda Retido na Fonte (IRRF) incidente sobre remessas internacionais n&atilde;o &eacute; reembols&aacute;vel.</p>\n",
+    "formOfPayment": "<p><p><strong>FORMA DE PAGAMENTO DA PARTE TERRESTRE </strong>(Usar para PRIMETOUR)<br />\n&Agrave; vista ou 40% de entrada em dep&oacute;sito banc&aacute;rio + saldo parcelado em at&eacute; 2x em cart&atilde;o de cr&eacute;dito emitido no Brasil.<br />\n&nbsp;<br />\n<strong>FORMA DE PAGAMENTO DA PARTE TERRESTRE </strong>(Cart&otilde;es)<br />\nEm at&eacute; 3x nos cart&otilde;es de cr&eacute;dito emitidos no Brasil.&nbsp;</p>\n\n<p><strong>FORMA DE PAGAMENTO E POL&Iacute;TICAS DE CANCELAMENTO DA PARTE A&Eacute;REA </strong><br />\n(Usar em caso de voo interno inclu&iacute;do)<br />\nDe acordo com a pol&iacute;tica estabelecida pela companhia a&eacute;rea.</p>\n\n<p><strong>SOLICITA&Ccedil;&Atilde;O DE RESERVA</strong><br />\nSer&aacute; cobrado um sinal de US$ 300 por pessoa para solicita&ccedil;&otilde;es de reservas da parte terrestre. O valor do sinal ser&aacute; deduzido do montante total da viagem no momento do pagamento, mas ser&aacute; retido em caso de cancelamento. O valor somente ser&aacute; reembolsado integralmente caso a viagem n&atilde;o seja confirmada. Em caso de solicita&ccedil;&atilde;o de reserva feita em data pr&oacute;xima ao embarque, ou em caso de fornecedores que exijam uma quantia diferente, o valor do sinal poder&aacute; sofrer altera&ccedil;&atilde;o.</p>\n\n<p><strong>PRAZO PARA PAGAMENTO</strong><br />\nO pagamento total da viagem, descontado o sinal, dever&aacute; ser efetuado em at&eacute; 48h depois do envio da confirma&ccedil;&atilde;o de reserva.</p>\n</p>\n"
+  },
+  "_envisionCurrency": "USD",
+  "createdAt": null,
+  "createdBy": "",
+  "updatedAt": null,
+  "updatedBy": "",
+  "approvedAt": null,
+  "approvedBy": ""
+}
