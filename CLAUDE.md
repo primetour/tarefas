@@ -50,6 +50,22 @@ Após cada release minimamente significativa (qualquer patch que envolva mais de
 - `status: 'approved'` (se eu tiver confiança) ou `'draft'` (se quiser revisão do Renê)
 - `hourlyRate: 150` BRL
 
+**⚠ ARMADILHA DE MÓDULO** — IDs de `modules[]` que entram na lista **Foco em Produto** são SOMENTE os definidos em `MODULES` (vide `js/services/devHours.js:87`):
+
+| id | label oficial | é Foco em Produto |
+|---|---|---|
+| `roteiros` | Gerador de Roteiros | ✅ |
+| `portal` | **Portal de DICAS** (NÃO Portal de Solicitações) | ✅ |
+| `images` | Banco de Imagens | ✅ |
+| `iahub` | IA Hub | ✅ |
+| `banco-roteiros` | Banco de Roteiros | ✅ |
+
+Qualquer outro id (`tasks`, `requests`, `notifications`, `csat`, `goals`, `team`, `dashboard`, `infra`, `cloud-functions`, etc.) **NÃO** aparece em Foco em Produto — fica no track "Geral".
+
+**Erros que JÁ aconteceram (cuidar)**:
+- ❌ Marcar entry do **Portal de Solicitações** (módulo `requests`) com `modules: ['requests', 'portal']` — o `portal` aqui é Portal de Dicas! Resultado: Portal de Dicas inflado com trabalho que não é dele. Cleanup retroativo aplicado em 2026-05-25 (32 entries de v4.54.0→v4.57.20).
+- ✅ Correto: `module: 'requests'`, `modules: ['requests']` (sem `portal`).
+
 Use admin SDK script ou direct Firestore write se necessário — não esperar o Renê abrir UI pra logar.
 
 ### b) Atualizar `docs/DEV-HOURS.md`
