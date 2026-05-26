@@ -413,7 +413,11 @@ function mapImages(itinerary, opts = {}) {
   const buildUrl = (filename) => {
     if (!filename) return null;
     if (filename.startsWith('http')) return filename;            // URL completa OK
-    return `${baseUrl.replace(/\/$/, '')}/${filename}`;
+    // v4.58.3: Envision às vezes retorna paths com backslashes Windows
+    // (ex: "roteiros\primetour\xxx.jpg"). Normaliza pra forward slash
+    // e encode pra URL-safe.
+    const clean = filename.replace(/\\/g, '/').split('/').map(encodeURIComponent).join('/');
+    return `${baseUrl.replace(/\/$/, '')}/${clean}`;
   };
 
   return {

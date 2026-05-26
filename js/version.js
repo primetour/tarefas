@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 58,
-  patch: 2,
-  build: '20260526-envision-cdn-images-continent-removed',
+  patch: 3,
+  build: '20260526-envision-images-backslash-fix',
 };
 
 /** "1.2.0" */
