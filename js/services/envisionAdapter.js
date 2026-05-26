@@ -58,12 +58,35 @@ function decodeEntities(html) {
   });
 }
 
-/** Strip tags HTML mantendo só texto. Defensivo pra HTML mal-formado. */
+/** Strip tags HTML mantendo só texto inline. Para textos curtos sem estrutura. */
 function stripHtml(html) {
   if (!html || typeof html !== 'string') return '';
   return decodeEntities(
     html.replace(/<\/?[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
   );
+}
+
+/**
+ * Converte HTML em texto puro PRESERVANDO ESTRUTURA (parágrafos, quebras).
+ * v4.58.5: pra campos que vão em <textarea> (longDescription, days.narrative,
+ * services.descriptionHtml) — evita ver `<p>...</p>` literal no editor.
+ *
+ *   <p>foo</p><p>bar</p>  →  "foo\n\nbar"
+ *   <br>                  →  "\n"
+ *   <li>item</li>         →  "• item\n"
+ */
+function htmlToPlainText(html) {
+  if (!html || typeof html !== 'string') return '';
+  return decodeEntities(html)
+    .replace(/<\/(p|div|h[1-6])>\s*/gi, '\n\n')      // bloco fim → 2 quebras
+    .replace(/<br\s*\/?>/gi, '\n')                    // <br> → 1 quebra
+    .replace(/<li[^>]*>/gi, '\n• ')                   // bullet
+    .replace(/<\/li>/gi, '')
+    .replace(/<\/?[a-z][^>]*>/gi, '')                 // strip resto das tags
+    .replace(/[ \t]+/g, ' ')                          // collapse spaces (mantém \n)
+    .replace(/\n{3,}/g, '\n\n')                       // max 2 quebras consecutivas
+    .replace(/^\s+|\s+$/g, '')                        // trim
+    .trim();
 }
 
 /**
@@ -293,7 +316,9 @@ function mapService(product) {
     category:        normalizeCategory(catLabel),
     categoryLabel:   catLabel,
     name,
-    descriptionHtml: service.Description || product.Description || '',
+    // v4.58.5: htmlToPlainText pra textarea-friendly. Manter descriptionHtml
+    // como NAME pra retrocompat schema, mas conteúdo já vai limpo (sem tags).
+    descriptionHtml: htmlToPlainText(service.Description || product.Description || ''),
     day:             product.Day || null,
     consumableDays:  service.ConsumableDays ?? product.NumberOfDays ?? null,
     optional:        !!product.Optional,
@@ -435,10 +460,10 @@ function mapDays(itinerary) {
     dayNumber:     d.Day || null,
     city:          d.Name || '',
     title:         d.Name || '',                                  // pode ser cidade ou tema do dia
-    // v4.58.1: decodeEntities preserva HTML mas decodifica &aacute; etc
-    narrative:     decodeEntities(d.Description || ''),
-    overnightCity: stripHtml(d.NightDescription || ''),           // strip + decode → texto curto
-    flightLeg:     null,                                          // não vem do Envision
+    // v4.58.5: htmlToPlainText pra textarea-friendly (preserva quebras de parágrafo)
+    narrative:     htmlToPlainText(d.Description || ''),
+    overnightCity: stripHtml(d.NightDescription || ''),
+    flightLeg:     null,
   }));
 }
 
@@ -494,10 +519,11 @@ export function envisionItineraryToBank(envisionJson, opts = {}) {
     validity:     mapValidity(),
 
     // ─── Narrativa ───
-    // v4.58.1: decodeEntities mantém HTML mas decodifica &aacute; etc.
-    // (Antes salvava HTML raw com entities — UI mostrava `&ccedil;` literal.)
+    // v4.58.5: htmlToPlainText pra textarea-friendly (preserva quebras de
+    // parágrafo mas tira tags HTML). envisionRaw mantém HTML original pra
+    // renderers que aceitam (preview/PDF).
     shortDescription: stripHtml(g.ShortDescription || '').slice(0, 300),
-    longDescription:  decodeEntities(g.Description || it.Description || ''),
+    longDescription:  htmlToPlainText(g.Description || it.Description || ''),
 
     // ─── Geo (derivado de Products + DayByDay) ───
     geo:          deriveGeo(it),

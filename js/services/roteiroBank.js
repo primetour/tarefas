@@ -580,14 +580,28 @@ export async function resolveBankHero(doc) {
   } catch (e) { /* segue pro fallback */ }
 
   // 2. Unsplash via CF (com cache de 90d em photo_cache)
+  // v4.58.5: retry chain — query mais específica falha primeiro (Cidade do Cabo,
+  // África do Sul), tenta variações progressivamente mais amplas.
   try {
     const { httpsCallable, getFunctions } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js');
     const { app } = await import('../firebase.js');
     const fn = httpsCallable(getFunctions(app, 'us-central1'), 'fetchDestinationPhoto');
-    const q = [city.city, city.country].filter(Boolean).join(', ');
-    const res = await fn({ query: q, count: 1 });
-    const url = res?.data?.url || null;
-    if (url) return { url, source: res?.data?.source || 'unsplash', attribution: res?.data?.attribution || '' };
+    // Lista de queries em ordem de specificidade (mais → menos)
+    const queries = [
+      city.city && city.country ? `${city.city}, ${city.country}` : null,  // 1. cidade + país
+      city.city || null,                                                    // 2. só cidade
+      city.country || null,                                                 // 3. só país
+    ].filter(Boolean);
+    for (const q of queries) {
+      try {
+        const res = await fn({ query: q, count: 1 });
+        const url = res?.data?.url || null;
+        if (url) return { url, source: res?.data?.source || 'unsplash', attribution: res?.data?.attribution || '' };
+      } catch (e) {
+        // 404/nenhuma foto encontrada — tenta próxima
+        if (!/nenhuma foto/i.test(e?.message || '')) throw e;
+      }
+    }
   } catch (e) { console.warn('[resolveBankHero] Unsplash falhou:', e?.message); }
 
   return { url: null, source: null };

@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 58,
-  patch: 4,
-  build: '20260526-csp-envision-gcs-images',
+  patch: 5,
+  build: '20260526-html-cleanup-unsplash-retry',
 };
 
 /** "1.2.0" */
