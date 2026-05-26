@@ -6,6 +6,57 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.58.0+20260526-roteiros-bank-envision-schema] — 2026-05-26
+
+Release **MINOR/SCHEMA** — preparação Banco de Roteiros pra integração API Envision (Travel Agent).
+
+**Contexto**
+
+Pivot Sprint #93: hoje os roteiros do `roteiros_bank` são cadastrados manualmente (CRUD + import PDF). Vão passar a vir da Envision (sistema operacional da agência) via API. Cadastro manual continua como fallback. Antes de codar o adapter/import, alinhamos o schema pra receber TODAS as informações que a Envision tem.
+
+**Auditoria realizada**
+
+8 fixtures reais capturados via Chrome MCP (Peru, Itália, Grécia, África do Sul, Patagônia, Chapada, Japão, Austrália) — coverage de 5-14 dias, LATAM/Europa/Ásia/África/Oceania/Brasil. Schema canônico extraído + comparado com `roteiros_bank` atual. Doc completo: `docs/ENVISION-SCHEMA-AUDIT.md`.
+
+Conclusão da auditoria: **3 gaps informacionais reais** (hotéis minimalistas, serviços tratados como bullets, info geral de destino não-estruturada). Estrutura/UX nossa é melhor que Envision — só faltava informação.
+
+**Mudanças neste release (apenas schema, sem código de import)**
+
+`js/services/roteiroBank.js`:
+
+- **`categories[].hotels[].*` enriquecido** (Hotel é objeto rico no Envision):
+  - `address: { street, number, district, postalCode, complement }`
+  - `phone`, `email`, `chainCode`, `rating`
+  - `coords: { lat, lng }`, `iata`, `locationId`
+  - `distanceToCenter`, `distanceToAirport`, `nearestAirport`
+  - `envisionProductId`, `envisionRoomId`, `optional`
+- **Novo array `services[]`** — antes Envision Service virava bullet em `includes.{passeios,traslados,...}`; agora vira entidade estruturada com `category` (passeio/transfer/ingresso/trem/mini-roteiro), `descriptionHtml`, `cancellationPolicyHtml` (POLÍTICA PRÓPRIA do serviço), `ageGroups[]`, `consumableDays`, `day`, `optional`, `supplier`. `includes` continua existindo pra render PDF bullet-friendly.
+- **Novo bloco `generalInfo`**: campos estruturados que Envision tem em `Globalization.GeneralInfo` (HTML único) — `timezone`, `currency`, `climate`, `gratuities`, `voltage`, `gastronomy`, `telecom`, `tips`. `travelNotes[]` continua existindo pra bullets livres.
+- **Novo bloco `envision`**: metadata pra sync — `id` (FK Envision PK), `url` (deep link), `loginInformationId` (qual credencial criou), `supplierId` (operador local), `syncedAt`.
+- **Novo bloco `envisionRaw`**: HTML bruto fallback — `includes`, `generalInfo`, `cancellationPolicy`, `formOfPayment`. Não renderizado por default; só se campo estruturado equivalente estiver vazio. Adapter copia direto sem parsing (CLAUDE.md §11.h — fallback explícito, sem parser frágil).
+- **`source.type`** ganha `'envision'` como valor válido (junto com `manual`, `pdf_import`, `api_import`).
+
+`migrateRoteiroBank()` atualizado pra cobrir novos sub-objetos defensivamente (docs antigos sem os campos novos rodam sem quebrar — `generalInfo: {}`, `envision: {id:null,...}`, `envisionRaw: {}`, `services: []`).
+
+**Não inclui (próximos releases)**
+
+- Adapter `envisionItineraryToBank()` — Fase 1
+- Import batch script (Forms Auth via cookie copy-paste) — Fase 1
+- Cloud Function sync automático — Fase 3
+- UI no Banco mostrando badge "Envision" — Fase 4
+
+**Decisões adiadas pra Fase 2 (preços via `CalculateItineraryFareEstimate`)**
+
+- `envision.exchangeRate` + `envision.originalCurrency`
+
+**Decisões dispensadas** (irrelevantes pra Primetour)
+
+- `GapReason`, `SupplierAgreement`, `SelectedDate`, `ErrorLogs[]`, `ExternalProperties[]`
+
+**Aprendizado registrado em CLAUDE.md §11.h**: confirmação do padrão "fallback explícito, não migração silenciosa" pra schemas legados — adicionamos `envisionRaw` HTML como fallback em vez de parser regex/IA pra extrair estrutura.
+
+---
+
 ## [4.57.57+20260526-taskmodal-ms-undefined-hotfix] — 2026-05-26
 
 Release **PATCH/HOTFIX** — Bug crítico que travava o taskModal inteiro: `ReferenceError: _ms is not defined` em `bindEvents` (taskModal.js:2664).

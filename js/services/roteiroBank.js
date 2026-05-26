@@ -100,7 +100,24 @@ export function emptyRoteiroBank() {
      *   {
      *     key:    'sugestao-prime' | 'luxo' | 'luxo-standard' | 'luxo-moderado' | custom,
      *     label:  'Sugestão Prime' | ...
-     *     hotels: [{ city, name, roomType, nights, supplierUrl, notes }, ...],
+     *     hotels: [{
+     *       // legacy minimal
+     *       city, name, roomType, nights, supplierUrl, notes,
+     *       // v4.58.0+ enriched (Envision API): preenchidos quando source='envision'
+     *       address:    { street, number, district, postalCode, complement },
+     *       phone, email,
+     *       chainCode,            // ex: "FOURSEASONS"
+     *       rating,               // estrelas (1-5)
+     *       coords:     { lat, lng },
+     *       iata,                 // IATA da cidade (ex: "TYO" pra Tokyo)
+     *       locationId,           // FK Envision pra Location
+     *       distanceToCenter,     // km do centro
+     *       distanceToAirport,    // km do aeroporto mais próximo
+     *       nearestAirport,       // nome do aeroporto
+     *       envisionProductId,    // FK Envision Product
+     *       envisionRoomId,       // FK Envision Room (matriz fares)
+     *       optional,             // se é opcional/upgrade na categoria
+     *     }, ...],
      *     pricing: [
      *       { period: { start, end }, single, double, currency: 'USD'|'BRL'|'EUR', notes },
      *       ...
@@ -110,6 +127,35 @@ export function emptyRoteiroBank() {
      * Pricing é por pessoa (compatível com convenção do PDF).
      */
     categories: [],
+
+    /* ─── Services estruturados (passeios, transfers, ingressos, trens) ─── */
+    /**
+     * v4.58.0+ ADD. Envision Product (ProductType=1) vem como entidade RICA
+     * (Category + Description + CancellationPolicy + AgeGroups), não bullet.
+     * Mantemos paralelo ao `includes.{passeios,traslados,...}` (que continua
+     * pra render bullet-friendly no PDF). Render decide quando usar struct
+     * (modal de detalhe do serviço) vs bullet (resumo Inclui no PDF).
+     *
+     * Cada service:
+     *   {
+     *     category:           'passeio'|'transfer'|'ingresso'|'trem'|'mini-roteiro'|'outro',
+     *     categoryLabel:      string (label oficial Envision, ex: "Passeio", "Mini Roteiro"),
+     *     name:               string,
+     *     descriptionHtml:    string (HTML rico — passa por sanitize no render),
+     *     day:                number (dia do roteiro em que ocorre),
+     *     consumableDays:     number (quantos dias o serviço dura),
+     *     optional:           boolean (se é opcional/upgrade),
+     *     ageGroups:          [{ min, max, label }] (ex: criança 6-11, adulto 12+),
+     *     cancellationPolicyHtml: string (política PRÓPRIA do serviço),
+     *     supplier:           string (ProductSupplier),
+     *     locationId:         number (FK Envision Location),
+     *     locationName:       string,
+     *     envisionProductId:  number (FK),
+     *     online:             boolean,
+     *     maxQuantity:        number,
+     *   }
+     */
+    services: [],
 
     /* ─── Inclui / Não inclui (buckets pra render limpo) ─── */
     includes: {
@@ -147,6 +193,24 @@ export function emptyRoteiroBank() {
       vaccines: '',
     },
 
+    /* ─── Informações gerais do destino (Envision: Globalization.GeneralInfo) ─── */
+    /**
+     * v4.58.0+ ADD. Hoje o curador preenche essas coisas como bullets em
+     * `travelNotes`. Envision tem campo dedicado pra cada (mais estruturado).
+     * Mantemos `travelNotes` pra bullets livres + estes campos pra essenciais.
+     * Cada um aceita HTML ou texto livre — render decide formatação.
+     */
+    generalInfo: {
+      timezone:   '',                 // ex: "GMT-3 (Brasília)"
+      currency:   '',                 // ex: "Iene (¥) — 1 USD ≈ 150 JPY"
+      climate:    '',                 // ex: "Verão quente jul-set (28-35°C)..."
+      gratuities: '',                 // ex: "Gorjeta não é costume no Japão..."
+      voltage:    '',                 // ex: "100V, plug tipo A. Adaptador opcional."
+      gastronomy: '',                 // ex: "Sushi/sashimi/ramen, omakase reservas..."
+      telecom:    '',                 // ex: "Wi-Fi pocket recomendado, eSIM funciona..."
+      tips:       '',                 // bullets livres adicionais
+    },
+
     /* ─── Notas de viagem (clima, altitude, festas locais) ─── */
     travelNotes: [],                  // lista de strings, cada uma um bullet
 
@@ -159,11 +223,44 @@ export function emptyRoteiroBank() {
 
     /* ─── Origem do dado ─── */
     source: {
-      type:         'manual',         // manual | pdf_import | api_import
+      type:         'manual',         // manual | pdf_import | api_import | envision
       originalFile: '',               // nome do PDF de origem
       importedAt:   null,             // ISO timestamp
       importedBy:   '',               // uid do usuário que importou
       llmTokens:    { input: 0, output: 0 },  // pra controle de custo
+    },
+
+    /* ─── Integração Envision (v4.58.0+) ─── */
+    /**
+     * Sync com TravelAgent (envisiontecnologia.com.br). Populado quando o
+     * roteiro vem da Envision (manualmente importado OU via Cloud Function
+     * de sync). Vazio (envision.id = null) pra roteiros 100% manuais.
+     *
+     * Rastreabilidade: dado o envision.id, o sync re-importa preservando
+     * editorialOverlay (campos locais que o curador customizou). Doc completo
+     * de overlay em docs/ENVISION-INTEGRATION-PLAN.md §6.
+     */
+    envision: {
+      id:                   null,     // Itinerary.Id (FK Envision, número)
+      url:                  null,     // deep link pro TravelAgent (gerado on-save)
+      loginInformationId:   null,     // qual credencial Envision criou (debug)
+      supplierId:           null,     // operador local que montou o pacote
+      syncedAt:             null,     // ISO timestamp do último sync bem-sucedido
+      // Currency/ExchangeRate adiados pra Fase 2 (quando integrarmos preços
+      // via /CalculateItineraryFareEstimate).
+    },
+
+    /**
+     * HTML bruto vindo da Envision (raw fallback). Não é renderizado por
+     * default — só se o campo estruturado correspondente estiver vazio.
+     * Adapter copia direto da Envision sem parsing (sem parser frágil).
+     * Curador edita os campos estruturados → renderer prioriza estruturado.
+     */
+    envisionRaw: {
+      includes:           '',         // Globalization.Includes (HTML)
+      generalInfo:        '',         // Globalization.GeneralInfo (HTML)
+      cancellationPolicy: '',         // Globalization.CancellationPolicy (HTML)
+      formOfPayment:      '',         // Globalization.FormOfPayment (HTML)
     },
 
     /* ─── Curadoria / tags ─── */
@@ -180,6 +277,10 @@ export function emptyRoteiroBank() {
 /**
  * Migration on-read: garante que docs antigos têm o shape novo.
  * Defensivo — só preenche campos faltando, não altera valores existentes.
+ *
+ * v4.58.0+ ADD: cobre novos sub-objetos { envision, envisionRaw, generalInfo }
+ * e novo array `services`. CLAUDE.md §11.h — fallback explícito, não migra
+ * dado silenciosamente (preserva valores existentes).
  */
 export function migrateRoteiroBank(raw) {
   const base = emptyRoteiroBank();
@@ -196,8 +297,13 @@ export function migrateRoteiroBank(raw) {
   merged.source        = { ...base.source, ...(raw.source || {}) };
   merged.source.llmTokens = { ...base.source.llmTokens, ...(raw.source?.llmTokens || {}) };
 
+  // v4.58.0+ novos sub-objetos
+  merged.generalInfo = { ...base.generalInfo, ...(raw.generalInfo || {}) };
+  merged.envision    = { ...base.envision, ...(raw.envision || {}) };
+  merged.envisionRaw = { ...base.envisionRaw, ...(raw.envisionRaw || {}) };
+
   // Arrays — default vazio se ausente
-  for (const k of ['categories', 'days', 'excludes', 'cancellation', 'travelNotes', 'tags']) {
+  for (const k of ['categories', 'days', 'excludes', 'cancellation', 'travelNotes', 'tags', 'services']) {
     if (!Array.isArray(merged[k])) merged[k] = [];
   }
   for (const k of ['continents', 'countries', 'cities', 'destinationIds']) {

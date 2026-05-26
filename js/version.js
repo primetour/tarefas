@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 57,
-  patch: 57,
-  build: '20260526-taskmodal-ms-undefined-hotfix',
+  minor: 58,
+  patch: 0,
+  build: '20260526-roteiros-bank-envision-schema',
 };
 
 /** "1.2.0" */
