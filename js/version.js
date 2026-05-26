@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 57,
-  patch: 31,
-  build: '20260525-delete-orphan-cleanup-goal-csat',
+  patch: 32,
+  build: '20260525-recurring-tasks-cf-cron',
 };
 
 /** "1.2.0" */

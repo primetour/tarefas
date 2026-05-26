@@ -6,6 +6,45 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.57.32+20260525-recurring-tasks-cf-cron] — 2026-05-25
+
+Release **PATCH** — fecha o gap #4 da auditoria de integrações. Geração de tarefas recorrentes agora roda também server-side via Cloud Function agendada.
+
+**Problema (antes)**: `runDueRecurrenceGeneration()` em `js/services/recurringTasks.js` era 100% lazy client-side — só rodava quando alguém abria a página de Tarefas. Cenários quebrados:
+- Final de semana / feriado: ninguém abre o sistema → tarefas de Sex/Sáb/Dom/Seg só aparecem terça.
+- Power-user de férias: backlog acumula até alguém abrir.
+- Notificações de prazo disparavam tarde porque a task ainda nem existia.
+
+**Solução**: Cloud Function `recurringTasksDailyCron` (em `functions/index.js`).
+- Schedule: `0 6 * * *` America/Sao_Paulo (todo dia 6h da manhã)
+- Timeout 540s, memory 256MiB, retry 2x
+- Lógica mirrors `runDueRecurrenceGeneration` server-side com Admin SDK:
+  - Lê `recurring_task_templates` where `active==true`
+  - `_recurComputeDueOccurrences` (cópia da fn client, sem dependência de store)
+  - Idempotência hard via ID determinístico `rec_${tplId}_${occISO}` (`getDoc` antes de `setDoc`)
+  - Limite `RECUR_MAX_INSTANCES_PER_TPL=30` por template/run (mesmo cap do client)
+  - Atualiza `lastGeneratedFor` pra avançar o cursor
+  - Audit log agregado por run (`system.recurring_tasks_cron` com stats)
+  - Flag `recurringSource: 'cf-cron'` nas tasks criadas (diferencia de client lazy)
+  - `createdBy` = `template.createdBy || 'system'` (preserva accountability)
+
+**Cinto-e-suspensório**: client-side `runDueRecurrenceGeneration` continua funcionando como fallback. Se a CF falhar 1-2 dias, primeiro user que abrir o app cobre o backlog. Mesmo ID determinístico — sem risco de duplicação.
+
+**Trade-offs aceitos**:
+- CF não tem acesso ao store de `taskTypes` → quando template tem `dueOffsetDays=0` (caso 4.32.2+), dueDate fica `null` e o cliente recalcula via SLA na primeira renderização. Cobre 95% dos casos; o 5% com offset explícito > 0 funciona normalmente.
+- Audit log do `tasks.create` é feito separadamente (não passa pelo helper `auditLog` do client). Severity 'info', source 'cf-recurring-tasks' pra rastreio.
+
+**Validação E2E**:
+- Deploy `firebase deploy --only functions:recurringTasksDailyCron` → OK
+- Trigger manual via `gcloud scheduler jobs run` → 7 templates escaneados, 2 instâncias criadas pro dia 26/05/2026
+- 2º run consecutivo → 0 created, 0 errors (idempotência confirmada)
+- Tasks aparecem no Firestore com `recurringSource='cf-cron'`, `recurringFromTemplateId`, `recurringOccurrence`
+- Audit log `system.recurring_tasks_cron` registra cada run
+
+**Próximo gap (#7)**: 16 callsites de `notify()` em scheduled tasks client-side com mesma raiz arquitetural — atribuem `actorId` ao user que abriu o app em vez de "sistema". Próxima release.
+
+---
+
 ## [4.57.31+20260525-delete-orphan-cleanup-goal-csat] — 2026-05-25
 
 Release **PATCH** — completa o ciclo de cleanup de FKs em deletes (v4.57.28→31). Mais 2 fontes: goals e csat_surveys.

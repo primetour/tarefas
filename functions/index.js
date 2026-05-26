@@ -3582,3 +3582,267 @@ REGRAS DE OURO:
     status: finalStatus,
   };
 });
+
+/* ═════════════════════════════════════════════════════════════════
+ * recurringTasksDailyCron — gera instâncias de templates recorrentes
+ * Roda 06:00 BRT todos os dias. Equivalente server-side do
+ * runDueRecurrenceGeneration() em js/services/recurringTasks.js.
+ *
+ * Motivação: a geração lazy client-side dependia de alguém abrir a
+ * página de tarefas. Em finais de semana / férias do power-user o
+ * sistema acumulava backlog e gerava tudo de uma vez na próxima
+ * visita. Notificações de prazo disparavam tarde. (CLAUDE.md gap #4)
+ *
+ * Garantias:
+ *  - Idempotência hard via ID determinístico `rec_${tplId}_${occISO}`
+ *    (mesma estratégia do client; se rodada client gerou primeiro,
+ *    CF detecta via getDoc e pula).
+ *  - Limite MAX_INSTANCES_PER_RUN_PER_TPL (30) por template — espelha
+ *    o cap client pra não criar 6 meses de backlog num único run.
+ *  - Atualiza lastGeneratedFor pra avançar o cursor.
+ *  - Audit log no fim com stats agregadas.
+ *
+ * Client-side runDueRecurrenceGeneration continua funcionando como
+ * fallback — se CF falhar 1-2 dias, o primeiro user que abrir o app
+ * gera o atrasado. Cinto-e-suspensório intencional.
+ * ═════════════════════════════════════════════════════════════════ */
+const RECUR_MAX_INSTANCES_PER_TPL = 30;
+const RECUR_DEFAULT_MAX_MONTHS    = 12;
+const RECUR_MAX_MONTHS            = 24;
+
+function _recurToISO(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+function _recurFromISO(s)    { return new Date(s + 'T12:00:00'); }
+function _recurAddDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
+function _recurAddMonths(d, n) { const x = new Date(d); x.setMonth(x.getMonth() + n); return x; }
+
+function _recurEffectiveEndDate(template) {
+  if (template.endDate) return _recurFromISO(template.endDate);
+  const start = _recurFromISO(template.startDate);
+  return _recurAddMonths(start, RECUR_DEFAULT_MAX_MONTHS);
+}
+
+function _recurComputeDueOccurrences(template, todayISO) {
+  const start   = _recurFromISO(template.startDate);
+  const end     = _recurEffectiveEndDate(template);
+  const today   = _recurFromISO(todayISO);
+  const lastGen = template.lastGeneratedFor ? _recurFromISO(template.lastGeneratedFor) : null;
+  let cursor    = lastGen ? _recurAddDays(lastGen, 1) : new Date(start);
+  if (cursor < start) cursor = new Date(start);
+
+  const horizon = today < end ? today : end;
+
+  const dates = [];
+  let safety = 0;
+  while (cursor <= horizon && safety < 400 && dates.length < RECUR_MAX_INSTANCES_PER_TPL) {
+    safety++;
+    let match = false;
+    if (template.frequency === 'daily') {
+      match = true;
+    } else if (template.frequency === 'weekly') {
+      match = Array.isArray(template.weekdays) && template.weekdays.includes(cursor.getDay());
+    } else if (template.frequency === 'monthly') {
+      const day = Number(template.monthDay) || 1;
+      const lastDayOfMonth = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0).getDate();
+      const targetDay = Math.min(day, lastDayOfMonth);
+      match = cursor.getDate() === targetDay;
+    } else if (template.frequency === 'custom') {
+      const interval = Math.max(1, Number(template.intervalDays) || 1);
+      const diffDays = Math.round((cursor - start) / (1000 * 60 * 60 * 24));
+      match = diffDays >= 0 && (diffDays % interval) === 0;
+    }
+    if (match) dates.push(_recurToISO(cursor));
+    cursor = _recurAddDays(cursor, 1);
+  }
+  return dates;
+}
+
+async function _recurInstanceExists(detId) {
+  // Quick check via getDoc pelo ID determinístico (1 read).
+  // Mais barato que query composta + dispensa índice.
+  try {
+    const snap = await db.collection('tasks').doc(detId).get();
+    return snap.exists;
+  } catch (e) {
+    console.warn('[recurringTasksDailyCron] instance check failed:', e?.message);
+    return false;  // best-effort: deixa create tentar (Firestore vai rejeitar se duplicate via setDoc)
+  }
+}
+
+export const recurringTasksDailyCron = onSchedule({
+  schedule: '0 6 * * *',           // 06:00 todos os dias
+  timeZone: 'America/Sao_Paulo',
+  timeoutSeconds: 540,
+  memory: '256MiB',
+  retryCount: 2,
+}, async () => {
+  const report = {
+    templatesScanned: 0,
+    templatesWithDue: 0,
+    tasksCreated:     0,
+    tasksSkippedExisting: 0,
+    errors:           0,
+    errorMessages:    [],
+  };
+
+  let templatesSnap;
+  try {
+    templatesSnap = await db.collection('recurring_task_templates')
+      .where('active', '==', true)
+      .get();
+  } catch (e) {
+    console.error('[recurringTasksDailyCron] FATAL: cant fetch templates:', e?.message);
+    await db.collection('audit_logs').add({
+      action: 'system.recurring_tasks_cron',
+      userId: 'system',
+      severity: 'critical',
+      error: e?.message || String(e),
+      timestamp: FieldValue.serverTimestamp(),
+    });
+    return;
+  }
+
+  const today = new Date();
+  const todayISO = _recurToISO(today);
+  report.templatesScanned = templatesSnap.size;
+
+  for (const docSnap of templatesSnap.docs) {
+    const template = { id: docSnap.id, ...docSnap.data() };
+
+    let dates;
+    try {
+      dates = _recurComputeDueOccurrences(template, todayISO);
+    } catch (e) {
+      report.errors++;
+      report.errorMessages.push(`tpl=${template.id} compute: ${e?.message}`);
+      continue;
+    }
+    if (!dates.length) continue;
+    report.templatesWithDue++;
+
+    let lastCreatedFor = template.lastGeneratedFor || null;
+    for (const occISO of dates) {
+      const detId = `rec_${template.id}_${occISO}`;
+      const exists = await _recurInstanceExists(detId);
+      if (exists) {
+        report.tasksSkippedExisting++;
+        if (!lastCreatedFor || occISO > lastCreatedFor) lastCreatedFor = occISO;
+        continue;
+      }
+
+      const occDate = _recurFromISO(occISO);
+      const base = template.taskData || {};
+      const offset = Number(template.dueOffsetDays) || 0;
+      // SLA do tipo NÃO é resolvido aqui (calcSla é client-side e depende
+      // do store de taskTypes). Quando o offset > 0, aplica como fallback;
+      // quando offset = 0, deixa dueDate null e cliente recalcula via SLA
+      // na primeira renderização (taskTypes carrega async).
+      const dueDate = offset > 0 ? _recurAddDays(occDate, offset) : null;
+
+      const taskDoc = {
+        // Espelha taskData do template
+        title:            base.title || 'Tarefa recorrente',
+        description:      base.description || '',
+        status:           'not_started',
+        priority:         base.priority || 'medium',
+        projectId:        base.projectId || null,
+        assignees:        Array.isArray(base.assignees) ? base.assignees : [],
+        observers:        Array.isArray(base.observers) ? base.observers : [],
+        isPartnership:    !!base.isPartnership,
+        tags:             Array.isArray(base.tags)    ? base.tags    : [],
+        nucleos:          Array.isArray(base.nucleos) ? base.nucleos : [],
+        startDate:        occDate,
+        dueDate:          dueDate,
+        typeId:           base.typeId         || null,
+        variationId:      base.variationId    || null,
+        variationName:    base.variationName  || '',
+        variationSLADays: base.variationSLADays != null ? base.variationSLADays : null,
+        sector:           base.sector || null,
+        workspaceId:      base.workspaceId || null,
+        customFields:     base.customFields || {},
+        type:             base.type || '',
+        newsletterStatus: '',
+        requestingArea:   base.requestingArea || '',
+        clientEmail:      base.clientEmail || '',
+        outOfCalendar:    !!base.outOfCalendar,
+        deliveryLink:     '',
+        // Rastreabilidade
+        recurringFromTemplateId: template.id,
+        recurringOccurrence:     occISO,
+        subtasks:    [],
+        comments:    [],
+        attachments: [],
+        order:       Date.now(),
+        completedAt: null,
+        metaLinks:   Array.isArray(base.metaLinks) ? base.metaLinks : [],
+        goalId:      base.goalId || null,
+        goalMetaRef: base.goalMetaRef || null,
+        periodoRef:  '',
+        linkComprovacao: '',
+        confirmadaEvidencia: false,
+        sourceRequestId:  null,
+        sourceNewsId:     null,
+        requesterEditFlag: false,
+        requesterEditAt:   null,
+        requesterEditChanges: '',
+        // Atribui criação ao próprio criador do template (preserva accountability)
+        createdAt:   FieldValue.serverTimestamp(),
+        createdBy:   template.createdBy || 'system',
+        updatedAt:   FieldValue.serverTimestamp(),
+        updatedBy:   template.createdBy || 'system',
+        // Flag de origem pra diferenciar de tasks criadas no client lazy
+        recurringSource: 'cf-cron',
+      };
+
+      try {
+        // setDoc com merge:false — Firestore garante uniqueness por docId.
+        // Se outro processo (client lazy concorrente) criou primeiro com o
+        // mesmo detId, getDoc anterior teria detectado. Race window pequena.
+        await db.collection('tasks').doc(detId).set(taskDoc);
+        report.tasksCreated++;
+        lastCreatedFor = occISO;
+
+        // Audit log da criação (espelha tasks.create do client)
+        await db.collection('audit_logs').add({
+          action: 'tasks.create',
+          userId: 'system',
+          actorName: 'Sistema (recurring cron)',
+          entityType: 'task',
+          entityId: detId,
+          details: { title: taskDoc.title, source: 'cf-recurring-tasks', templateId: template.id, occISO },
+          timestamp: FieldValue.serverTimestamp(),
+          severity: 'info',
+        }).catch(() => {});
+      } catch (e) {
+        report.errors++;
+        report.errorMessages.push(`tpl=${template.id} occ=${occISO}: ${e?.message}`);
+      }
+    }
+
+    if (lastCreatedFor && lastCreatedFor !== template.lastGeneratedFor) {
+      try {
+        await db.collection('recurring_task_templates').doc(template.id).update({
+          lastGeneratedFor: lastCreatedFor,
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+      } catch (e) {
+        console.warn(`[recurringTasksDailyCron] update lastGen failed tpl=${template.id}:`, e?.message);
+      }
+    }
+  }
+
+  await db.collection('audit_logs').add({
+    action: 'system.recurring_tasks_cron',
+    userId: 'system',
+    severity: report.errors > 0 ? 'warning' : 'info',
+    ...report,
+    errorMessages: report.errorMessages.slice(0, 5),  // cap pra não inchar
+    timestamp: FieldValue.serverTimestamp(),
+  });
+
+  console.log(`[recurringTasksDailyCron] done:`, JSON.stringify(report));
+});
