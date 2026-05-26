@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 57,
-  patch: 42,
-  build: '20260525-portal-dicas-cf-cron-images-orphan-tips-stale',
+  patch: 43,
+  build: '20260525-portal-dicas-polish-confirm-errorcode-vars',
 };
 
 /** "1.2.0" */

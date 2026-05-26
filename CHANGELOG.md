@@ -6,6 +6,45 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.57.43+20260525-portal-dicas-polish-confirm-errorcode-vars] — 2026-05-25
+
+Release **PATCH** — Sprint Portal de Dicas (5/5, final). Polish: anti-padrões.
+
+**PD18 — `confirm()` nativo → `modal.confirm`** (3 ocorrências):
+- `portalTipsList.js:308` (excluir dica) — modal danger style com nome da dica em negrito.
+- `portalTipsList.js:763` (excluir material) — modal danger style.
+- `portalImages.js:1272` (excluir imagem do banco+R2) — modal com aviso "Esta ação não pode ser desfeita".
+
+**PD19 — Hex hardcoded → CSS vars** (`js/pages/portalImages.js`): substituídas 6 ocorrências via `sed` — `color:#EF4444` → `color:var(--color-danger, #EF4444)`, `#F59E0B` → `--color-warning`, `#22C55E` → `--color-success`. Fallback hex preserva renderização em tema sem var. Padrão consolidado em v4.57.38 R17 (Roteiros).
+
+**PD17 — `portalPdfParser` error classification** (`js/services/portalPdfParser.js:815-848`). Espelho R3 (Roteiros v4.57.38) + recém-adicionado em sprint Tarefas. Helper `_portalParseError(message, code, isRetryable)` cria Error com props anexadas. Classifica 5 códigos:
+- `invalid_file` (não retryable) — extensão errada
+- `invalid_filename` (não retryable) — nome não casa padrão "Continente - País - Cidade.pdf"
+- `pdf_encrypted` (não retryable) — pdf.js detecta password/encrypt
+- `pdf_corrupted` (não retryable) — pdf.js falha extraindo texto
+- `empty_content` (não retryable) — extrai 0 linhas
+
+UI futuro pode renderizar mensagem amigável + sugestão por código.
+
+**Falsos positivos descartados após verificação no código**:
+- **PD6 (auto-save no editor)** — `portalTipEditor.js:1225` JÁ TEM debounce 4s + `setDirty` → `saveDraft`. Inventário audit estava errado.
+- **PD14 (listeners cleanup)** — `grep document/window.addEventListener` no editor = 0. Todos container-scoped, GC automático.
+
+**Sprint Portal de Dicas FECHADA** (v4.57.39 → v4.57.43):
+- 5 releases consecutivas
+- 16 fixes (PD1-PD11 + PD12 + PD13 + PD17 + PD18 + PD19) + 2 falsos positivos descartados (PD6, PD14)
+- 10 caminhos cleanup FK cross-collection
+- 2 Cloud Functions agendadas novas
+- 3 confirm() nativos eliminados + 6 hex hardcoded substituídos
+
+**Acumulado da maratona hoje** (Tarefas + Roteiros + Portal de Dicas):
+- 16 releases (v4.57.28 → v4.57.43)
+- 38 gaps fechados
+- 8 Cloud Functions novas/atualizadas
+- 22 caminhos de cleanup FK cross-collection
+
+---
+
 ## [4.57.42+20260525-portal-dicas-cf-cron-images-orphan-tips-stale] — 2026-05-25
 
 Release **PATCH** — Sprint Portal de Dicas (4/5). 2 Cloud Functions agendadas: imagens órfãs + tips stale.

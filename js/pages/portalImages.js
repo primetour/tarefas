@@ -1269,7 +1269,14 @@ function renderGallery() {
   gallery.querySelectorAll('.img-delete-btn').forEach(btn => {
     btn.addEventListener('click', async e => {
       e.stopPropagation();
-      if (!confirm('Excluir esta imagem do banco e do R2?')) return;
+      // v4.57.43 PD18: confirm() nativo → modal.confirm
+      const { default: modal } = await import('../components/modal.js');
+      const ok = await modal.confirm({
+        title: 'Excluir imagem?',
+        message: 'A imagem será removida do banco e do R2.<br>Esta ação não pode ser desfeita.',
+        confirmText: 'Excluir', danger: true, icon: '🗑',
+      });
+      if (!ok) return;
       try {
         await deleteImageMeta(btn.dataset.id);
         toast.success('Imagem excluída.');
@@ -1322,7 +1329,7 @@ function imgCard(img, idx) {
             data-url="${esc(img.url)}" data-name="${esc(img.name||'imagem')}"
             style="font-size:0.7rem;color:var(--brand-gold);" title="Baixar" aria-label="Baixar"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14"/></svg></button>
           <button class="img-delete-btn btn btn-ghost btn-sm" data-id="${img.id}"
-            style="font-size:0.7rem;color:#EF4444;" title="Excluir" aria-label="Excluir"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13a2 2 0 002 2h6a2 2 0 002-2l1-13M9 7V5a2 2 0 012-2h2a2 2 0 012 2v2"/></svg></button>
+            style="font-size:0.7rem;color:var(--color-danger, #EF4444);" title="Excluir" aria-label="Excluir"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13a2 2 0 002 2h6a2 2 0 002-2l1-13M9 7V5a2 2 0 012-2h2a2 2 0 012 2v2"/></svg></button>
         </div>
       </div>
     </div>`;
@@ -1366,7 +1373,7 @@ function imgRow(img, idx) {
             data-url="${esc(img.url)}" data-name="${esc(img.name||'imagem')}"
             style="font-size:0.75rem;color:var(--brand-gold);" title="Baixar" aria-label="Baixar"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14"/></svg></button>
           <button class="img-delete-btn btn btn-ghost btn-sm" data-id="${img.id}"
-            style="font-size:0.75rem;color:#EF4444;">✕</button>
+            style="font-size:0.75rem;color:var(--color-danger, #EF4444);">✕</button>
         </div>
       </td>
     </tr>`;

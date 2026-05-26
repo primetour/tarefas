@@ -305,7 +305,14 @@ function renderTable() {
 
   tbody.querySelectorAll('.tip-delete-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
-      if (!confirm(`Excluir a dica de "${btn.dataset.label}"? Esta ação não pode ser desfeita.`)) return;
+      // v4.57.43 PD18: confirm() nativo → modal.confirm (§11.k)
+      const { default: modal } = await import('../components/modal.js');
+      const ok = await modal.confirm({
+        title: 'Excluir dica?',
+        message: `Excluir a dica de <strong>"${btn.dataset.label}"</strong>?<br>Esta ação não pode ser desfeita.`,
+        confirmText: 'Excluir', danger: true, icon: '🗑',
+      });
+      if (!ok) return;
       try {
         await deleteTip(btn.dataset.id);
         toast.success('Dica excluída.');
@@ -753,7 +760,14 @@ async function showMaterialsModal(tip, dest) {
     btn.addEventListener('click', async () => {
       const kind = btn.dataset.kind;
       const id   = btn.dataset.id;
-      if (!confirm('Excluir este material? Esta ação não pode ser desfeita.')) return;
+      // v4.57.43 PD18: confirm() nativo → modal.confirm
+      const { default: modal } = await import('../components/modal.js');
+      const ok = await modal.confirm({
+        title: 'Excluir material?',
+        message: 'Esta ação não pode ser desfeita.',
+        confirmText: 'Excluir', danger: true, icon: '🗑',
+      });
+      if (!ok) return;
       btn.disabled = true; btn.textContent = '⏳';
       try {
         await deletePortalMaterial(kind, id);

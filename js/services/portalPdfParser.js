@@ -812,9 +812,20 @@ function splitIntoSections(lines, { headingHints = null } = {}) {
 }
 
 /* ─── Main entry point ───────────────────────────────────── */
+// v4.57.43 PD17: error classification helper. Espelho R3 (Roteiros v4.57.38).
+// Classifica falhas em códigos pra UI distinguir transiente (rate_limit,
+// timeout, network) vs permanente (invalid_file, empty_content, parse_fail).
+// Erros lançados desta função carregam err.code + err.isRetryable.
+function _portalParseError(message, code, isRetryable = false) {
+  const e = new Error(message);
+  e.code = code;
+  e.isRetryable = isRetryable;
+  return e;
+}
+
 export async function parsePortalPdf(file, overrideMeta = null) {
   if (!file || !/\.pdf$/i.test(file.name || '')) {
-    throw new Error('Arquivo PDF inválido.');
+    throw _portalParseError('Arquivo PDF inválido.', 'invalid_file', false);
   }
 
   // 4.49.13+ Permite override do destino quando o nome do arquivo não casa
@@ -825,15 +836,28 @@ export async function parsePortalPdf(file, overrideMeta = null) {
   // Valida: se NÃO veio override E parseFileName não conseguiu inferir país/cidade,
   // lança erro com instrução clara em vez de processar com dados vazios.
   if (!overrideMeta && (!meta.pais || !meta.cidade)) {
-    throw new Error(
+    throw _portalParseError(
       `Não foi possível identificar país/cidade pelo nome do arquivo "${file.name}". ` +
       `Renomeie pra "Continente - País - Cidade.pdf" ` +
-      `(ex.: "Europa - França - Paris.pdf") OU use o seletor de destino na UI antes de subir.`
+      `(ex.: "Europa - França - Paris.pdf") OU use o seletor de destino na UI antes de subir.`,
+      'invalid_filename', false,
     );
   }
 
-  const lines = await extractText(file);
-  if (!lines.length) throw new Error('PDF vazio ou ilegível.');
+  let lines;
+  try {
+    lines = await extractText(file);
+  } catch (e) {
+    // pdf.js falha — geralmente PDF corrompido, criptografado ou formato desconhecido
+    const msg = String(e?.message || e || '');
+    if (/password|encrypt/i.test(msg)) {
+      throw _portalParseError('PDF protegido por senha. Remova a proteção e tente novamente.', 'pdf_encrypted', false);
+    }
+    throw _portalParseError(`Falha ao extrair texto do PDF: ${msg}`, 'pdf_corrupted', false);
+  }
+  if (!lines.length) {
+    throw _portalParseError('PDF vazio ou ilegível.', 'empty_content', false);
+  }
   return linesToRows(lines, meta);
 }
 
