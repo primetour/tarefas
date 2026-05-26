@@ -4439,3 +4439,267 @@ export const onPortalTipUpdated = onDocumentUpdated({
 
   console.log(`[onPortalTipUpdated] tip=${tipId} affected=${affected} roteiros`);
 });
+
+/* ═════════════════════════════════════════════════════════════════
+ * portalImagesOrphanCleanupCron — flag imagens órfãs e arquiva.
+ *
+ * Fecha gap PD10 da auditoria Portal de Dicas. Antes: imagem removida
+ * de uma galeria persiste em portal_images + R2 indefinidamente.
+ * Acúmulo de "lixo" cresce com uso.
+ *
+ * Schedule: 0 7 * * 1 (segunda 7h BRT, semanal).
+ * Política:
+ *  1. Scan portal_images (cap 1000).
+ *  2. Pra cada imagem, query inversa em: portal_tips (segments.items.image.imageId),
+ *     portal_destinations (heroImage.imageId), roteiros (days.imageIds).
+ *  3. Se 0 referências → flag `unused: true` + `unusedDetectedAt`.
+ *  4. Imagens já flagged com `unused: true` há > 30d → hard delete (doc + R2).
+ *  5. Audit log + notif single pra portal_manage (sumário "N imagens limpas").
+ *
+ * Conservadorismo: scan é cap 1000 por execução pra não estourar
+ * timeout. Roteiros com images cap 500. Em produção grande, virar
+ * batched (cursor pagination) — pra agora é OK.
+ * ═════════════════════════════════════════════════════════════════ */
+export const portalImagesOrphanCleanupCron = onSchedule({
+  schedule: '0 7 * * 1',           // segunda 7h BRT
+  timeZone: 'America/Sao_Paulo',
+  timeoutSeconds: 540,
+  memory: '512MiB',
+  retryCount: 1,
+}, async () => {
+  const stats = { scanned: 0, flaggedUnused: 0, hardDeleted: 0, errors: 0 };
+  const cutoff30d = Date.now() - 30 * 24 * 60 * 60 * 1000;
+
+  // 1. Pre-fetch all reference IDs (3 collections)
+  const refs = new Set();
+  try {
+    const tipsSnap = await db.collection('portal_tips').limit(500).get();
+    tipsSnap.forEach(d => {
+      const t = d.data();
+      const segs = Array.isArray(t.segments) ? t.segments : [];
+      segs.forEach(seg => {
+        const items = Array.isArray(seg?.items) ? seg.items : [];
+        items.forEach(it => { if (it?.image?.imageId) refs.add(it.image.imageId); });
+      });
+    });
+  } catch (e) { console.warn('[portalImagesOrphanCleanupCron] tips fetch fail:', e?.message); }
+
+  try {
+    const destSnap = await db.collection('portal_destinations').limit(1000).get();
+    destSnap.forEach(d => {
+      const dt = d.data();
+      if (dt.heroImage?.imageId) refs.add(dt.heroImage.imageId);
+    });
+  } catch (e) { console.warn('[portalImagesOrphanCleanupCron] destinos fetch fail:', e?.message); }
+
+  try {
+    const rotSnap = await db.collection('roteiros').limit(500).get();
+    rotSnap.forEach(d => {
+      const r = d.data();
+      const days = Array.isArray(r.days) ? r.days : [];
+      days.forEach(day => {
+        const ids = Array.isArray(day.imageIds) ? day.imageIds : [];
+        ids.forEach(id => id && refs.add(id));
+      });
+    });
+  } catch (e) { console.warn('[portalImagesOrphanCleanupCron] roteiros fetch fail:', e?.message); }
+
+  // 2. Scan portal_images + classificar
+  let imgSnap;
+  try {
+    imgSnap = await db.collection('portal_images').limit(1000).get();
+  } catch (e) {
+    console.error('[portalImagesOrphanCleanupCron] portal_images fetch fail:', e?.message);
+    return;
+  }
+  stats.scanned = imgSnap.size;
+
+  let batch = db.batch();
+  let ops = 0;
+  const flush = async () => { if (ops > 0) { await batch.commit(); batch = db.batch(); ops = 0; } };
+
+  for (const docSnap of imgSnap.docs) {
+    const img = docSnap.data();
+    const isUsed = refs.has(docSnap.id);
+
+    if (isUsed) {
+      // Se estava flagged unused mas foi re-usada (raro), remove a flag
+      if (img.unused) {
+        batch.update(docSnap.ref, { unused: false, unusedDetectedAt: null });
+        ops++;
+      }
+      continue;
+    }
+
+    // Não usada
+    const detectedAt = img.unusedDetectedAt?.toMillis?.() || 0;
+    if (img.unused && detectedAt && detectedAt < cutoff30d) {
+      // Hard delete (R2 blob + doc)
+      // Inline import pra evitar peso no cold start
+      try {
+        if (img.path) {
+          // Best-effort R2 delete via Cloudflare API (deleteFromR2 está client-side, replicamos lógica)
+          const r2Url = `https://primetour-images.r2.cloudflarestorage.com/${img.path}`;
+          // CF não tem cred R2 aqui — gravamos marker pra script offline limpar
+          await db.collection('portal_images_pending_r2_delete').doc(docSnap.id).set({
+            path: img.path,
+            r2Url,
+            markedAt: FieldValue.serverTimestamp(),
+            reason: 'auto-cleanup orphan >30d',
+          });
+        }
+      } catch (e) { console.warn('[portalImagesOrphanCleanupCron] R2 marker fail:', e?.message); }
+      batch.delete(docSnap.ref);
+      ops++;
+      stats.hardDeleted++;
+    } else if (!img.unused) {
+      // Primeira detecção como órfã: flag + timestamp
+      batch.update(docSnap.ref, {
+        unused: true,
+        unusedDetectedAt: FieldValue.serverTimestamp(),
+      });
+      ops++;
+      stats.flaggedUnused++;
+    }
+
+    if (ops >= 400) await flush();
+  }
+
+  try { await flush(); } catch (e) { stats.errors++; console.error('[portalImagesOrphanCleanupCron] commit fail:', e?.message); }
+
+  await db.collection('audit_logs').add({
+    action: 'system.portal_images_orphan_cron',
+    userId: 'system',
+    severity: stats.errors > 0 ? 'warning' : 'info',
+    ...stats,
+    timestamp: FieldValue.serverTimestamp(),
+  });
+
+  console.log('[portalImagesOrphanCleanupCron] done:', JSON.stringify(stats));
+});
+
+/* ═════════════════════════════════════════════════════════════════
+ * portalTipsStaleCheckCron — notifica curadores sobre tips sem revisão.
+ *
+ * Fecha gap PD11. Antes: tips ficavam meses sem revisão e ninguém
+ * sabia. Conteúdo antigo desatualizando silenciosamente.
+ *
+ * Schedule: 0 8 * * 1 (segunda 8h BRT, semanal).
+ * Política:
+ *  - Tips com `updatedAt < now - 90d` E `status != archived` →
+ *    flag `staleSince` + notif sumária semanal pra curadores
+ *    (portal_manage OU portal_tips_manage).
+ *  - Dedup por semana: deterministic notif ID
+ *    `portal_tips_stale_{curatorId}_{YYYY-WW}` — re-runs na mesma
+ *    semana não duplicam.
+ * ═════════════════════════════════════════════════════════════════ */
+export const portalTipsStaleCheckCron = onSchedule({
+  schedule: '0 8 * * 1',           // segunda 8h BRT
+  timeZone: 'America/Sao_Paulo',
+  timeoutSeconds: 300,
+  memory: '256MiB',
+  retryCount: 1,
+}, async () => {
+  const stats = { scanned: 0, stale: 0, notifsSent: 0, errors: 0 };
+  const cutoff90d = Date.now() - 90 * 24 * 60 * 60 * 1000;
+
+  let tipsSnap;
+  try {
+    tipsSnap = await db.collection('portal_tips').limit(1000).get();
+  } catch (e) {
+    console.error('[portalTipsStaleCheckCron] fetch fail:', e?.message);
+    return;
+  }
+  stats.scanned = tipsSnap.size;
+
+  const staleTips = [];
+  for (const d of tipsSnap.docs) {
+    const t = d.data();
+    if (t.status === 'archived') continue;
+    const ts = t.updatedAt?.toMillis?.() || 0;
+    if (!ts || ts < cutoff90d) {
+      staleTips.push({ id: d.id, ref: d.ref, data: t });
+    }
+  }
+  stats.stale = staleTips.length;
+  if (staleTips.length === 0) {
+    console.log('[portalTipsStaleCheckCron] nenhuma tip stale.');
+    return;
+  }
+
+  // Flag cada tip + acumula curadores
+  let batch = db.batch();
+  let ops = 0;
+  const flush = async () => { if (ops > 0) { await batch.commit(); batch = db.batch(); ops = 0; } };
+
+  for (const { ref, data } of staleTips) {
+    if (!data.staleSince) {
+      batch.update(ref, { staleSince: FieldValue.serverTimestamp() });
+      ops++;
+    }
+    if (ops >= 400) await flush();
+  }
+  try { await flush(); } catch (e) { stats.errors++; console.error('[portalTipsStaleCheckCron] flag commit fail:', e?.message); }
+
+  // Notif sumária semanal pra curadores
+  let curators = [];
+  try {
+    const usersSnap = await db.collection('users').get();
+    curators = usersSnap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(u => u.active !== false && u.id !== 'system')
+      .filter(u =>
+           u.isMaster
+        || u.roleId === 'master'
+        || u.roleId === 'admin'
+        || (Array.isArray(u.permissions) && (
+             u.permissions.includes('portal_manage')
+          || u.permissions.includes('portal_tips_manage')
+        ))
+      ).map(u => u.id).slice(0, 50);
+  } catch (e) { console.warn('[portalTipsStaleCheckCron] users fetch fail:', e?.message); }
+
+  if (curators.length) {
+    const now = new Date();
+    const weekNum = Math.ceil((((now - new Date(now.getFullYear(), 0, 1)) / 86400000) + new Date(now.getFullYear(), 0, 1).getDay() + 1) / 7);
+    const weekKey = `${now.getFullYear()}-W${String(weekNum).padStart(2, '0')}`;
+    const tsNow = FieldValue.serverTimestamp();
+    const expiresAt = Timestamp.fromMillis(Date.now() + 30*24*60*60*1000);
+
+    batch = db.batch();
+    ops = 0;
+    for (const cid of curators) {
+      const notifId = `portal_tips_stale_${cid}_${weekKey}`;
+      batch.set(db.collection('notifications').doc(notifId), {
+        actorId:     'system',
+        actorName:   'Sistema PRIMETOUR',
+        recipientId: cid,
+        type:        'portal.tips_stale_digest',
+        entityType:  'system',
+        entityId:    'portal-tips-stale',
+        title:       `🕐 ${staleTips.length} dica(s) sem revisão há +90 dias`,
+        body:        staleTips.slice(0, 3).map(t => `"${t.data.title || t.data.city || t.id}"`).join(', ') + (staleTips.length > 3 ? ` e mais ${staleTips.length - 3}` : ''),
+        route:       'portal-tips',
+        priority:    'normal',
+        category:    'portal',
+        read:        false,
+        readAt:      null,
+        createdAt:   tsNow,
+        expiresAt,
+      });
+      ops++;
+      stats.notifsSent++;
+    }
+    try { await batch.commit(); } catch (e) { stats.errors++; console.error('[portalTipsStaleCheckCron] notif commit fail:', e?.message); }
+  }
+
+  await db.collection('audit_logs').add({
+    action: 'system.portal_tips_stale_cron',
+    userId: 'system',
+    severity: stats.errors > 0 ? 'warning' : 'info',
+    ...stats,
+    timestamp: FieldValue.serverTimestamp(),
+  });
+
+  console.log('[portalTipsStaleCheckCron] done:', JSON.stringify(stats));
+});

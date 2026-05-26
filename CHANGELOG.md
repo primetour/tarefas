@@ -6,6 +6,42 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.57.42+20260525-portal-dicas-cf-cron-images-orphan-tips-stale] — 2026-05-25
+
+Release **PATCH** — Sprint Portal de Dicas (4/5). 2 Cloud Functions agendadas: imagens órfãs + tips stale.
+
+**PD10 — `portalImagesOrphanCleanupCron`** (segundas 7h BRT, `0 7 * * 1`). Antes: imagens removidas de galerias persistiam em `portal_images` + Storage R2 indefinidamente. Sem limpeza.
+
+Política:
+1. Pre-fetch refs ativos (3 collections): `portal_tips.segments[].items[].image.imageId`, `portal_destinations.heroImage.imageId`, `roteiros.days[].imageIds[]`.
+2. Scan `portal_images` (cap 1000), classifica cada uma como `inUse` ou órfã.
+3. **Primeira detecção como órfã**: flag `unused: true` + `unusedDetectedAt`.
+4. **Já flagged há > 30d**: hard delete do doc + marker em `portal_images_pending_r2_delete` (script offline limpa R2 com creds privadas — CF não tem cred R2 inline).
+5. Re-uso (raro): remove flag se imagem voltou a ser referenciada.
+
+Conservadorismo: dois passes (flag → hard delete) dão ~30d de buffer pra curador resgatar.
+
+**PD11 — `portalTipsStaleCheckCron`** (segundas 8h BRT, `0 8 * * 1`). Antes: tips sem revisão há meses ficavam silenciosamente desatualizadas.
+
+Política:
+1. Scan `portal_tips` (cap 1000), filtra `updatedAt < now-90d` e `status != archived`.
+2. Cada stale ganha flag `staleSince` (primeira detecção).
+3. Notif sumária semanal pra curadores (`portal_manage` OU `portal_tips_manage`): "🕐 N dica(s) sem revisão há +90 dias" com top-3 títulos.
+4. Dedup por semana via deterministic notif ID `portal_tips_stale_{curatorId}_{YYYY-Www}` — re-runs na mesma semana não duplicam.
+
+**E2E validação**:
+- Deploy `firebase deploy --only functions:portalImagesOrphanCleanupCron,portalTipsStaleCheckCron` OK
+- Trigger `gcloud scheduler jobs run portalTipsStaleCheckCron` → "nenhuma tip stale" (correto, sistema novo)
+- Quando tips passarem 90d, dispara automaticamente
+
+**Acumulado da sprint Portal de Dicas** (4 de 5):
+- 10 caminhos cleanup FK (v4.57.39)
+- 3 fixes notif + conflict (v4.57.40)
+- 3 fixes race condition (v4.57.41)
+- 2 CFs novas (v4.57.42)
+
+---
+
 ## [4.57.41+20260525-portal-dicas-race-export-import-upload] — 2026-05-25
 
 Release **PATCH** — Sprint Portal de Dicas (3/5). Race conditions: export debounce + import lock + upload dedup.

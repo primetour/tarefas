@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 57,
-  patch: 41,
-  build: '20260525-portal-dicas-race-export-import-upload',
+  patch: 42,
+  build: '20260525-portal-dicas-cf-cron-images-orphan-tips-stale',
 };
 
 /** "1.2.0" */
