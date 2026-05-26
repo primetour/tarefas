@@ -31,7 +31,7 @@
 import { db } from '../firebase.js';
 import { store } from '../store.js';
 import { auditLog } from '../auth/audit.js';
-import { R2_PUBLIC_URL, R2_WORKER_URL, R2_UPLOAD_TOKEN } from './portal.js';
+import { R2_PUBLIC_URL } from './portal.js';
 import {
   collection, doc, addDoc, getDoc, getDocs, setDoc, updateDoc, deleteDoc,
   query, orderBy, limit, serverTimestamp,
@@ -59,10 +59,17 @@ const userName = () => store.get('userProfile')?.name
  * @param {string} path - ex: "luxury-travel/editions/lt07/pdf_pt.pdf"
  * @param {Function} [onProgress] - callback (loaded/total) opcional
  */
+// v4.57.49 fix I1 security: tokens hardcoded removidos. Helpers usam CF
+// (getR2UploadUrl + deleteR2) — vide js/services/portal.js pra contexto.
 export async function uploadFileToR2(file, path, onProgress) {
-  if (!R2_WORKER_URL) throw new Error('R2_WORKER_URL não configurado.');
-  if (!R2_UPLOAD_TOKEN) throw new Error('R2_UPLOAD_TOKEN não configurado.');
   if (!file) throw new Error('Arquivo vazio.');
+
+  // v4.57.49: credencial via CF (auth+perm+rate-limit+audit)
+  const { httpsCallable, getFunctions } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js');
+  const getUrl = httpsCallable(getFunctions(), 'getR2UploadUrl');
+  const { data } = await getUrl({ path });
+  const { uploadUrl, uploadToken } = data || {};
+  if (!uploadUrl || !uploadToken) throw new Error('CF getR2UploadUrl retornou resposta inválida.');
 
   const fd = new FormData();
   fd.append('file', file, path.split('/').pop());
@@ -77,16 +84,16 @@ export async function uploadFileToR2(file, path, onProgress) {
         ? resolve(`${R2_PUBLIC_URL}/${path}`)
         : reject(new Error(`Upload falhou: HTTP ${xhr.status} — ${xhr.responseText?.slice(0,200)}`));
       xhr.onerror = () => reject(new Error('Upload falhou: erro de rede.'));
-      xhr.open('POST', R2_WORKER_URL);
-      xhr.setRequestHeader('X-Upload-Token', R2_UPLOAD_TOKEN);
+      xhr.open('POST', uploadUrl);
+      xhr.setRequestHeader('X-Upload-Token', uploadToken);
       xhr.send(fd);
     });
   }
 
   // Fallback fetch (sem progresso)
-  const res = await fetch(R2_WORKER_URL, {
+  const res = await fetch(uploadUrl, {
     method: 'POST',
-    headers: { 'X-Upload-Token': R2_UPLOAD_TOKEN },
+    headers: { 'X-Upload-Token': uploadToken },
     body: fd,
   });
   if (!res.ok) {
@@ -96,14 +103,16 @@ export async function uploadFileToR2(file, path, onProgress) {
   return `${R2_PUBLIC_URL}/${path}`;
 }
 
-/** Remove arquivo do R2. */
+/** Remove arquivo do R2 (via CF deleteR2). */
 export async function deleteFromR2(path) {
-  if (!R2_WORKER_URL || !R2_UPLOAD_TOKEN) return;
-  const url = `${R2_WORKER_URL}?path=${encodeURIComponent(path)}`;
-  await fetch(url, {
-    method: 'DELETE',
-    headers: { 'X-Upload-Token': R2_UPLOAD_TOKEN },
-  }).catch(() => {});
+  if (!path) return;
+  try {
+    const { httpsCallable, getFunctions } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js');
+    const fn = httpsCallable(getFunctions(), 'deleteR2');
+    await fn({ path });
+  } catch (e) {
+    console.warn('[luxuryTravel.deleteFromR2] CF deleteR2 falhou:', e?.message || e);
+  }
 }
 
 /* ════════════════════════════════════════════════════════════

@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 57,
-  patch: 48,
-  build: '20260525-banco-imagens-polish-cascade-refresh-after-upload',
+  patch: 49,
+  build: '20260525-banco-imagens-r2-token-security-cf-cutover',
 };
 
 /** "1.2.0" */

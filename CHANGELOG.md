@@ -6,6 +6,54 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.57.49+20260525-banco-imagens-r2-token-security-cf-cutover] — 2026-05-25
+
+Release **PATCH/SECURITY** — fecha gap #I1 da auditoria Banco de Imagens. R2 token migrado pra Cloud Functions; constantes hardcoded removidas do client.
+
+**Problema (antes)**
+
+`js/services/portal.js:18` continha `R2_UPLOAD_TOKEN = 'primetour2026-imagens-secreto-xk9q'` em código JS público (GH Pages serve raw). Qualquer um inspecionando o arquivo:
+- Extraía o token
+- Chamava `https://primetour-images.rene-castro.workers.dev/upload` com header `X-Upload-Token` e fazia upload arbitrário no bucket R2
+- Idem pra delete via `DELETE ?path=...`
+- Sem nenhuma checagem de autenticação Firebase ou permissão do user
+
+Mesma falha em `js/services/agents.js:131-132` (duplicava constantes) e `js/services/luxuryTravel.js:34` (importava do portal.js).
+
+**Solução (3 partes)**
+
+1. **CF `deleteR2`** (`functions/index.js`, ~80 linhas novas). Espelho de `getR2UploadUrl` existente — valida `requireAuth(req)`, perm `portal_manage` OU `portal_images_manage`, mesmo path-traversal whitelist, rate-limit IP+user, audit log. Lê `R2_UPLOAD_TOKEN` de Secret Manager, chama Worker DELETE server-side, retorna `{ok:true, path}`. Cliente nunca vê o token.
+
+2. **`getR2UploadUrl` (CF já existente, sem mudança)** continua sendo a fonte de credencial efêmera pra uploads. Cliente AGORA chama essa CF antes de cada upload em vez de usar constante hardcoded.
+
+3. **Refactor client em 3 arquivos**:
+   - `js/services/portal.js` — remove `R2_UPLOAD_TOKEN` e `R2_WORKER_URL` exports. `uploadImageToR2`: novo helper `_getR2UploadCredentials(path)` chama `httpsCallable('getR2UploadUrl')` e usa `uploadUrl`/`uploadToken` retornados. `deleteFromR2`: agora chama `httpsCallable('deleteR2')`.
+   - `js/services/agents.js` — remove constantes duplicadas locais. `uploadAgentAvatar` usa mesma estratégia CF.
+   - `js/services/luxuryTravel.js` — remove import de `R2_WORKER_URL`/`R2_UPLOAD_TOKEN`. `uploadFileToR2` + `deleteFromR2` usam CFs.
+
+**Validação E2E (preciso fazer via Chrome MCP no ambiente real, em sessão separada)**
+
+| Cenário | Esperado | Como confirmar |
+|---|---|---|
+| **a) Token não mais exposto** | `curl https://primetour.github.io/tarefas/js/services/portal.js \| grep -i "primetour2026"` retorna **vazio** | curl direto |
+| **b) Upload funcional** | Banco de Imagens → adicionar foto → toast "1 enviada" + imagem visível + Firestore tem doc novo | UI + Chrome DevTools Network + Firestore console |
+| **c) Delete funcional** | Imagem nova deletada → toast sucesso + galeria atualiza + curl URL pública anterior **404** | UI + curl |
+| **d) Permission deny** | Login com user sem `portal_images_manage` → tentar upload = erro permission-denied + R2 não tocado | UI + logs CF |
+| **e) Logs CF** | `firebase functions:log --only deleteR2` mostra request bem-sucedido após delete | terminal |
+
+**Worker hardening (fora do escopo)**: Worker Cloudflare continua aceitando o mesmo X-Upload-Token (sem mudança no painel CF). Token ainda válido — qualquer um com cópia antiga pode usar até rotação. Próxima fase (não nesta release): rotacionar token no Worker dashboard + Secret Manager simultaneamente.
+
+**Files modificados**:
+- `functions/index.js` — `deleteR2` CF nova
+- `js/services/portal.js` — remove constantes + refactor upload/delete
+- `js/services/agents.js` — remove constantes locais + refactor `uploadAgentAvatar`
+- `js/services/luxuryTravel.js` — remove import + refactor `uploadFileToR2`/`deleteFromR2`
+- `js/version.js` — 4.57.48 → 4.57.49
+- `index.html`, `solicitar.html` — cache-bust
+- `CHANGELOG.md`
+
+---
+
 ## [4.57.48+20260525-banco-imagens-polish-cascade-refresh-after-upload] — 2026-05-25
 
 Release **PATCH** — Sprint Banco de Imagens (5/5, final). Polish: cascade refresh + descarte de gaps já mitigados.

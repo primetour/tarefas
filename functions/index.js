@@ -575,6 +575,90 @@ export const getR2UploadUrl = onCall({
 });
 
 /* ═════════════════════════════════════════════════════════
+ * deleteR2 — Delete server-side (v4.57.49 fix I1 security)
+ *
+ * Antes: client chamava worker.dev/delete com X-Upload-Token hardcoded
+ * em portal.js (público em GH Pages). Qualquer um inspecionando JS
+ * podia deletar qualquer blob.
+ *
+ * Agora: CF valida auth + permissão + rate limit + path whitelist +
+ * audit log, e SÓ ENTÃO chama Worker server-side com token de Secret
+ * Manager. Cliente nunca vê o token.
+ * ═════════════════════════════════════════════════════════ */
+export const deleteR2 = onCall({
+  cors: ['https://primetour.github.io', 'http://localhost:5000'],
+  secrets: [R2_UPLOAD_TOKEN],
+  maxInstances: 10,
+}, async (request) => {
+  const auth = requireAuth(request);
+  const { path } = request.data || {};
+  if (!path || typeof path !== 'string') throw new HttpsError('invalid-argument', 'path obrigatório');
+
+  // Mesmas validações de path do getR2UploadUrl (security symmetry)
+  if (path.includes('..') || path.includes('//') || path.includes('\\') || path.startsWith('/')) {
+    throw new HttpsError('permission-denied', 'Path inválido (traversal/absoluto bloqueado).');
+  }
+  if (!/^[a-zA-Z0-9_./()-]+$/.test(path)) {
+    throw new HttpsError('invalid-argument', 'Path com caracteres inválidos.');
+  }
+  if (path.length > 200) {
+    throw new HttpsError('invalid-argument', 'Path muito longo.');
+  }
+
+  // Permission check: requer portal_manage OU portal_images_manage (mesmo de delete client-side)
+  let canDelete = false;
+  try {
+    const u = await db.collection('users').doc(auth.uid).get();
+    if (u.exists) {
+      const data = u.data();
+      if (data?.isMaster === true) canDelete = true;
+      else {
+        const role = data?.role || data?.roleId;
+        if (role) {
+          const r = await db.collection('roles').doc(role).get();
+          const perms = r.exists ? (r.data()?.permissions || []) : [];
+          canDelete = perms.includes('portal_manage') || perms.includes('portal_images_manage');
+        }
+      }
+    }
+  } catch (_) { /* default false */ }
+  if (!canDelete) {
+    throw new HttpsError('permission-denied', 'Sem permissão pra deletar imagens.');
+  }
+
+  // Rate limit
+  await checkRateLimitIP(request, 'deleteR2', 30, 60);
+  await checkRateLimit(auth.uid, 'deleteR2', 15, 60);
+
+  // Audit ANTES do delete (forensics)
+  await db.collection('audit_logs').add({
+    action: 'security.r2_delete_called',
+    userId: auth.uid,
+    entity: 'r2_delete',
+    details: { path },
+    severity: 'info',
+    timestamp: FieldValue.serverTimestamp(),
+  }).catch(() => {});
+
+  // Chama Worker server-side
+  try {
+    const workerUrl = `https://primetour-images.rene-castro.workers.dev?path=${encodeURIComponent(path)}`;
+    const res = await fetch(workerUrl, {
+      method: 'DELETE',
+      headers: { 'X-Upload-Token': R2_UPLOAD_TOKEN.value() },
+    });
+    if (!res.ok) {
+      const msg = await res.text().catch(() => res.status);
+      throw new HttpsError('internal', `Delete falhou no R2: ${msg}`);
+    }
+    return { ok: true, path };
+  } catch (e) {
+    if (e instanceof HttpsError) throw e;
+    throw new HttpsError('internal', `Delete error: ${e?.message || e}`);
+  }
+});
+
+/* ═════════════════════════════════════════════════════════
  * getSharePointToken — client_credentials Azure AD
  * ═════════════════════════════════════════════════════════ */
 export const getSharePointToken = onCall({

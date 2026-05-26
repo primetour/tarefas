@@ -12,10 +12,15 @@ import { db }    from '../firebase.js';
 import { store } from '../store.js';
 
 /* ─── Cloudflare R2 ───────────────────────────────────────── */
+// v4.57.49 fix I1 security: R2_UPLOAD_TOKEN e R2_WORKER_URL REMOVIDOS do
+// client (estavam expostos em GH Pages — qualquer um inspecionava o JS e
+// extraía o token, usando pra upload/delete arbitrário no R2 sem auth).
+// Agora: client chama Cloud Functions (getR2UploadUrl + deleteR2) que
+// validam auth + permissão + path + rate limit antes de tocar no R2.
+// Apenas R2_PUBLIC_URL (read-only domain) e R2_ACCOUNT_ID (identificador,
+// não-secreto) permanecem expostos.
 export const R2_PUBLIC_URL   = 'https://pub-ad909dc0c977450a93ee5faa79c7374d.r2.dev';
 export const R2_ACCOUNT_ID   = '29a66e93504dfad5ae7cdb2c6044ed6f';
-export const R2_WORKER_URL   = 'https://primetour-images.rene-castro.workers.dev';
-export const R2_UPLOAD_TOKEN = 'primetour2026-imagens-secreto-xk9q';
 
 /* ─── Continents ──────────────────────────────────────────── */
 export const CONTINENTS = [
@@ -929,12 +934,28 @@ export async function convertToWebp(file, quality = 0.92, maxSide = WEBP_MAX_SID
   });
 }
 
+// v4.57.49 fix I1 security: refactor pra usar CF getR2UploadUrl (que valida
+// auth + permissão + path + rate limit + audit antes de retornar token).
+// Token nunca mais aparece em código público (GH Pages).
 // v4.57.47 fix I17: aceita callback opcional onProgress(percentInt) pra UI
 // mostrar % por arquivo. Usa XMLHttpRequest (fetch nativo não expõe upload
-// progress). Mantém comportamento e retorno idênticos ao fetch anterior.
+// progress).
+async function _getR2UploadCredentials(path) {
+  const { httpsCallable, getFunctions } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js');
+  const fn = httpsCallable(getFunctions(), 'getR2UploadUrl');
+  const { data } = await fn({ path });
+  if (!data?.uploadUrl || !data?.uploadToken) {
+    throw new Error('CF getR2UploadUrl retornou resposta inválida.');
+  }
+  return data;
+}
+
 export async function uploadImageToR2(webpBlob, path, opts = {}) {
-  if (!R2_WORKER_URL)   throw new Error('R2_WORKER_URL não configurada. Faça o deploy do Worker.');
-  if (!R2_UPLOAD_TOKEN) throw new Error('R2_UPLOAD_TOKEN não configurado.');
+  // Step 1: solicita credencial efêmera via CF (auth+perm+rate-limit+audit)
+  const creds = await _getR2UploadCredentials(path);
+  const { uploadUrl, uploadToken } = creds;
+
+  // Step 2: upload pro Worker com token autorizado pela CF (NÃO mais hardcoded)
   const fd = new FormData();
   fd.append('file', webpBlob, path.split('/').pop());
   fd.append('path', path);
@@ -942,9 +963,9 @@ export async function uploadImageToR2(webpBlob, path, opts = {}) {
   const onProgress = typeof opts.onProgress === 'function' ? opts.onProgress : null;
   if (!onProgress) {
     // Sem callback: mantém fetch (compat 100%)
-    const res = await fetch(R2_WORKER_URL, {
+    const res = await fetch(uploadUrl, {
       method: 'POST',
-      headers: { 'X-Upload-Token': R2_UPLOAD_TOKEN },
+      headers: { 'X-Upload-Token': uploadToken },
       body: fd,
     });
     if (!res.ok) {
@@ -957,8 +978,8 @@ export async function uploadImageToR2(webpBlob, path, opts = {}) {
   // Com callback: XHR pra expor upload.progress
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open('POST', R2_WORKER_URL);
-    xhr.setRequestHeader('X-Upload-Token', R2_UPLOAD_TOKEN);
+    xhr.open('POST', uploadUrl);
+    xhr.setRequestHeader('X-Upload-Token', uploadToken);
     xhr.upload.onprogress = (ev) => {
       if (ev.lengthComputable) {
         const pct = Math.round((ev.loaded / ev.total) * 100);
@@ -978,13 +999,18 @@ export async function uploadImageToR2(webpBlob, path, opts = {}) {
   });
 }
 
+// v4.57.49 fix I1: delete via CF (token server-side, nunca exposto)
 export async function deleteFromR2(path) {
-  if (!R2_WORKER_URL || !R2_UPLOAD_TOKEN) return; // silently skip if not configured
-  const url = `${R2_WORKER_URL}?path=${encodeURIComponent(path)}`;
-  await fetch(url, {
-    method: 'DELETE',
-    headers: { 'X-Upload-Token': R2_UPLOAD_TOKEN },
-  });
+  if (!path) return;
+  try {
+    const { httpsCallable, getFunctions } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js');
+    const fn = httpsCallable(getFunctions(), 'deleteR2');
+    await fn({ path });
+  } catch (e) {
+    // Best-effort: log mas não propaga (caller decide se erro de delete é fatal)
+    console.warn('[deleteFromR2] CF deleteR2 falhou:', e?.message || e);
+    throw e;
+  }
 }
 
 /* ─── Generations ─────────────────────────────────────────── */

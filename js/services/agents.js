@@ -127,9 +127,10 @@ export const AGENT_DEFAULTS = {
 };
 
 /* ─── R2 (avatar upload) ────────────────────────────────── */
-const R2_PUBLIC_URL   = 'https://pub-ad909dc0c977450a93ee5faa79c7374d.r2.dev';
-const R2_WORKER_URL   = 'https://primetour-images.rene-castro.workers.dev';
-const R2_UPLOAD_TOKEN = 'primetour2026-imagens-secreto-xk9q';
+// v4.57.49 fix I1 security: tokens hardcoded removidos. Agora usa CF
+// getR2UploadUrl que valida auth+permissão+path+rate limit antes de retornar
+// credencial efêmera. Vide js/services/portal.js linhas ~14-22 pro contexto.
+const R2_PUBLIC_URL = 'https://pub-ad909dc0c977450a93ee5faa79c7374d.r2.dev';
 
 /**
  * Upload de avatar do agente pro R2. Aceita File/Blob; retorna URL pública.
@@ -140,12 +141,20 @@ export async function uploadAgentAvatar(file, agentId = 'new') {
   if (file.size > 2 * 1024 * 1024) throw new Error('Avatar deve ter até 2MB.');
   const ext  = (file.name?.split('.').pop() || 'png').toLowerCase().replace(/[^a-z0-9]/g, '') || 'png';
   const path = `agents/avatar-${agentId}-${Date.now()}.${ext}`;
-  const fd   = new FormData();
+
+  // v4.57.49: credencial via CF (auth+perm+rate-limit+audit)
+  const { httpsCallable, getFunctions } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js');
+  const getUrl = httpsCallable(getFunctions(), 'getR2UploadUrl');
+  const { data } = await getUrl({ path });
+  const { uploadUrl, uploadToken } = data || {};
+  if (!uploadUrl || !uploadToken) throw new Error('CF getR2UploadUrl retornou resposta inválida.');
+
+  const fd = new FormData();
   fd.append('file', file, path.split('/').pop());
   fd.append('path', path);
-  const res = await fetch(R2_WORKER_URL, {
+  const res = await fetch(uploadUrl, {
     method: 'POST',
-    headers: { 'X-Upload-Token': R2_UPLOAD_TOKEN },
+    headers: { 'X-Upload-Token': uploadToken },
     body: fd,
   });
   if (!res.ok) {
