@@ -850,9 +850,25 @@ async function uploadBatch() {
         + '/' + Date.now() + '-' + slug(file.name.replace(/\.[^.]+$/,'')) + '.webp';
 
       const url = await uploadImageToR2(blob, path);
-      await saveImageMeta({ assetCategory, continent, country, city, type, tags, name, placeName,
-        copyright, url, path,
-        originalName: file.name, sizeMB: parseFloat(sizeMB), width, height });
+      try {
+        await saveImageMeta({ assetCategory, continent, country, city, type, tags, name, placeName,
+          copyright, url, path,
+          originalName: file.name, sizeMB: parseFloat(sizeMB), width, height });
+      } catch (firestoreErr) {
+        // v4.57.45 fix I6: rollback no R2 se Firestore save falhar.
+        // Antes: blob ficava órfão no R2 sem doc Firestore = invisível à CF
+        // de cleanup (que scaneia portal_images). Acumulava lixo indefinidamente.
+        // Agora: tenta deletar blob recém-uploaded antes de re-throw.
+        try {
+          const { deleteFromR2 } = await import('../services/portal.js');
+          await deleteFromR2(path);
+          console.warn('[uploadBatch] Firestore save falhou; R2 rollback OK:', firestoreErr?.message);
+        } catch (rollbackErr) {
+          console.error('[uploadBatch] Firestore + R2 rollback FALHARAM:',
+            { firestore: firestoreErr?.message, r2: rollbackErr?.message });
+        }
+        throw firestoreErr;  // propaga pro catch externo
+      }
 
       if (statusEl) { statusEl.textContent = '✓ Enviado'; statusEl.style.color = '#22C55E'; }
 
@@ -1513,7 +1529,19 @@ function openEditModal(imgId) {
       toast.success('Imagem atualizada.');
       close();
       await loadImages();
-    } catch(e) { toast.error('Erro: ' + e.message); }
+    } catch(e) {
+      // v4.57.45 fix I16: distinguir doc-not-found (outro user deletou) de
+      // erro genérico. Antes: toast "Erro: ..." pouco informativo.
+      const msg = String(e?.message || e || '');
+      const code = e?.code || '';
+      if (code === 'not-found' || /not.?found|no document|missing/i.test(msg)) {
+        toast.error('Esta imagem foi excluída por outro usuário. Recarregando galeria…');
+        close();
+        await loadImages();
+      } else {
+        toast.error('Erro: ' + msg);
+      }
+    }
   });
 }
 

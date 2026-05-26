@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 57,
-  patch: 44,
-  build: '20260525-banco-imagens-revert-autodelete-add-badge',
+  patch: 45,
+  build: '20260525-banco-imagens-storage-rollback-conflict-detection',
 };
 
 /** "1.2.0" */

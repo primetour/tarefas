@@ -6,6 +6,26 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.57.45+20260525-banco-imagens-storage-rollback-conflict-detection] — 2026-05-25
+
+Release **PATCH** — Sprint Banco de Imagens (2/5). Storage consistency + edit modal conflict detection.
+
+**I6 — Upload R2 vs Firestore desync rollback** (`js/pages/portalImages.js:852-871`). Antes: `uploadImageToR2()` OK + `saveImageMeta()` falha = blob órfão no R2 sem doc Firestore. CF de cleanup orphan (`portalImagesOrphanCleanupCron`) **NÃO detectava** porque scaneia `portal_images` collection (doc nunca foi criado). Acúmulo invisível.
+
+Fix: try/catch volta o `saveImageMeta`. Em erro, importa `deleteFromR2` dinâmico e tenta deletar o blob recém-uploaded. Re-throw o erro original pra UI mostrar. Log informativo: `"Firestore save falhou; R2 rollback OK"` ou `"Firestore + R2 rollback FALHARAM"` se ambos falharem.
+
+**I16 — Edit modal não detecta delete por outro user** (`js/pages/portalImages.js:1528-1541`). Cenário: User A abre edit modal da imagem X. User B deleta X em outra aba. User A clica Save → `updateImageMeta` lança erro genérico "not-found". Toast genérico não explica.
+
+Fix: catch específico em `e.code === 'not-found'` OU regex `/not.?found|no document|missing/i`. Toast amigável: "Esta imagem foi excluída por outro usuário. Recarregando galeria…" + `close()` + `loadImages()`. Outros erros mantém toast genérico.
+
+**I11 (cascade race) — falso positivo descartado.** Verificação no código: `wireCascade()` é 100% síncrono (filtra `allDests` em memória). Sem fetch async no listener. Race impossível. Item removido do escopo.
+
+**Validação**:
+- `node --check js/pages/portalImages.js` OK
+- Cenários testáveis E2E: (a) upload com Firestore mockado pra falhar → blob deletado do R2, (b) abrir edit modal + deletar mesma img em aba 2 → save mostra toast amigável + reload
+
+---
+
 ## [4.57.44+20260525-banco-imagens-revert-autodelete-add-badge] — 2026-05-25
 
 Release **PATCH** — Sprint Banco de Imagens (1/5). **REVERSÃO** de comportamento errado introduzido em v4.57.42 + UI feedback.
