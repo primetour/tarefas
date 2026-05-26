@@ -1030,3 +1030,298 @@ Estabelecido em v4.50.1. Categorias, coleções, tipos, status (que sejam editá
 - UI tem modal "gerenciar X" com edit inline + add + delete (builtin lock 🔒)
 
 **Princípio Renê**: "nao pode ser algo q vc cria e o padrao nao pode ser alterado no front end".
+
+---
+
+## 13. Aprendizados sprint maratona v4.57.28→52 (26/05/2026)
+
+Padrões consolidados em 25 releases consecutivas cobrindo Tarefas + Roteiros + Portal de Dicas + Banco de Imagens. Aplicar de cabeça nas próximas auditorias de módulo.
+
+### a) Padrão consolidado de FK cleanup cross-collection
+
+Toda operação `deleteXxx` precisa zerar refs em coleções dependentes — senão filtros quebram silenciosamente. Pattern obrigatório:
+
+```js
+export async function deleteXxx(id) {
+  // ... permission check + delete principal ...
+  await deleteDoc(doc(db, 'xxx', id));
+
+  // Cleanup FK em N coleções dependentes:
+  try {
+    const snap = await getDocs(query(
+      collection(db, 'collection_dependente'),
+      where('xxxId', '==', id),
+      limit(500),  // batch cap
+    ));
+    if (!snap.empty) {
+      const batch = writeBatch(db);
+      snap.forEach(d => {
+        batch.update(d.ref, {
+          xxxId: null,                          // zera FK
+          xxxDeleted: true,                     // flag pra UI
+          xxxDeletedAt: serverTimestamp(),      // timestamp
+          xxxDeletedLabel: existing?.title,     // preserva metadata útil
+        });
+      });
+      await batch.commit();
+    }
+  } catch (e) {
+    console.warn('[deleteXxx] cleanup collection_dependente falhou:', e?.message);
+  }
+}
+```
+
+**Variações por shape de FK**:
+- `where(fk == id)`: simples (a maioria)
+- `array-contains id`: `arrayRemove(id)` + flag (workspaces v4.57.30)
+- Array de objetos `[{fkId, ...}]`: read-modify-write + filter (goals.metaLinks v4.57.31, roteiros.embeddedTips v4.57.39)
+- Aninhado em N níveis (`segments[].items[].image.imageId`): scan + read-modify-write profundo (portal_images deleteImageMeta v4.57.39)
+
+**Catálogo dos 12+ caminhos implementados** (referência rápida):
+- `tasks`: requests, content_calendar, projects, workspaces, task_types, goals, csat_surveys, roteiros, attachments Storage
+- `requests`: tasks (reverse)
+- `portal`: deleteArea→destinations, deleteDestination→tips+images, deleteTip→roteiros.embeddedTips, deleteImageMeta→tips+destinations
+- `roteiros`: tasks, ai_usage_logs, roteiro_generations
+
+### b) Padrão CF agendada com pseudo-user 'system'
+
+Work agendado/scheduled que dependia de "qualquer user logado abrir o app" é bug latente — atribui actorId errado e não roda quando ninguém abre o sistema.
+
+**Pattern**: mover pra Cloud Function `onSchedule` (`firebase-functions/v2/scheduler`) com **pseudo-user `users/system`** (criado em v4.57.33: `id='system', name='Sistema PRIMETOUR', isSystem=true, active=false`).
+
+```js
+export const xxxCron = onSchedule({
+  schedule: '0 7 * * *',           // 7h BRT diário
+  timeZone: 'America/Sao_Paulo',
+  timeoutSeconds: 540,
+  memory: '256MiB',
+  retryCount: 1,
+}, async () => {
+  // ... lógica ...
+  await db.collection('notifications').add({
+    actorId:     'system',          // pseudo-user
+    actorName:   'Sistema PRIMETOUR',
+    recipientId: uid,
+    type:        'xxx.notification_type',
+    // ...
+  });
+  await db.collection('audit_logs').add({
+    action: 'system.xxx_cron',
+    severity: stats.errors > 0 ? 'warning' : 'info',
+    ...stats,
+    timestamp: FieldValue.serverTimestamp(),
+  });
+});
+```
+
+**Renderers já tratam `actorId === 'system'`** (notificationPanel.js:250) — fallback pra `actorName` do doc, sem precisar buscar no store. Rule Firestore permite porque Admin SDK bypassa.
+
+**8 CFs scheduled novas nesta sessão**: recurringTasksDailyCron, scheduledNotificationsCron, roteiroBankValidityCron, onPortalTipUpdated (reactive), portalImagesOrphanCleanupCron, portalTipsStaleCheckCron, processRoteiroQueue (já existia, recebeu generation_complete), deleteR2.
+
+### c) Padrão conflict detection multi-aba/multi-user
+
+Editor com auto-save + multi-user = last-write-wins silencioso = perda de edits. Pattern:
+
+```js
+// Editor (boot do load):
+currentDoc._loadedAt = doc.updatedAt?.toMillis?.() ?? Date.now();
+
+// handleSave:
+const result = await saveXxx(id, sanitized, {
+  expectedUpdatedAt: currentDoc._loadedAt,  // passa pro service
+});
+currentDoc._loadedAt = Date.now();  // atualiza pós save OK
+
+// Service:
+export async function saveXxx(id, data, opts = {}) {
+  if (id) {
+    const existing = await fetchXxx(id);
+    if (opts.expectedUpdatedAt && existing?.updatedAt?.toMillis) {
+      const serverMs = existing.updatedAt.toMillis();
+      const expectedMs = opts.expectedUpdatedAt;
+      if (expectedMs && serverMs > expectedMs + 1000) {  // tolerância 1s
+        const err = new Error('Doc modificado por outro user. Recarregue.');
+        err.code = 'CONFLICT';
+        throw err;
+      }
+    }
+  }
+  await updateDoc(/*...*/);
+}
+
+// handleSave catch:
+catch (e) {
+  if (e?.code === 'CONFLICT') {
+    if (silent) {/* auto-save: pausa retries */}
+    else {
+      const reload = await modal.confirm({
+        title: 'Documento modificado',
+        message: 'Outro usuário salvou. Recarregar (descarta) / Cancelar?',
+        confirmText: 'Recarregar', danger: true,
+      });
+      if (reload) location.reload();
+    }
+    throw e;
+  }
+}
+```
+
+**Implementado em**: roteiros (R5 v4.57.36), portal_tips (PD5 v4.57.40).
+
+### d) Padrão anti-double-submit (race condition)
+
+Click duplo rápido em botão de operação async = 2 chamadas paralelas = duplicação. Pattern:
+
+**Por escopo único** (export de 1 doc, import lock):
+```js
+let _xInFlight = false;
+async function doX() {
+  if (_xInFlight) { toast.info('Em andamento — aguarde.'); return; }
+  _xInFlight = true;
+  try { /* operação */ }
+  finally { _xInFlight = false; }
+}
+```
+
+**Por escopo composto** (export PDF/DOCX/PPTX por doc — permite formatos diferentes paralelos):
+```js
+const _genInFlight = new Map();  // key=`${docId}::${format}`
+async function generate(doc, format) {
+  const key = `${doc.id}::${format}`;
+  const started = _genInFlight.get(key);
+  if (started && (Date.now() - started) < 30_000) {
+    throw new Error(`Já existe exportação ${format} em andamento. Aguarde.`);
+  }
+  _genInFlight.set(key, Date.now());
+  try { /* generate */ } finally { _genInFlight.delete(key); }
+}
+```
+
+**Server-side distributed lock** (CF que retry-prone pelo client):
+```js
+const lockRef = db.collection('xxx_locks').doc(`x_${fingerprint}`);
+await db.runTransaction(async tx => {
+  const snap = await tx.get(lockRef);
+  if (snap.exists && Date.now() - (snap.data()?.lockedAt?.toMillis?.() || 0) < TTL_MS) {
+    throw new HttpsError('already-exists', 'Operação em andamento. Aguarde.');
+  }
+  tx.set(lockRef, { lockedAt: FieldValue.serverTimestamp(), lockedBy: uid });
+});
+// ... operação ...
+await lockRef.delete();  // libera no final (best-effort, TTL cobre falhas)
+```
+
+### e) Padrão errorCode + isRetryable em CFs
+
+CF que pode falhar por N motivos (rate limit transient vs token exhaustion permanente) deve classificar erro pro UI mostrar ação certa ("Tentar de novo" vs "Editar prompt").
+
+```js
+catch (err) {
+  const errMsg = String(err?.message || err);
+  let errorCode = 'unknown';
+  let isRetryable = false;
+  if (/rate.?limit|429|too many requests/i.test(errMsg)) { errorCode = 'rate_limit'; isRetryable = true; }
+  else if (/max.?tokens|token.?limit|context length/i.test(errMsg)) { errorCode = 'token_limit'; isRetryable = false; }
+  else if (/timeout|deadline.?exceeded/i.test(errMsg)) { errorCode = 'timeout'; isRetryable = true; }
+  else if (/network|fetch failed|ECONN/i.test(errMsg)) { errorCode = 'network'; isRetryable = true; }
+  // ... outros ...
+  await docRef.update({ status: 'failed', error: errMsg.slice(0,1000), errorCode, isRetryable });
+}
+```
+
+**Implementado em**: processRoteiroQueue (R3 v4.57.38), portalPdfParser (PD17 v4.57.43).
+
+### f) ⚠ ARMADILHA: `roles.{role}.permissions` é OBJETO `{key:bool}`, NÃO Array
+
+**Descoberto em validação E2E v4.57.49→51** (R2 token security). Cloud Function check de permissão fazia:
+```js
+const perms = r.data()?.permissions || [];
+canDelete = perms.includes('portal_manage');   // ❌ permissions é objeto, includes não existe
+```
+Master sempre falhava com `permission-denied`.
+
+**Padrão correto**:
+```js
+const u = await db.collection('users').doc(uid).get();
+const ud = u.data();
+const role = ud?.role || ud?.roleId;
+if (ud?.isMaster === true || role === 'master') {
+  canDo = true;
+} else if (role) {
+  const r = await db.collection('roles').doc(role).get();
+  if (r.exists) {
+    const rd = r.data();
+    const perms = rd?.permissions || {};
+    canDo = perms.portal_manage === true
+         || perms.portal_images_manage === true
+         || rd?.isSystem === true;
+  }
+}
+```
+
+**Shape verificado em produção**:
+- `users.{uid}.role = 'master'` (string), pode estar SEM flag `isMaster` boolean
+- `roles.{role}.permissions = { perm_key: true, ... }` (objeto, não array)
+- `roles.{role}.isSystem = true` marca roles de sistema (master, admin)
+
+**Auditar próximas CFs** com mesmo padrão: `grep "perms.includes\|permissions.includes" functions/index.js`. Já há 1 latente em `portalTipsStaleCheckCron` linha 4747 (afeta filtragem de notif, baixa severidade).
+
+### g) ⚠ ARMADILHA: `getFunctions()` SEM app explícito
+
+**Descoberto em validação E2E v4.57.49→50**. `js/firebase.js` inicializa apps NOMEADOS:
+```js
+const app = initializeApp(firebaseConfig, 'primetour-main');           // não default
+const secondaryApp = initializeApp(firebaseConfig, 'primetour-secondary');
+```
+
+`getFunctions()` sem argumento busca `[DEFAULT]` app — que NÃO EXISTE. Erro:
+```
+No Firebase App '[DEFAULT]' has been created - call initializeApp() first
+```
+
+**Padrão correto**:
+```js
+const { app } = await import('../firebase.js');
+const fn = httpsCallable(getFunctions(app, 'us-central1'), 'nomeDaCF');
+```
+
+**Callsites latentes** (não auditados em escopo do hotfix v4.57.50): `getSharePointToken` em `agents.js:1224`, possivelmente outros. Auditar com `grep "getFunctions()" js/`.
+
+### h) ⚠ ARMADILHA: Sandbox macOS bloqueia subprocess em ~/Downloads (TCC)
+
+**Descoberto na sessão v4.57.45**. Bash subprocess (node, git, firebase) recebe `EPERM` ao ler cwd quando projeto está em `~/Downloads` no macOS Sequoia+ sem Full Disk Access.
+
+**Sintoma**: `fatal: Unable to read current working directory: Operation not permitted` — Read/Write/Edit tools funcionam (sandbox diferente), mas commit/deploy quebra.
+
+**Resolução**:
+1. System Settings → Privacy & Security → Full Disk Access → adicionar Terminal + Claude (rápido)
+2. Mover projeto pra `~/dev/` ou `~/Documents/` (long-term)
+
+### i) Banco de Imagens é REPOSITÓRIO, não cache
+
+**Decisão Renê 2026-05-25** (após audit Banco de Imagens): "a ideia do banco é ter os arquivos independente da quantidade de uso".
+
+- ❌ Auto-delete imagens órfãs após 30d (foi feito em v4.57.42, **revertido em v4.57.44**)
+- ✅ Apenas SINALIZAR via flag `unused:true` + badge UI azul "Não usada"
+- ✅ Hard-delete é exclusivamente manual via botão Excluir no card
+
+Princípio mais geral: bibliotecas/repositórios são imutáveis por design — só user decide deletar. CFs apenas detectam e sinalizam, nunca destroem.
+
+### j) Validação E2E via Chrome MCP > deploy + curl
+
+Releases passam syntax check + deploy + curl validation, mas só E2E real via Chrome MCP pega:
+- Bugs de runtime no contexto autenticado (ex: shape de `roles.permissions`)
+- Cache stale do MCP que mascara fix novo
+- Permissions/RLS rules que só falham com user real
+- Cascade async (cascade filters race, etc.)
+
+**Pattern** (espelho do v4.57.49 E2E):
+1. Deploy + cache-bust + clear MCP service worker
+2. Reload com `?nuke=N`
+3. Validar `window.__PRIMETOUR_VERSION__` é a esperada
+4. Executar operação real via UI ou direct JS no console
+5. Verificar Firestore via Admin SDK script (não via UI cache)
+6. Verificar logs CF: `firebase functions:log --only <fnName> --lines 5`
+7. Verificar fingerprint público: curl direto pra confirmar token zerado, blob 404, etc.
+
+**Antes de dizer "100% funcional"**: cobrir pelo menos 3 dos 7 steps acima. Sintoma de release não-testada: bug descoberto pelo user no mesmo dia.

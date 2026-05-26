@@ -235,6 +235,60 @@ export const callLLM = onCall({
 
 NUNCA commitar secrets em git. Sempre via Secret Manager.
 
+### Cloud Functions agendadas + reactive (sessão maratona maio/2026)
+
+A partir de v4.57.28→52, padrão consolidado: work scheduled/lazy que
+dependia de "user logado abrir o app" foi migrado pra Cloud Functions
+agendadas (`firebase-functions/v2/scheduler`) + reactive (`onDocumentUpdated`).
+
+**Pseudo-user `users/system` (criado em v4.57.33):**
+
+```js
+// users/system doc
+{
+  id: 'system',
+  name: 'Sistema PRIMETOUR',
+  isSystem: true,
+  active: false,  // não pode logar
+  avatarColor: '#6B7280',
+}
+```
+
+Permite notifs sistêmicas (SLA alerts, daily summary, stale checks) atribuírem
+`actorId='system'` em vez do user random que abriu o app primeiro. Renderers
+em `notificationPanel.js:250` já fazem fallback pro `actorName` armazenado
+quando `actorId==='system'` (sem precisar buscar no store).
+
+**Catálogo de CFs scheduled/reactive (após maratona):**
+
+| CF | Type | Schedule | Module |
+|---|---|---|---|
+| `csatPeriodicTrigger` | onSchedule | 30 min | CSAT |
+| `pruneOldAuditLogs` | onSchedule | 30 6 * * * BRT | infra |
+| `dailyBackup` | onSchedule | 0 6 * * * BRT | infra |
+| `dailySecurityDigest` | onSchedule | 0 12 * * * BRT | security |
+| `weeklySecretsAudit` | onSchedule | 0 12 * * 1 BRT | security |
+| `recurringTasksDailyCron` | onSchedule | 0 6 * * * BRT | tasks (v4.57.32) |
+| `scheduledNotificationsCron` | onSchedule | 0 7 * * * BRT | tasks (v4.57.33) |
+| `roteiroBankValidityCron` | onSchedule | 0 8 * * * BRT | roteiros (v4.57.37) |
+| `portalImagesOrphanCleanupCron` | onSchedule | 0 7 * * 1 BRT | images (v4.57.42, REVERTIDO auto-delete em v4.57.44) |
+| `portalTipsStaleCheckCron` | onSchedule | 0 8 * * 1 BRT | portal-tips (v4.57.42) |
+| `onPortalTipUpdated` | onDocumentUpdated | reactive | portal-tips (v4.57.37) |
+| `processRoteiroQueue` | onDocumentCreated | reactive (queue) | roteiros |
+| `onSystemFeedbackCreate` | onDocumentCreated | reactive | feedback |
+| `onNotificationCreate` | onDocumentCreated | reactive (push) | notifications |
+| `deleteR2` | onCall | event | images (v4.57.49 — security I1 fix) |
+| `getR2UploadUrl` | onCall | event | images |
+| `importRoteiroBankPdf` | onCall | event | roteiros |
+
+**Política comum** dessas CFs:
+- TimeZone `America/Sao_Paulo`
+- `timeoutSeconds: 540` (9min, máximo onSchedule)
+- `memory: 256-512MiB` conforme intensidade
+- `retryCount: 1` (safety net)
+- Audit log no final com stats agregadas (`{scanned, processed, errors}`)
+- Pre-fetch refs (1 query lookup) antes do scan principal
+
 ### IA Hub (4.35.23+) — arquitetura server-side
 
 **Princípio**: o browser nunca vê API keys de provedores de IA. Toda chamada LLM
