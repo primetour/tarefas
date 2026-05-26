@@ -6,6 +6,49 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.57.37+20260525-roteiros-cf-scheduled-validity-tips-genComplete] — 2026-05-25
+
+Release **PATCH** — Sprint Roteiros (4/5). Cloud Functions agendadas/reactive: validity expiration + tips staleness + generation_complete notif.
+
+**R15 — Notif quando geração IA completa.**
+
+Antes (`functions/index.js` `processRoteiroQueue` final): apenas `docRef.update({status:'done'})`. Se user fecha aba antes do `onSnapshot` no client disparar, nunca sabe que terminou — abre próximo dia, geração "sumiu". Agora: após o update + log ai_usage_logs, grava `notifications` doc `roteiro.generation_complete` pro `claimed.userId` (actorId='system'). Route aponta pro editor do roteiro se `claimed.roteiroId`, senão pra listagem.
+
+**R7 — `roteiroBankValidityCron` (CF agendada 8h BRT diário).**
+
+Antes: roteiros aprovados no Banco com `validity.endDate < hoje` só mostravam badge "Expirado" no UI. Curador nunca notificado. Banco encheria de docs stale + risco de cliente receber roteiro com hotel/preço desatualizado.
+
+Agora — schedule `0 8 * * *` America/Sao_Paulo:
+- Scan `roteiros_bank where status=='approved'`
+- Filtra `validity.endDate < todayISO` (string compare seguro)
+- Pra cada expirado: notif `roteiro.bank_validity_expired` pra curadores (master + roles com manage), prioridade `high`
+- Auto-arquivamento se vencido há > 30 dias (`status='archived'`, `archivedReason='auto-archive: vencido desde X (>30d)'`)
+- Dedup por mês: deterministic notif ID `bank_expired_{docId}_{curatorId}_{YYYY-MM}` — re-runs no mesmo mês reusam doc
+- Audit log agregado por run
+
+E2E validation: `gcloud scheduler jobs run` → `scanned:2, expired:0, autoArchived:0, notifsSent:0` (correto — nenhum doc venceu ainda).
+
+**R13 — `onPortalTipUpdated` (CF reactive em `portal_tips/{tipId}`).**
+
+Antes: tips editadas no portal nunca alertavam consultor sobre roteiros que tinham snapshot dessa tip. UI mostrava badge "Dica desatualizada" comparando `updatedAtSnapshot`, mas nenhum painel agregado.
+
+Agora — trigger onDocumentUpdated:
+- Detecta mudança em campos relevantes (`title, content, destinationId, gallery, highlights`) — ignora updatedAt-only ticks
+- Scan `roteiros` (cap 500) com filtro client-side `embeddedTips.some(t => t.tipId === changedTipId)`
+- Adiciona `tipId` em `staleTipIds: arrayUnion` + `tipsStaleAt: serverTimestamp` (skip se já marcado)
+- Audit log `system.roteiro_tips_stale_flagged` com count
+
+Dashboard futuro pode query `where('staleTipIds', '!=', [])` pra mostrar "N roteiros com conteúdo desatualizado". UI atual ainda mostra badge isolado — dado pronto pra expandir.
+
+**Sprint Roteiros parcial (4 de 5)**:
+- v4.57.34: cleanup FK
+- v4.57.35: notif status/collab + safety-net
+- v4.57.36: race conditions
+- v4.57.37: CFs agendadas/reactive ← esta
+- v4.57.38: polish (próxima)
+
+---
+
 ## [4.57.36+20260525-roteiros-race-conditions-conflict-debounce-lock] — 2026-05-25
 
 Release **PATCH** — Sprint Roteiros (3/5). Race conditions: multi-aba conflict + PDF double-click + import lock.

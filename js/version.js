@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 57,
-  patch: 36,
-  build: '20260525-roteiros-race-conditions-conflict-debounce-lock',
+  patch: 37,
+  build: '20260525-roteiros-cf-scheduled-validity-tips-genComplete',
 };
 
 /** "1.2.0" */

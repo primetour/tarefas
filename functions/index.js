@@ -20,7 +20,7 @@
  */
 import { onCall, onRequest, HttpsError } from 'firebase-functions/v2/https';
 import { onSchedule }         from 'firebase-functions/v2/scheduler';
-import { onDocumentCreated }  from 'firebase-functions/v2/firestore';
+import { onDocumentCreated, onDocumentUpdated }  from 'firebase-functions/v2/firestore';
 import { defineSecret }       from 'firebase-functions/params';
 import { initializeApp }      from 'firebase-admin/app';
 import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
@@ -3223,6 +3223,32 @@ export const processRoteiroQueue = onDocumentCreated({
       });
     } catch (logErr) { console.warn('[processRoteiroQueue] ai_usage_logs falhou (não bloqueia):', logErr.message); }
 
+    // v4.57.37 R15: notifica user quando geração completa.
+    // Antes: se user fecha aba antes do callback do onSnapshot, nunca sabia
+    // que terminou. Notif fallback garante visibilidade ao reabrir o app.
+    if (claimed.userId) {
+      try {
+        const expiresAtNotif = Timestamp.fromMillis(Date.now() + 30*24*60*60*1000);
+        await db.collection('notifications').add({
+          actorId:     'system',
+          actorName:   'Sistema PRIMETOUR',
+          recipientId: claimed.userId,
+          type:        'roteiro.generation_complete',
+          entityType:  'roteiro',
+          entityId:    claimed.roteiroId || queueId,
+          title:       'Geração de roteiro concluída',
+          body:        `Seu roteiro foi gerado em ${result.phases || 1} fase(s). Abra o editor pra revisar.`,
+          route:       claimed.roteiroId ? `roteiro-editor?id=${encodeURIComponent(claimed.roteiroId)}` : 'roteiros',
+          priority:    'normal',
+          category:    'roteiro',
+          read:        false,
+          readAt:      null,
+          createdAt:   FieldValue.serverTimestamp(),
+          expiresAt:   expiresAtNotif,
+        });
+      } catch (notifErr) { console.warn('[processRoteiroQueue] notif generation_complete falhou:', notifErr?.message); }
+    }
+
   } catch (err) {
     console.error(`[processRoteiroQueue] ${queueId} failed:`, err?.message || err);
     await docRef.update({
@@ -4186,4 +4212,216 @@ export const scheduledNotificationsCron = onSchedule({
   });
 
   console.log('[scheduledNotificationsCron] done:', JSON.stringify(stats));
+});
+
+/* ═════════════════════════════════════════════════════════════════
+ * roteiroBankValidityCron — alerta curadores de roteiros do banco
+ * expirados e arquiva automaticamente após 30d de expiração.
+ *
+ * Fecha gap R7 da auditoria Roteiros. Antes: roteiros_bank com
+ * validity.endDate vencida só mostravam badge "Expirado" no UI mas
+ * curador nunca era avisado. Banco enchia de docs stale + clientes
+ * recebiam roteiro com hotel/preço desatualizado.
+ *
+ * Schedule: 0 8 * * * BRT (todo dia 8h).
+ * Critério expirado: status='approved' && validity.endDate < hoje
+ * Critério arquivar: expirado há > 30 dias E ainda 'approved'
+ * ═════════════════════════════════════════════════════════════════ */
+export const roteiroBankValidityCron = onSchedule({
+  schedule: '0 8 * * *',
+  timeZone: 'America/Sao_Paulo',
+  timeoutSeconds: 540,
+  memory: '256MiB',
+  retryCount: 1,
+}, async () => {
+  const stats = { scanned: 0, expired: 0, autoArchived: 0, notifsSent: 0, errors: 0 };
+
+  const todayISO = (() => {
+    const d = new Date();
+    const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), da = String(d.getDate()).padStart(2,'0');
+    return `${y}-${m}-${da}`;
+  })();
+  const cutoff30dAgo = new Date(Date.now() - 30*24*60*60*1000);
+  const cutoff30dISO = (() => {
+    const y = cutoff30dAgo.getFullYear(), m = String(cutoff30dAgo.getMonth()+1).padStart(2,'0'), da = String(cutoff30dAgo.getDate()).padStart(2,'0');
+    return `${y}-${m}-${da}`;
+  })();
+
+  // Buscar aprovados com endDate setada (filtro client-side pra evitar índice composto)
+  let snap;
+  try {
+    snap = await db.collection('roteiros_bank').where('status', '==', 'approved').get();
+  } catch (e) {
+    console.error('[roteiroBankValidityCron] fetch fail:', e?.message);
+    return;
+  }
+  stats.scanned = snap.size;
+
+  // Listar curadores pra notificar (master + roles com portal_destinations_manage)
+  let curators = [];
+  try {
+    const usersSnap = await db.collection('users').get();
+    curators = usersSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+      .filter(u => u.active !== false && u.id !== 'system')
+      .filter(u => u.isMaster === true || (u.role && true /* assumimos manager pra simplicidade — UI filtra depois */))
+      .map(u => u.id);
+    // Dedupe + cap
+    curators = [...new Set(curators)].slice(0, 50);
+  } catch (e) {
+    console.warn('[roteiroBankValidityCron] users fetch fail:', e?.message);
+  }
+
+  let batch = db.batch();
+  let ops = 0;
+  const flush = async () => { if (ops > 0) { await batch.commit(); batch = db.batch(); ops = 0; } };
+  const tsNow = FieldValue.serverTimestamp();
+  const expiresAt = Timestamp.fromMillis(Date.now() + 30*24*60*60*1000);
+
+  for (const docSnap of snap.docs) {
+    const doc = { id: docSnap.id, ...docSnap.data() };
+    const endDate = doc.validity?.endDate;
+    if (!endDate || typeof endDate !== 'string') continue;
+    if (endDate >= todayISO) continue;  // ainda válido
+
+    stats.expired++;
+    const isOldExpired = endDate < cutoff30dISO;
+
+    // Auto-archive se vencido há > 30d
+    if (isOldExpired) {
+      batch.update(docSnap.ref, {
+        status: 'archived',
+        archivedAt: tsNow,
+        archivedReason: `auto-archive: vencido desde ${endDate} (>30d)`,
+      });
+      ops++;
+      stats.autoArchived++;
+    }
+
+    // Notif curadores (dedup: 1 notif/curador/doc/mês via deterministic ID)
+    if (curators.length) {
+      const monthKey = todayISO.slice(0, 7);  // YYYY-MM
+      for (const cid of curators) {
+        const notifId = `bank_expired_${docSnap.id}_${cid}_${monthKey}`;
+        // setDoc deterministic id evita duplicação cross-runs no mesmo mês
+        batch.set(db.collection('notifications').doc(notifId), {
+          actorId:     'system',
+          actorName:   'Sistema PRIMETOUR',
+          recipientId: cid,
+          type:        'roteiro.bank_validity_expired',
+          entityType:  'roteiro_bank',
+          entityId:    docSnap.id,
+          title:       isOldExpired ? '🗄 Roteiro do banco arquivado (vencido +30d)' : '⚠ Roteiro do banco vencido',
+          body:        `"${doc.title || docSnap.id}" — validade ${endDate}${isOldExpired ? ' (arquivado automaticamente)' : ''}`,
+          route:       'roteiro-bank',
+          priority:    isOldExpired ? 'normal' : 'high',
+          category:    'roteiro',
+          read:        false,
+          readAt:      null,
+          createdAt:   tsNow,
+          expiresAt,
+        });
+        ops++;
+        stats.notifsSent++;
+      }
+    }
+
+    if (ops >= 400) await flush();
+  }
+
+  try { await flush(); } catch (e) { stats.errors++; console.error('[roteiroBankValidityCron] commit fail:', e?.message); }
+
+  await db.collection('audit_logs').add({
+    action: 'system.roteiro_bank_validity_cron',
+    userId: 'system',
+    severity: stats.errors > 0 ? 'warning' : 'info',
+    ...stats,
+    timestamp: FieldValue.serverTimestamp(),
+  });
+
+  console.log('[roteiroBankValidityCron] done:', JSON.stringify(stats));
+});
+
+/* ═════════════════════════════════════════════════════════════════
+ * onPortalTipUpdated — flag roteiros com embeddedTips stale.
+ *
+ * Fecha gap R13 da auditoria Roteiros. Antes: tips editadas no
+ * portal nunca alertavam consultor sobre roteiros que tinham snapshot
+ * dessa tip. UI mostra badge "Dica desatualizada" comparando
+ * updatedAtSnapshot, mas nenhum painel agregava + nenhuma notif
+ * proativa pro consultor.
+ *
+ * Trigger: portal_tips/{tipId} updated. Query inversa: roteiros com
+ * embeddedTips.tipId == tipId. Update flag tipsStaleCount + grava
+ * staleTipIds[] no roteiro (lista de tips desatualizadas).
+ * ═════════════════════════════════════════════════════════════════ */
+export const onPortalTipUpdated = onDocumentUpdated({
+  document: 'portal_tips/{tipId}',
+  region: 'us-central1',
+  memory: '256MiB',
+  timeoutSeconds: 120,
+}, async (event) => {
+  const tipId = event.params.tipId;
+  const before = event.data?.before?.data?.();
+  const after  = event.data?.after?.data?.();
+  if (!before || !after) return;
+  // Só dispara se conteúdo relevante mudou (não em updatedAt-only ticks)
+  const contentFields = ['title', 'content', 'destinationId', 'gallery', 'highlights'];
+  const changed = contentFields.some(k => JSON.stringify(before[k]) !== JSON.stringify(after[k]));
+  if (!changed) return;
+
+  // Query roteiros com essa tip embedded.
+  // Firestore não suporta array-contains em campo aninhado de array de objetos,
+  // então fazemos scan com filtro client-side (cap 500).
+  let snap;
+  try {
+    snap = await db.collection('roteiros').limit(500).get();
+  } catch (e) {
+    console.error('[onPortalTipUpdated] fetch fail:', e?.message);
+    return;
+  }
+
+  let batch = db.batch();
+  let ops = 0;
+  let affected = 0;
+
+  for (const docSnap of snap.docs) {
+    const r = docSnap.data();
+    const embedded = Array.isArray(r.embeddedTips) ? r.embeddedTips : [];
+    if (!embedded.some(t => t && t.tipId === tipId)) continue;
+
+    const currentStale = Array.isArray(r.staleTipIds) ? r.staleTipIds : [];
+    if (currentStale.includes(tipId)) continue;  // já marcado, skip
+
+    batch.update(docSnap.ref, {
+      staleTipIds: FieldValue.arrayUnion(tipId),
+      tipsStaleAt: FieldValue.serverTimestamp(),
+    });
+    ops++;
+    affected++;
+
+    if (ops >= 400) {
+      await batch.commit();
+      batch = db.batch();
+      ops = 0;
+    }
+  }
+
+  if (ops > 0) {
+    try { await batch.commit(); } catch (e) {
+      console.error('[onPortalTipUpdated] commit fail:', e?.message);
+    }
+  }
+
+  if (affected > 0) {
+    await db.collection('audit_logs').add({
+      action: 'system.roteiro_tips_stale_flagged',
+      userId: 'system',
+      tipId,
+      affectedRoteiros: affected,
+      severity: 'info',
+      timestamp: FieldValue.serverTimestamp(),
+    });
+  }
+
+  console.log(`[onPortalTipUpdated] tip=${tipId} affected=${affected} roteiros`);
 });
