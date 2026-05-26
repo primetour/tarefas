@@ -6,6 +6,26 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.57.48+20260525-banco-imagens-polish-cascade-refresh-after-upload] — 2026-05-25
+
+Release **PATCH** — Sprint Banco de Imagens (5/5, final). Polish: cascade refresh + descarte de gaps já mitigados.
+
+**I24 — Cascade allDests stale após upload** (`js/pages/portalImages.js:898`). Antes: user cadastrava destino novo (ex.: "Coreia do Sul") e fazia upload de imagem pra ele em sequência. `allDests` carregado no boot ficava stale — cascade filter (continent→country→city) não mostrava o novo país até refresh manual.
+
+Fix: após upload success, antes do `loadImages()`, recarrega `allDests = await fetchDestinations()`. Try/catch defensivo (não bloqueia se falhar).
+
+**I21 — Unsplash global quota** descartado. Verificado em `functions/index.js:2639-2670`: cooldown proativo JÁ EXISTE. Quando Unsplash retorna `X-Ratelimit-Remaining ≤ 5`, grava `system_state/unsplash_cooldown` doc com timestamp → próximas chamadas (60min) pulam direto pro fallback Wikipedia. Cobre o cenário de 100 users hitting destinos diferentes globalmente. Production tier do Unsplash (5000/h) + cooldown reativo são suficientes.
+
+**I23 — CSP inline handlers** descartado. Sistema não tem CSP strict ativa. Refactor de `onmouseover`/`onerror` inline pra event listeners adicionaria overhead de complexidade sem benefício imediato. Pode virar release dedicada se CSP for ativada no futuro.
+
+**Sprint Banco de Imagens FECHADA (v4.57.44 → v4.57.48)**:
+- 5 releases consecutivas
+- **Total fixes implementados**: I6, I8, I15, I16, I17, I24 + REVERSÃO PD10 (auto-delete 30d) + badge "Não usada"
+- **Falsos positivos descartados** (verificação no código): I10 (allImages já em memória), I11 (cascade síncrono), I21 (cooldown já existe), I23 (sem CSP strict)
+- **Out of sprint**: I1 (R2 token security) próxima release dedicada v4.57.49 com validação E2E
+
+---
+
 ## [4.57.47+20260525-banco-imagens-ux-lightbox-guard-upload-progress] — 2026-05-25
 
 Release **PATCH** — Sprint Banco de Imagens (4/5). UX: lightbox keyboard guard + upload progress per-file.

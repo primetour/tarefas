@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 57,
-  patch: 47,
-  build: '20260525-banco-imagens-ux-lightbox-guard-upload-progress',
+  patch: 48,
+  build: '20260525-banco-imagens-polish-cascade-refresh-after-upload',
 };
 
 /** "1.2.0" */

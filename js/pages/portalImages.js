@@ -896,6 +896,10 @@ async function uploadBatch() {
 
   if (success > 0) {
     setTimeout(async () => {
+      // v4.57.48 fix I24: recarrega allDests pra cascade filter (continent→
+      // country→city) pegar destinos novos cadastrados durante o upload.
+      // Antes: cascade ficava stale até refresh manual da página.
+      try { allDests = await fetchDestinations(); } catch (_) {/* non-blocking */}
       await loadImages();
       if (!failed) {
         // All succeeded — close and reset the upload panel
