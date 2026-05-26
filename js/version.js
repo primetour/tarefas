@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 57,
-  patch: 37,
-  build: '20260525-roteiros-cf-scheduled-validity-tips-genComplete',
+  patch: 38,
+  build: '20260525-roteiros-polish-modal-vars-cap-errorcode',
 };
 
 /** "1.2.0" */

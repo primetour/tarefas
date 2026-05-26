@@ -715,7 +715,7 @@ function renderEmbeddedTipsSection() {
                 ${esc(e.subtitle || 'Sem continente')} ·
                 ${segmentsCount} item${segmentsCount !== 1 ? 's' : ''} ·
                 snapshot em ${snapDate}
-                <span data-embed-stale-${i} style="display:none;margin-left:8px;color:#F59E0B;font-weight:600;">
+                <span data-embed-stale-${i} style="display:none;margin-left:8px;color:var(--color-warning, #F59E0B);font-weight:600;">
                   ⚠ versão mais recente disponível
                 </span>
               </div>
@@ -1525,7 +1525,7 @@ function renderIncluiSection() {
         <button class="re-add-btn" data-action="add-inc">+ Adicionar</button>
       </div>
       <div>
-        <label class="re-label" style="color:#EF4444;font-weight:700;">N\u00e3o Inclui</label>
+        <label class="re-label" style="color:var(--color-danger, #EF4444);font-weight:700;">N\u00e3o Inclui</label>
         <div class="re-list-col" id="re-excludes-list">
           ${exc.map((item, i) => `
             <div class="re-list-item" data-exc-idx="${i}">
@@ -1847,7 +1847,7 @@ async function populateLinkedTasksList(taskIds) {
       ${rowsHTML}
     `;
   } catch (err) {
-    listEl.innerHTML = `<div style="padding:16px;text-align:center;color:#EF4444;font-size:0.8125rem;">
+    listEl.innerHTML = `<div style="padding:16px;text-align:center;color:var(--color-danger, #EF4444);font-size:0.8125rem;">
       Erro ao carregar: ${esc(err.message)}
     </div>`;
   }
@@ -2669,9 +2669,29 @@ async function handleStatusChange(newStatus) {
   const menu = document.getElementById('re-status-menu');
   if (menu) menu.style.display = 'none';
 
-  // Confirmações pra estados terminais
-  if (newStatus === 'approved' && !confirm('Marcar como Aprovado? Isso pode disparar geração automática de tarefas operacionais.')) return;
-  if (newStatus === 'archived' && !confirm('Arquivar este roteiro? Ele continua acessível mas sai dos filtros padrão.')) return;
+  // v4.57.38 R16: confirm() nativo → modal.confirm (CLAUDE.md §11.k).
+  // Confirmações pra estados terminais com UX consistente.
+  if (newStatus === 'approved') {
+    const { default: modal } = await import('../components/modal.js');
+    const ok = await modal.confirm({
+      title: 'Marcar roteiro como aprovado?',
+      message: 'Isso pode disparar geração automática de tarefas operacionais (reservar voos, confirmar hotéis, transfers, etc.).',
+      confirmText: 'Sim, aprovar',
+      icon: '✓',
+    });
+    if (!ok) return;
+  }
+  if (newStatus === 'archived') {
+    const { default: modal } = await import('../components/modal.js');
+    const ok = await modal.confirm({
+      title: 'Arquivar roteiro?',
+      message: 'Ele continua acessível mas sai dos filtros padrão. Você pode restaurar depois.',
+      confirmText: 'Arquivar',
+      danger: true,
+      icon: '🗄',
+    });
+    if (!ok) return;
+  }
 
   // Salva pending changes antes de mudar status
   if (isDirty) await handleSave({ silent: true });
@@ -2819,12 +2839,18 @@ async function maybeOfferTaskGeneration(roteiroId) {
   // Plus 1 por hotel
   const estimated = 5 + hotels;
 
-  const userConfirmed = confirm(
-    `Roteiro aprovado!\n\n` +
-    `Quer gerar ${estimated} tarefas operacionais agora?\n` +
-    `(reservar voos, confirmar ${hotels} hotel(éis), transfers, seguro, materiais, vouchers)\n\n` +
-    `As datas vão ser calculadas automaticamente a partir do início da viagem.`
-  );
+  // v4.57.38 R16: confirm() nativo → modal.confirm
+  const { default: modal } = await import('../components/modal.js');
+  const userConfirmed = await modal.confirm({
+    title: '🎉 Roteiro aprovado!',
+    message: `Quer gerar <strong>${estimated} tarefas operacionais</strong> agora?<br><br>` +
+             `<small style="color:var(--text-secondary);">reservar voos · confirmar ${hotels} hotel(éis) · ` +
+             `transfers · seguro · materiais · vouchers</small><br><br>` +
+             `As datas vão ser calculadas automaticamente a partir do início da viagem.`,
+    confirmText: `Gerar ${estimated} tarefas`,
+    cancelText: 'Agora não',
+    icon: '✓',
+  });
   if (!userConfirmed) return;
 
   try {
@@ -4115,7 +4141,7 @@ export async function renderRoteiroEditor(container) {
           padding:14px 18px;margin-bottom:16px;display:flex;align-items:flex-start;gap:12px;">
           <span style="font-size:1.25rem;">◈</span>
           <div style="flex:1;">
-            <div style="font-size:0.875rem;font-weight:600;color:#F59E0B;margin-bottom:4px;">
+            <div style="font-size:0.875rem;font-weight:600;color:var(--color-warning, #F59E0B);margin-bottom:4px;">
               Roteiro gerado por Intelig\u00eancia Artificial
             </div>
             <div style="font-size:0.8125rem;color:var(--text-muted);line-height:1.5;">
@@ -4258,7 +4284,7 @@ function openCadastrarDestinoModal(prefill = {}) {
           </select>
         </label>
         <label style="display:flex;flex-direction:column;gap:4px;font-size:0.8125rem;color:var(--text-secondary);">
-          País <span style="color:#EF4444;">*</span>
+          País <span style="color:var(--color-danger, #EF4444);">*</span>
           <input type="text" id="cad-dest-country" value="${esc(_country)}" style="padding:8px 10px;background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:6px;color:var(--text-primary);" placeholder="Ex: Marrocos" />
         </label>
         <label style="display:flex;flex-direction:column;gap:4px;font-size:0.8125rem;color:var(--text-secondary);">

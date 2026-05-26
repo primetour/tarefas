@@ -6,6 +6,38 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.57.38+20260525-roteiros-polish-modal-vars-cap-errorcode] — 2026-05-25
+
+Release **PATCH** — Sprint Roteiros (5/5, final). Polish: anti-padrões + dashboard cap + CF error classification.
+
+**R16 — `confirm()` nativo → `modal.confirm`** (CLAUDE.md §11.k). Substituições no editor:
+- `handleStatusChange` — 2 confirms (approve / archive) viraram `modal.confirm` com título, mensagem rica HTML, danger style p/ archive.
+- `maybeOfferTaskGeneration` — "Quer gerar N tarefas?" virou modal com layout HTML estruturado, lista das operações em `<small>` cinza, confirmText dinâmico.
+
+**R17 — Cor hex hardcoded → CSS vars** (CLAUDE.md §11.l). `sed` em `js/pages/roteiroEditor.js` trocou todas as 6 ocorrências de `color:#F59E0B` → `var(--color-warning, #F59E0B)` e `color:#EF4444` → `var(--color-danger, #EF4444)`. Fallback hex preserva renderização em tema sem var. Backgrounds com alpha (`#FEF3C720` etc.) mantidos pois são tints específicos.
+
+**R18 — Dashboard ai_usage_logs sem cap temporal** (`js/pages/roteiroDashboard.js:282`). Query antes: `where('module','==','roteiros'), limit(500)` — cresce linearmente com tempo, custo Firestore inflava. Agora: `where('timestamp', '>=', Timestamp.fromMillis(now - 90d))` + try/catch com fallback client-side se índice composto não existe (filtra após fetch). Bonus: `import('firebase-firestore')` defensivo pra pegar `Timestamp`.
+
+**R3 — CF errorCode + isRetryable classification** (`functions/index.js:3252-3271`). Antes catch genérico setava `status='failed' + error='<msg>'`. Client não distinguia transiente vs permanente. Agora regex classifica:
+- `rate_limit` (retryable) — Anthropic 429
+- `token_limit` (não retryable) — context length exceeded
+- `timeout` (retryable) — deadline
+- `network` (retryable) — fetch failed/ECONN/ENOTFOUND
+- `invalid_output` (retryable) — JSON parse fail
+- `auth` (não retryable) — 401/403
+- `agent_config` (não retryable) — agente não encontrado/pausado
+- `unknown` (não retryable default)
+
+QueueDoc agora tem `{errorCode, isRetryable, error}`. UI pode renderizar "Tentar de novo" só quando `isRetryable === true`. (Cliente ainda não usa — UI update fica pra próxima release).
+
+**Sprint Roteiros FECHADA (v4.57.34 → v4.57.38)**:
+- 5 releases, 14 fixes (R1, R5, R6, R7, R8, R9, R10, R11, R13, R14, R15, R16, R17, R18 + R3)
+- 4 Cloud Functions novas/atualizadas (processRoteiroQueue×2 update, roteiroBankValidityCron, onPortalTipUpdated, importRoteiroBankPdf update)
+- 1 regra Firestore expandida (whitelist `roteiro.*`)
+- Padrão FK cleanup consolidado em mais 4 caminhos (tasks, ai_usage_logs, roteiro_generations)
+
+---
+
 ## [4.57.37+20260525-roteiros-cf-scheduled-validity-tips-genComplete] — 2026-05-25
 
 Release **PATCH** — Sprint Roteiros (4/5). Cloud Functions agendadas/reactive: validity expiration + tips staleness + generation_complete notif.

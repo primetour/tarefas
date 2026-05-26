@@ -278,15 +278,43 @@ export async function renderRoteiroDashboard(container) {
   await processAndRender();
 }
 
-/** v4.50.1+ Busca ai_usage_logs de roteiros (módulos 'roteiros' + 'banco-roteiros'). */
+/** v4.50.1+ Busca ai_usage_logs de roteiros (módulos 'roteiros' + 'banco-roteiros').
+ *  v4.57.38 R18: filtro temporal de 90d pra cap de reads (antes: cresce linear
+ *  com tempo, custo Firestore inflava). Ainda mantém limit defensivo de 500/200. */
 async function fetchAiUsageRoteiros() {
+  const cutoff = Date.now() - 90 * 24 * 60 * 60 * 1000;
+  // Imports defensivos (Timestamp pode não estar no escopo deste módulo)
+  const { Timestamp } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+  const since = Timestamp.fromMillis(cutoff);
   // 2 queries em paralelo (Firestore não tem OR em campos diferentes)
-  const [s1, s2] = await Promise.all([
-    getDocs(query(collection(db, 'ai_usage_logs'), where('module', '==', 'roteiros'), fbLimit(500))),
-    getDocs(query(collection(db, 'ai_usage_logs'), where('module', '==', 'banco-roteiros'), fbLimit(200))),
-  ]);
-  const all = [...s1.docs, ...s2.docs].map(d => ({ id: d.id, ...d.data() }));
-  return all;
+  // NOTA: where('timestamp', '>=', since) requer índice composto module+timestamp.
+  // Se index ainda não existe, query falha graceful → fallback sem filtro temporal.
+  try {
+    const [s1, s2] = await Promise.all([
+      getDocs(query(collection(db, 'ai_usage_logs'),
+        where('module', '==', 'roteiros'),
+        where('timestamp', '>=', since),
+        fbLimit(500))),
+      getDocs(query(collection(db, 'ai_usage_logs'),
+        where('module', '==', 'banco-roteiros'),
+        where('timestamp', '>=', since),
+        fbLimit(200))),
+    ]);
+    return [...s1.docs, ...s2.docs].map(d => ({ id: d.id, ...d.data() }));
+  } catch (e) {
+    // Fallback (sem índice composto): query simples + filtro client-side
+    console.warn('[fetchAiUsageRoteiros] composite index missing, fallback (custo maior):', e?.message);
+    const [s1, s2] = await Promise.all([
+      getDocs(query(collection(db, 'ai_usage_logs'), where('module', '==', 'roteiros'), fbLimit(500))),
+      getDocs(query(collection(db, 'ai_usage_logs'), where('module', '==', 'banco-roteiros'), fbLimit(200))),
+    ]);
+    return [...s1.docs, ...s2.docs]
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(e => {
+        const ts = e.timestamp?.toMillis?.() || 0;
+        return !ts || ts >= cutoff;
+      });
+  }
 }
 
 /* ─── Process & render all ───────────────────────────────── */

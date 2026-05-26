@@ -3251,11 +3251,25 @@ export const processRoteiroQueue = onDocumentCreated({
 
   } catch (err) {
     console.error(`[processRoteiroQueue] ${queueId} failed:`, err?.message || err);
+    // v4.57.38 R3: classifica erro pra UI mostrar "Tentar de novo" vs "Editar prompt".
+    // Antes: client só via 'failed' + texto livre, sem distinguir transiente vs permanente.
+    const errMsg = String(err?.message || err);
+    let errorCode = 'unknown';
+    let isRetryable = false;
+    if (/rate.?limit|429|too many requests/i.test(errMsg)) { errorCode = 'rate_limit'; isRetryable = true; }
+    else if (/max.?tokens|token.?limit|context length|exceeds/i.test(errMsg)) { errorCode = 'token_limit'; isRetryable = false; }
+    else if (/timeout|deadline.?exceeded|timed out/i.test(errMsg)) { errorCode = 'timeout'; isRetryable = true; }
+    else if (/network|fetch failed|ECONN|ENOTFOUND|socket/i.test(errMsg)) { errorCode = 'network'; isRetryable = true; }
+    else if (/JSON inválido|JSON parse|Unexpected token/i.test(errMsg)) { errorCode = 'invalid_output'; isRetryable = true; }
+    else if (/api.?key|unauthorized|401|403/i.test(errMsg)) { errorCode = 'auth'; isRetryable = false; }
+    else if (/agent.*não encontrado|agent.*pausado/i.test(errMsg)) { errorCode = 'agent_config'; isRetryable = false; }
     await docRef.update({
       status: 'failed',
       phase: null,
       completedAt: FieldValue.serverTimestamp(),
-      error: String(err?.message || err).slice(0, 1000),
+      error: errMsg.slice(0, 1000),
+      errorCode,
+      isRetryable,
     });
   }
 });
