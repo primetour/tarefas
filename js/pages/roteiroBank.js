@@ -247,6 +247,16 @@ export async function renderRoteiroBank(container) {
   const wrap = container.querySelector('#rb-list-wrap');
   if (wrap) wrap.innerHTML = gridHTML();
 
+  // v4.58.8: re-renderiza dropdown país após o load (countryOptions depende
+  // de state.list que só fica populado AGORA). Antes ficava só "Todos países"
+  // + 1 option vazia porque countryOptions() era chamado no template inicial
+  // quando state.list ainda era [].
+  const countrySelectEl = container.querySelector('#rb-filter-country');
+  if (countrySelectEl) {
+    const currentVal = countrySelectEl.value;
+    countrySelectEl.innerHTML = countryOptions().map(o => `<option value="${o.value}" ${o.value===currentVal?'selected':''}>${o.label}</option>`).join('');
+  }
+
   // v4.50.1+ Hero auto-resolve em background — pra docs sem hero,
   // busca banco_imagens → Unsplash e persiste no doc. Atualiza UI quando achar.
   const missingHero = (state.list || []).filter(d => !d?.images?.hero);

@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 58,
-  patch: 7,
-  build: '20260526-envision-bulk-import-236-approved',
+  patch: 8,
+  build: '20260526-banco-filters-double-check-fixes',
 };
 
 /** "1.2.0" */

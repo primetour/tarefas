@@ -230,6 +230,38 @@ function parsePayment(html) {
   return out;
 }
 
+/**
+ * v4.58.8: Normaliza nome de país Envision pra forma canônica pt-BR.
+ * Mapa de exceções pra casos reais detectados:
+ *   - 'Australia' → 'Austrália' (sem acento original)
+ *   - 'Tanzania' → 'Tanzânia'
+ *   - 'Suiça' → 'Suíça' (typo Envision)
+ *   - 'Coréia do Sul' → 'Coreia do Sul' (ortografia atualizada)
+ * Mantém outros nomes como estão (trim + dedupe via Set caller).
+ */
+const COUNTRY_NORMALIZATIONS = {
+  'australia': 'Austrália',
+  'tanzania': 'Tanzânia',
+  'suiça': 'Suíça',
+  'suiça ': 'Suíça',
+  'colombia': 'Colômbia',
+  'mexico': 'México',
+  'panama': 'Panamá',
+  'paraguai': 'Paraguai',
+  'inglaterra': 'Inglaterra',
+  'escocia': 'Escócia',
+  'irlanda': 'Irlanda',
+  'india': 'Índia',
+  'africa': 'África do Sul',  // observado 3 docs com "África" isolado — provável typo "África do Sul"
+  'sri lanka': 'Sri Lanka',
+};
+function normalizeCountry(raw) {
+  if (!raw || typeof raw !== 'string') return '';
+  const trimmed = raw.trim();
+  const key = trimmed.toLowerCase();
+  return COUNTRY_NORMALIZATIONS[key] || trimmed;
+}
+
 /** Normaliza nome de categoria Envision pra slug consistente. */
 function normalizeCategory(envisionCategoryName) {
   if (!envisionCategoryName) return 'outro';
@@ -376,6 +408,9 @@ function deriveGeo(itinerary) {
   const countries = new Set();
   const cityList = [];      // [{city, country, continent, nights, locationId}]
 
+  // v4.58.8: normalizeCountry aplicado em todos os country values
+  // (acentos, typos, exceções como "África" sozinho).
+
   // Extrair de Products
   for (const p of (itinerary.Products || [])) {
     const loc = typeof p.Location === 'object' ? p.Location
@@ -383,7 +418,7 @@ function deriveGeo(itinerary) {
     if (!loc) continue;
     const cityName = bestLocationName(loc);
     if (!cityName) continue;
-    const country = loc.Country || '';
+    const country = normalizeCountry(loc.Country || '');
     const key = `${cityName}|${country}`;
     if (cities.has(key)) continue;
     cities.add(key);
@@ -391,7 +426,7 @@ function deriveGeo(itinerary) {
     cityList.push({
       city: cityName,
       country,
-      continent: '',                            // requer mapping País→Continente (TODO)
+      continent: '',
       nights: p.NumberOfNights || 0,
       locationId: loc.Id || p.LocationId || null,
       iata: loc.IATA || '',
@@ -408,13 +443,17 @@ function deriveGeo(itinerary) {
     }
   }
 
-  // v4.58.1: continents removido (Renê: "não precisamos do campo continente").
-  // Mantemos array vazio pra retrocompat com schema/UI que ainda referenciam.
+  // v4.58.8: se countries vazio MAS cityList tem entries com country, infere
+  // (caso de roteiro onde 1 Product não tem Country mas outros têm).
+  if (!countries.size && cityList.some(c => c.country)) {
+    for (const c of cityList) if (c.country) countries.add(c.country);
+  }
+
   return {
     continents: [],
     countries:  [...countries],
     cities:     cityList,
-    destinationIds: [],                        // resolvido em pós-processo (matching portal_destinations)
+    destinationIds: [],
   };
 }
 
