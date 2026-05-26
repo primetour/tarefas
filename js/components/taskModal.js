@@ -389,7 +389,7 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
   // Bind events after next paint — use requestAnimationFrame for reliability
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
-      bindEvents(task, users, currentTags, currentAssignees, currentObservers, isEdit, allAbsences, m.getElement());
+      bindEvents(task, users, currentTags, currentAssignees, currentObservers, isEdit, allAbsences, m.getElement(), _ms);
 
       // Track dirty state for cancel confirmation
       setTimeout(() => {
@@ -1953,9 +1953,11 @@ function buildHTML(task, users, projects, tags, assignees, observers, isEdit, ta
   </div>`;
 }
 
-function bindEvents(task, users, currentTags, currentAssignees, currentObservers, isEdit, absences = [], rootEl = null) {
+function bindEvents(task, users, currentTags, currentAssignees, currentObservers, isEdit, absences = [], rootEl = null, _ms = null) {
   // Scope used for subtask (and other) DOM queries. Falls back to `document`
   // when a modal root isn't provided, preserving legacy behavior.
+  // v4.57.57: _ms vem do _modalAbortCtrl.signal do openTaskModal (passado por param —
+  // sem isso, dava ReferenceError em runtime nas linhas que usam { signal: _ms }).
   const root = rootEl || document;
   const qId = (id) => (rootEl ? rootEl.querySelector('#' + id) : document.getElementById(id));
 
@@ -2661,7 +2663,7 @@ function bindEvents(task, users, currentTags, currentAssignees, currentObservers
       }
     }
   });
-  document.addEventListener('click', () => { const dd=document.getElementById('assignee-dropdown'); if(dd)dd.style.display='none'; }, { signal: _ms });
+  document.addEventListener('click', () => { const dd=document.getElementById('assignee-dropdown'); if(dd)dd.style.display='none'; }, _ms ? { signal: _ms } : false);
 
   // Observadores — mesma lógica dos assignees, sem checagem de ausência
   document.getElementById('observer-add-btn')?.addEventListener('click', (e) => {
@@ -2712,7 +2714,7 @@ function bindEvents(task, users, currentTags, currentAssignees, currentObservers
       chip.remove();
     }
   });
-  document.addEventListener('click', () => { const dd=document.getElementById('observer-dropdown'); if(dd)dd.style.display='none'; }, { signal: _ms });
+  document.addEventListener('click', () => { const dd=document.getElementById('observer-dropdown'); if(dd)dd.style.display='none'; }, _ms ? { signal: _ms } : false);
 
   // Quando datas mudam, atualizar indicadores de ausência no dropdown
   const updateAbsenceIndicators = () => {

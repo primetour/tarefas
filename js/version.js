@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 57,
-  patch: 56,
-  build: '20260526-goals-perm-gate-fix',
+  patch: 57,
+  build: '20260526-taskmodal-ms-undefined-hotfix',
 };
 
 /** "1.2.0" */

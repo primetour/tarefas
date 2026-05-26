@@ -6,6 +6,42 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.57.57+20260526-taskmodal-ms-undefined-hotfix] — 2026-05-26
+
+Release **PATCH/HOTFIX** — Bug crítico que travava o taskModal inteiro: `ReferenceError: _ms is not defined` em `bindEvents` (taskModal.js:2664).
+
+**Bug**
+
+v4.57.25 introduziu `_modalAbortCtrl` + `const _ms = _modalAbortCtrl.signal` no escopo de `openTaskModal()` pra cleanup de listeners globais (fix #5 de leak). Mas referenciou `_ms` dentro de `bindEvents(...)` (linhas 2664, 2715, 3136) — função separada, escopo isolado. Em produção: ao abrir QUALQUER tarefa, `bindEvents` lançava `ReferenceError` na linha 2664 (1ª referência) e abortava antes de chegar aos handlers do observer-add-btn (linhas 2667+). Sintoma reportado por user: "botão de observador não responde".
+
+Evidência: console em produção:
+```
+Uncaught ReferenceError: _ms is not defined
+    at bindEvents (taskModal.js:2664:145)
+    at taskModal.js:392:7
+```
+
+**Fix**
+
+- `bindEvents()` signature: adiciona `_ms = null` como último parâmetro (default null pra compat se chamado de outro lugar).
+- Callsite na linha 392: passa `_ms` (o signal do `_modalAbortCtrl` do escopo openTaskModal).
+- Linhas 2664 e 2715: guard defensivo — `_ms ? { signal: _ms } : false` (listener fica sem AbortSignal se _ms for null, evita crash).
+- Linha 3136 (`setupMentionAutocomplete(_ms)`) — função já aceita signal opcional com fallback `{ once: false }`.
+
+**Impact**
+
+- Adicionar observadores volta a funcionar (handler observer-add-btn deixa de ser dead code após ReferenceError).
+- Adicionar assignees também afetado (mesmo handler aborta no error em runtime — mas o handler do assignee-add-btn está ANTES do ponto de crash, então quebra parcial).
+- Mention autocomplete em comentários também volta.
+
+**Como passou despercebido**
+
+Auditoria estática (§6/§7 CLAUDE.md) cobre cenários funcionais MAS não detecta closure-scope errors automaticamente. Apenas runtime real (sessão logada, abrir modal) dispara. v4.57.25 foi testado mas provavelmente o caminho exato (modal de tarefa NOVA com observers) não foi exercitado a partir do release.
+
+**Lição CLAUDE.md §12 nova**: refator de cleanup (AbortController) usando closure var DEVE ser acompanhado de inspeção em TODAS as funções no mesmo arquivo que possam usar essa var. Se função é separada (não closure), parâmetro explícito + default = só caminho seguro.
+
+---
+
 ## [4.57.56+20260526-goals-perm-gate-fix] — 2026-05-26
 
 Release **PATCH/BUGFIX** — bug crítico reportado por users: gestores não conseguiam cadastrar metas.
