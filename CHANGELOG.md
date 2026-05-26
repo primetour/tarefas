@@ -6,6 +6,29 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.57.47+20260525-banco-imagens-ux-lightbox-guard-upload-progress] — 2026-05-25
+
+Release **PATCH** — Sprint Banco de Imagens (4/5). UX: lightbox keyboard guard + upload progress per-file.
+
+**I15 — Lightbox keyboard interfere com edit modal** (`js/pages/portalImages.js:1619-1631`). Antes: `document.addEventListener('keydown', handleLightboxKey)` global. Edit modal aberto sobre lightbox = ArrowLeft/Right navegavam galeria atrás do modal.
+
+Fix: early return em `handleLightboxKey` se `document.getElementById('img-edit-modal')` existe. Edit modal usa seu próprio Esc handler interno — não conflita.
+
+**I17 — Upload sem progress per-file** (`js/services/portal.js:932-985` + `js/pages/portalImages.js:855-864`). Antes: status "WebP X MB — enviando…" travado por 5-30s sem feedback. User não sabia se 10% ou 99%.
+
+Fix em 2 partes:
+1. `uploadImageToR2(blob, path, { onProgress })` aceita callback opcional. Sem callback → mantém `fetch` (compat 100%). Com callback → switch pra `XMLHttpRequest` que expõe `upload.onprogress` (fetch nativo não tem). Calcula `pct = round(loaded/total * 100)`.
+2. `uploadBatch` (portalImages) passa callback `onProgress: (pct) => statusEl.textContent = 'WebP X MB — Y%'`. Update em tempo real durante upload.
+
+`onerror`, `ontimeout` mapeados pra Error com mensagens claras.
+
+**Validação**:
+- `node --check` 2 arquivos OK
+- E2E: upload em arquivo grande (50MB) → contador % visível atualizando
+- Compatibility: chamadas existentes sem callback continuam usando fetch
+
+---
+
 ## [4.57.46+20260525-banco-imagens-perf-category-counts-cache] — 2026-05-25
 
 Release **PATCH** — Sprint Banco de Imagens (3/5). Performance: cache de category counts entre trocas de pill.

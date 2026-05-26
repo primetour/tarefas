@@ -849,7 +849,15 @@ async function uploadBatch() {
       const path = pathPrefixParts.join('/')
         + '/' + Date.now() + '-' + slug(file.name.replace(/\.[^.]+$/,'')) + '.webp';
 
-      const url = await uploadImageToR2(blob, path);
+      // v4.57.47 fix I17: callback de progress atualiza statusEl com %.
+      // XHR-based upload (em uploadImageToR2) expõe upload.progress que
+      // fetch nativo não dá. UX antes: "WebP X MB — enviando…" travado.
+      // Agora: "WebP X MB — 45%" updating em tempo real.
+      const url = await uploadImageToR2(blob, path, {
+        onProgress: (pct) => {
+          if (statusEl && pct < 100) statusEl.textContent = `WebP (${sizeMB} MB) — ${pct}%`;
+        },
+      });
       try {
         await saveImageMeta({ assetCategory, continent, country, city, type, tags, name, placeName,
           copyright, url, path,
@@ -1619,6 +1627,10 @@ function closeLightbox() {
 function handleLightboxKey(e) {
   const lb = document.getElementById('img-lightbox');
   if (!lb || lb.style.display === 'none') return;
+  // v4.57.47 fix I15: guard contra modal sobre lightbox. Quando edit modal
+  // (img-edit-modal) está aberto, ArrowLeft/Right não devem navegar a
+  // galeria por trás. Esc do edit modal já tem seu próprio handler interno.
+  if (document.getElementById('img-edit-modal')) return;
   const imgs = window._galleryImgs || [];
   if (e.key === 'Escape')      closeLightbox();
   if (e.key === 'ArrowLeft'  && lightboxIdx > 0)             { lightboxIdx--; renderLightbox(); }

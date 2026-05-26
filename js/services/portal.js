@@ -929,22 +929,53 @@ export async function convertToWebp(file, quality = 0.92, maxSide = WEBP_MAX_SID
   });
 }
 
-export async function uploadImageToR2(webpBlob, path) {
+// v4.57.47 fix I17: aceita callback opcional onProgress(percentInt) pra UI
+// mostrar % por arquivo. Usa XMLHttpRequest (fetch nativo não expõe upload
+// progress). Mantém comportamento e retorno idênticos ao fetch anterior.
+export async function uploadImageToR2(webpBlob, path, opts = {}) {
   if (!R2_WORKER_URL)   throw new Error('R2_WORKER_URL não configurada. Faça o deploy do Worker.');
   if (!R2_UPLOAD_TOKEN) throw new Error('R2_UPLOAD_TOKEN não configurado.');
   const fd = new FormData();
   fd.append('file', webpBlob, path.split('/').pop());
   fd.append('path', path);
-  const res = await fetch(R2_WORKER_URL, {
-    method: 'POST',
-    headers: { 'X-Upload-Token': R2_UPLOAD_TOKEN },
-    body: fd,
-  });
-  if (!res.ok) {
-    const msg = await res.text().catch(() => res.status);
-    throw new Error(`Upload falhou: ${msg}`);
+
+  const onProgress = typeof opts.onProgress === 'function' ? opts.onProgress : null;
+  if (!onProgress) {
+    // Sem callback: mantém fetch (compat 100%)
+    const res = await fetch(R2_WORKER_URL, {
+      method: 'POST',
+      headers: { 'X-Upload-Token': R2_UPLOAD_TOKEN },
+      body: fd,
+    });
+    if (!res.ok) {
+      const msg = await res.text().catch(() => res.status);
+      throw new Error(`Upload falhou: ${msg}`);
+    }
+    return `${R2_PUBLIC_URL}/${path}`;
   }
-  return `${R2_PUBLIC_URL}/${path}`;
+
+  // Com callback: XHR pra expor upload.progress
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', R2_WORKER_URL);
+    xhr.setRequestHeader('X-Upload-Token', R2_UPLOAD_TOKEN);
+    xhr.upload.onprogress = (ev) => {
+      if (ev.lengthComputable) {
+        const pct = Math.round((ev.loaded / ev.total) * 100);
+        try { onProgress(pct); } catch (_) {}
+      }
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(`${R2_PUBLIC_URL}/${path}`);
+      } else {
+        reject(new Error(`Upload falhou: ${xhr.responseText || xhr.status}`));
+      }
+    };
+    xhr.onerror = () => reject(new Error('Upload falhou: erro de rede'));
+    xhr.ontimeout = () => reject(new Error('Upload falhou: timeout'));
+    xhr.send(fd);
+  });
 }
 
 export async function deleteFromR2(path) {

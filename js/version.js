@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 57,
-  patch: 46,
-  build: '20260525-banco-imagens-perf-category-counts-cache',
+  patch: 47,
+  build: '20260525-banco-imagens-ux-lightbox-guard-upload-progress',
 };
 
 /** "1.2.0" */
