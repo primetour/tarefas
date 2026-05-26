@@ -6,6 +6,44 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.57.44+20260525-banco-imagens-revert-autodelete-add-badge] — 2026-05-25
+
+Release **PATCH** — Sprint Banco de Imagens (1/5). **REVERSÃO** de comportamento errado introduzido em v4.57.42 + UI feedback.
+
+**Reversão crítica — auto-delete 30d removido.**
+
+Em **v4.57.42 (PD10)** eu criei `portalImagesOrphanCleanupCron` que, após 30d com flag `unused`, fazia **hard-delete** do doc Firestore + gravava marker em `portal_images_pending_r2_delete` (eu planejava CF separada pra limpar R2 — gap #I5).
+
+Renê corrigiu (2026-05-25): **"a ideia do banco é ter os arquivos independente da quantidade de uso"**. Banco de Imagens é **repositório**, não cache. Imagens podem ser re-aproveitadas a qualquer momento — perda automática quebra esse contrato.
+
+**Mudanças em `functions/index.js` `portalImagesOrphanCleanupCron`**:
+- ❌ Removido bloco `if (img.unused && detectedAt < cutoff30d)` que fazia `batch.delete(docSnap.ref)` + gravava marker
+- ❌ Removido `cutoff30d` e `hardDeleted` do stats
+- ❌ Cancelado gap #I5 (CF processor R2 markers) — não vai existir
+- ✅ Mantido: detecção + flag `unused:true, unusedDetectedAt:<ts>`
+- ✅ Mantido: reverse-flag (imagem voltou a ser usada → remove flag)
+- ✅ Header da CF atualizado documentando decisão: "JAMAIS deleta. Hard-delete é exclusivamente manual via botão Excluir."
+
+**Badge UI "Não usada" no card** (`js/pages/portalImages.js:1308-1312`). Quando `img.unused === true`, card mostra badge azul no canto superior direito com tooltip "Esta imagem não está sendo usada em nenhum roteiro, tip ou destino atualmente". Cor azul (informativa), não vermelha/amarela (alerta). Curador vê contexto sem alarme.
+
+**Validação E2E**:
+- Deploy `firebase deploy --only functions:portalImagesOrphanCleanupCron` OK
+- Trigger manual: `scanned:128, flaggedUnused:128, errors:0` — campo `hardDeleted` removido confirma reversão
+- Próxima abertura do Banco de Imagens mostra badge "Não usada" nas 128 imagens flagged (esperado — refs set possivelmente truncou em cap 500, alguns falsos positivos OK porque é só informativo)
+
+**Impacto em sprint planejado**:
+- #I5 (CF processor R2 markers) — descartado. Não precisa mais.
+- Sprint reduz de 5 pra 4 releases efetivas.
+
+**Outros gaps do audit Banco de Imagens** (próximas releases planejadas):
+- v4.57.45 — I6 storage rollback + I16 edit conflict + I11 cascade race
+- v4.57.46 — I8 stats doc + I10 client cache
+- v4.57.47 — I13 (já feito aqui) + I15 lightbox guard + I17 upload progress
+- v4.57.48 — I21 + I23 + I24 (polish)
+- v4.57.49 (dedicada) — **I1 R2 token security com validação E2E completa**
+
+---
+
 ## [4.57.43+20260525-portal-dicas-polish-confirm-errorcode-vars] — 2026-05-25
 
 Release **PATCH** — Sprint Portal de Dicas (5/5, final). Polish: anti-padrões.

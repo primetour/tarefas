@@ -1306,6 +1306,10 @@ function imgCard(img, idx) {
         <div style="position:absolute;top:6px;left:6px;font-size:0.6375rem;padding:2px 7px;
           border-radius:20px;background:rgba(0,0,0,.65);color:white;backdrop-filter:blur(4px);">
           ${esc(typeBadge)}</div>
+        ${img.unused ? `<div title="Esta imagem não está sendo usada em nenhum roteiro, tip ou destino atualmente"
+          style="position:absolute;top:6px;right:6px;font-size:0.6375rem;padding:2px 7px;
+          border-radius:20px;background:rgba(59,130,246,.85);color:white;backdrop-filter:blur(4px);">
+          Não usada</div>` : ''}
       </div>
       <div style="padding:10px 12px;">
         <div style="font-size:0.875rem;font-weight:600;white-space:nowrap;overflow:hidden;

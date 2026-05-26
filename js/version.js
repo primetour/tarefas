@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 57,
-  patch: 43,
-  build: '20260525-portal-dicas-polish-confirm-errorcode-vars',
+  patch: 44,
+  build: '20260525-banco-imagens-revert-autodelete-add-badge',
 };
 
 /** "1.2.0" */

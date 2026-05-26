@@ -4441,24 +4441,27 @@ export const onPortalTipUpdated = onDocumentUpdated({
 });
 
 /* ═════════════════════════════════════════════════════════════════
- * portalImagesOrphanCleanupCron — flag imagens órfãs e arquiva.
+ * portalImagesOrphanCleanupCron — detecta + sinaliza imagens não usadas.
  *
- * Fecha gap PD10 da auditoria Portal de Dicas. Antes: imagem removida
- * de uma galeria persiste em portal_images + R2 indefinidamente.
- * Acúmulo de "lixo" cresce com uso.
+ * v4.57.42 (criado): cobria PD10 com auto-delete >30d.
+ * v4.57.44 (revertido): REMOVIDO auto-delete. Decisão Renê 2026-05-25:
+ *   "Banco de Imagens é repositório, não cache. Arquivos ficam
+ *    independente de uso futuro, podem ser re-aproveitados a qualquer
+ *    momento. CF apenas SINALIZA, nunca deleta."
  *
  * Schedule: 0 7 * * 1 (segunda 7h BRT, semanal).
- * Política:
- *  1. Scan portal_images (cap 1000).
- *  2. Pra cada imagem, query inversa em: portal_tips (segments.items.image.imageId),
- *     portal_destinations (heroImage.imageId), roteiros (days.imageIds).
- *  3. Se 0 referências → flag `unused: true` + `unusedDetectedAt`.
- *  4. Imagens já flagged com `unused: true` há > 30d → hard delete (doc + R2).
- *  5. Audit log + notif single pra portal_manage (sumário "N imagens limpas").
+ * Política atual:
+ *  1. Pre-fetch refs vivas em portal_tips, portal_destinations, roteiros.
+ *  2. Scan portal_images (cap 1000).
+ *  3. Se imagem NÃO está em refs E ainda não tinha flag → marca
+ *     `unused: true, unusedDetectedAt: <ts>`. UI mostra badge "Não
+ *     usada atualmente" pro curador decidir manualmente.
+ *  4. Se imagem voltou a ser usada (foi re-taggada) → remove flag.
+ *  5. JAMAIS deleta doc nem blob R2. Hard-delete é exclusivamente
+ *     manual via botão Excluir no card.
  *
- * Conservadorismo: scan é cap 1000 por execução pra não estourar
- * timeout. Roteiros com images cap 500. Em produção grande, virar
- * batched (cursor pagination) — pra agora é OK.
+ * Conservadorismo: scan cap 1000 por execução. Em produção grande,
+ * virar batched (cursor pagination).
  * ═════════════════════════════════════════════════════════════════ */
 export const portalImagesOrphanCleanupCron = onSchedule({
   schedule: '0 7 * * 1',           // segunda 7h BRT
@@ -4467,8 +4470,9 @@ export const portalImagesOrphanCleanupCron = onSchedule({
   memory: '512MiB',
   retryCount: 1,
 }, async () => {
-  const stats = { scanned: 0, flaggedUnused: 0, hardDeleted: 0, errors: 0 };
-  const cutoff30d = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  // v4.57.44 REVERSÃO: stats e cutoff30d removidos junto com auto-delete.
+  // Banco de Imagens é repositório — só detecta+flag, nunca deleta.
+  const stats = { scanned: 0, flaggedUnused: 0, errors: 0 };
 
   // 1. Pre-fetch all reference IDs (3 collections)
   const refs = new Set();
@@ -4532,28 +4536,15 @@ export const portalImagesOrphanCleanupCron = onSchedule({
     }
 
     // Não usada
-    const detectedAt = img.unusedDetectedAt?.toMillis?.() || 0;
-    if (img.unused && detectedAt && detectedAt < cutoff30d) {
-      // Hard delete (R2 blob + doc)
-      // Inline import pra evitar peso no cold start
-      try {
-        if (img.path) {
-          // Best-effort R2 delete via Cloudflare API (deleteFromR2 está client-side, replicamos lógica)
-          const r2Url = `https://primetour-images.r2.cloudflarestorage.com/${img.path}`;
-          // CF não tem cred R2 aqui — gravamos marker pra script offline limpar
-          await db.collection('portal_images_pending_r2_delete').doc(docSnap.id).set({
-            path: img.path,
-            r2Url,
-            markedAt: FieldValue.serverTimestamp(),
-            reason: 'auto-cleanup orphan >30d',
-          });
-        }
-      } catch (e) { console.warn('[portalImagesOrphanCleanupCron] R2 marker fail:', e?.message); }
-      batch.delete(docSnap.ref);
-      ops++;
-      stats.hardDeleted++;
-    } else if (!img.unused) {
-      // Primeira detecção como órfã: flag + timestamp
+    // v4.57.44 REVERSÃO: removido auto-delete após 30d. Banco de Imagens é
+    // REPOSITÓRIO (não cache) — arquivos ficam independente de uso futuro,
+    // podem ser re-aproveitados a qualquer momento. CF agora APENAS detecta
+    // + sinaliza via flag `unused`. Curador decide manualmente se quer
+    // arquivar/deletar pelo botão Excluir no card.
+    // Decisão Renê 2026-05-25 após audit Banco de Imagens.
+    if (!img.unused) {
+      // Primeira detecção como órfã: flag + timestamp pra UI mostrar contexto
+      // (badge "Não usada atualmente" no card)
       batch.update(docSnap.ref, {
         unused: true,
         unusedDetectedAt: FieldValue.serverTimestamp(),
