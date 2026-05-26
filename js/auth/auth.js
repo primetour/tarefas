@@ -675,22 +675,26 @@ export function initAuthObserver(onReady) {
           .catch(() => {});
 
         // ─── Automation services (lazy, non-blocking) ───
+        // v4.57.33 (gap #7): SLA/stale/dailySummary migraram pra CF
+        // scheduledNotificationsCron (rodando 7h BRT todo dia, actorId='system').
+        // Antes esses 3 rodavam client-side atribuindo actorId ao user que
+        // abrisse o app primeiro — semanticamente errado + duplicação cross-user.
+        // Mantemos runAutoArchive como client-side (arquivamento local, não
+        // notifica e depende de prefs do user). Imports comentados ficam aqui
+        // como bookmark caso precise ressuscitar como fallback.
         Promise.resolve().then(async () => {
-          const [
-            { checkSlaAlerts },
-            { checkStaleTasks },
-            { runAutoArchive },
-            { generateDailySummary },
-          ] = await Promise.all([
-            import('../services/slaAlerts.js'),
-            import('../services/staleTaskNudge.js'),
-            import('../services/autoArchive.js'),
-            import('../services/dailySummary.js'),
-          ]);
-          checkSlaAlerts().catch(() => {});
-          checkStaleTasks().catch(() => {});
+          const { runAutoArchive } = await import('../services/autoArchive.js');
           runAutoArchive().catch(() => {});
-          generateDailySummary().catch(() => {});
+          // FALLBACK COMENTADO — descomentar SOMENTE se CF scheduledNotificationsCron falhar:
+          // const [{ checkSlaAlerts }, { checkStaleTasks }, { generateDailySummary }] =
+          //   await Promise.all([
+          //     import('../services/slaAlerts.js'),
+          //     import('../services/staleTaskNudge.js'),
+          //     import('../services/dailySummary.js'),
+          //   ]);
+          // checkSlaAlerts().catch(() => {});
+          // checkStaleTasks().catch(() => {});
+          // generateDailySummary().catch(() => {});
         }).catch(() => {});
 
       } catch (err) {

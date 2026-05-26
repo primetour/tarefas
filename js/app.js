@@ -536,8 +536,11 @@ function mountShell(root) {
     });
     // Cleanup expired notifications (runs once on login)
     cleanupExpired(currentUser.uid).catch(() => {});
-    // Start deadline check scheduler
-    startScheduler();
+    // v4.57.33 (gap #7): startScheduler() (deadline approaching/overdue)
+    // migrou pra CF scheduledNotificationsCron. Mantido import no topo do
+    // arquivo como fallback. Pra ressuscitar: descomente a linha abaixo
+    // E desabilite a CF via gcloud scheduler pause.
+    // startScheduler();
     // Scheduler de agents (Fase 5 IA Hub) — substitui aiAutomations legado
     import('./services/agentScheduler.js?v=20260512oo4').then(m => m.startAgentScheduler()).catch(() => {});
   }

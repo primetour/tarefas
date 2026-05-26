@@ -6,6 +6,44 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.57.33+20260525-scheduled-notifications-cf-system-actor] — 2026-05-25
+
+Release **PATCH** — fecha o gap #7 da auditoria de integrações. Notifs sistêmicas (SLA, stale, deadline approaching, daily summary) migraram pra Cloud Function com `actorId='system'`.
+
+**Problema (antes)**: 4 services client-side (`slaAlerts.js`, `staleTaskNudge.js`, `notificationScheduler.js`, `dailySummary.js`) rodavam em `setInterval` no browser. Quando o user abria o app, `notify()` chamava `store.get('currentUser')?.uid` como `actorId`. Resultado: TODAS as notifs sistêmicas do dia ficavam atribuídas ao primeiro user que abriu o app. Filtro "minhas notifs disparadas" virava lixo, atribuição inconsistente, e se ninguém abrisse o sistema, alerta não saía.
+
+**Solução** (3 partes):
+
+1. **Pseudo-user `users/system`** (`functions/create-system-user.cjs`)
+   - Doc com `id='system'`, `name='Sistema PRIMETOUR'`, `active=false`, `isSystem=true`
+   - Renderers (`notificationPanel.js:250`) já tinham fallback pra `n.actorName` quando `actorId==='system'` — funciona sem mudança de UI.
+
+2. **CF `scheduledNotificationsCron`** (`functions/index.js`)
+   - Schedule: `0 7 * * *` America/Sao_Paulo (todo dia 7h BRT)
+   - Timeout 540s, memory 512MiB (mais data crunching)
+   - 1 fetch de tasks ativas + 1 fetch de users (filtra `system` + `active!=false`)
+   - Pra cada user, computa: SLA breach/today/tomorrow, stale (in_progress/review/not_started), deadline_approaching (48h-24h window), daily summary
+   - Batch write (limit 400 ops/batch com flush automático)
+   - Admin SDK bypassa rule `actorId == auth.uid` — escreve com `actorId='system'`, `actorName='Sistema PRIMETOUR'`
+   - Audit log agregado por run (`system.scheduled_notifications_cron`)
+
+3. **Client-side desabilitado** (`js/auth/auth.js`, `js/app.js`)
+   - 3 chamadas em `auth.js` (`checkSlaAlerts/checkStaleTasks/generateDailySummary`) comentadas com bookmark FALLBACK pra ressuscitar se CF instável
+   - `startScheduler()` em `app.js` comentado (era `notificationScheduler.js`)
+   - `runAutoArchive()` mantido client-side (arquivamento local, não notifica)
+   - Imports preservados — código vivo, apenas desativado
+
+**Validação E2E**:
+- Deploy CF + `gcloud scheduler jobs run` manual → 18 users escaneados, 77 tasks, **67 notifs criadas em 1 run, 0 erros**
+- Distribuição: 5 sla_breach + 4 sla_today + 9 sla_tomorrow + 7 stale + 4 stale_review + 6 stale_not_started + 13 daily_summary + 19 deadline_approaching
+- Verificação Firestore: notifs gravadas com `actorId='system'`, `actorName='Sistema PRIMETOUR'`
+
+**Sprint integrações fechada (v4.57.28→33)**: 6 releases, gaps #1, #2, #3, #5, #11, #4, #7 todos resolvidos + cleanup de 8 caminhos FK + 2 CFs novas (`recurringTasksDailyCron` + `scheduledNotificationsCron`).
+
+**Princípio arquitetural consolidado**: notifs/work que dependem de "qualquer user logado" são lazy-loaded silenciosamente quebradas — sempre que possível, mover pra Cloud Function agendada com pseudo-user 'system'. Client-side fica como fallback comentado, não como caminho principal.
+
+---
+
 ## [4.57.32+20260525-recurring-tasks-cf-cron] — 2026-05-25
 
 Release **PATCH** — fecha o gap #4 da auditoria de integrações. Geração de tarefas recorrentes agora roda também server-side via Cloud Function agendada.

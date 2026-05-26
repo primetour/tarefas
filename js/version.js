@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 57,
-  patch: 32,
-  build: '20260525-recurring-tasks-cf-cron',
+  patch: 33,
+  build: '20260525-scheduled-notifications-cf-system-actor',
 };
 
 /** "1.2.0" */

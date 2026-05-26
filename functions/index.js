@@ -23,7 +23,7 @@ import { onSchedule }         from 'firebase-functions/v2/scheduler';
 import { onDocumentCreated }  from 'firebase-functions/v2/firestore';
 import { defineSecret }       from 'firebase-functions/params';
 import { initializeApp }      from 'firebase-admin/app';
-import { getFirestore, FieldValue } from 'firebase-admin/firestore';
+import { getFirestore, FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { getAuth }            from 'firebase-admin/auth';
 import { GoogleAuth }         from 'google-auth-library';
 import { renderEmailTemplate, buildNotificationEmail } from './emailTemplate.js';
@@ -3845,4 +3845,308 @@ export const recurringTasksDailyCron = onSchedule({
   });
 
   console.log(`[recurringTasksDailyCron] done:`, JSON.stringify(report));
+});
+
+/* ═════════════════════════════════════════════════════════════════
+ * scheduledNotificationsCron — gera notifs do sistema (SLA, stale,
+ * deadline approaching, daily summary) com actorId='system'.
+ *
+ * Fecha gap #7 da auditoria de integrações: antes os 4 services
+ * (slaAlerts/staleTaskNudge/notificationScheduler/dailySummary)
+ * rodavam client-side e atribuíam actorId = user logado primeiro.
+ * Resultado: filtro "minhas notifs disparadas" virava lixo + se
+ * ninguém abrisse o app, alerta não saía.
+ *
+ * Roda 7h BRT todo dia. Lê tasks + users uma vez, agrupa por
+ * stakeholder, escreve notif batch com Admin SDK (bypassa rule
+ * actorId == auth.uid).
+ *
+ * Client-side wrappers (slaAlerts.js etc.) ficam DESABILITADOS no
+ * boot do app (commit junto desta CF). Mantém código pra ressuscitar
+ * como fallback se a CF se mostrar instável.
+ * ═════════════════════════════════════════════════════════════════ */
+const SYSTEM_ACTOR_ID    = 'system';
+const SYSTEM_ACTOR_NAME  = 'Sistema PRIMETOUR';
+const ACTIVE_STATUSES    = ['not_started', 'in_progress', 'review', 'approval', 'validation', 'rework'];
+const STALE_IN_PROGRESS  = 5;   // dias
+const STALE_REVIEW       = 3;
+const STALE_NOT_STARTED  = 7;
+const APPROACHING_HOURS  = 48;
+const NOTIF_TTL_DAYS     = 30;
+
+function _notifDueISO(val) {
+  if (!val) return '';
+  let d;
+  if (val?.toDate) d = val.toDate();
+  else if (val instanceof Date) d = val;
+  else if (typeof val === 'string') {
+    const m = val.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+    d = new Date(val);
+  } else if (typeof val === 'number') d = new Date(val);
+  else return '';
+  if (!d || isNaN(d.getTime())) return '';
+  const y = d.getFullYear(), mo = String(d.getMonth()+1).padStart(2,'0'), da = String(d.getDate()).padStart(2,'0');
+  return `${y}-${mo}-${da}`;
+}
+
+function _ymd(d) {
+  const y = d.getFullYear(), mo = String(d.getMonth()+1).padStart(2,'0'), da = String(d.getDate()).padStart(2,'0');
+  return `${y}-${mo}-${da}`;
+}
+
+function _writeNotifBatch(batch, recipientId, payload, now, expiresAt) {
+  const docRef = db.collection('notifications').doc();
+  batch.set(docRef, {
+    actorId:     SYSTEM_ACTOR_ID,
+    actorName:   SYSTEM_ACTOR_NAME,
+    recipientId,
+    read:        false,
+    readAt:      null,
+    createdAt:   now,
+    expiresAt,
+    ...payload,
+  });
+  return docRef.id;
+}
+
+export const scheduledNotificationsCron = onSchedule({
+  schedule: '0 7 * * *',          // 7h BRT todo dia
+  timeZone: 'America/Sao_Paulo',
+  timeoutSeconds: 540,
+  memory: '512MiB',
+  retryCount: 1,
+}, async () => {
+  const stats = {
+    usersScanned: 0,
+    tasksScanned: 0,
+    notifsCreated: 0,
+    notifsByType: {},
+    errors: 0,
+  };
+
+  // 1) Buscar tasks ativas (uma vez)
+  let tasksSnap;
+  try {
+    tasksSnap = await db.collection('tasks')
+      .where('status', 'in', ACTIVE_STATUSES)
+      .limit(2000)
+      .get();
+  } catch (e) {
+    console.error('[scheduledNotificationsCron] fail fetch tasks:', e?.message);
+    return;
+  }
+  const tasks = tasksSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  stats.tasksScanned = tasks.length;
+
+  // 2) Buscar users ativos (exclui pseudo-user 'system')
+  let usersSnap;
+  try {
+    usersSnap = await db.collection('users').get();
+  } catch (e) {
+    console.error('[scheduledNotificationsCron] fail fetch users:', e?.message);
+    return;
+  }
+  const users = usersSnap.docs
+    .map(d => ({ id: d.id, ...d.data() }))
+    .filter(u => u.id !== SYSTEM_ACTOR_ID && u.active !== false);
+  stats.usersScanned = users.length;
+
+  const now = new Date();
+  const todayStr    = _ymd(now);
+  const tomorrowStr = _ymd(new Date(now.getTime() + 24*60*60*1000));
+  const tsNow       = FieldValue.serverTimestamp();
+  const expiresAt   = Timestamp.fromMillis(now.getTime() + NOTIF_TTL_DAYS*24*60*60*1000);
+
+  let batch = db.batch();
+  let batchOps = 0;
+  const flushBatch = async () => {
+    if (batchOps > 0) { await batch.commit(); batch = db.batch(); batchOps = 0; }
+  };
+  const trackType = (type) => { stats.notifsByType[type] = (stats.notifsByType[type] || 0) + 1; stats.notifsCreated++; };
+
+  for (const user of users) {
+    const uid = user.id;
+
+    // Tasks onde o user é stakeholder
+    const myTasks = tasks.filter(t => {
+      const assignees = Array.isArray(t.assignees) ? t.assignees : [];
+      const observers = Array.isArray(t.observers) ? t.observers : [];
+      return t.createdBy === uid || assignees.includes(uid) || observers.includes(uid);
+    });
+    if (myTasks.length === 0) continue;
+
+    // ── (a) SLA: overdue / today / tomorrow ──
+    const overdue = [];
+    const dueToday = [];
+    const dueTomorrow = [];
+    for (const t of myTasks) {
+      if (!t.dueDate) continue;
+      // Skip validation (SLA congelado v4.53.0)
+      if (t.status === 'validation') continue;
+      const due = _notifDueISO(t.dueDate);
+      if (!due) continue;
+      if (due < todayStr) overdue.push(t);
+      else if (due === todayStr) dueToday.push(t);
+      else if (due === tomorrowStr) dueTomorrow.push(t);
+    }
+
+    if (overdue.length > 0) {
+      _writeNotifBatch(batch, uid, {
+        type:        'task.sla_breach',
+        entityType:  'system',
+        entityId:    'sla-check',
+        title:       `⚠ ${overdue.length} tarefa(s) com prazo vencido`,
+        body:        overdue.slice(0,3).map(t => `"${t.title || t.id}"`).join(', ') + (overdue.length>3 ? ` e mais ${overdue.length-3}` : ''),
+        route:       'tasks',
+        priority:    'high',
+        category:    'sla',
+      }, tsNow, expiresAt);
+      trackType('task.sla_breach'); batchOps++;
+    }
+    if (dueToday.length > 0) {
+      _writeNotifBatch(batch, uid, {
+        type:        'task.sla_today',
+        entityType:  'system',
+        entityId:    'sla-check',
+        title:       `📅 ${dueToday.length} tarefa(s) vencem hoje`,
+        body:        dueToday.slice(0,3).map(t => `"${t.title || t.id}"`).join(', '),
+        route:       'tasks',
+        priority:    'normal',
+        category:    'sla',
+      }, tsNow, expiresAt);
+      trackType('task.sla_today'); batchOps++;
+    }
+    if (dueTomorrow.length > 0) {
+      _writeNotifBatch(batch, uid, {
+        type:        'task.sla_tomorrow',
+        entityType:  'system',
+        entityId:    'sla-check',
+        title:       `🔔 ${dueTomorrow.length} tarefa(s) vencem amanhã`,
+        body:        dueTomorrow.slice(0,3).map(t => `"${t.title || t.id}"`).join(', '),
+        route:       'tasks',
+        priority:    'normal',
+        category:    'sla',
+      }, tsNow, expiresAt);
+      trackType('task.sla_tomorrow'); batchOps++;
+    }
+
+    // ── (b) Stale: tarefas paradas há N dias ──
+    const stale = { inProgress: [], inReview: [], notStarted: [] };
+    const nowMs = now.getTime();
+    for (const t of myTasks) {
+      if (!Array.isArray(t.assignees) || !t.assignees.includes(uid)) continue;  // nudge só assignee
+      const updTs = t.updatedAt?.toDate?.() || (t.updatedAt?.seconds ? new Date(t.updatedAt.seconds*1000) : null);
+      if (!updTs) continue;
+      const days = Math.floor((nowMs - updTs.getTime()) / (24*60*60*1000));
+      if (t.status === 'in_progress' && days >= STALE_IN_PROGRESS) stale.inProgress.push({...t, daysSince: days});
+      else if (t.status === 'review' && days >= STALE_REVIEW)      stale.inReview.push({...t, daysSince: days});
+      else if (t.status === 'not_started' && days >= STALE_NOT_STARTED) stale.notStarted.push({...t, daysSince: days});
+    }
+
+    if (stale.inProgress.length) {
+      _writeNotifBatch(batch, uid, {
+        type:        'task.stale',
+        entityType:  'system',
+        entityId:    'stale-check',
+        title:       `${stale.inProgress.length} tarefa(s) parada(s) em "Em Andamento"`,
+        body:        stale.inProgress.slice(0,3).map(t => `"${t.title}" (${t.daysSince}d)`).join(', '),
+        route:       'tasks',
+        category:    'productivity',
+      }, tsNow, expiresAt);
+      trackType('task.stale'); batchOps++;
+    }
+    if (stale.inReview.length) {
+      _writeNotifBatch(batch, uid, {
+        type:        'task.stale_review',
+        entityType:  'system',
+        entityId:    'stale-check',
+        title:       `${stale.inReview.length} tarefa(s) aguardando revisão há dias`,
+        body:        stale.inReview.slice(0,3).map(t => `"${t.title}" (${t.daysSince}d)`).join(', '),
+        route:       'tasks',
+        category:    'productivity',
+      }, tsNow, expiresAt);
+      trackType('task.stale_review'); batchOps++;
+    }
+    if (stale.notStarted.length) {
+      _writeNotifBatch(batch, uid, {
+        type:        'task.stale_not_started',
+        entityType:  'system',
+        entityId:    'stale-check',
+        title:       `${stale.notStarted.length} tarefa(s) não iniciada(s) há ${stale.notStarted[0].daysSince}+ dias`,
+        body:        stale.notStarted.slice(0,3).map(t => `"${t.title}"`).join(', '),
+        route:       'tasks',
+        category:    'productivity',
+      }, tsNow, expiresAt);
+      trackType('task.stale_not_started'); batchOps++;
+    }
+
+    // ── (c) Daily summary ──
+    const myAssigneeTasks = myTasks.filter(t => Array.isArray(t.assignees) && t.assignees.includes(uid));
+    if (myAssigneeTasks.length > 0) {
+      const inProgress = myAssigneeTasks.filter(t => t.status === 'in_progress');
+      const inReview   = myAssigneeTasks.filter(t => t.status === 'review');
+      const parts = [];
+      if (dueToday.length)  parts.push(`${dueToday.length} para hoje`);
+      if (overdue.length)   parts.push(`${overdue.length} atrasada(s)`);
+      if (inProgress.length) parts.push(`${inProgress.length} em andamento`);
+      if (inReview.length)  parts.push(`${inReview.length} em revisão`);
+      const body = parts.join(' · ') || `${myAssigneeTasks.length} tarefa(s) ativa(s)`;
+      _writeNotifBatch(batch, uid, {
+        type:        'system.daily_summary',
+        entityType:  'system',
+        entityId:    'daily-summary',
+        title:       `Bom dia! Seu resumo: ${myAssigneeTasks.length} tarefa(s)`,
+        body,
+        route:       'dashboard',
+        category:    'summary',
+      }, tsNow, expiresAt);
+      trackType('system.daily_summary'); batchOps++;
+    }
+
+    // ── (d) Deadline approaching (próximos 48h, dedup natural por daily run) ──
+    for (const t of myTasks) {
+      if (t.status === 'validation') continue;
+      if (!t.dueDate) continue;
+      const due = t.dueDate?.toDate?.() || new Date(t.dueDate);
+      if (isNaN(due.getTime())) continue;
+      const hoursUntilDue = (due - now) / (1000*60*60);
+      // Já cobrimos overdue e sla_today/tomorrow acima. Approaching = 48h-24h window.
+      if (hoursUntilDue > 24 && hoursUntilDue <= APPROACHING_HOURS) {
+        const hoursLeft = Math.round(hoursUntilDue);
+        const label = hoursLeft >= 24 ? `${Math.ceil(hoursLeft/24)} dia(s)` : `${hoursLeft}h`;
+        _writeNotifBatch(batch, uid, {
+          type:        'task.deadline_approaching',
+          entityType:  'task',
+          entityId:    t.id,
+          title:       'Prazo próximo',
+          body:        `"${t.title || t.id}" — vence em ${label}`,
+          route:       'tasks',
+          priority:    'normal',
+          category:    'task',
+        }, tsNow, expiresAt);
+        trackType('task.deadline_approaching'); batchOps++;
+      }
+    }
+
+    // Flush por safety a cada ~400 ops (limite Firestore 500/batch)
+    if (batchOps >= 400) await flushBatch();
+  }
+
+  try {
+    await flushBatch();
+  } catch (e) {
+    stats.errors++;
+    console.error('[scheduledNotificationsCron] batch commit failed:', e?.message);
+  }
+
+  await db.collection('audit_logs').add({
+    action: 'system.scheduled_notifications_cron',
+    userId: 'system',
+    severity: stats.errors > 0 ? 'warning' : 'info',
+    ...stats,
+    timestamp: FieldValue.serverTimestamp(),
+  });
+
+  console.log('[scheduledNotificationsCron] done:', JSON.stringify(stats));
 });
