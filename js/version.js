@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 57,
-  patch: 54,
-  build: '20260526-analytics-listener-cleanup-state-reset',
+  patch: 55,
+  build: '20260526-analytics-query-orderby-truncation-warn',
 };
 
 /** "1.2.0" */

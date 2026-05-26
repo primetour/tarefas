@@ -6,6 +6,22 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.57.55+20260526-analytics-query-orderby-truncation-warn] — 2026-05-26
+
+Release **PATCH/PERF** — sprint Analytics #3/5. Queries de logs/custos com orderBy timestamp desc + warn de truncamento.
+
+**Mudanças**
+
+- `js/pages/aiHub.js renderCostsTab`: query `ai_usage_logs` agora usa `orderBy('timestamp','desc')` + limit 5000 (antes 2000 sem ordem definida). Banner UI quando `snap.size === limit` avisa truncamento.
+- `js/pages/aiHub.js renderLogsTab`: query usa `orderBy('timestamp','desc')` server-side + limit 500 (antes sort client-side de docs em ordem arbitrária do Firestore — risco de exibir logs antigos enquanto recentes ficavam fora do snapshot). Banner avisa truncamento.
+
+**Por quê**
+
+- A1+A2 (audit Analytics): sem `orderBy`, Firestore retorna docs em ordem de inserção/storage = não-determinística. Limit 2000 era arbitrário; pra orgs com >2k chamadas/30d, totais subestimavam custo real.
+- UX: warning visível pro user em vez de console-only — admin sabe quando os totais estão truncados e pode olhar logs CF pra histórico completo.
+
+---
+
 ## [4.57.54+20260526-analytics-listener-cleanup-state-reset] — 2026-05-26
 
 Release **PATCH/PERF** — sprint Analytics #2/5. Listener cleanup + state reset cross-session.

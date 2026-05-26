@@ -1726,19 +1726,16 @@ async function renderKnowledgeTab(container) {
 }
 
 async function renderLogsTab(container) {
-  // Lê últimos 200 logs com filtro por agente
+  // v4.57.55 — lê últimos 500 logs orderBy timestamp desc (antes era sem orderBy = ordem arbitrária do Firestore)
   const { collection, getDocs, query, orderBy, limit } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
   const { db } = await import('../firebase.js');
   let agents = await fetchAgents();
-  let logs = [];
+  const LOGS_LIMIT = 500;
+  let logs = [], logsTruncated = false;
   try {
-    const snap = await getDocs(query(collection(db, 'ai_usage_logs'), limit(500)));
+    const snap = await getDocs(query(collection(db, 'ai_usage_logs'), orderBy('timestamp', 'desc'), limit(LOGS_LIMIT)));
     logs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    logs.sort((a, b) => {
-      const ta = a.timestamp?.toDate ? a.timestamp.toDate().getTime() : 0;
-      const tb = b.timestamp?.toDate ? b.timestamp.toDate().getTime() : 0;
-      return tb - ta;
-    });
+    logsTruncated = snap.size === LOGS_LIMIT;
   } catch (e) {
     container.innerHTML = `<p style="color:var(--color-danger);padding:24px;">Erro: ${esc(e.message)}</p>`;
     return;
@@ -1747,6 +1744,9 @@ async function renderLogsTab(container) {
   function paint() {
     const filtered = filterAgent ? logs.filter(l => l.agentId === filterAgent) : logs;
     container.innerHTML = `
+      ${logsTruncated ? `<div style="background:rgba(245,158,11,.08);border-left:3px solid #F59E0B;padding:10px 14px;border-radius:6px;margin-bottom:12px;font-size:0.8125rem;color:var(--text-secondary);">
+        ⚠ Exibindo os ${LOGS_LIMIT} mais recentes (ordenados por timestamp desc). Histórico completo só via aba <strong>Custos</strong>.
+      </div>` : ''}
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;">
         <label style="font-size:0.8125rem;color:var(--text-secondary);">Filtrar por agente:</label>
         <div style="min-width:240px;">
@@ -1812,19 +1812,26 @@ async function renderLogsTab(container) {
 }
 
 async function renderCostsTab(container) {
-  const { collection, getDocs, query, where, limit, Timestamp } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+  const { collection, getDocs, query, where, orderBy, limit, Timestamp } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
   const { db } = await import('../firebase.js');
   // Últimos 30 dias
   const since = new Date(); since.setDate(since.getDate() - 30);
-  let logs = [];
+  // v4.57.55 — bump 2000→5000 + orderBy timestamp desc pra garantir que se truncar pega os mais recentes
+  const QUERY_LIMIT = 5000;
+  let logs = [], truncated = false;
   try {
     const snap = await getDocs(query(collection(db, 'ai_usage_logs'),
       where('timestamp', '>=', Timestamp.fromDate(since)),
-      limit(2000)));
+      orderBy('timestamp', 'desc'),
+      limit(QUERY_LIMIT)));
     logs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    truncated = snap.size === QUERY_LIMIT;
   } catch (e) {
     container.innerHTML = `<p style="color:var(--color-danger);padding:24px;">Erro: ${esc(e.message)}</p>`;
     return;
+  }
+  if (truncated) {
+    console.warn(`[aiHub.renderCostsTab] truncado em ${QUERY_LIMIT} logs — totais podem subestimar.`);
   }
 
   let totalCost = 0, totalIn = 0, totalOut = 0, totalSaved = 0, totalCacheRead = 0;
@@ -1870,6 +1877,9 @@ async function renderCostsTab(container) {
   const savedUsd = Math.max(0, naiveCost - totalCost);
 
   container.innerHTML = `
+    ${truncated ? `<div style="background:rgba(245,158,11,.08);border-left:3px solid #F59E0B;padding:10px 14px;border-radius:6px;margin-bottom:16px;font-size:0.8125rem;color:var(--text-secondary);">
+      ⚠ Dataset truncado em ${QUERY_LIMIT.toLocaleString('pt-BR')} chamadas. Totais e gráficos abaixo refletem os mais recentes; valores reais dos últimos 30d podem ser maiores.
+    </div>` : ''}
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:24px;">
       ${[
         { l: 'Custo total (30d)', v: '$ ' + totalCost.toFixed(2), c: totalCost>1 ? '#F59E0B':'#22C55E' },
