@@ -6,6 +6,22 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.57.54+20260526-analytics-listener-cleanup-state-reset] — 2026-05-26
+
+Release **PATCH/PERF** — sprint Analytics #2/5. Listener cleanup + state reset cross-session.
+
+**Mudanças**
+
+- `js/app.js`: import `destroyDashboard` (singular, dashboard home) + invoca em `router.beforeNavigation`. Defense-in-depth alinhado ao pattern dos outros destroyXxx (Kanban, TasksPage, Csat, etc.). Antes só `teardownAllTasksAutoRefresh()` cobria via varredura global.
+- `js/pages/nlPerformance.js`: `renderNlPerformance()` agora reseta `hiddenRows = new Set()` no início. Antes o `Set` module-scoped persistia entre visitas — user navegava away com 5 jobs ocultos e ao voltar continuavam ocultos sem indicação visual.
+
+**Por quê**
+
+- A11 (audit Analytics): `destroyDashboard` existia mas nunca era invocado → dead code + dependência implícita do safety-net global.
+- A7 (audit Analytics): `hiddenRows` é estado UI que não deveria persistir cross-navigation — coloca user em estado confuso ("por que sumiu o disparo X?").
+
+---
+
 ## [4.57.53+20260526-analytics-antipadrao-confirm-alert] — 2026-05-26
 
 Release **PATCH/UX** — primeira do sprint Analytics (v4.57.53→57). Anti-padrões §11.k: substitui `confirm()`/`alert()` nativos por `modal.confirm()` + showNotice inline. Adiciona anti-double-submit no export PDF do dev-hours.

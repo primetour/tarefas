@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 57,
-  patch: 53,
-  build: '20260526-analytics-antipadrao-confirm-alert',
+  patch: 54,
+  build: '20260526-analytics-listener-cleanup-state-reset',
 };
 
 /** "1.2.0" */

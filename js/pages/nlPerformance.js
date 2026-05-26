@@ -89,6 +89,8 @@ let hiddenRows    = new Set(); // jobIds ocultos na pré-edição
 
 /* ─── Render page ─────────────────────────────────────────── */
 export async function renderNlPerformance(container) {
+  // v4.57.54 — reset state em cada entrada na page (evita state cross-session)
+  hiddenRows = new Set();
   // v4.49.60+ Aceita perm granular dashboard_nl_view + fallback analytics_view
   if (!store.can('system_manage_users') && !store.isMaster() &&
       !store.can('dashboard_nl_view') &&

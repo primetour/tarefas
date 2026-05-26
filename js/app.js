@@ -22,7 +22,7 @@ import { startScheduler, stopScheduler }          from './services/notificationS
 import { checkAndPlaySound, resetSoundCounter }   from './components/notificationPanel.js';
 
 import { renderLogin }       from './pages/login.js';
-import { renderDashboard }   from './pages/dashboard.js';
+import { renderDashboard, destroyDashboard } from './pages/dashboard.js';
 import { renderUsers }       from './pages/users.js';
 import { renderTasks, destroyTasksPage } from './pages/tasks.js';
 import { renderProjects }    from './pages/projects.js';
@@ -679,6 +679,7 @@ function setupRouter() {
     if (content) {
       content.scrollTop = 0;
       // Destruir instâncias ativas antes de limpar o DOM
+      destroyDashboard();
       destroyDashboards();
       destroyKanban();
       destroyTasksPage();
