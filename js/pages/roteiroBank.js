@@ -226,11 +226,8 @@ export async function renderRoteiroBank(container) {
         ],
         activeStatus: state.filter.status,
         selects: [
-          { id: 'rb-filter-continent', label: 'Continente', value: state.filter.continent, options: [
-            { value: '', label: 'Todos continentes' },
-            ...CONTINENTS.map(c => ({ value: c, label: c })),
-          ]},
-          // v4.50.1+ Filtro país cascata — opções derivadas dos roteiros sob o continente ativo
+          // v4.58.2: filtro continente removido (Renê: "não precisamos do campo continente").
+          // Filtro país agora não cascata mais — usa todos os países de todos os roteiros.
           { id: 'rb-filter-country', label: 'País', value: state.filter.country, options: countryOptions() },
         ],
       })}

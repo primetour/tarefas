@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 58,
-  patch: 1,
-  build: '20260526-envision-adapter-html-parser-decode',
+  patch: 2,
+  build: '20260526-envision-cdn-images-continent-removed',
 };
 
 /** "1.2.0" */

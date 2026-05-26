@@ -398,17 +398,22 @@ function deriveGeo(itinerary) {
  * Adapter recebe `imageBaseUrl` opcional pra construir URL completa.
  * Sem prefix, deixa filename → cliente decide depois.
  */
+// v4.58.2: URL CDN Envision descoberta via Chrome MCP (inspeção DOM no
+// v2.travelagent.com.br). Bucket público Google Cloud Storage. Confirmado
+// HTTP 200 sem auth pra UUIDs do Japão.
+const ENVISION_CDN_BASE = 'https://storage.googleapis.com/envision-ets-upload';
+
 function mapImages(itinerary, opts = {}) {
   const images = itinerary.Images || [];
   if (!images.length) return { hero: null, gallery: [], overrides: {} };
 
-  // v4.58.1: sem URL CDN, deixa hero=null pra ensureBankHero/resolveBankHero
-  // ativarem fallback Unsplash automático.
+  // Default: usa CDN Envision conhecido. Override via opts.imageBaseUrl
+  // pra futuro mirror R2 (opts.imageBaseUrl substitui o bucket original).
+  const baseUrl = opts.imageBaseUrl || ENVISION_CDN_BASE;
   const buildUrl = (filename) => {
     if (!filename) return null;
     if (filename.startsWith('http')) return filename;            // URL completa OK
-    if (opts.imageBaseUrl) return `${opts.imageBaseUrl.replace(/\/$/, '')}/${filename}`;
-    return null;                                                 // UUID sem prefix → null (Unsplash assume)
+    return `${baseUrl.replace(/\/$/, '')}/${filename}`;
   };
 
   return {
