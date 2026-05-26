@@ -4390,6 +4390,7 @@ Pesquise em **Virtuoso**, **FHR (Amex)** e **LHW** antes de sugerir hotéis. Cit
       totalDias,
       useChunking,
       progress,
+      roteiroId: roteiroId || null,  // v4.57.34: rastreabilidade pra cleanup em ai_usage_logs
     });
 
     // Parse JSON do output
@@ -4595,7 +4596,7 @@ function _showAiProgress() {
  * - Geração continua mesmo se user fechar a aba (Cloud Function termina,
  *   user vê result ao reabrir).
  */
-async function _enqueueAndWait({ userId, userDisplayName, briefingMessage, totalDias, useChunking, progress }) {
+async function _enqueueAndWait({ userId, userDisplayName, briefingMessage, totalDias, useChunking, progress, roteiroId = null }) {
   if (!userId) throw new Error('Usuário não autenticado');
 
   const [{ db }, { collection, addDoc, doc, onSnapshot, deleteDoc, serverTimestamp, query, where, getDocs }] = await Promise.all([
@@ -4610,6 +4611,7 @@ async function _enqueueAndWait({ userId, userDisplayName, briefingMessage, total
     briefingMessage,
     totalDias,
     useChunking,
+    roteiroId,  // v4.57.34: rastreabilidade — CF copia pro ai_usage_logs
     status: 'queued',
     createdAt: serverTimestamp(),
     claimedAt: null,

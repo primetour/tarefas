@@ -3218,6 +3218,7 @@ export const processRoteiroQueue = onDocumentCreated({
         expiresAt,
         source: 'cf-processRoteiroQueue',
         queueId,
+        roteiroId: claimed.roteiroId || null,  // v4.57.34 R6: rastreabilidade pra cleanup em deleteRoteiro
         phases: result.phases || 1,
       });
     } catch (logErr) { console.warn('[processRoteiroQueue] ai_usage_logs falhou (não bloqueia):', logErr.message); }

@@ -6,7 +6,7 @@
 import {
   collection, doc, getDoc, getDocs, setDoc, addDoc,
   updateDoc, deleteDoc, query, where, orderBy,
-  serverTimestamp, limit,
+  serverTimestamp, limit, writeBatch,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { db }    from '../firebase.js';
 import { store } from '../store.js';
@@ -588,6 +588,68 @@ export async function deleteRoteiro(id) {
   auditLog('roteiro.delete', 'roteiro', id, {
     title: existing?.title || '',
   }).catch(() => {});
+
+  // v4.57.34 fix integração R1: cleanup tasks órfãs (com roteiroId apontando
+  // pra roteiro deletado). Tasks são criadas por generateOperationalTasksForRoteiro
+  // (roteiroTasks.js:211) com FK `roteiroId`. Antes: ficavam órfãs silenciosamente
+  // — filtro "tarefas deste roteiro" mostrava, click = 404.
+  try {
+    const tasksSnap = await getDocs(query(
+      collection(db, 'tasks'),
+      where('roteiroId', '==', id),
+      limit(500),
+    ));
+    if (!tasksSnap.empty) {
+      const batch = writeBatch(db);
+      tasksSnap.forEach(d => {
+        batch.update(d.ref, {
+          roteiroId: null,
+          roteiroDeleted: true,
+          roteiroDeletedAt: serverTimestamp(),
+          roteiroDeletedTitle: existing?.title || null,  // preserva pra UI
+        });
+      });
+      await batch.commit();
+    }
+  } catch (e) {
+    console.warn('[deleteRoteiro] cleanup tasks.roteiroId falhou:', e?.message);
+  }
+
+  // v4.57.34 fix integração R6: cleanup ai_usage_logs com roteiroId.
+  // CF processRoteiroQueue grava entries em ai_usage_logs (module='roteiros').
+  // Sem cleanup, IA Hub mostra custo de roteiros que não existem mais.
+  try {
+    const logsSnap = await getDocs(query(
+      collection(db, 'ai_usage_logs'),
+      where('roteiroId', '==', id),
+      limit(500),
+    ));
+    if (!logsSnap.empty) {
+      const batch = writeBatch(db);
+      logsSnap.forEach(d => batch.delete(d.ref));
+      await batch.commit();
+    }
+  } catch (e) {
+    console.warn('[deleteRoteiro] cleanup ai_usage_logs falhou:', e?.message);
+  }
+
+  // v4.57.34 fix integração: cleanup roteiro_generations (histórico de exports
+  // PDF/DOCX/PPTX). Sem isso, fetchGenerations() retorna entries com roteiroId
+  // fantasma — dashboard mostra "exportado X vezes" pra doc inexistente.
+  try {
+    const gensSnap = await getDocs(query(
+      collection(db, COL_GEN),
+      where('roteiroId', '==', id),
+      limit(500),
+    ));
+    if (!gensSnap.empty) {
+      const batch = writeBatch(db);
+      gensSnap.forEach(d => batch.delete(d.ref));
+      await batch.commit();
+    }
+  } catch (e) {
+    console.warn('[deleteRoteiro] cleanup roteiro_generations falhou:', e?.message);
+  }
 }
 
 export async function updateRoteiroStatus(id, status) {

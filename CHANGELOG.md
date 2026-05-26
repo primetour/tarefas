@@ -6,6 +6,34 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.57.34+20260525-roteiros-cleanup-fk-tasks-ailogs-generations] — 2026-05-25
+
+Release **PATCH** — Sprint Gerador de Roteiros (1/5). Cleanup FK críticos no `deleteRoteiro` — fecha gaps R1 + R6 da auditoria + bonus `roteiro_generations`.
+
+**Antes**: `deleteRoteiro` em `js/services/roteiros.js:580-591` fazia apenas `deleteDoc` e `auditLog`. Nada limpava FKs apontando pro roteiro.
+
+**Fixes**:
+
+**R1 — `tasks.roteiroId` órfão.** `generateOperationalTasksForRoteiro` (`js/services/roteiroTasks.js:211`) cria tasks com FK `roteiroId`. Após delete, filtros "tarefas deste roteiro" continuavam mostrando entries, click no card → 404. Agora: batch update zera `roteiroId` + flag `roteiroDeleted=true` + `roteiroDeletedAt` + `roteiroDeletedTitle` (preserva título pra UI mostrar "ex-roteiro: X").
+
+**R6 — `ai_usage_logs` órfão.** CF `processRoteiroQueue` gravava entries em `ai_usage_logs` com `module='roteiros'` mas SEM `roteiroId`. Pré-requisito do fix: adicionar `roteiroId` em (1) `_enqueueAndWait` em `js/pages/roteiroEditor.js:4598`, (2) queueDoc no addDoc da fila, (3) CF copia `claimed.roteiroId` ao gravar log (`functions/index.js:3223`). Depois: cleanup batch `deleteDoc` no `deleteRoteiro` por `where('roteiroId','==',id)`. IA Hub deixa de contabilizar custo de roteiros que não existem mais.
+
+**Bonus — `roteiro_generations` (histórico de exports PDF/DOCX/PPTX) órfão.** Mesmo padrão batch delete. Dashboard `roteiroDashboard.js` deixa de mostrar "X exportações" pra doc inexistente.
+
+**Validação**:
+- `node --check` em 3 arquivos OK
+- Deploy `firebase deploy --only functions:processRoteiroQueue` OK
+- Próxima geração via IA já gravará `roteiroId` no log (testável quando user salvar roteiro existente + clicar Gerar)
+- Próximo delete já fará cleanup nos 3 caminhos (logs batched, try/catch defensivo — não bloqueia delete)
+
+**Restante sprint Roteiros** (próximas releases planejadas):
+- v4.57.35 — R10 status notif + R11 collaborator notif + R14 CF onApprove
+- v4.57.36 — R5 multi-aba conflict + R8 PDF debounce + R9 import lock
+- v4.57.37 — CFs agendadas R7 validity + R13 tips staleness + R15 generation_complete
+- v4.57.38 — Polish R16 confirm + R17 hex + R18 dashboard cap + R3 errorCode
+
+---
+
 ## [4.57.33+20260525-scheduled-notifications-cf-system-actor] — 2026-05-25
 
 Release **PATCH** — fecha o gap #7 da auditoria de integrações. Notifs sistêmicas (SLA, stale, deadline approaching, daily summary) migraram pra Cloud Function com `actorId='system'`.

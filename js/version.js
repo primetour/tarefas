@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 57,
-  patch: 33,
-  build: '20260525-scheduled-notifications-cf-system-actor',
+  patch: 34,
+  build: '20260525-roteiros-cleanup-fk-tasks-ailogs-generations',
 };
 
 /** "1.2.0" */
