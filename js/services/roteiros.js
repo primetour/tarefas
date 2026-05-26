@@ -536,7 +536,7 @@ export async function fetchRoteiro(id) {
   return migrateRoteiroOnRead({ id: snap.id, ...snap.data() });
 }
 
-export async function saveRoteiro(id, data) {
+export async function saveRoteiro(id, data, opts = {}) {
   const uid = store.get('currentUser')?.uid || '';
   const now = serverTimestamp();
 
@@ -546,6 +546,24 @@ export async function saveRoteiro(id, data) {
     const isOwner = existing && existing.consultantId === uid;
     if (!store.canManageRoteiros() && !isOwner) {
       throw new Error('Permissão negada: você não pode editar este roteiro.');
+    }
+    // v4.57.36 fix integração R5: conflict detection multi-aba/multi-user.
+    // opts.expectedUpdatedAt = timestamp do snapshot que o editor abriu.
+    // Se o Firestore tem updatedAt MAIOR, outro user/aba salvou no meio
+    // do caminho. Sem isso, last-write-wins silencioso = perda de edits.
+    // Aceita pequena tolerância (1s) pra evitar falso positivo na própria sessão.
+    if (opts.expectedUpdatedAt && existing?.updatedAt?.toMillis) {
+      const serverMs = existing.updatedAt.toMillis();
+      const expectedMs = typeof opts.expectedUpdatedAt === 'number'
+        ? opts.expectedUpdatedAt
+        : (opts.expectedUpdatedAt?.toMillis?.() || 0);
+      if (expectedMs && serverMs > expectedMs + 1000) {
+        const err = new Error('Documento foi modificado por outro usuário. Recarregue antes de salvar.');
+        err.code = 'CONFLICT';
+        err.serverUpdatedAt = serverMs;
+        err.expectedUpdatedAt = expectedMs;
+        throw err;
+      }
     }
     await updateDoc(doc(db, COL, id), {
       ...data,

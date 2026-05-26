@@ -2711,12 +2711,17 @@ async function handleSave({ silent = false } = {}) {
 
     _setAutoSaveStatus('Salvando…');
 
-    const newId = await saveRoteiro(currentRoteiro.id || null, sanitized);
+    // v4.57.36 fix R5: passa timestamp do snapshot atual pra saveRoteiro
+    // detectar conflito multi-aba. Captura updatedAt do doc carregado.
+    const expectedUpdatedAt = currentRoteiro._loadedAt
+      || (currentRoteiro.updatedAt?.toMillis?.() ?? null);
+    const newId = await saveRoteiro(currentRoteiro.id || null, sanitized, { expectedUpdatedAt });
     isDirty = false;
     autoSaveRetries = 0;
     lastSaveTs = Date.now();
 
     currentRoteiro = sanitized;
+    currentRoteiro._loadedAt = Date.now();  // atualiza marca após save bem-sucedido
 
     if (!currentRoteiro.id && newId) {
       currentRoteiro.id = newId;
@@ -2738,6 +2743,34 @@ async function handleSave({ silent = false } = {}) {
       maybeOfferTaskGeneration(currentRoteiro.id);
     }
   } catch (err) {
+    // v4.57.36 fix R5: trata CONFLICT distinto de erro genérico.
+    // Auto-save em conflito NÃO retry (recarregar perderia silenciosamente
+    // edits do user). Manual save em conflito: pergunta via modal.confirm.
+    if (err?.code === 'CONFLICT') {
+      _setAutoSaveStatus('Conflito — outro user editou');
+      if (silent) {
+        console.warn('[auto-save] conflito detectado, pausando auto-save até resolução manual');
+        // Não re-agenda retry; user precisa intervir
+      } else {
+        try {
+          const { default: modal } = await import('../components/modal.js');
+          const reload = await modal.confirm({
+            title: 'Roteiro foi modificado',
+            message: 'Outro usuário (ou outra aba) salvou este roteiro depois que você abriu. ' +
+                     'Suas mudanças locais ainda não foram salvas.<br><br>' +
+                     '<strong>Recarregar agora</strong> descarta suas mudanças e mostra a versão atualizada.<br>' +
+                     '<strong>Cancelar</strong> mantém suas mudanças (mas o próximo save vai falhar até recarregar manualmente).',
+            confirmText: 'Recarregar (descartar mudanças)',
+            danger: true, icon: '⚠',
+          });
+          if (reload) location.reload();
+        } catch (_) {
+          // fallback se modal não disponível: alert nativo
+          if (confirm('Roteiro foi modificado por outro usuário. Recarregar?')) location.reload();
+        }
+      }
+      throw err;  // propaga pro caller
+    }
     autoSaveRetries++;
     _setAutoSaveStatus(`Erro ao salvar${autoSaveRetries > 1 ? ` (tentativa ${autoSaveRetries})` : ''}`);
     if (!silent) showToast('Erro ao salvar: ' + err.message, 'error');
@@ -3982,6 +4015,8 @@ export async function renderRoteiroEditor(container) {
 
     if (roteiroData) {
       currentRoteiro = roteiroData;
+      // v4.57.36 R5: marca momento do load pra conflict detection no save
+      currentRoteiro._loadedAt = roteiroData.updatedAt?.toMillis?.() ?? Date.now();
     } else if (aiData) {
       // Roteiro gerado pela IA
       currentRoteiro = aiData;

@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 57,
-  patch: 35,
-  build: '20260525-roteiros-notif-status-collab-approve-safety',
+  patch: 36,
+  build: '20260525-roteiros-race-conditions-conflict-debounce-lock',
 };
 
 /** "1.2.0" */

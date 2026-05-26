@@ -6,6 +6,47 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.57.36+20260525-roteiros-race-conditions-conflict-debounce-lock] — 2026-05-25
+
+Release **PATCH** — Sprint Roteiros (3/5). Race conditions: multi-aba conflict + PDF double-click + import lock.
+
+**R5 — Conflict detection multi-aba/multi-user.**
+
+Antes: User A abre roteiro 14h. User B abre 14h05. B salva 14h10. A salva 14h12 — Firestore overwrite silencioso, edits de B perdidos. Sem alerta. (`js/services/roteiros.js` `saveRoteiro` + `js/pages/roteiroEditor.js` `handleSave`)
+
+Agora:
+1. Ao carregar roteiro no editor (`roteiroEditor.js:4019`), grava `currentRoteiro._loadedAt = updatedAt.toMillis()`.
+2. `handleSave` passa `expectedUpdatedAt: currentRoteiro._loadedAt` pra `saveRoteiro(id, data, opts)`.
+3. `saveRoteiro` re-fetcha o doc antes do updateDoc. Se `existing.updatedAt > expectedUpdatedAt + 1000ms` → throw `Error('Documento foi modificado...')` com `err.code = 'CONFLICT'`.
+4. `handleSave` cata CONFLICT especialmente:
+   - **Auto-save** (silent=true): pausa retries (não pode recarregar sem perder edits), seta status "Conflito — outro user editou".
+   - **Manual save**: modal.confirm "Recarregar (descartar mudanças)" / "Cancelar (mantém local mas próximo save vai falhar)". Reload via `location.reload()`.
+
+Tolerância de 1s evita falso positivo na própria sessão (auto-save + manual quase simultâneos pelo mesmo user).
+
+**R8 — Export PDF/DOCX/PPTX double-click race.**
+
+Antes: 2 cliques rápidos em "Exportar" disparavam 2 `generateRoteiro()` em paralelo. Memory spike (autoTable plugin tem race de prototype init), possíveis arquivos duplicados no download. (`js/services/roteiroGenerator.js:904`)
+
+Fix: Map global `_generateInFlight` por `${roteiroId}::${format}` com TTL 30s. Permite formatos diferentes em paralelo (user pode clicar PDF + PPTX OK), mas bloqueia mesma combo:
+```
+Já existe uma exportação PDF em andamento deste roteiro. Aguarde.
+```
+`try/finally` libera a flag. TTL defensivo evita travar se promise pendurar.
+
+**R9 — `importRoteiroBankPdf` distributed lock.**
+
+Antes: UI retry se 1ª chamada timeout. CF rodava 2x = parse duplo do mesmo PDF = 2 docs no banco. (`functions/index.js:3349`)
+
+Fix: Lock em `import_locks/{pdf_<fingerprint>}` antes do parse. Fingerprint = SHA256(primeiros 2KB + últimos 2KB do base64), 24 chars. TTL 10min. Lock via `runTransaction` (atomic). Se ativo → throw `HttpsError('already-exists', ...)`. Liberado no final via `lockRef.delete()` (best-effort, TTL cobre falhas).
+
+**Validação**:
+- `node --check` em 4 arquivos OK
+- Deploy `firebase deploy --only functions:importRoteiroBankPdf` OK
+- Race scenarios testáveis: (a) abrir mesma roteiro em 2 abas, salvar B, salvar A → modal conflict, (b) clicar Export PDF 2x rápido → "exportação em andamento", (c) reenviar mesmo PDF no banco em 5min → "lock ativo".
+
+---
+
 ## [4.57.35+20260525-roteiros-notif-status-collab-approve-safety] — 2026-05-25
 
 Release **PATCH** — Sprint Roteiros (2/5). Notifs + safety-net no fluxo de aprovação.

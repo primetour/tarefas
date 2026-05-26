@@ -3350,6 +3350,37 @@ export const importRoteiroBankPdf = onCall({
     throw new HttpsError('invalid-argument', 'PDF muito grande (>25MB base64).');
   }
 
+  // v4.57.36 fix integração R9: distributed lock pra evitar import duplo.
+  // Cenário antes: UI retry se 1ª chamada demorar (timeout cliente, conexão
+  // ruim). 2ª chamada chega na CF, parseia o MESMO PDF e grava 2 docs
+  // no banco. Lock: doc em `import_locks/{fileHash}` com TTL 10min.
+  // Fingerprint = primeiros + últimos 1024 chars do base64 (estável, cheap).
+  const fingerprint = (pdfBase64.slice(0, 1024) + ':' + pdfBase64.slice(-1024)).length > 100
+    ? require('crypto').createHash('sha256').update(pdfBase64.slice(0, 2048) + pdfBase64.slice(-2048)).digest('hex').slice(0, 24)
+    : 'unknown';
+  const lockRef = db.collection('import_locks').doc(`pdf_${fingerprint}`);
+  const lockTTLMs = 10 * 60 * 1000;
+  try {
+    await db.runTransaction(async tx => {
+      const snap = await tx.get(lockRef);
+      if (snap.exists) {
+        const lockedAt = snap.data()?.lockedAt?.toMillis?.() || 0;
+        if (Date.now() - lockedAt < lockTTLMs) {
+          throw new HttpsError('already-exists',
+            `Este PDF já está sendo importado (lock ativo). Aguarde ~5min e tente novamente, ou contate suporte se persistir.`);
+        }
+      }
+      tx.set(lockRef, {
+        lockedAt: FieldValue.serverTimestamp(),
+        lockedBy: req.auth.uid,
+        filename: filename || 'unknown',
+      });
+    });
+  } catch (lockErr) {
+    if (lockErr instanceof HttpsError) throw lockErr;
+    console.warn('[importRoteiroBankPdf] lock fail (best-effort, prosseguindo):', lockErr?.message);
+  }
+
   // Verifica permissão via custom claims OU role doc
   const uid = req.auth.uid;
   let canImport = false;
@@ -3575,6 +3606,11 @@ REGRAS DE OURO:
       filename: filename || 'unknown.pdf',
     });
   } catch (logErr) { console.warn('[importRoteiroBankPdf] ai_usage_logs falhou:', logErr.message); }
+
+  // v4.57.36 R9: libera lock após sucesso (best-effort)
+  try {
+    await lockRef.delete();
+  } catch (lockErr) { console.warn('[importRoteiroBankPdf] lock release falhou:', lockErr?.message); }
 
   return {
     docId: ref.id,

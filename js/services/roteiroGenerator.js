@@ -901,28 +901,46 @@ export async function generateRoteiroPDF(roteiro, area = null) {
  * @param {'pdf'|'pptx'|'docx'|'web'} opts.format
  * @returns {Promise<Object>} { filename?, blob?, url?, token?, ... }
  */
+// v4.57.36 fix integração R8: anti-double-submit. Click duplo rápido em
+// "Exportar PDF/DOCX/PPTX" disparava 2 gerações paralelas (mesma roteiro,
+// mesmo formato). Memory spike, possíveis arquivos duplicados, e em PDF
+// com autoTable plugin tem race de prototype init. Flag por (roteiroId+format)
+// pra permitir formatos diferentes em paralelo (PDF + PPTX OK), mas bloqueia
+// mesma combo. TTL 30s defensivo se promise pendurar.
+const _generateInFlight = new Map();   // key=`${roteiroId}::${format}` → timestamp
+
 export async function generateRoteiro({ roteiro, areaId = null, area = null, format = 'pdf' }) {
-  // Resolve area se passou só ID
-  if (!area && areaId) {
-    const areas = await fetchAreas();
-    area = areas.find(a => a.id === areaId) || null;
+  const inflightKey = `${roteiro?.id || 'novo'}::${format}`;
+  const startedAt = _generateInFlight.get(inflightKey);
+  if (startedAt && (Date.now() - startedAt) < 30_000) {
+    throw new Error(`Já existe uma exportação ${format.toUpperCase()} em andamento deste roteiro. Aguarde.`);
   }
+  _generateInFlight.set(inflightKey, Date.now());
+  try {
+    // Resolve area se passou só ID
+    if (!area && areaId) {
+      const areas = await fetchAreas();
+      area = areas.find(a => a.id === areaId) || null;
+    }
 
-  // Strip defensivo (custo interno + workflow + linkedTaskIds — nunca pro cliente)
-  const sanitized = stripInternalFields(roteiro);
+    // Strip defensivo (custo interno + workflow + linkedTaskIds — nunca pro cliente)
+    const sanitized = stripInternalFields(roteiro);
 
-  switch (format) {
-    case 'pdf':
-      return generateRoteiroPDF(sanitized, area);
-    case 'pptx':
-      return generateRoteiroPPTX(sanitized, area);
-    case 'docx':
-      return generateRoteiroDOCX(sanitized, area);
-    case 'web':
-      // 4.45.0+ planned — fallback temporário
-      throw new Error('Link web em desenvolvimento (Sprint 5 Phase 4).');
-    default:
-      throw new Error(`Formato desconhecido: ${format}`);
+    switch (format) {
+      case 'pdf':
+        return await generateRoteiroPDF(sanitized, area);
+      case 'pptx':
+        return await generateRoteiroPPTX(sanitized, area);
+      case 'docx':
+        return await generateRoteiroDOCX(sanitized, area);
+      case 'web':
+        // 4.45.0+ planned — fallback temporário
+        throw new Error('Link web em desenvolvimento (Sprint 5 Phase 4).');
+      default:
+        throw new Error(`Formato desconhecido: ${format}`);
+    }
+  } finally {
+    _generateInFlight.delete(inflightKey);
   }
 }
 
