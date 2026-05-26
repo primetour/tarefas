@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 58,
-  patch: 0,
-  build: '20260526-roteiros-bank-envision-schema',
+  patch: 1,
+  build: '20260526-envision-adapter-html-parser-decode',
 };
 
 /** "1.2.0" */

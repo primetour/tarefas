@@ -19,27 +19,192 @@
  * Doc completo do mapeamento campo-a-campo: docs/ENVISION-SCHEMA-AUDIT.md §3
  */
 
+/**
+ * Mapa de entidades HTML comuns (acentos pt-BR + HTML básico).
+ * Usado tanto pra strip quanto pra decode preservando tags.
+ */
+const HTML_ENTITIES = {
+  '&nbsp;': ' ', '&amp;': '&', '&lt;': '<', '&gt;': '>',
+  '&quot;': '"', '&#39;': "'", '&apos;': "'",
+  '&ldquo;': '"', '&rdquo;': '"', '&lsquo;': "'", '&rsquo;': "'",
+  '&ndash;': '–', '&mdash;': '—', '&hellip;': '…', '&middot;': '·',
+  '&deg;': '°', '&copy;': '©', '&reg;': '®', '&trade;': '™',
+  '&euro;': '€', '&pound;': '£', '&yen;': '¥',
+  '&laquo;': '«', '&raquo;': '»', '&bull;': '•',
+  // Acentos pt-BR (vistos nos fixtures Envision)
+  '&aacute;': 'á', '&Aacute;': 'Á', '&eacute;': 'é', '&Eacute;': 'É',
+  '&iacute;': 'í', '&Iacute;': 'Í', '&oacute;': 'ó', '&Oacute;': 'Ó',
+  '&uacute;': 'ú', '&Uacute;': 'Ú', '&atilde;': 'ã', '&Atilde;': 'Ã',
+  '&otilde;': 'õ', '&Otilde;': 'Õ', '&acirc;': 'â', '&Acirc;': 'Â',
+  '&ecirc;': 'ê', '&Ecirc;': 'Ê', '&ocirc;': 'ô', '&Ocirc;': 'Ô',
+  '&ccedil;': 'ç', '&Ccedil;': 'Ç', '&agrave;': 'à', '&Agrave;': 'À',
+  '&ntilde;': 'ñ', '&Ntilde;': 'Ñ', '&uuml;': 'ü', '&Uuml;': 'Ü',
+};
+
+/**
+ * Decode entidades HTML preservando tags. Usar pra HTML que vai ser
+ * renderizado como HTML (ex: descrição rica que o renderer mostra com innerHTML).
+ */
+function decodeEntities(html) {
+  if (!html || typeof html !== 'string') return '';
+  return html.replace(/&[a-zA-Z]+;|&#?\d+;/g, m => {
+    if (HTML_ENTITIES[m] !== undefined) return HTML_ENTITIES[m];
+    // numeric entity (&#39; etc) — try parsing
+    const num = m.match(/^&#(\d+);$/);
+    if (num) {
+      try { return String.fromCodePoint(parseInt(num[1], 10)); } catch {}
+    }
+    return m;  // unknown — keep raw
+  });
+}
+
 /** Strip tags HTML mantendo só texto. Defensivo pra HTML mal-formado. */
 function stripHtml(html) {
   if (!html || typeof html !== 'string') return '';
-  // Mapa de entidades comuns (acentos pt-BR + HTML básico)
-  const entities = {
-    '&nbsp;': ' ', '&amp;': '&', '&lt;': '<', '&gt;': '>',
-    '&quot;': '"', '&#39;': "'", '&apos;': "'",
-    // Acentos pt-BR (vistos nos fixtures Envision)
-    '&aacute;': 'á', '&Aacute;': 'Á', '&eacute;': 'é', '&Eacute;': 'É',
-    '&iacute;': 'í', '&Iacute;': 'Í', '&oacute;': 'ó', '&Oacute;': 'Ó',
-    '&uacute;': 'ú', '&Uacute;': 'Ú', '&atilde;': 'ã', '&Atilde;': 'Ã',
-    '&otilde;': 'õ', '&Otilde;': 'Õ', '&acirc;': 'â', '&Acirc;': 'Â',
-    '&ecirc;': 'ê', '&Ecirc;': 'Ê', '&ocirc;': 'ô', '&Ocirc;': 'Ô',
-    '&ccedil;': 'ç', '&Ccedil;': 'Ç', '&agrave;': 'à', '&Agrave;': 'À',
-    '&ntilde;': 'ñ', '&Ntilde;': 'Ñ',
+  return decodeEntities(
+    html.replace(/<\/?[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
+  );
+}
+
+/**
+ * Parser básico do `Globalization.Includes` (HTML organizado em seções).
+ * Envision usa pattern: `<strong>SEÇÃO</strong><br />\nitem1<br />\nitem2<br /><br />\n<strong>OUTRA</strong>...`
+ *
+ * Retorna { hospedagem[], traslados[], passeios[], assistencia[], aereoInterno[], trem[], outros[] }.
+ * Bullets vazias e duplicatas removidas. Fallback: tudo cai em `outros` se não bate header.
+ */
+function parseIncludes(html) {
+  const out = { hospedagem:[], traslados:[], passeios:[], assistencia:[], aereoInterno:[], trem:[], outros:[] };
+  if (!html) return out;
+
+  const decoded = decodeEntities(html);
+
+  // Map de headers Envision → bucket nosso
+  const headerMap = [
+    [/hospedagem|hotel/i,                    'hospedagem'],
+    [/translad|transfer/i,                   'traslados'],
+    [/passeio|tour|visita/i,                 'passeios'],
+    [/assist[êe]ncia|seguro|suporte/i,       'assistencia'],
+    [/a[ée]reo|voo|cia\.?\s*a[ée]rea/i,      'aereoInterno'],
+    [/trem|train/i,                          'trem'],
+  ];
+
+  // Split por <strong>...</strong> blocks
+  // Estratégia: trata cada `<strong>HEADER</strong>` como divisor
+  const re = /<strong[^>]*>([^<]+)<\/strong>([\s\S]*?)(?=<strong|$)/gi;
+  let m, foundAny = false;
+  while ((m = re.exec(decoded))) {
+    foundAny = true;
+    const headerRaw = m[1].trim();
+    const bodyHtml = m[2] || '';
+    // Identifica bucket
+    const bucketEntry = headerMap.find(([rx]) => rx.test(headerRaw));
+    const bucket = bucketEntry ? bucketEntry[1] : 'outros';
+    // Extrai bullets: cada <br>, <p>, ou linha vira 1 item
+    const items = bodyHtml
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/?p[^>]*>/gi, '\n')
+      .replace(/<[^>]+>/g, '')
+      .split('\n')
+      .map(s => decodeEntities(s).replace(/^\s*[•·\-*]\s*/, '').trim())
+      .filter(s => s.length > 1 && s.length < 250);
+    out[bucket].push(...items);
+  }
+  // Se não achou nenhum <strong>, joga tudo em outros (texto plano)
+  if (!foundAny) {
+    const text = stripHtml(html);
+    if (text) out.outros.push(text.slice(0, 500));
+  }
+  // Dedup
+  for (const k of Object.keys(out)) {
+    out[k] = [...new Set(out[k])];
+  }
+  return out;
+}
+
+/**
+ * Parser básico de cancellation policy escalonada.
+ * Padrão Envision: "Entre X e Y dias antes da viagem: multa no valor de Z%"
+ * Extrai array [{ fromDays, multaPercent, notes }].
+ */
+function parseCancellation(html) {
+  if (!html) return [];
+  const decoded = stripHtml(html);
+  const out = [];
+  const seen = new Set();
+
+  const addDegree = (fromDays, raw) => {
+    const notes = raw.trim().replace(/^[.,;:]/, '').trim();
+    if (!notes || notes.length < 3) return;
+    const multaMatch = notes.match(/(\d{1,3})\s*%/);
+    const multaPercent = multaMatch ? +multaMatch[1] : null;
+    const key = `${fromDays}-${multaPercent}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    out.push({ fromDays, multaPercent, notes });
   };
-  return html
-    .replace(/<\/?[^>]+>/g, ' ')
-    .replace(/&[a-zA-Z]+;|&#?\d+;/g, m => entities[m] !== undefined ? entities[m] : ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+
+  // Pattern 1: "Entre X e Y dias antes da viagem: ..."
+  let m;
+  const re1 = /entre\s+(\d+)\s*(?:e|ou)\s*(\d+)\s*dias[^:]*:\s*([^.\n<]{5,200})/gi;
+  while ((m = re1.exec(decoded))) {
+    const fromDays = Math.max(+m[1], +m[2]);
+    addDegree(fromDays, m[3]);
+  }
+
+  // Pattern 2: "A partir de X dias antes da viagem: ..."  (degrau mais próximo da viagem)
+  const re2 = /a\s+partir\s+de\s+(\d+)\s*dias\s+antes[^:]*:\s*([^.\n<]{5,200})/gi;
+  while ((m = re2.exec(decoded))) {
+    addDegree(+m[1], m[2]);
+  }
+
+  // Pattern 3: "Até X dias antes da viagem: ..." OU "a partir da confirmação até X dias antes..."
+  const re3 = /at[ée]\s+(\d+)\s*dias\s+antes[^:]*:\s*([^.\n<]{5,200})/gi;
+  while ((m = re3.exec(decoded))) {
+    addDegree(+m[1], m[2]);
+  }
+
+  // Pattern 4: "menos de X dias" / "0 a X dias"
+  const re4 = /(?:menos\s+de\s+|menor\s+que\s+|0\s+(?:a|ou)\s+)(\d+)\s*dias[^:]*:\s*([^.\n<]{5,200})/gi;
+  while ((m = re4.exec(decoded))) {
+    addDegree(+m[1], m[2]);
+  }
+
+  return out.sort((a,b) => b.fromDays - a.fromDays);
+}
+
+/**
+ * Parser básico de FormOfPayment.
+ * Envision tem seções marcadas com <strong>PARTE TERRESTRE</strong>, <strong>PARTE AÉREA</strong>, etc.
+ */
+function parsePayment(html) {
+  const out = { terrestrial: '', aerial: '', deposit: { amount: 0, currency: 'USD', perPerson: true, notes: '' }, settlement: '' };
+  if (!html) return out;
+
+  const decoded = decodeEntities(html);
+  const re = /<strong[^>]*>([^<]+)<\/strong>([\s\S]*?)(?=<strong|$)/gi;
+  let m;
+  while ((m = re.exec(decoded))) {
+    const header = m[1].trim().toLowerCase();
+    const body = stripHtml(m[2]).trim().slice(0, 800);
+    if (/terrestre/.test(header)) out.terrestrial = body;
+    else if (/a[ée]rea|aviao|voo/.test(header)) out.aerial = body;
+    else if (/sinal|dep[óo]sito/.test(header))  out.deposit.notes = body;
+    else if (/parcel|saldo|pagamento\s+final/.test(header)) out.settlement = body;
+  }
+  // Tenta extrair valor de sinal (ex: "USD 1.000" ou "R$ 5.000")
+  if (out.deposit.notes) {
+    const valMatch = out.deposit.notes.match(/(USD|R\$|BRL|EUR)\s*([\d.,]+)/i);
+    if (valMatch) {
+      const cur = valMatch[1].toUpperCase().replace('R$','BRL');
+      const num = parseFloat(valMatch[2].replace(/\./g,'').replace(',','.'));
+      if (!isNaN(num)) {
+        out.deposit.currency = cur;
+        out.deposit.amount = num;
+      }
+    }
+  }
+  return out;
 }
 
 /** Normaliza nome de categoria Envision pra slug consistente. */
@@ -218,8 +383,10 @@ function deriveGeo(itinerary) {
     }
   }
 
+  // v4.58.1: continents removido (Renê: "não precisamos do campo continente").
+  // Mantemos array vazio pra retrocompat com schema/UI que ainda referenciam.
   return {
-    continents: [],                            // requer mapping (TODO)
+    continents: [],
     countries:  [...countries],
     cities:     cityList,
     destinationIds: [],                        // resolvido em pós-processo (matching portal_destinations)
@@ -235,11 +402,13 @@ function mapImages(itinerary, opts = {}) {
   const images = itinerary.Images || [];
   if (!images.length) return { hero: null, gallery: [], overrides: {} };
 
+  // v4.58.1: sem URL CDN, deixa hero=null pra ensureBankHero/resolveBankHero
+  // ativarem fallback Unsplash automático.
   const buildUrl = (filename) => {
     if (!filename) return null;
-    if (filename.startsWith('http')) return filename;            // já é URL completa
+    if (filename.startsWith('http')) return filename;            // URL completa OK
     if (opts.imageBaseUrl) return `${opts.imageBaseUrl.replace(/\/$/, '')}/${filename}`;
-    return filename;                                              // só o UUID, app decide
+    return null;                                                 // UUID sem prefix → null (Unsplash assume)
   };
 
   return {
@@ -257,8 +426,9 @@ function mapDays(itinerary) {
     dayNumber:     d.Day || null,
     city:          d.Name || '',
     title:         d.Name || '',                                  // pode ser cidade ou tema do dia
-    narrative:     d.Description || '',                           // HTML — renderer já lida
-    overnightCity: stripHtml(d.NightDescription || ''),           // strip HTML pra texto curto
+    // v4.58.1: decodeEntities preserva HTML mas decodifica &aacute; etc
+    narrative:     decodeEntities(d.Description || ''),
+    overnightCity: stripHtml(d.NightDescription || ''),           // strip + decode → texto curto
     flightLeg:     null,                                          // não vem do Envision
   }));
 }
@@ -315,8 +485,10 @@ export function envisionItineraryToBank(envisionJson, opts = {}) {
     validity:     mapValidity(),
 
     // ─── Narrativa ───
+    // v4.58.1: decodeEntities mantém HTML mas decodifica &aacute; etc.
+    // (Antes salvava HTML raw com entities — UI mostrava `&ccedil;` literal.)
     shortDescription: stripHtml(g.ShortDescription || '').slice(0, 300),
-    longDescription:  g.Description || it.Description || '',     // HTML
+    longDescription:  decodeEntities(g.Description || it.Description || ''),
 
     // ─── Geo (derivado de Products + DayByDay) ───
     geo:          deriveGeo(it),
@@ -335,27 +507,18 @@ export function envisionItineraryToBank(envisionJson, opts = {}) {
     services,
 
     // ─── Includes / Excludes ───
-    // Mantemos vazio por enquanto — Envision tem em HTML único (`Globalization.Includes`)
-    // que salvamos em `envisionRaw.includes` (fallback). Curador pode popular o struct
-    // posteriormente via UI manual SE precisar do bullet PDF (overlay editorial — Fase 4).
-    includes:     {
-      hospedagem: [], traslados: [], passeios: [],
-      assistencia: [], aereoInterno: [], trem: [], outros: [],
-    },
+    // v4.58.1: adapter parseia HTML Envision em bullets estruturados.
+    // envisionRaw.includes continua disponível pra UI fallback OU pra curador re-extrair manualmente.
+    includes:     parseIncludes(g.Includes),
     excludes:     [],
 
     // ─── Pagamento ───
-    // Idem: HTML único em envisionRaw.formOfPayment.
-    payment:      {
-      terrestrial: '',
-      aerial:      '',
-      deposit:     { amount: 0, currency: 'USD', perPerson: true, notes: '' },
-      settlement:  '',
-    },
+    // v4.58.1: parser extrai PARTE TERRESTRE / PARTE AÉREA / SINAL automaticamente.
+    payment:      parsePayment(g.FormOfPayment),
 
     // ─── Cancelamento ───
-    // Idem: HTML único em envisionRaw.cancellationPolicy.
-    cancellation: [],
+    // v4.58.1: parser extrai degraus escalonados ({fromDays, multaPercent, notes}).
+    cancellation: parseCancellation(g.CancellationPolicy),
 
     // ─── Documentação + travel notes ───
     // Idem: HTML único em envisionRaw.generalInfo. GeneralInfo struct fica vazio
@@ -393,11 +556,15 @@ export function envisionItineraryToBank(envisionJson, opts = {}) {
     },
 
     // ─── Envision RAW (HTML fallback — não renderizado por default) ───
+    // v4.58.1: decodeEntities aplicado pra mostrar legível se UI renderizar como HTML.
     envisionRaw: {
-      includes:           g.Includes           || '',
-      generalInfo:        g.GeneralInfo        || '',
-      cancellationPolicy: g.CancellationPolicy || '',
-      formOfPayment:      g.FormOfPayment      || '',
+      includes:           decodeEntities(g.Includes           || ''),
+      generalInfo:        decodeEntities(g.GeneralInfo        || ''),
+      cancellationPolicy: decodeEntities(g.CancellationPolicy || ''),
+      formOfPayment:      decodeEntities(g.FormOfPayment      || ''),
+      // UUIDs originais Envision (filename.png) pra Fase 2 mirror R2.
+      // Hoje sem URL CDN conhecida → ficam só como referência.
+      imageUuids:         (it.Images || []).map(img => img.UrlImage).filter(Boolean),
     },
 
     // Currency top-level (Envision tem 1 só) — adicionado pra debug

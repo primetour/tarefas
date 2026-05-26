@@ -600,7 +600,9 @@ export async function resolveBankHero(doc) {
  * @returns {Promise<string|null>} URL final do hero
  */
 export async function ensureBankHero(id, bankDoc) {
-  if (bankDoc?.images?.hero) return bankDoc.images.hero;
+  // v4.58.1: hero precisa ser URL absoluta (não UUID Envision sem prefix).
+  const hero = bankDoc?.images?.hero;
+  if (hero && (hero.startsWith('http://') || hero.startsWith('https://'))) return hero;
   const { url, source, attribution } = await resolveBankHero(bankDoc);
   if (!url || !id) return url;
   try {
