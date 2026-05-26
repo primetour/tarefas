@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 57,
-  patch: 52,
-  build: '20260526-tasks-59-60-dedupe-hierarchical-quickadd',
+  patch: 53,
+  build: '20260526-analytics-antipadrao-confirm-alert',
 };
 
 /** "1.2.0" */

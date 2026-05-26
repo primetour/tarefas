@@ -6,6 +6,24 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.57.53+20260526-analytics-antipadrao-confirm-alert] — 2026-05-26
+
+Release **PATCH/UX** — primeira do sprint Analytics (v4.57.53→57). Anti-padrões §11.k: substitui `confirm()`/`alert()` nativos por `modal.confirm()` + showNotice inline. Adiciona anti-double-submit no export PDF do dev-hours.
+
+**Mudanças**
+
+- `js/pages/aiHub.js`: 5× `confirm()` nativo → `modal.confirm({ danger:true })` com título/mensagem/CTA contextuais (excluir agente · purge keys legadas · excluir doc KB · purge ai_skills/ai_automations · trocar Client ID).
+- `dev-hours-view.html` (standalone): 2× `alert()` nativo → `showNotice()` helper inline (stack fixed top-right, 4s auto-dismiss, kind=info|error). CSS isolado, sem dependência de toast component da app principal.
+- `dev-hours-view.html`: anti-double-submit (§12.o) no botão Export PDF — flag `_pdfInFlight` impede duplo trigger em rede lenta.
+
+**Por quê**
+
+- §11.k registrado em CLAUDE.md: `confirm()`/`alert()` nativos são UX de 1995 (bloqueia thread, não estilizável, screen reader sofre).
+- dev-hours-view.html é página pública — não importa modal/toast da app. Solução: helper inline próprio, alinhado ao design system local (--brand-gold, --color-danger, --shadow-md).
+- Auditoria Analytics (20 gaps #A1-#A20) identificou esses 7 pontos como prioritários por afetar UX directamente.
+
+---
+
 ## [4.57.49+20260525-banco-imagens-r2-token-security-cf-cutover] — 2026-05-25
 
 Release **PATCH/SECURITY** — fecha gap #I1 da auditoria Banco de Imagens. R2 token migrado pra Cloud Functions; constantes hardcoded removidas do client.

@@ -168,7 +168,13 @@ function renderAgentsTab(container) {
       btn.addEventListener('click', () => openAgentRunModal(btn.dataset.id)));
     container.querySelectorAll('[data-act="delete"]').forEach(btn =>
       btn.addEventListener('click', async () => {
-        if (!confirm('Excluir este agente? Logs ficam, mas o agente desaparece.')) return;
+        const ok = await modal.confirm({
+          title: 'Excluir agente',
+          message: 'Excluir este agente? Logs ficam, mas o agente desaparece.',
+          confirmText: 'Excluir',
+          danger: true,
+        });
+        if (!ok) return;
         try { await deleteAgent(btn.dataset.id); toast.success('Excluído.'); }
         catch (e) { toast.error(e.message); }
       }));
@@ -1355,7 +1361,13 @@ async function renderApiKeysTab(container) {
       b.addEventListener('click', () => openSecretRotateModal(b.dataset.provider)));
 
     document.getElementById('ak-purge-legacy')?.addEventListener('click', async () => {
-      if (!confirm('Apagar TODAS as keys legadas de system_config/ai-config e ai_api_keys? A Cloud Function não usa esses dados, então é seguro.')) return;
+      const ok = await modal.confirm({
+        title: 'Apagar keys legadas',
+        message: 'Apagar TODAS as keys legadas de system_config/ai-config e ai_api_keys? A Cloud Function não usa esses dados, então é seguro.',
+        confirmText: 'Apagar',
+        danger: true,
+      });
+      if (!ok) return;
       try {
         // Apaga global
         const { doc, deleteDoc, getDocs, collection } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
@@ -1597,7 +1609,13 @@ async function renderKnowledgeTab(container) {
       b.addEventListener('click', () => openKnowledgeEditor(docs.find(x => x.id === b.dataset.id))));
     container.querySelectorAll('[data-act="kb-del"]').forEach(b =>
       b.addEventListener('click', async () => {
-        if (!confirm('Excluir este doc? Agentes que o referenciam vão perdê-lo.')) return;
+        const ok = await modal.confirm({
+          title: 'Excluir doc da base',
+          message: 'Excluir este doc? Agentes que o referenciam vão perdê-lo.',
+          confirmText: 'Excluir',
+          danger: true,
+        });
+        if (!ok) return;
         try { await deleteKnowledgeDoc(b.dataset.id); docs = await fetchKnowledge(); paint(); toast.success('Excluído.'); }
         catch (e) { toast.error(e.message); }
       }));
@@ -2111,7 +2129,13 @@ function _bindLegacyMigrationButtons() {
     purgeBtn.disabled = confirmInput.value.trim() !== 'APAGAR LEGADO';
   });
   purgeBtn?.addEventListener('click', async () => {
-    if (!confirm('CERTEZA? Apaga ai_skills e ai_automations originais (backups ficam em *_archive).')) return;
+    const ok = await modal.confirm({
+      title: 'Apagar coleções legadas',
+      message: 'CERTEZA? Apaga ai_skills e ai_automations originais (backups ficam em *_archive).',
+      confirmText: 'Apagar legado',
+      danger: true,
+    });
+    if (!ok) return;
     purgeBtn.disabled = true; purgeBtn.textContent = '⏳ Apagando...';
     try {
       const report = await purgeLegacyCollections({ confirmText: confirmInput.value.trim() });
@@ -2397,8 +2421,13 @@ async function renderConnectionsTab(container) {
         setTimeout(paint, 600);
       } catch (e) { toast.error(e.message); }
     });
-    document.getElementById('gd-change-id')?.addEventListener('click', () => {
-      if (!confirm('Trocar Client ID? Você precisará reconectar.')) return;
+    document.getElementById('gd-change-id')?.addEventListener('click', async () => {
+      const ok = await modal.confirm({
+        title: 'Trocar Client ID',
+        message: 'Trocar Client ID? Você precisará reconectar.',
+        confirmText: 'Trocar',
+      });
+      if (!ok) return;
       try { localStorage.removeItem('google-client-id'); } catch {}
       gd.clearGoogleToken();
       paint();

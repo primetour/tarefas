@@ -193,6 +193,28 @@
       padding: 60px 20px; text-align: center; color: var(--text-muted);
       background: var(--bg-card); border: 1px dashed var(--border); border-radius: 10px;
     }
+
+    /* v4.57.53 — inline notice (substitui alert() nativo) */
+    .notice-stack {
+      position: fixed; top: 20px; right: 20px; z-index: 9999;
+      display: flex; flex-direction: column; gap: 8px; max-width: 360px;
+      pointer-events: none;
+    }
+    .notice {
+      pointer-events: auto;
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-left: 3px solid var(--brand-gold);
+      border-radius: 8px; padding: 12px 16px;
+      box-shadow: var(--shadow-md);
+      font-size: 0.875rem; color: var(--text-primary);
+      animation: notice-slide 0.18s ease-out;
+    }
+    .notice.notice-error { border-left-color: var(--color-danger); }
+    .notice.notice-info  { border-left-color: var(--brand-gold); }
+    @keyframes notice-slide {
+      from { opacity: 0; transform: translateX(20px); }
+      to   { opacity: 1; transform: translateX(0); }
+    }
   </style>
 </head>
 <body>
@@ -276,6 +298,8 @@
       <div id="products-list"></div>
     </div>
 
+    <div class="notice-stack" id="notice-stack"></div>
+
     <div class="footer-note">
       Página gerada pelo sistema interno PRIMETOUR. Atualizada em tempo real conforme
       novas entradas são aprovadas. Para auditoria completa da metodologia, consulte
@@ -336,9 +360,28 @@
     document.getElementById('f-category').addEventListener('change', e => { f_category = e.target.value; render(); });
     document.getElementById('f-search').addEventListener('input', e => { f_search = e.target.value.trim().toLowerCase(); render(); });
 
+    // v4.57.53 — inline notice helper (substitui alert() nativo, anti-padrão §11.k)
+    function showNotice(message, kind = 'info', ms = 4000) {
+      const stack = document.getElementById('notice-stack');
+      if (!stack) return;
+      const el = document.createElement('div');
+      el.className = 'notice notice-' + kind;
+      el.textContent = message;
+      stack.appendChild(el);
+      setTimeout(() => {
+        el.style.transition = 'opacity .2s';
+        el.style.opacity = '0';
+        setTimeout(() => el.remove(), 220);
+      }, ms);
+    }
+
     // PDF export — reutiliza o mesmo módulo da app autenticada (já há filtragem por status='approved' no array)
     // 4.40.28+ No tab "products" passa focus/breakdown/fullSummary pra mudar layout do PDF.
+    // v4.57.53 anti-double-submit (§12.o) + showNotice (§11.k)
+    let _pdfInFlight = false;
     document.getElementById('pdf-btn').addEventListener('click', async () => {
+      if (_pdfInFlight) return;
+      _pdfInFlight = true;
       const btn = document.getElementById('pdf-btn');
       btn.disabled = true;
       btn.textContent = '⌛ Gerando...';
@@ -347,7 +390,7 @@
         const filtered = currentTab === 'products'
           ? baseFiltered.filter(e => entryMatchesModules(e) && isAfterProductsCutoff(e))
           : baseFiltered;
-        if (!filtered.length) { alert('Sem entradas para exportar com os filtros atuais.'); return; }
+        if (!filtered.length) { showNotice('Sem entradas para exportar com os filtros atuais.', 'info'); return; }
         const { exportDevHoursPdf } = await import('./js/services/devHoursPdf.js');
         const periodLabel = f_period === 'month'   ? 'Este mês'
                          : f_period === 'quarter' ? 'Este trimestre'
@@ -359,8 +402,9 @@
         await exportDevHoursPdf(filtered, pdfOpts);
       } catch (e) {
         console.error(e);
-        alert('Falha ao gerar PDF: ' + e.message);
+        showNotice('Falha ao gerar PDF: ' + e.message, 'error', 6000);
       } finally {
+        _pdfInFlight = false;
         btn.disabled = false;
         btn.textContent = '📄 PDF';
       }
