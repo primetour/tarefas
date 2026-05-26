@@ -513,7 +513,10 @@ export function envisionItineraryToBank(envisionJson, opts = {}) {
     collectionLabel: opts.collectionLabel || 'Envision',
 
     // ─── Status ───
-    status:       'review',                                       // novo doc vindo de sync → review p/ curador validar
+    // v4.58.7: roteiros Envision JÁ são publicados oficialmente pela equipe
+    // de produtos PrimeTour (Active=true no Envision). Importamos como
+    // 'approved' por default. Curador ainda pode mover pra review/draft.
+    status:       'approved',
 
     // ─── Validade ───
     validity:     mapValidity(),

@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 58,
-  patch: 6,
-  build: '20260526-export-pdf-images-parallel',
+  patch: 7,
+  build: '20260526-envision-bulk-import-236-approved',
 };
 
 /** "1.2.0" */

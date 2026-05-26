@@ -20,10 +20,18 @@ const fs = require('fs');
 const path = require('path');
 
 const samplesDir = path.join(__dirname, '..', 'docs', 'envision-samples');
+// v4.58.7: prefere full-bundle (236 ativos via Admin) sobre fixtures-bundle (8 sample iniciais)
 const bundles = fs.readdirSync(samplesDir)
-  .filter(f => /^envision-fixtures-bundle-.*\.json$/.test(f))
+  .filter(f => /^envision-(full|fixtures)-bundle-.*\.json$/.test(f))
   .map(f => path.join(samplesDir, f))
-  .sort();
+  .sort((a, b) => {
+    // full-bundle tem prioridade
+    const aFull = a.includes('full-bundle');
+    const bFull = b.includes('full-bundle');
+    if (aFull && !bFull) return 1;
+    if (!aFull && bFull) return -1;
+    return a.localeCompare(b);
+  });
 const bundlePath = bundles[bundles.length - 1];
 
 // Carrega adapter via CJS hack (mesmo padrão do test runner)
