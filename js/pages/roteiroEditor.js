@@ -4051,6 +4051,20 @@ export async function renderRoteiroEditor(container) {
     const pageTitle = roteiroId ? 'Editar Roteiro' : (isAiGenerated ? 'Roteiro Gerado por IA' : 'Novo Roteiro');
     const statusLabel = currentRoteiro.status || 'draft';
 
+    // v4.57.35 fix integração R14: safety-net pra estado "approved mas tasks
+    // não geradas". Pode acontecer se: (a) user aprovou + page crashou antes do
+    // generateOperationalTasksForRoteiro completar; (b) user aprovou em offline
+    // mode + voltou online; (c) admin restaurou roteiro de archived. Sem isso,
+    // tasks ficavam permanentemente não geradas. Ao abrir, oferece geração.
+    // Delay pra não competir com render inicial + só se for owner editor.
+    if (roteiroId && currentRoteiro.status === 'approved'
+        && !currentRoteiro.tasksGeneratedAt
+        && currentRoteiro.workflowMode !== 'offline') {
+      setTimeout(() => {
+        try { maybeOfferTaskGeneration(roteiroId); } catch (_) { /* non-blocking */ }
+      }, 1500);
+    }
+
     // Inject CSS
     const styleEl = document.createElement('style');
     styleEl.textContent = EDITOR_CSS;

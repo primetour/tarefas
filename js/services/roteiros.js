@@ -556,6 +556,30 @@ export async function saveRoteiro(id, data) {
       title: data.title || existing?.title || '',
       fields: Object.keys(data),
     }).catch(() => {});
+
+    // v4.57.35 fix integração R11: notif quando user é ADICIONADO a collaboratorIds.
+    // Antes: collaborator adicionado não sabia que ganhou acesso de edição
+    // (entrava na lista silenciosamente).
+    if (Array.isArray(data.collaboratorIds)) {
+      try {
+        const prevCollabs = Array.isArray(existing?.collaboratorIds) ? existing.collaboratorIds : [];
+        const newCollabs  = data.collaboratorIds.filter(cid => cid && !prevCollabs.includes(cid) && cid !== uid);
+        if (newCollabs.length) {
+          const { notify } = await import('./notifications.js');
+          await notify('roteiro.shared', {
+            entityType: 'roteiro',
+            entityId: id,
+            recipientIds: newCollabs,
+            title: 'Você foi adicionado a um roteiro',
+            body: `Você agora pode editar "${data.title || existing?.title || 'Roteiro'}"`,
+            route: `roteiro-editor?id=${encodeURIComponent(id)}`,
+            category: 'roteiro',
+          });
+        }
+      } catch (e) {
+        console.warn('[saveRoteiro] notify collab adicionado falhou:', e?.message);
+      }
+    }
     return id;
   } else {
     if (!store.canCreateRoteiro()) {
@@ -680,6 +704,36 @@ export async function updateRoteiroStatus(id, status) {
     statusFrom: prevStatus,
     statusTo: status,
   }).catch(() => {});
+
+  // v4.57.35 fix integração R10: notif status_changed pra creator + collaborators.
+  // Antes: status mudava (draft→em_revisao→aprovado→enviado) sem feedback pro
+  // creator. Audit log existia mas não é visível ao user. Quem espera aprovação
+  // não sabia que status mudou.
+  if (prevStatus && prevStatus !== status) {
+    try {
+      const consultantId  = existing?.consultantId || null;
+      const collaborators = Array.isArray(existing?.collaboratorIds) ? existing.collaboratorIds : [];
+      const recipientIds  = [...new Set([consultantId, ...collaborators].filter(Boolean).filter(rid => rid !== uid))];
+      if (recipientIds.length) {
+        const { notify } = await import('./notifications.js');
+        const statusLabels = {
+          draft: 'Rascunho', em_revisao: 'Em Revisão', aprovado: 'Aprovado',
+          enviado: 'Enviado', archived: 'Arquivado', approved: 'Aprovado', sent: 'Enviado',
+        };
+        await notify('roteiro.status_change', {
+          entityType: 'roteiro',
+          entityId: id,
+          recipientIds,
+          title: 'Status do roteiro alterado',
+          body: `"${existing?.title || 'Roteiro'}" — ${statusLabels[prevStatus] || prevStatus} → ${statusLabels[status] || status}`,
+          route: `roteiro-editor?id=${encodeURIComponent(id)}`,
+          category: 'roteiro',
+        });
+      }
+    } catch (e) {
+      console.warn('[updateRoteiroStatus] notify falhou (não bloqueia):', e?.message);
+    }
+  }
 }
 
 /* ─── Duplicar roteiro ────────────────────────────────────── */

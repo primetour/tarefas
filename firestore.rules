@@ -955,7 +955,7 @@ service cloud.firestore {
       allow create: if isAuth()
         && request.resource.data.actorId == request.auth.uid
         && request.resource.data.type is string
-        && request.resource.data.type.matches('^(client|mention|task|project|squad|csat|request|goal|portal|feedback|subtask)[.][a-z_]+$')
+        && request.resource.data.type.matches('^(client|mention|task|project|squad|csat|request|goal|portal|feedback|subtask|roteiro)[.][a-z_]+$')
         && !request.resource.data.type.matches('^(security|lgpd|system|auth|secrets)[.].*$');
       // Ler, atualizar e deletar apenas as próprias notificações
       allow read, update, delete: if isAuth()

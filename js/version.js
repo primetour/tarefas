@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 57,
-  patch: 34,
-  build: '20260525-roteiros-cleanup-fk-tasks-ailogs-generations',
+  patch: 35,
+  build: '20260525-roteiros-notif-status-collab-approve-safety',
 };
 
 /** "1.2.0" */

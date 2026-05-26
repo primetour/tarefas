@@ -6,6 +6,26 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.57.35+20260525-roteiros-notif-status-collab-approve-safety] — 2026-05-25
+
+Release **PATCH** — Sprint Roteiros (2/5). Notifs + safety-net no fluxo de aprovação.
+
+**R10 — Status change sem notif** (`js/services/roteiros.js` `updateRoteiroStatus`). Antes: `draft→em_revisao→aprovado→enviado` mudava status mas creator + collaborators não recebiam notif. Audit log existe mas é invisível ao user. Agora: após o updateDoc, notif `roteiro.status_change` pra `consultantId + collaboratorIds` (excluindo o ator). Body: "Roteiro X — Em Revisão → Aprovado".
+
+**R11 — Collaborator adicionado sem notif** (`js/services/roteiros.js` `saveRoteiro`). Quando o roteiro é atualizado com `data.collaboratorIds`, diff com `existing.collaboratorIds` pra detectar quem é NOVO. Pra cada novo collaborator (excluindo o autor da mudança), notif `roteiro.shared` "Você foi adicionado a um roteiro 'X'".
+
+**R14 — Safety-net "approved && !tasksGeneratedAt"** (`js/pages/roteiroEditor.js` boot). Cenários onde o state ficava degenerado: (a) user aprovou + page crashou antes de gerar tasks, (b) modo offline → online sem manual trigger, (c) admin restaurou archived. Antes: tasks permanentemente não geradas. Agora: ao abrir o editor, se `status='approved' && !tasksGeneratedAt && workflowMode != 'offline'`, dispara `maybeOfferTaskGeneration` após 1.5s (não compete com render inicial). User vê o mesmo prompt original e completa o fluxo.
+
+**Pré-requisito infra — Firestore rule**:
+`firestore.rules:958` — whitelist de tipos de notif. `roteiro.*` NÃO estava listada (apesar de `NOTIF_ICONS['roteiro']` existir desde sempre). Notif do client teria sido REJEITADA com "permission-denied" no `addDoc`. Fix: adicionado `roteiro` ao regex `^(client|mention|task|project|squad|csat|request|goal|portal|feedback|subtask|roteiro)[.][a-z_]+$`. Deploy `firebase deploy --only firestore:rules` confirmado.
+
+**Validação**:
+- `node --check` 2 arquivos OK
+- Rule deployada → notifs `roteiro.*` agora permitidas
+- Próxima mudança de status / add collaborator dispara notif (testável end-to-end via UI)
+
+---
+
 ## [4.57.34+20260525-roteiros-cleanup-fk-tasks-ailogs-generations] — 2026-05-25
 
 Release **PATCH** — Sprint Gerador de Roteiros (1/5). Cleanup FK críticos no `deleteRoteiro` — fecha gaps R1 + R6 da auditoria + bonus `roteiro_generations`.
