@@ -942,7 +942,10 @@ export async function convertToWebp(file, quality = 0.92, maxSide = WEBP_MAX_SID
 // progress).
 async function _getR2UploadCredentials(path) {
   const { httpsCallable, getFunctions } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js');
-  const fn = httpsCallable(getFunctions(), 'getR2UploadUrl');
+  // App nomeado 'primetour-main' (não default) — precisa passar explícito,
+  // senão getFunctions() resolve pro default app inexistente (vide firebase.js)
+  const { app } = await import('../firebase.js');
+  const fn = httpsCallable(getFunctions(app, 'us-central1'), 'getR2UploadUrl');
   const { data } = await fn({ path });
   if (!data?.uploadUrl || !data?.uploadToken) {
     throw new Error('CF getR2UploadUrl retornou resposta inválida.');
@@ -1004,7 +1007,8 @@ export async function deleteFromR2(path) {
   if (!path) return;
   try {
     const { httpsCallable, getFunctions } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js');
-    const fn = httpsCallable(getFunctions(), 'deleteR2');
+    const { app } = await import('../firebase.js');
+    const fn = httpsCallable(getFunctions(app, 'us-central1'), 'deleteR2');
     await fn({ path });
   } catch (e) {
     // Best-effort: log mas não propaga (caller decide se erro de delete é fatal)

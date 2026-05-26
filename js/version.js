@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 57,
-  patch: 49,
-  build: '20260525-banco-imagens-r2-token-security-cf-cutover',
+  patch: 50,
+  build: '20260525-r2-cf-hotfix-app-explicit',
 };
 
 /** "1.2.0" */

@@ -143,8 +143,10 @@ export async function uploadAgentAvatar(file, agentId = 'new') {
   const path = `agents/avatar-${agentId}-${Date.now()}.${ext}`;
 
   // v4.57.49: credencial via CF (auth+perm+rate-limit+audit)
+  // App nomeado primetour-main (não default) — passa explícito
   const { httpsCallable, getFunctions } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js');
-  const getUrl = httpsCallable(getFunctions(), 'getR2UploadUrl');
+  const { app } = await import('../firebase.js');
+  const getUrl = httpsCallable(getFunctions(app, 'us-central1'), 'getR2UploadUrl');
   const { data } = await getUrl({ path });
   const { uploadUrl, uploadToken } = data || {};
   if (!uploadUrl || !uploadToken) throw new Error('CF getR2UploadUrl retornou resposta inválida.');

@@ -65,8 +65,10 @@ export async function uploadFileToR2(file, path, onProgress) {
   if (!file) throw new Error('Arquivo vazio.');
 
   // v4.57.49: credencial via CF (auth+perm+rate-limit+audit)
+  // App nomeado primetour-main (não default) — passa explícito
   const { httpsCallable, getFunctions } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js');
-  const getUrl = httpsCallable(getFunctions(), 'getR2UploadUrl');
+  const { app } = await import('../firebase.js');
+  const getUrl = httpsCallable(getFunctions(app, 'us-central1'), 'getR2UploadUrl');
   const { data } = await getUrl({ path });
   const { uploadUrl, uploadToken } = data || {};
   if (!uploadUrl || !uploadToken) throw new Error('CF getR2UploadUrl retornou resposta inválida.');
@@ -108,7 +110,8 @@ export async function deleteFromR2(path) {
   if (!path) return;
   try {
     const { httpsCallable, getFunctions } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js');
-    const fn = httpsCallable(getFunctions(), 'deleteR2');
+    const { app } = await import('../firebase.js');
+    const fn = httpsCallable(getFunctions(app, 'us-central1'), 'deleteR2');
     await fn({ path });
   } catch (e) {
     console.warn('[luxuryTravel.deleteFromR2] CF deleteR2 falhou:', e?.message || e);
