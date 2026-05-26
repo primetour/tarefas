@@ -496,35 +496,27 @@ export async function enrichRoteiroImages(roteiro) {
   const overrides = roteiro?.images?.overrides || {};
   const out = { heroUrl: null, byCity: {}, byHotel: {} };
 
-  // 4.46.2+ (Sprint 5 dedup fix) — Set global rastreia TODAS as URLs já
-  // alocadas nesta enrichment, em qualquer slot (hero/city/hotel). Cada
-  // resolução posterior passa o Set e evita repetir.
+  // v4.58.6 — REWRITE pra paralelismo. Antes era SEQUENCIAL (1 hero +
+  // N cidades + M hotéis em série) → 23s pra Japão (5 cidades + 8 hotéis).
   //
-  // Por que isso resolve user-reported "fotos se repetem":
-  //   - Banco pode ter 1 foto cadastrada pra "Tóquio" + 3 hotéis na cidade
-  //     → todos os 4 slots receberiam a mesma URL antes
-  //   - Unsplash pode retornar mesma top-foto pra queries similares
-  //   - Sem Set global, dedup é impossível
-  const usedUrls = new Set();
+  // Estratégia nova: dispara TODOS os fetchs em paralelo (Promise.allSettled),
+  // depois faz dedup pós-processo em ORDEM CANÔNICA (hero → cidades → hotéis).
+  // Cada slot só fica com URL se ela não foi usada em slot anterior; se foi
+  // (duplicata), slot fica null e renderer cai pro placeholder.
+  //
+  // Reduz tempo de imagens de O(N) pra O(1) — todas as chamadas em paralelo,
+  // cache hits Unsplash respondem em ms.
 
   // Carrega banco de imagens uma vez
   let bankImages = [];
   try { bankImages = await fetchImages({}); }
   catch (e) { console.warn('[roteiroImages] fetchImages falhou:', e.message); }
 
-  // 1) Hero — primeira destinação (ou override hero) — sempre alocado primeiro
+  // ─── Coleta TODAS as tasks (sem await ainda) ───
   const heroOverride = overrides.hero || roteiro?.images?.hero;
   const firstDest = roteiro?.travel?.destinations?.[0];
-  if (heroOverride) {
-    out.heroUrl = heroOverride;
-    usedUrls.add(heroOverride);
-  } else if (firstDest) {
-    out.heroUrl = await resolveDestinationImage(firstDest, null, bankImages, { excludeUrls: usedUrls });
-    if (out.heroUrl) usedUrls.add(out.heroUrl);
-  }
 
-  // 2) Por cidade — coleta cidades únicas do itinerário (days + destinations)
-  const cities = new Map(); // key: cityName, value: {city, country}
+  const cities = new Map(); // key → {city, country}
   (roteiro?.travel?.destinations || []).forEach(d => {
     if (d.city) cities.set(normKey(d.city), { city: d.city, country: d.country });
   });
@@ -534,48 +526,89 @@ export async function enrichRoteiroImages(roteiro) {
     }
   });
 
-  // SEQUENCIAL (não Promise.allSettled) pra dedup funcionar — paralelismo
-  // perderia o Set sync. Volume típico (5-10 cities) torna a latência aceitável.
+  // Dispara tasks em paralelo. Passa excludeUrls VAZIO (dedup é pós-processo).
+  // Cada task retorna { slot, url, override } pra atribuição posterior.
+  const tasks = [];
+
+  // Hero
+  if (heroOverride) {
+    tasks.push(Promise.resolve({ slot: 'hero', url: heroOverride, override: true }));
+  } else if (firstDest) {
+    tasks.push(
+      resolveDestinationImage(firstDest, null, bankImages, { excludeUrls: new Set() })
+        .then(url => ({ slot: 'hero', url, override: false }))
+        .catch(() => ({ slot: 'hero', url: null, override: false }))
+    );
+  }
+
+  // Cidades
   for (const [key, dest] of cities.entries()) {
     const ovKey = `city_${key}`;
-    const override = overrides[ovKey];
-    if (override) {
-      out.byCity[key] = override;
-      usedUrls.add(override);
-      continue;
-    }
-    const url = await resolveDestinationImage(dest, null, bankImages, { excludeUrls: usedUrls });
-    if (url) {
-      out.byCity[key] = url;
-      usedUrls.add(url);
+    if (overrides[ovKey]) {
+      tasks.push(Promise.resolve({ slot: `city:${key}`, url: overrides[ovKey], override: true }));
+    } else {
+      tasks.push(
+        resolveDestinationImage(dest, null, bankImages, { excludeUrls: new Set() })
+          .then(url => ({ slot: `city:${key}`, url, override: false }))
+          .catch(() => ({ slot: `city:${key}`, url: null, override: false }))
+      );
     }
   }
 
-  // 3) Por hotel (opcional) — usa city + hotelName. Idem sequencial pro dedup.
+  // Hotéis
   for (let idx = 0; idx < (roteiro?.hotels?.length || 0); idx++) {
     const h = roteiro.hotels[idx];
     const ovKey = `hotel_${idx}`;
-    const override = overrides[ovKey];
-    if (override) {
-      out.byHotel[idx] = override;
-      usedUrls.add(override);
+    if (overrides[ovKey]) {
+      tasks.push(Promise.resolve({ slot: `hotel:${idx}`, url: overrides[ovKey], override: true }));
       continue;
     }
-    // Tenta banco por city (com dedup)
-    const fromBank = pickFromBank(bankImages, { city: h.city, country: '' }, { excludeUrls: usedUrls });
+    // Banco por city
+    const fromBank = pickFromBank(bankImages, { city: h.city, country: '' }, { excludeUrls: new Set() });
     if (fromBank) {
-      out.byHotel[idx] = fromBank;
-      usedUrls.add(fromBank);
+      tasks.push(Promise.resolve({ slot: `hotel:${idx}`, url: fromBank, override: false }));
       continue;
     }
-    // Auto-fetch hotel-specific (com dedup)
+    // Auto-fetch hotel
     const q = h.hotelName ? `${h.hotelName} ${h.city || ''}`.trim() : h.city;
     if (q) {
-      const url = await fetchAutoPhoto(q, { excludeUrls: usedUrls });
-      if (url) {
-        out.byHotel[idx] = url;
-        usedUrls.add(url);
-      }
+      tasks.push(
+        fetchAutoPhoto(q, { excludeUrls: new Set() })
+          .then(url => ({ slot: `hotel:${idx}`, url, override: false }))
+          .catch(() => ({ slot: `hotel:${idx}`, url: null, override: false }))
+      );
+    }
+  }
+
+  // ─── Aguarda TODAS em paralelo ───
+  const results = await Promise.allSettled(tasks);
+
+  // ─── Pós-processo: assign URLs com dedup em ORDEM CANÔNICA ───
+  // Ordem: hero primeiro (mais visível), depois cidades (ordem de inserção do
+  // Map = ordem dos days no roteiro), depois hotéis.
+  // Override sempre ganha (não passa por dedup — user escolheu manualmente).
+  const usedUrls = new Set();
+  const byHero = results.find(r => r.status === 'fulfilled' && r.value?.slot === 'hero')?.value;
+  if (byHero?.url) {
+    out.heroUrl = byHero.url;
+    usedUrls.add(byHero.url);
+  }
+  // Cidades — preserva ordem do Map original
+  for (const [key] of cities.entries()) {
+    const found = results.find(r => r.status === 'fulfilled' && r.value?.slot === `city:${key}`)?.value;
+    if (!found?.url) continue;
+    if (found.override || !usedUrls.has(found.url)) {
+      out.byCity[key] = found.url;
+      usedUrls.add(found.url);
+    }
+  }
+  // Hotéis
+  for (let idx = 0; idx < (roteiro?.hotels?.length || 0); idx++) {
+    const found = results.find(r => r.status === 'fulfilled' && r.value?.slot === `hotel:${idx}`)?.value;
+    if (!found?.url) continue;
+    if (found.override || !usedUrls.has(found.url)) {
+      out.byHotel[idx] = found.url;
+      usedUrls.add(found.url);
     }
   }
 

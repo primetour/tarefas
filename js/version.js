@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 58,
-  patch: 5,
-  build: '20260526-html-cleanup-unsplash-retry',
+  patch: 6,
+  build: '20260526-export-pdf-images-parallel',
 };
 
 /** "1.2.0" */
