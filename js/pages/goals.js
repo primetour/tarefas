@@ -113,7 +113,7 @@ export async function renderGoals(container) {
             </button>
           </div>
         </div>
-        ${store.can('system_manage_roles')||store.isMaster()?
+        ${store.can('goals_manage')||store.isMaster()?
           `<button class="btn btn-primary" id="new-goal-btn">+ Nova Meta</button>` : ''}
       </div>
     </div>
@@ -379,10 +379,10 @@ function renderGoalsList(container) {
             </div>
           </div>
           <div style="display:flex;gap:6px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;">
-            ${goal.status==='rascunho'&&(store.isMaster()||store.can('system_manage_roles'))?
+            ${goal.status==='rascunho'&&(store.isMaster()||store.can('goals_manage'))?
               `<button class="btn btn-primary btn-sm goal-publish-btn" data-id="${esc(goal.id)}"
                 style="font-size:0.75rem;">✓ Publicar</button>`:''}
-            ${store.isMaster()||store.can('system_manage_roles')?
+            ${store.isMaster()||store.can('goals_manage')?
               `<button class="btn btn-ghost btn-sm goal-edit-btn" data-id="${esc(goal.id)}"
                 style="font-size:0.75rem;color:var(--brand-gold);">✎ Editar</button>
                <button class="btn btn-ghost btn-sm goal-del-btn" data-id="${esc(goal.id)}"
@@ -517,7 +517,7 @@ async function renderAvaliacoes(container) {
     const respNames = getResponsavelNames(goal, allUsers);
     const respLabel = respNames.length ? respNames.join(', ') : '—';
     const gestor = allUsers.find(u=>u.id===goal.gestorId);
-    const isGestor = goal.gestorId===uid || store.isMaster() || store.can('system_manage_roles');
+    const isGestor = goal.gestorId===uid || store.isMaster() || store.can('goals_manage');
 
     return `
     <div class="card" style="margin-bottom:16px;padding:0;overflow:hidden;">
@@ -577,7 +577,7 @@ async function renderAvaliacoes(container) {
       ${evals.map(ev => {
         const evDate = ev.createdAt?.toDate?ev.createdAt.toDate():new Date(ev.createdAt||0);
         const uid2   = store.get('currentUser')?.uid;
-        const canEdit = goal.gestorId===uid2||store.isMaster()||store.can('system_manage_roles');
+        const canEdit = goal.gestorId===uid2||store.isMaster()||store.can('goals_manage');
         return `
         <div style="background:var(--bg-surface);border-radius:var(--radius-md);
           padding:12px 16px;margin-bottom:8px;border:1px solid var(--border-subtle);">
@@ -617,7 +617,7 @@ async function renderAvaliacoes(container) {
     // v4.53.1+ Adicionado 'approval' e 'validation' (alinhado a STATUSES de tasks.js)
     const statusIcons  = { done:'✓', in_progress:'▶', review:'◉', approval:'⚖', validation:'🔍', not_started:'○', cancelled:'✕', rework:'↺' };
     const statusColors = { done:'#22C55E', in_progress:'#F59E0B', review:'#A78BFA', approval:'#0EA5E9', validation:'#EAB308', not_started:'#38BDF8', cancelled:'#EF4444', rework:'#F97316' };
-    const isGestorForLink = goal.gestorId === store.get('currentUser')?.uid || store.isMaster() || store.can('system_manage_roles');
+    const isGestorForLink = goal.gestorId === store.get('currentUser')?.uid || store.isMaster() || store.can('goals_manage');
 
     const evidenceHTML = `
       <div style="margin-top:${evals.length?'20px':'0'};">
@@ -1803,7 +1803,7 @@ function openLinkTaskToGoalModal(goalId, allTasks, container) {
 /* ─── Evaluation form ────────────────────────────────────── */
 function openEvaluationForm(goal, pillarIdx, metaIdx, existingEvals, existingEval) {
   const uid      = store.get('currentUser')?.uid;
-  const isGestor = goal.gestorId===uid||store.isMaster()||store.can('system_manage_roles');
+  const isGestor = goal.gestorId===uid||store.isMaster()||store.can('goals_manage');
   if (!isGestor) { toast.error('Apenas o gestor pode registrar avaliações.'); return; }
 
   const pilar = goal.pilares?.[pillarIdx];

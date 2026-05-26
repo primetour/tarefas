@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 57,
-  patch: 55,
-  build: '20260526-analytics-query-orderby-truncation-warn',
+  patch: 56,
+  build: '20260526-goals-perm-gate-fix',
 };
 
 /** "1.2.0" */

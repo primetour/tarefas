@@ -6,6 +6,28 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.57.56+20260526-goals-perm-gate-fix] — 2026-05-26
+
+Release **PATCH/BUGFIX** — bug crítico reportado por users: gestores não conseguiam cadastrar metas.
+
+**Bug**
+
+`js/pages/goals.js` gateava os botões "+ Nova Meta" / "Editar" / "Excluir" / "Publicar" + checks `isGestor` em renderers internos por `store.can('system_manage_roles')` — uma perm de admin de roles que NENHUM gestor tem. Como resultado: usuários com `goals_manage` (gestores, coords, heads, diretoria) não viam o botão de criar meta apesar de TEREM permissão correta. 7 ocorrências.
+
+**Fix**
+
+`system_manage_roles` → `goals_manage` em todas as 7 ocorrências (linhas 117, 382, 385, 520, 580, 620, 1806). Esta perm é definida em `rbac.js` linha 98: "Criar, editar, publicar e excluir metas. Reservado para gestores e diretoria."
+
+**Investigação adicional**
+
+Bug reportado em paralelo: "não conseguem adicionar observadores a tarefas". Investigação estática do código (taskModal.js linhas 1869-1900 buildHTML observer section + 2667-2715 bindEvents observer-add-btn/dropdown/picker handlers) não encontrou bug óbvio. Estrutura HTML e fluxo de eventos consistente com a seção de assignees (que funciona). Possíveis hipóteses pendentes de validação E2E logado:
+- Sector filtering (`activeUsers` filtra `users` por `visibleSectors` no mesmo padrão dos assignees — se assignees funciona, deveria observers também)
+- Rules block update quando user não é creator/assignee/observer/manager (mas isso seria o mesmo bloqueio que afeta assignees)
+
+Próximo passo: aguardar Renê reproduzir o fluxo em sessão logada via Chrome MCP pra coletar evidência do ponto exato de falha.
+
+---
+
 ## [4.57.55+20260526-analytics-query-orderby-truncation-warn] — 2026-05-26
 
 Release **PATCH/PERF** — sprint Analytics #3/5. Queries de logs/custos com orderBy timestamp desc + warn de truncamento.
