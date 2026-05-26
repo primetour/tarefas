@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 57,
-  patch: 38,
-  build: '20260525-roteiros-polish-modal-vars-cap-errorcode',
+  patch: 39,
+  build: '20260525-portal-dicas-cleanup-fk-area-dest-tip-image',
 };
 
 /** "1.2.0" */

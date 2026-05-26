@@ -6,6 +6,33 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.57.39+20260525-portal-dicas-cleanup-fk-area-dest-tip-image] — 2026-05-25
+
+Release **PATCH** — Sprint Portal de Dicas (1/5). Cleanup FK críticos em 4 deletes do `js/services/portal.js`.
+
+**Antes**: todos os 4 deletes faziam apenas `deleteDoc` sem query inversa. FKs apontando pra documento deletado quebravam silenciosamente — destinos órfãos sem área, tips órfãs sem destino, roteiros com snapshot de tip deletada, generator quebrando em imagem inexistente.
+
+**PD1 — `deleteArea`** limpa `portal_destinations.areaId`. Captura `name` antes do delete pra UI mostrar "ex-área: X". Batch zera + flag `areaDeleted` + `areaDeletedAt` + `areaDeletedName`.
+
+**PD2 — `deleteDestination`** limpa em 2 passes:
+1. `portal_tips where destinationId==id` → batch zera + flag `destinationDeleted` + `destinationDeletedLabel` (preserva "Tóquio, Japão" pra UI mostrar contexto)
+2. `portal_images where destinationId==id` → batch zera + flag (mantém imagem viva, pode ser re-taggada)
+
+**PD3 — `deleteTip`** limpa `roteiros.embeddedTips[]` (array de objetos snapshot). Read-modify-write porque `arrayRemove` não funciona em objeto sem match exato. Marca cada embedded item como `tipDeleted: true` + `tipDeletedTitle` (preserva snapshot — conteúdo já entregue ao cliente). Set `embeddedTipsStaleAt` no roteiro pra dashboard agregar. Complemento do `onPortalTipUpdated` (v4.57.37 R13) que só cobria updates.
+
+**PD4 — `deleteImageMeta`** limpa em 2 passes:
+1. `portal_destinations where heroImage.imageId==id` → nullify + flag `heroImageDeleted`
+2. `portal_tips` scan + read-modify-write em `segments[].items[].image.imageId` (estrutura aninhada de 3 níveis, não permite query direto)
+
+**Padrão consolidado**: mesmo template das sprints anteriores (Tarefas v4.57.28-31, Roteiros v4.57.34). Query inversa + batch 500 + null FK + flag `xxxDeleted` + timestamp + preservar metadata útil + try/catch defensivo (não bloqueia delete).
+
+**Validação**:
+- `node --check js/services/portal.js` OK
+- Próximo delete de Area/Destination/Tip/Image dispara cleanup automaticamente
+- Total adicionado: 10 caminhos de cleanup FK cross-collection neste módulo
+
+---
+
 ## [4.57.38+20260525-roteiros-polish-modal-vars-cap-errorcode] — 2026-05-25
 
 Release **PATCH** — Sprint Roteiros (5/5, final). Polish: anti-padrões + dashboard cap + CF error classification.

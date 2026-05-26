@@ -6,7 +6,7 @@
 import {
   collection, doc, getDoc, getDocs, setDoc, addDoc,
   updateDoc, deleteDoc, query, where, orderBy,
-  serverTimestamp, increment, limit,
+  serverTimestamp, increment, limit, writeBatch,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { db }    from '../firebase.js';
 import { store } from '../store.js';
@@ -200,7 +200,35 @@ export async function saveArea(id, data) {
 
 export async function deleteArea(id) {
   if (!store.canManagePortalAreas()) throw new Error('Permissão negada.');
+  // Captura nome pra preservar em flag (UI mostra "ex-área: X")
+  let areaName = null;
+  try { const s = await getDoc(doc(db, 'portal_areas', id)); if (s.exists()) areaName = s.data()?.name || s.data()?.title || null; } catch {}
   await deleteDoc(doc(db, 'portal_areas', id));
+
+  // v4.57.39 fix integração PD1: cleanup portal_destinations.areaId órfão.
+  // Antes: destinos com areaId apontando pra área deletada ficavam órfãos
+  // (hierarquia continente→país→área→destino quebrava silenciosamente).
+  try {
+    const destSnap = await getDocs(query(
+      collection(db, 'portal_destinations'),
+      where('areaId', '==', id),
+      limit(500),
+    ));
+    if (!destSnap.empty) {
+      const batch = writeBatch(db);
+      destSnap.forEach(d => {
+        batch.update(d.ref, {
+          areaId: null,
+          areaDeleted: true,
+          areaDeletedAt: serverTimestamp(),
+          areaDeletedName: areaName,
+        });
+      });
+      await batch.commit();
+    }
+  } catch (e) {
+    console.warn('[deleteArea] cleanup portal_destinations.areaId falhou:', e?.message);
+  }
 }
 
 /* ─── Destinations ────────────────────────────────────────── */
@@ -249,7 +277,65 @@ export async function deleteDestination(id) {
   // 4.49.2+ Mesmo critério que saveDestination — analista pode deletar destinos
   // que ele mesmo cadastrou. Auditoria server-side via auditLog preserva trilha.
   if (!store.canManageDestinations()) throw new Error('Permissão negada.');
+  // Captura nome (city/country) pra flag UI
+  let destLabel = null;
+  try {
+    const s = await getDoc(doc(db, 'portal_destinations', id));
+    if (s.exists()) {
+      const d = s.data();
+      destLabel = [d.city, d.country].filter(Boolean).join(', ') || null;
+    }
+  } catch {}
   await deleteDoc(doc(db, 'portal_destinations', id));
+
+  // v4.57.39 fix integração PD2: cleanup portal_tips + portal_images
+  // referenciando destino deletado.
+  // 1) tips: zera destinationId + flag destinationDeleted (preserva tip pra
+  //    curador re-categorizar; alternativa seria soft-delete mas perde conteúdo).
+  try {
+    const tipsSnap = await getDocs(query(
+      collection(db, 'portal_tips'),
+      where('destinationId', '==', id),
+      limit(500),
+    ));
+    if (!tipsSnap.empty) {
+      const batch = writeBatch(db);
+      tipsSnap.forEach(d => {
+        batch.update(d.ref, {
+          destinationId: null,
+          destinationDeleted: true,
+          destinationDeletedAt: serverTimestamp(),
+          destinationDeletedLabel: destLabel,
+        });
+      });
+      await batch.commit();
+    }
+  } catch (e) {
+    console.warn('[deleteDestination] cleanup portal_tips.destinationId falhou:', e?.message);
+  }
+
+  // 2) images taggadas pelo destino — zera o tag + flag (mantém imagem viva,
+  //    pode ser re-taggada). Imagem em si NÃO é deletada (lifecycle separado).
+  try {
+    const imgSnap = await getDocs(query(
+      collection(db, 'portal_images'),
+      where('destinationId', '==', id),
+      limit(500),
+    ));
+    if (!imgSnap.empty) {
+      const batch = writeBatch(db);
+      imgSnap.forEach(d => {
+        batch.update(d.ref, {
+          destinationId: null,
+          destinationDeleted: true,
+          destinationDeletedAt: serverTimestamp(),
+        });
+      });
+      await batch.commit();
+    }
+  } catch (e) {
+    console.warn('[deleteDestination] cleanup portal_images.destinationId falhou:', e?.message);
+  }
 }
 
 /* ─── Tips ────────────────────────────────────────────────── */
@@ -346,7 +432,42 @@ export async function geocodeAndUpdate(tipId, dataIn) {
 
 export async function deleteTip(id) {
   if (!store.canManagePortal()) throw new Error('Permissão negada.');
+  // Captura título pra flag
+  let tipTitle = null;
+  try { const s = await getDoc(doc(db, 'portal_tips', id)); if (s.exists()) tipTitle = s.data()?.title || null; } catch {}
   await deleteDoc(doc(db, 'portal_tips', id));
+
+  // v4.57.39 fix integração PD3: cleanup roteiros.embeddedTips[] órfão.
+  // Roteiros mantêm snapshot da tip em embeddedTips[]; quando tip é deletada,
+  // o snapshot continua válido (é cópia), mas perde a referência viva.
+  // Marca cada embedded item como tipDeleted (não remove pra preservar
+  // conteúdo já entregue ao cliente). Renderer da UI pode mostrar badge.
+  // Read-modify-write (não é array-contains de objetos puros).
+  try {
+    const roteirosSnap = await getDocs(query(
+      collection(db, 'roteiros'),
+      limit(500),
+    ));
+    const dirty = [];
+    roteirosSnap.forEach(d => {
+      const r = d.data();
+      const tips = Array.isArray(r.embeddedTips) ? r.embeddedTips : [];
+      if (!tips.some(t => t && t.tipId === id)) return;
+      const updated = tips.map(t => (t && t.tipId === id)
+        ? { ...t, tipDeleted: true, tipDeletedAt: new Date().toISOString(), tipDeletedTitle: tipTitle }
+        : t);
+      dirty.push({ ref: d.ref, updated });
+    });
+    if (dirty.length) {
+      const batch = writeBatch(db);
+      dirty.forEach(({ ref, updated }) => {
+        batch.update(ref, { embeddedTips: updated, embeddedTipsStaleAt: serverTimestamp() });
+      });
+      await batch.commit();
+    }
+  } catch (e) {
+    console.warn('[deleteTip] cleanup roteiros.embeddedTips falhou:', e?.message);
+  }
 }
 
 export async function toggleTipPriority(tipId, priority) {
@@ -640,6 +761,67 @@ export async function deleteImageMeta(id) {
   await _auditPortalImage('portal_images.delete', id,
     before ? { name: before.name, type: before.type, url: before.url, assetCategory: before.assetCategory } : null,
     null);
+
+  // v4.57.39 fix integração PD4: cleanup refs órfãs em tips + destinos.
+  // Generator quebrava ao tentar carregar imagem inexistente (404 + render fail).
+  // 1) portal_destinations.heroImage.imageId (objeto único, simples nullify)
+  try {
+    const destSnap = await getDocs(query(
+      collection(db, 'portal_destinations'),
+      where('heroImage.imageId', '==', id),
+      limit(500),
+    ));
+    if (!destSnap.empty) {
+      const batch = writeBatch(db);
+      destSnap.forEach(d => {
+        batch.update(d.ref, {
+          heroImage: null,
+          heroImageDeleted: true,
+          heroImageDeletedAt: serverTimestamp(),
+        });
+      });
+      await batch.commit();
+    }
+  } catch (e) {
+    console.warn('[deleteImageMeta] cleanup destinations.heroImage falhou:', e?.message);
+  }
+
+  // 2) portal_tips com a imagem em segments[].items[].image.imageId.
+  //    Array aninhado de objetos — não dá pra arrayRemove direto; read-modify-write.
+  //    Scan limit 500 (em produção média <100 tips por área).
+  try {
+    const tipsSnap = await getDocs(query(collection(db, 'portal_tips'), limit(500)));
+    const dirty = [];
+    tipsSnap.forEach(d => {
+      const t = d.data();
+      const segs = Array.isArray(t.segments) ? t.segments : [];
+      let touched = false;
+      const updatedSegs = segs.map(seg => {
+        const items = Array.isArray(seg?.items) ? seg.items : [];
+        const updatedItems = items.map(it => {
+          if (it?.image?.imageId === id) {
+            touched = true;
+            return { ...it, image: null, imageDeleted: true };
+          }
+          return it;
+        });
+        return { ...seg, items: updatedItems };
+      });
+      if (touched) dirty.push({ ref: d.ref, segments: updatedSegs });
+    });
+    if (dirty.length) {
+      const batch = writeBatch(db);
+      dirty.forEach(({ ref, segments }) => {
+        batch.update(ref, {
+          segments,
+          imageDeletedAt: serverTimestamp(),
+        });
+      });
+      await batch.commit();
+    }
+  } catch (e) {
+    console.warn('[deleteImageMeta] cleanup tips.segments[].items[].image falhou:', e?.message);
+  }
 }
 
 export async function convertToWebp(file, quality = 0.92, maxSide = WEBP_MAX_SIDE_DEFAULT) {
