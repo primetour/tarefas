@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 57,
-  patch: 51,
-  build: '20260526-cf-permissions-object-shape-fix',
+  patch: 52,
+  build: '20260526-tasks-59-60-dedupe-hierarchical-quickadd',
 };
 
 /** "1.2.0" */

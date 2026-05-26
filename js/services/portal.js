@@ -258,6 +258,77 @@ export async function fetchContinentsWithContent() {
   return CONTINENTS.filter(c => continents.has(c));
 }
 
+/**
+ * v4.57.52 task #59: leitura hierárquica continente → país → cidades.
+ *
+ * Schema Firestore continua FLAT (1 doc por cidade) — não há migração.
+ * Helper agrupa em memória pra UI renderizar drill-down sem N queries.
+ *
+ * Retorno (ordenado pt-BR):
+ * [
+ *   {
+ *     continent: 'América do Sul',
+ *     countries: [
+ *       {
+ *         country: 'Argentina',
+ *         cities: [
+ *           { id, city, areaId?, heroImage?, ... },  // doc completo
+ *           ...
+ *         ],
+ *         cityCount: 3,
+ *       },
+ *       ...
+ *     ],
+ *     countryCount: 4,
+ *     cityCount: 12,
+ *   },
+ *   ...
+ * ]
+ *
+ * Sem refator de schema (option A da decisão Renê) — mantém compat
+ * total com queries existentes. UI futura pode renderizar tree view
+ * usando este helper, descartando o cliente refazer agrupamento.
+ */
+export async function fetchDestinationsHierarchical() {
+  const flat = await fetchDestinations();  // já ordenado por continent → country → city
+  const byContinent = new Map();
+  for (const d of flat) {
+    const cont = d.continent || '?';
+    const cntry = d.country || '?';
+    if (!byContinent.has(cont)) byContinent.set(cont, new Map());
+    const countriesMap = byContinent.get(cont);
+    if (!countriesMap.has(cntry)) countriesMap.set(cntry, []);
+    countriesMap.get(cntry).push(d);
+  }
+  const result = [];
+  // Ordem dos continentes: usa CONTINENTS canônica (linha 33+) pra ordenar consistente
+  const orderedConts = [...byContinent.keys()].sort((a, b) => {
+    const ai = CONTINENTS.indexOf(a);
+    const bi = CONTINENTS.indexOf(b);
+    if (ai >= 0 && bi >= 0) return ai - bi;
+    if (ai >= 0) return -1;
+    if (bi >= 0) return 1;
+    return a.localeCompare(b, 'pt-BR');
+  });
+  for (const cont of orderedConts) {
+    const countriesMap = byContinent.get(cont);
+    const countries = [];
+    let totalCities = 0;
+    for (const cntry of [...countriesMap.keys()].sort((a, b) => a.localeCompare(b, 'pt-BR'))) {
+      const cities = countriesMap.get(cntry);
+      countries.push({ country: cntry, cities, cityCount: cities.length });
+      totalCities += cities.length;
+    }
+    result.push({
+      continent: cont,
+      countries,
+      countryCount: countries.length,
+      cityCount: totalCities,
+    });
+  }
+  return result;
+}
+
 export async function saveDestination(id, data) {
   // 4.49.2+ Aceita portal_destinations_manage (granular) OU portal_manage (legado/master)
   if (!store.canManageDestinations()) throw new Error('Permissão negada.');

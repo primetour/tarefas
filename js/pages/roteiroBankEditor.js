@@ -80,12 +80,81 @@ async function autosave() {
     }
     state.dirty = false;
     if (ind) ind.textContent = `Salvo ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+    // v4.57.52 task #60: dispara sync inline com portal_destinations.
+    // UI promete em linha 184 ("cidades novas viram destinos auto-criados
+    // ao salvar") mas comportamento nunca foi wired. Agora honra a promessa.
+    // Não bloqueia auto-save: roda em background, toast só quando algo mudou.
+    _syncDestinationsBackground();
   } catch (e) {
     console.error('[roteiroBankEditor] autosave falhou:', e);
     if (ind) ind.textContent = '⚠ Falha ao salvar';
     toast.error('Auto-save falhou: ' + (e.message || e));
   } finally {
     state.saving = false;
+  }
+}
+
+/**
+ * v4.57.52 task #60: quick-add destinos do banco no portal_destinations.
+ * Itera state.doc.geo.cities[] e chama ensureDestination pra cada. Coleta
+ * IDs e mantém state.doc.geo.destinationIds sincronizado.
+ *
+ * Idempotente: cidades que já têm destino vinculado são pass-through
+ * (ensureDestination retorna existing). Cidades vazias (sem city+country+
+ * continent) são puladas.
+ *
+ * Roda em background pós autosave — NÃO refaz o save grande. Apenas
+ * updateDoc pontual em geo.destinationIds se mudou.
+ *
+ * Flag _syncing evita re-entrada (autosave dispara sync, sync poderia
+ * triggar setDirty, novo autosave... loop).
+ */
+async function _syncDestinationsBackground() {
+  if (!state.id || state._destSyncing) return;
+  const cities = Array.isArray(state.doc?.geo?.cities) ? state.doc.geo.cities : [];
+  if (!cities.length) return;
+
+  state._destSyncing = true;
+  try {
+    const newIds = [];
+    let createdCount = 0;
+    let linkedCount  = 0;
+    for (const c of cities) {
+      if (!c.city || !c.country || !c.continent) continue;
+      try {
+        const { destinationId, created } = await ensureDestination({
+          city: c.city, country: c.country, continent: c.continent,
+        });
+        if (destinationId) {
+          newIds.push(destinationId);
+          linkedCount++;
+          if (created) createdCount++;
+        }
+      } catch (e) {
+        console.warn('[_syncDestinationsBackground] cidade falhou:', c.city, e?.message);
+      }
+    }
+    // Diff: só atualiza se mudou
+    const prev = Array.isArray(state.doc.geo.destinationIds) ? state.doc.geo.destinationIds : [];
+    const changed = newIds.length !== prev.length || newIds.some((id, i) => prev[i] !== id);
+    if (changed) {
+      state.doc.geo.destinationIds = newIds;
+      // Update pontual no Firestore (sem passar pelo state.dirty/autosave)
+      const { db } = await import('../firebase.js');
+      const { doc, updateDoc, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+      await updateDoc(doc(db, 'roteiros_bank', state.id), {
+        'geo.destinationIds': newIds,
+        updatedAt: serverTimestamp(),
+      });
+    }
+    if (createdCount > 0) {
+      toast.success(`✓ ${createdCount} novo(s) destino(s) criado(s) em portal_destinations.`);
+    }
+    console.info(`[bank-editor] sync destinos: ${linkedCount} vinculadas, ${createdCount} criadas.`);
+  } catch (e) {
+    console.warn('[_syncDestinationsBackground] falhou:', e?.message);
+  } finally {
+    state._destSyncing = false;
   }
 }
 
