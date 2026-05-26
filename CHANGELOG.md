@@ -6,6 +6,28 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.57.46+20260525-banco-imagens-perf-category-counts-cache] — 2026-05-25
+
+Release **PATCH** — Sprint Banco de Imagens (3/5). Performance: cache de category counts entre trocas de pill.
+
+**I8 — `_fetchCategoryCounts` fazia 1 query de 1000 docs por troca de pill**
+
+Antes: cada click em pill de categoria (Todas → Destinos → Logos → Hotéis…) disparava `loadImages({reset:true})` que invalidava `_categoryCounts = null`. `renderCategoryNav` então re-fetchava 1000 docs pra recalcular os contadores. **Mas os contadores são GLOBAIS — não mudam ao trocar pill**. Cada troca custava 1 query × 1000 docs em vão.
+
+Fix (mínima invasão): novo parâmetro `loadImages({preserveCounts: true})`. Quando trocou de pill (linha 1037), passa `preserveCounts:true` → cache `_categoryCounts` é mantido. Em todos os outros caminhos que mudam totais (uploader filter, date filter, upload success, delete success), `preserveCounts:false` (default) — cache invalidado normalmente.
+
+Economia: usuário típico que troca 4 pills numa sessão = 4 queries de 1000 docs evitadas (~4000 reads salvos). Em equipe de 10 users ativos diários = ~40k reads salvos/dia.
+
+**I10 — Cache client-side de allImages**: descartado. `allImages` já é estado em memória da sessão (não re-fetcha sem reset:true). O problema real era _categoryCounts (#I8). Marcando #I10 como **resolvido pelo escopo de #I8**.
+
+**Validação manual sugerida**:
+- Abrir DevTools Network tab → filtrar `firestore`
+- Trocar 4 pills consecutivas
+- Antes: ver 4 `commit:` calls com payload ~1MB cada
+- Depois: ver 0 calls extras (counts vêm do cache)
+
+---
+
 ## [4.57.45+20260525-banco-imagens-storage-rollback-conflict-detection] — 2026-05-25
 
 Release **PATCH** — Sprint Banco de Imagens (2/5). Storage consistency + edit modal conflict detection.

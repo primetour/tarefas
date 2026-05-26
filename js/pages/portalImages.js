@@ -933,14 +933,18 @@ function _getFiltersForServer() {
   return filters;
 }
 
-async function loadImages({ reset = true } = {}) {
+async function loadImages({ reset = true, preserveCounts = false } = {}) {
   if (reset) {
     _pageCursor = null;
     allImages   = [];
     // 4.40.1+ Invalida cache de contadores das pills sempre que recarregar do zero.
     // Antes: deletar/editar/upload não refrescava os números das categorias
     // (Todas 11, Destino 9, ...) porque _categoryCounts continuava válido.
-    _categoryCounts = null;
+    // v4.57.46 fix I8: agora `preserveCounts: true` mantém o cache de
+    // contagens entre trocas de pill (categoria não muda os totais globais).
+    // Reduz N queries de 1000 docs pra cada toggle de pill → 1 query inicial
+    // + invalidação só em upload/delete/refresh manual.
+    if (!preserveCounts) _categoryCounts = null;
   }
   const { docs, lastDoc, hasMore } = await fetchImagesPage({
     ..._getFiltersForServer(),
@@ -1034,7 +1038,8 @@ async function renderCategoryNav() {
       // Reset continent ao trocar de categoria (não faz sentido manter "Brasil" quando vai pra Logos)
       navContinent = ''; navCountry = ''; navCity = '';
       // 4.40.5+ Não há mais select 'img-filter-category' (categoria é só pelas pills)
-      loadImages({ reset: true });
+      // v4.57.46 fix I8: preserveCounts pq totais globais não mudam ao trocar pill
+      loadImages({ reset: true, preserveCounts: true });
     });
   });
 }

@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 57,
-  patch: 45,
-  build: '20260525-banco-imagens-storage-rollback-conflict-detection',
+  patch: 46,
+  build: '20260525-banco-imagens-perf-category-counts-cache',
 };
 
 /** "1.2.0" */
