@@ -766,10 +766,21 @@ function wireBatchCascade(row, id) {
 }
 
 /* ── Upload batch ── */
+// v4.57.41 fix integração PD9: anti-double-submit no upload em lote.
+// Click duplo rápido em "Enviar todas" disparava 2 Promise.all paralelos =
+// 2 convertToWebp + 2 uploads pro R2 por arquivo = duplicatas em portal_images
+// + dobro de banda. Flag protege contra concorrência intra-sessão.
+let _uploadBatchInFlight = false;
+
 async function uploadBatch() {
+  if (_uploadBatchInFlight) {
+    toast.info('Upload em andamento — aguarde.');
+    return;
+  }
   const itemRows = document.getElementById('img-item-rows');
   const rows = itemRows ? [...itemRows.querySelectorAll('[id^="batch-row-"]')] : [];
   if (!rows.length) { toast.error('Nenhuma imagem na fila.'); return; }
+  _uploadBatchInFlight = true;
 
   const btn = document.getElementById('img-upload-all-btn');
   if (btn) { btn.disabled = true; btn.textContent = '⏳ Enviando…'; }
@@ -856,6 +867,7 @@ async function uploadBatch() {
   }));
 
   if (btn) { btn.disabled = false; btn.textContent = '↑ Enviar todas'; }
+  _uploadBatchInFlight = false;  // v4.57.41 PD9: libera flag
   toast.success(`${success} enviada${success!==1?'s':''} com sucesso${failed ? ` · ${failed} com erro` : ''}.`);
 
   if (success > 0) {

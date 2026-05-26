@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 57,
-  patch: 40,
-  build: '20260525-portal-dicas-conflict-notifs-status-destination',
+  patch: 41,
+  build: '20260525-portal-dicas-race-export-import-upload',
 };
 
 /** "1.2.0" */

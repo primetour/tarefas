@@ -393,7 +393,22 @@ function loadScript(src) {
  * @param {string[]} params.destIds  — for combined destinations
  * @returns {object} { url?, filename? }
  */
+// v4.57.41 fix integração PD8: anti-double-submit. Click duplo rápido em
+// "Gerar PDF/DOCX/PPTX/Web" disparava 2 generateTip() em paralelo. Memory
+// spike (jsPDF tem race de prototype init via autoTable plugin), e cria 2
+// entries duplicadas em portal_generations + portal_web_links. Flag por
+// (tipId+format) — permite formatos diferentes em paralelo (PDF+DOCX OK).
+// TTL 30s defensivo se promise pendurar.
+const _genInFlight = new Map();  // key=`${tipId}::${format}` → timestamp
+
 export async function generateTip({ tip, area, dest, segments, format, extraTips = [], imagesOverride = {}, heroImageOverride = {}, clientName = '' }) {
+  const tipId = tip?.id || dest?.id || 'standalone';
+  const inflightKey = `${tipId}::${format}`;
+  const startedAt = _genInFlight.get(inflightKey);
+  if (startedAt && (Date.now() - startedAt) < 30_000) {
+    throw new Error(`Já existe uma exportação ${String(format || 'pdf').toUpperCase()} em andamento desta dica. Aguarde.`);
+  }
+  _genInFlight.set(inflightKey, Date.now());
   // 4.40.18+ Garante que SEGMENTS está atualizado (incl. customs) antes de
   // qualquer iteração. Sem isso, segmentos customs sumiam dos exports.
   await _loadSegmentsAsync();

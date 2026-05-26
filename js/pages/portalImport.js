@@ -1066,7 +1066,17 @@ function _syncDestItemsToParsedImportData(destKey, byDest) {
  * v4.49.63+ Usa _matchDest (normalizado, multi-camada). Aceita
  * allDests pre-fetched do review pra evitar double-fetch.
  * ──────────────────────────────────────────────────────────── */
+// v4.57.41 fix integração PD7: anti-double-submit no import. Guarda flag
+// de execução em andamento — evita parse duplo se user clicar 2x rapidamente
+// ou se confirmModal disparar callback 2x por engano.
+let _portalImportInFlight = false;
+
 async function runImport(byDest, preFetchedDests = null) {
+  if (_portalImportInFlight) {
+    console.warn('[runImport] já em andamento — ignorando call duplicada');
+    return;
+  }
+  _portalImportInFlight = true;
   document.getElementById('import-review').style.display   = 'none';
   document.getElementById('import-progress').style.display = 'block';
   const log = document.getElementById('import-log');
@@ -1196,6 +1206,7 @@ async function runImport(byDest, preFetchedDests = null) {
     errors > 0 ? '#F59E0B' : '#22C55E');
 
   toast.success(`Importação concluída: ${imported} destino(s).`);
+  _portalImportInFlight = false;  // v4.57.41 PD7: libera flag
 }
 
 function findSegmentKey(label) {

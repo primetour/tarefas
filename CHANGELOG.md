@@ -6,6 +6,24 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.57.41+20260525-portal-dicas-race-export-import-upload] — 2026-05-25
+
+Release **PATCH** — Sprint Portal de Dicas (3/5). Race conditions: export debounce + import lock + upload dedup.
+
+**PD7 — Import PDF anti-double-submit** (`js/pages/portalImport.js:1069`). Antes: user clicava "Importar" 2x rápido OR confirmModal disparava callback 2x → 2 `runImport()` em paralelo, criando duplicatas de destinos. Agora: flag `_portalImportInFlight` setada no início, liberada no final. Console warn em call duplicada (não throw — UX silenciosa).
+
+**PD8 — Export PDF/DOCX/PPTX/Web debounce** (`js/services/portalGenerator.js:396`). Espelho R8 (Roteiros v4.57.36). Map `_genInFlight` por `(tipId+format)` com TTL 30s. Permite formatos diferentes em paralelo (PDF + DOCX OK), bloqueia mesma combo. Throw com mensagem amigável: "Já existe uma exportação PDF em andamento desta dica. Aguarde."
+
+**PD9 — Upload em lote anti-double-submit** (`js/pages/portalImages.js:769`). Click duplo rápido em "Enviar todas" disparava 2 `Promise.all` paralelos = 2 convertToWebp + 2 uploads pro R2 por arquivo = duplicatas em `portal_images` + dobro de banda. Flag `_uploadBatchInFlight` proteção intra-sessão. Toast info se chamada concorrente: "Upload em andamento — aguarde."
+
+**PD14 — Listeners cleanup** (falso positivo do audit). `grep -c 'document.addEventListener|window.addEventListener' js/pages/portalTipEditor.js` = 0. Listeners são todos container-scoped (DOM children) — GC automático no innerHTML reset. Nenhum leak global pra corrigir. Item removido do escopo.
+
+**Validação**:
+- `node --check` em 3 arquivos OK
+- Race scenarios testáveis: (a) clicar Importar 2x rápido → 2ª call ignored, (b) Export PDF 2x → "exportação em andamento", (c) Enviar todas 2x → toast info
+
+---
+
 ## [4.57.40+20260525-portal-dicas-conflict-notifs-status-destination] — 2026-05-25
 
 Release **PATCH** — Sprint Portal de Dicas (2/5). Conflict detection no editor + notifs granulares.
