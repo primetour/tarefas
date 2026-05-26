@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 57,
-  patch: 50,
-  build: '20260525-r2-cf-hotfix-app-explicit',
+  patch: 51,
+  build: '20260526-cf-permissions-object-shape-fix',
 };
 
 /** "1.2.0" */

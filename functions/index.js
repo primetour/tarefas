@@ -605,19 +605,29 @@ export const deleteR2 = onCall({
     throw new HttpsError('invalid-argument', 'Path muito longo.');
   }
 
-  // Permission check: requer portal_manage OU portal_images_manage (mesmo de delete client-side)
+  // Permission check: requer master OR portal_manage OR portal_images_manage
+  // (mesmo de delete client-side em canManageImageBank).
+  // SHAPE NOTE (descoberto na validação E2E v4.57.49):
+  //  - users/{uid}.role pode ser 'master' (sem flag isMaster boolean no doc)
+  //  - roles/{role}.permissions é OBJETO { perm_key: bool }, não array
+  //  - roles/{role}.isSystem === true marca roles do sistema (master, admin)
   let canDelete = false;
   try {
     const u = await db.collection('users').doc(auth.uid).get();
     if (u.exists) {
       const data = u.data();
-      if (data?.isMaster === true) canDelete = true;
-      else {
-        const role = data?.role || data?.roleId;
-        if (role) {
-          const r = await db.collection('roles').doc(role).get();
-          const perms = r.exists ? (r.data()?.permissions || []) : [];
-          canDelete = perms.includes('portal_manage') || perms.includes('portal_images_manage');
+      const role = data?.role || data?.roleId;
+      // Detecta master por flag OU por roleId
+      if (data?.isMaster === true || role === 'master') {
+        canDelete = true;
+      } else if (role) {
+        const r = await db.collection('roles').doc(role).get();
+        if (r.exists) {
+          const rd = r.data();
+          const perms = rd?.permissions || {};
+          // permissions é OBJETO {key:bool}, não array
+          canDelete = perms.portal_manage === true || perms.portal_images_manage === true
+                   || rd?.isSystem === true;
         }
       }
     }
@@ -3506,18 +3516,25 @@ export const importRoteiroBankPdf = onCall({
   }
 
   // Verifica permissão via custom claims OU role doc
+  // v4.57.50: permissions é OBJETO {key:bool}, não array (descoberto em E2E)
   const uid = req.auth.uid;
   let canImport = false;
   try {
     const u = await db.collection('users').doc(uid).get();
     if (u.exists) {
-      const role = u.data()?.role;
-      if (role) {
+      const ud = u.data();
+      const role = ud?.role || ud?.roleId;
+      if (ud?.isMaster === true || role === 'master') {
+        canImport = true;
+      } else if (role) {
         const r = await db.collection('roles').doc(role).get();
-        const perms = r.exists ? (r.data()?.permissions || []) : [];
-        canImport = perms.includes('portal_destinations_manage')
-                 || perms.includes('portal_manage')
-                 || u.data()?.isMaster === true;
+        if (r.exists) {
+          const rd = r.data();
+          const perms = rd?.permissions || {};
+          canImport = perms.portal_destinations_manage === true
+                   || perms.portal_manage === true
+                   || rd?.isSystem === true;
+        }
       }
     }
   } catch (e) { /* default false */ }
