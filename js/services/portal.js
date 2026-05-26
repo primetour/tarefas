@@ -264,12 +264,46 @@ export async function saveDestination(id, data) {
       .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
       .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''))
     .join('/');
+  const isNew = !id;
   await setDoc(ref, {
     ...data, slug,
     updatedAt: serverTimestamp(),
     updatedBy: uid(),
-    ...(id ? {} : { createdAt: serverTimestamp(), createdBy: uid() }),
+    ...(isNew ? { createdAt: serverTimestamp(), createdBy: uid() } : {}),
   }, { merge: true });
+
+  // v4.57.40 fix integração PD13: notif quando destino é criado.
+  // Antes: curador criava 10 destinos, ninguém sabia até abrir dashboard.
+  // Assimétrico com saveTip que notifica. Agora notif pra portal_destinations_manage
+  // OU portal_manage (mesma audiência que pode editar/deletar).
+  if (isNew) {
+    try {
+      const { fetchUsers } = await import('./users.js');
+      const allActive = await fetchUsers({ active: true });
+      const recipients = allActive.filter(u =>
+           u.isMaster
+        || u.roleId === 'master'
+        || u.roleId === 'admin'
+        || (Array.isArray(u.permissions) && (
+             u.permissions.includes('portal_destinations_manage')
+          || u.permissions.includes('portal_manage')
+        ))
+      ).map(u => u.id).filter(uid2 => uid2 && uid2 !== uid());
+
+      if (recipients.length) {
+        const { notify } = await import('./notifications.js');
+        await notify('portal.destination_added', {
+          entityType: 'portal_destination', entityId: ref.id,
+          recipientIds: recipients,
+          title: 'Novo destino cadastrado',
+          body: [data.city, data.country, data.continent].filter(Boolean).join(' · '),
+          route: 'portal-destinations',
+          category: 'portal',
+        });
+      }
+    } catch (e) { console.warn('[saveDestination] notify falhou (não bloqueia):', e?.message); }
+  }
+
   return ref.id;
 }
 
@@ -356,12 +390,38 @@ export async function fetchTips({ continent, country } = {}) {
   return docs;
 }
 
-export async function saveTip(id, data) {
+export async function saveTip(id, data, opts = {}) {
   if (!store.canCreateTip()) throw new Error('Permissão negada.');
   const isNew = !id;
   const ref = id
     ? doc(db, 'portal_tips', id)
     : doc(collection(db, 'portal_tips'));
+
+  // v4.57.40 fix integração PD5: conflict detection multi-aba/multi-user.
+  // opts.expectedUpdatedAt = timestamp do snapshot que o editor abriu.
+  // Espelho do padrão R5 (Roteiros v4.57.36). Tolerância 1s pra evitar
+  // falso positivo na própria sessão (auto-save + manual quase simultâneos).
+  // prevStatus capturado pra detectar mudança de status pós-save.
+  let prevStatus = null;
+  if (!isNew) {
+    const existingSnap = await getDoc(ref);
+    const existing = existingSnap.exists() ? existingSnap.data() : null;
+    prevStatus = existing?.status || null;
+    if (opts.expectedUpdatedAt && existing?.updatedAt?.toMillis) {
+      const serverMs   = existing.updatedAt.toMillis();
+      const expectedMs = typeof opts.expectedUpdatedAt === 'number'
+        ? opts.expectedUpdatedAt
+        : (opts.expectedUpdatedAt?.toMillis?.() || 0);
+      if (expectedMs && serverMs > expectedMs + 1000) {
+        const err = new Error('Dica foi modificada por outro usuário. Recarregue antes de salvar.');
+        err.code = 'CONFLICT';
+        err.serverUpdatedAt = serverMs;
+        err.expectedUpdatedAt = expectedMs;
+        throw err;
+      }
+    }
+  }
+
   await setDoc(ref, {
     ...data,
     updatedAt: serverTimestamp(),
@@ -376,27 +436,47 @@ export async function saveTip(id, data) {
   geocodeAndUpdate(ref.id, data).catch(err =>
     console.warn('[saveTip] geocoding falhou:', err?.message));
 
-  // Notify team about new tip creation
-  if (isNew) {
-    try {
-      const { fetchUsers } = await import('./users.js');
-      const portalUsers = (await fetchUsers({ active: true }))
-        .filter(u => u.isMaster || u.roleId === 'admin' || u.roleId === 'head')
-        .map(u => u.id);
-      if (portalUsers.length) {
-        import('./notifications.js').then(({ notify }) => {
-          notify('portal.tip_created', {
-            entityType: 'portal_tip', entityId: ref.id,
-            recipientIds: portalUsers,
-            title: 'Nova dica criada',
-            body: `${data.city || data.country || 'Destino'} — ${data.continent || ''}`.trim(),
-            route: 'portal-tips',
-            category: 'portal',
-          });
-        }).catch(() => {});
+  // v4.57.40 fix PD12: notif granular — expande pra portal_manage E
+  // portal_tips_manage roles (antes só master/admin/head hardcoded) +
+  // dispara notif separada quando status muda (ex: draft→published).
+  try {
+    const { fetchUsers } = await import('./users.js');
+    const allActive = await fetchUsers({ active: true });
+    const portalUsers = allActive.filter(u =>
+         u.isMaster
+      || u.roleId === 'admin'
+      || u.roleId === 'head'
+      || u.roleId === 'master'
+      || (Array.isArray(u.permissions) && (
+           u.permissions.includes('portal_manage')
+        || u.permissions.includes('portal_tips_manage')
+      ))
+    ).map(u => u.id).filter(u => u && u !== uid());
+
+    if (portalUsers.length) {
+      const { notify } = await import('./notifications.js');
+      if (isNew) {
+        await notify('portal.tip_created', {
+          entityType: 'portal_tip', entityId: ref.id,
+          recipientIds: portalUsers,
+          title: 'Nova dica criada',
+          body: `${data.city || data.country || 'Destino'} — ${data.continent || ''}`.trim(),
+          route: 'portal-tips',
+          category: 'portal',
+        });
+      } else if (prevStatus && data.status && prevStatus !== data.status) {
+        // Status change explícito (ex: draft→published, published→archived)
+        await notify('portal.tip_status_changed', {
+          entityType: 'portal_tip', entityId: ref.id,
+          recipientIds: portalUsers,
+          title: 'Status da dica alterado',
+          body: `"${data.title || data.city || 'Dica'}" — ${prevStatus} → ${data.status}`,
+          route: 'portal-tips',
+          category: 'portal',
+        });
       }
-    } catch { /* non-blocking */ }
-  }
+    }
+  } catch (e) { console.warn('[saveTip] notify falhou (não bloqueia):', e?.message); }
 
   return ref.id;
 }

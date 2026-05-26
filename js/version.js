@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 57,
-  patch: 39,
-  build: '20260525-portal-dicas-cleanup-fk-area-dest-tip-image',
+  patch: 40,
+  build: '20260525-portal-dicas-conflict-notifs-status-destination',
 };
 
 /** "1.2.0" */

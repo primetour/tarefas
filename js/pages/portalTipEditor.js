@@ -238,6 +238,10 @@ async function loadDestinationById(destId, destInfo = null) {
   currentDestInfo = destInfo;
   const tip = await fetchTip(destId);
   currentTip = tip;
+  // v4.57.40 PD5: marca momento do load pra conflict detection no save
+  if (currentTip) {
+    currentTip._loadedAt = currentTip.updatedAt?.toMillis?.() ?? Date.now();
+  }
 
   // 4.40.18+ Carrega custom segments do Firestore antes de inicializar
   // segmentData — assim novos segs ficam disponíveis no nav imediatamente.
@@ -1043,16 +1047,41 @@ async function saveDraft() {
       priority,
       internalNotes,
       segments,
+    }, {
+      // v4.57.40 PD5: conflict detection — passa timestamp do snapshot atual
+      // pra saveTip detectar se outro user salvou no meio do caminho.
+      expectedUpdatedAt: currentTip?._loadedAt || null,
     });
     if (!currentTip) currentTip = { id: tipId };
+    currentTip._loadedAt = Date.now();  // atualiza marca após save bem-sucedido
     isDirty = false;
     const now = new Intl.DateTimeFormat('pt-BR',{ day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}).format(new Date());
     if (status) status.textContent = `Salvo às ${now}`;
     toast.success('Dica salva.');
     renderSegmentNav();
   } catch(e) {
-    toast.error('Erro ao salvar: ' + e.message);
-    if (status) status.textContent = 'Erro ao salvar.';
+    // v4.57.40 PD5: trata CONFLICT distinto de erro genérico.
+    if (e?.code === 'CONFLICT') {
+      if (status) status.textContent = 'Conflito — outro user editou';
+      try {
+        const { default: modal } = await import('../components/modal.js');
+        const reload = await modal.confirm({
+          title: 'Dica foi modificada',
+          message: 'Outro usuário (ou outra aba) salvou esta dica depois que você abriu. ' +
+                   'Suas mudanças locais ainda não foram salvas.<br><br>' +
+                   '<strong>Recarregar</strong> descarta suas mudanças e mostra a versão atualizada.<br>' +
+                   '<strong>Cancelar</strong> mantém suas mudanças (próximo save vai falhar até recarregar).',
+          confirmText: 'Recarregar (descartar mudanças)',
+          danger: true, icon: '⚠',
+        });
+        if (reload) location.reload();
+      } catch (_) {
+        if (confirm('Dica foi modificada por outro usuário. Recarregar?')) location.reload();
+      }
+    } else {
+      toast.error('Erro ao salvar: ' + e.message);
+      if (status) status.textContent = 'Erro ao salvar.';
+    }
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = 'Salvar Dica'; }
   }

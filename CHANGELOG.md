@@ -6,6 +6,30 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.57.40+20260525-portal-dicas-conflict-notifs-status-destination] — 2026-05-25
+
+Release **PATCH** — Sprint Portal de Dicas (2/5). Conflict detection no editor + notifs granulares.
+
+**PD5 — Conflict detection no `portalTipEditor`** (`js/services/portal.js` `saveTip` + `js/pages/portalTipEditor.js`). Espelho exato do R5 (Roteiros v4.57.36). Padrão:
+1. Editor (`portalTipEditor.js:240`) marca `currentTip._loadedAt = updatedAt.toMillis()` ao carregar.
+2. `handleSave` passa `expectedUpdatedAt` pra `saveTip(id, data, opts)`.
+3. `saveTip` re-fetcha o doc antes do setDoc. Se `existing.updatedAt > expectedUpdatedAt + 1000ms` → throw `Error` com `err.code='CONFLICT'`.
+4. Editor cata CONFLICT → `modal.confirm` "Recarregar (descartar mudanças) / Cancelar". Reload via `location.reload()`.
+
+Tolerância 1s evita falso positivo na própria sessão.
+
+**PD12 — Notifs granulares pra `tip_created` + status change** (`js/services/portal.js:359` `saveTip`). Antes: filtro hardcoded `isMaster || roleId in [admin, head]`. Agora expande pra users com `portal_manage` OU `portal_tips_manage` em `permissions[]`. Também: detecta `prevStatus !== data.status` e dispara `portal.tip_status_changed` separado (ex: draft→published, published→archived).
+
+**PD13 — Notif `destination_added`** (`js/services/portal.js:256` `saveDestination`). Antes: criação silenciosa. Agora notif `portal.destination_added` pra `portal_destinations_manage` OU `portal_manage` users (mesma audiência que pode editar/deletar). Body: "Cidade · País · Continente". Assimetria com saveTip resolvida.
+
+**Validação**:
+- `node --check js/services/portal.js + js/pages/portalTipEditor.js` OK
+- Notifs `portal.tip_status_changed` + `portal.destination_added` cobertas pela whitelist `^(...|portal)[.][a-z_]+$` (firestore.rules:958)
+- Próxima edição concorrente → modal de conflict
+- Próximo destino criado → recipients recebem notif
+
+---
+
 ## [4.57.39+20260525-portal-dicas-cleanup-fk-area-dest-tip-image] — 2026-05-25
 
 Release **PATCH** — Sprint Portal de Dicas (1/5). Cleanup FK críticos em 4 deletes do `js/services/portal.js`.
