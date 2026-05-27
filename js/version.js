@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 62,
-  patch: 6,
-  build: '20260527-aliases-tab-autosave-on-enter',
+  patch: 7,
+  build: '20260527-destinations-hastip-real-lookup-portal-tips',
 };
 
 /** "1.2.0" */

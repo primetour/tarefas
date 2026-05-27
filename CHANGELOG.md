@@ -6,6 +6,120 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.62.7+20260527-destinations-hastip-real-lookup-portal-tips] — 2026-05-27
+
+Release **BUGFIX CRÍTICO** — tabela de Destinos não estava lendo `portal_tips`.
+
+**Pedido Renê**: *"a coluna de dicas não está conectada com o módulo de dicas,
+pq todas aparecem sem dicas, sendo que temos dicas cadastradas para alguns
+destinos. precisamos conectar via destinos, lembra?"*.
+
+### Diagnóstico (Admin SDK)
+
+- `portal_tips`: **11 dicas cadastradas em produção**, todas com
+  `destinationId` válido (0 órfãs)
+- `portal_destinations`: 355 docs
+- `d.hasTip` no código era **referenciado mas nunca populado** — nenhum
+  `fetchDestinations` ou `saveDestination` setava esse campo
+- Resultado: **100% das linhas mostravam botão "💡 Dica" opaco** (sem dica)
+  mesmo Quênia, Casablanca, Berlim, Fez, Punta del Este TENDO dica cadastrada
+
+Bug latente desde v4.61.2 (introdução do filtro Dica) — passou despercebido
+porque `d.hasTip` é falsy silenciosamente em qualquer destino.
+
+### Fix em `js/pages/portalDestinations.js`
+
+#### 1. Novo `_loadTipLinks()` paralelo a `_loadRoteiroLinks()`
+
+```js
+let tipsByDestId = new Map();   // destId → [{ id, title }]
+
+async function _loadTipLinks() {
+  const tips = await fetchTips();
+  tipsByDestId = new Map();
+  for (const t of tips) {
+    if (!t.destinationId) continue;
+    if (!tipsByDestId.has(t.destinationId)) tipsByDestId.set(t.destinationId, []);
+    tipsByDestId.get(t.destinationId).push({ id: t.id, title: t.title || t.city || '(sem)' });
+  }
+}
+```
+
+Mantém shape extensível pra eventual N:1 (hoje 1:1 do schema). Import
+`fetchTips` adicionada da `services/portal.js`.
+
+#### 2. Boot paraleliza ambos via Promise.all
+
+```js
+// antes: await _loadRoteiroLinks();
+// agora:
+await Promise.all([_loadRoteiroLinks(), _loadTipLinks()]);
+```
+
+Sem custo extra de RTT — 2 queries em paralelo no boot da tab.
+
+#### 3. Filtro Dica usa lookup real
+
+```js
+// antes
+if (filterTip === 'with')    rows = rows.filter(d => d.hasTip);
+if (filterTip === 'without') rows = rows.filter(d => !d.hasTip);
+
+// agora
+if (filterTip === 'with')    rows = rows.filter(d => tipsByDestId.has(d.id));
+if (filterTip === 'without') rows = rows.filter(d => !tipsByDestId.has(d.id));
+```
+
+#### 4. Botão 💡 Dica com contagem real + badge numeral
+
+```js
+const tips = tipsByDestId.get(d.id) || [];
+if (tips.length) {
+  // dourado + badge "1" (ou N se futuro N:1)
+} else {
+  // cinza opacity 0.7
+}
+```
+
+### Validação E2E via Admin SDK
+
+```
+portal_tips:         11 docs
+portal_destinations: 355 docs
+Tips sem destinationId:    0
+Destinos COM dica:         11   ← antes: 0 (bug)
+Destinos SEM dica:         344  ← antes: 355 (todos)
+```
+
+Exemplos confirmados em prod (após deploy, vão aparecer com badge dourado):
+
+- Quênia, Quênia
+- Casablanca, Marrocos
+- Berlim, Alemanha
+- Fez, Marrocos
+- Punta del Este, Uruguai
+- +6 outros
+
+### Princípio aplicado (CLAUDE.md §11.f)
+
+*"Persistência ≠ UI funcionando — não declarar 'validado' só porque a UI
+mostrou o estado esperado. Fetch direto do backend APÓS a ação, conferir
+campo persistido."*
+
+O campo `d.hasTip` no client foi tratado como verdade sem validação contra
+Firestore. Lição: filtros que dependem de cross-collection lookup precisam
+de fetch real, nunca de flag local não-populada.
+
+### Arquivos tocados
+
+- `js/pages/portalDestinations.js`: import + Map + loader + boot + 2 callsites
+- `js/version.js`: 4.62.6 → 4.62.7
+- `index.html`: cache-bust
+- `functions/validate-tips-by-destid.cjs`: script validação Admin SDK
+- `CHANGELOG.md`: este bloco
+
+---
+
 ## [4.62.6+20260527-aliases-tab-autosave-on-enter] — 2026-05-27
 
 Release **UX/AUTO-SAVE** — aba "Variações de nome" ganha autosave imediato.

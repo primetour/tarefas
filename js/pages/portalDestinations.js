@@ -6,7 +6,7 @@ import { store } from '../store.js';
 import { toast } from '../components/toast.js';
 import {
   fetchDestinations, saveDestination, deleteDestination, mergeDestinations,
-  CONTINENTS,
+  fetchTips, CONTINENTS,
 } from '../services/portal.js';
 import { openDestinationsImport } from '../components/destinationsImport.js';
 // v4.61.1: SSOT geográfico — validação + auto-fill continente + datalist
@@ -19,6 +19,7 @@ const esc = s => String(s||'').replace(/[&<>"']/g, c =>
 
 let allDests   = [];
 let roteirosByDestId = new Map();   // v4.62.2: destId → [{id, title}] (vinculação reversa)
+let tipsByDestId     = new Map();   // v4.62.7: destId → { id, title } (1:1 schema atual)
 let filterCont = '';
 let filterCoun = '';
 let filterReview = 'approved';   // v4.60.0: default só aprovados; toggle pra ver pending
@@ -263,7 +264,8 @@ export async function renderPortalDestinations(container) {
   });
 
   allDests = await fetchDestinations();   // default 'all' agora — UI filtra in-memory
-  await _loadRoteiroLinks();   // v4.62.2: carrega map destId → roteiros vinculados
+  // v4.62.2 + v4.62.7: paralelo — destId → roteiros + destId → tip
+  await Promise.all([_loadRoteiroLinks(), _loadTipLinks()]);
   updateCountryFilter();
   renderTable();
 }
@@ -296,6 +298,32 @@ async function _loadRoteiroLinks() {
   } catch (e) {
     console.warn('[portalDestinations] _loadRoteiroLinks falhou (não-bloqueante):', e?.message);
     roteirosByDestId = new Map();
+  }
+}
+
+/**
+ * v4.62.7 — carrega vinculação reversa destId → tip (1:1 schema atual).
+ * Substitui d.hasTip que nunca era populado (sempre falsy → tabela mostrava
+ * "Sem dica" mesmo pra destinos COM dica). Fluxo single-source: fetch direto
+ * de portal_tips agrupado por destinationId. Mantém shape extensível pra
+ * eventual N:1 futuro (Map<destId, [{id,title}]>).
+ */
+async function _loadTipLinks() {
+  try {
+    const tips = await fetchTips();
+    tipsByDestId = new Map();
+    for (const t of tips) {
+      if (!t.destinationId) continue;
+      // Schema atual é 1:1, mas guardamos array pra escalar pra N:1 sem mudar API
+      if (!tipsByDestId.has(t.destinationId)) tipsByDestId.set(t.destinationId, []);
+      tipsByDestId.get(t.destinationId).push({
+        id: t.id,
+        title: t.title || t.city || '(sem título)',
+      });
+    }
+  } catch (e) {
+    console.warn('[portalDestinations] _loadTipLinks falhou (não-bloqueante):', e?.message);
+    tipsByDestId = new Map();
   }
 }
 
@@ -337,9 +365,10 @@ function renderTable() {
   }
   if (filterCont) rows = rows.filter(d => d.continent === filterCont);
   if (filterCoun) rows = rows.filter(d => d.country   === filterCoun);
-  // v4.61.2 — filtro dica + busca por palavra
-  if (filterTip === 'with')    rows = rows.filter(d => d.hasTip);
-  if (filterTip === 'without') rows = rows.filter(d => !d.hasTip);
+  // v4.62.7: filtro dica usa lookup real em tipsByDestId (d.hasTip nunca foi
+  // populado — sempre falsy. Bug latente desde v4.61.2).
+  if (filterTip === 'with')    rows = rows.filter(d => tipsByDestId.has(d.id));
+  if (filterTip === 'without') rows = rows.filter(d => !tipsByDestId.has(d.id));
   if (filterSearch) {
     const norm = s => String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
     const q = norm(filterSearch);
@@ -428,19 +457,24 @@ function renderTable() {
             style="font-size:0.75rem;color:var(--brand-blue,#3B82F6);" title="Editar destino (nome, país, aliases…)">
             ✎ Editar
           </button>
-          <!-- v4.62.5: botão Dica agora segue o padrão do Roteiro — badge numeral
-               quando tem (1 sempre, schema 1:1), opaco/disabled-look quando não. -->
-          ${d.hasTip
-            ? `<a href="#portal-tip-editor?destId=${d.id}" class="btn btn-ghost btn-sm"
+          <!-- v4.62.5+v4.62.7: botão Dica usa lookup real em tipsByDestId.
+               Badge numeral mostra contagem (schema atual 1:1, mas pronto pra
+               escalar pra N:1). Cor dourada quando existe, cinza quando não. -->
+          ${(() => {
+            const tips = tipsByDestId.get(d.id) || [];
+            if (tips.length) {
+              return `<a href="#portal-tip-editor?destId=${d.id}" class="btn btn-ghost btn-sm"
                 style="font-size:0.75rem;color:var(--brand-gold);text-decoration:none;"
                 title="Editar a dica deste destino">
-                💡 Dica <span style="background:var(--brand-gold);color:#0A1628;padding:0 6px;border-radius:999px;font-size:0.65rem;font-weight:700;margin-left:2px;">1</span>
-              </a>`
-            : `<a href="#portal-tip-editor?destId=${d.id}" class="btn btn-ghost btn-sm"
-                style="font-size:0.75rem;color:var(--text-muted);opacity:0.7;text-decoration:none;"
-                title="Cadastrar dica pra este destino">
-                💡 Dica
-              </a>`}
+                💡 Dica <span style="background:var(--brand-gold);color:#0A1628;padding:0 6px;border-radius:999px;font-size:0.65rem;font-weight:700;margin-left:2px;">${tips.length}</span>
+              </a>`;
+            }
+            return `<a href="#portal-tip-editor?destId=${d.id}" class="btn btn-ghost btn-sm"
+              style="font-size:0.75rem;color:var(--text-muted);opacity:0.7;text-decoration:none;"
+              title="Cadastrar dica pra este destino">
+              💡 Dica
+            </a>`;
+          })()}
           ${(() => {
             const refs = roteirosByDestId.get(d.id) || [];
             if (!refs.length) return `<span class="btn btn-ghost btn-sm" style="font-size:0.75rem;color:var(--text-muted);opacity:0.5;cursor:default;" title="Sem roteiros vinculados">📋 Roteiro</span>`;
