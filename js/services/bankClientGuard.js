@@ -187,7 +187,7 @@ export function showBankGuardModal({ bankName, clientName, module, contractNote,
           <div style="line-height:1.5;">
             <p style="margin:0 0 10px;"><strong>Roteiro:</strong> ${bankName}</p>
             <p style="margin:0 0 10px;">O LINK WEB do banco gera URL pública compartilhável com o cliente final.
-            Esse formato é destinado a roteiros <strong>cotados pra cliente</strong> (Gerador de Roteiros),
+            Esse formato é destinado a roteiros <strong>cotados pra cliente</strong> (Gerador de Cotações),
             não a templates de curadoria.</p>
             <p style="margin:0;color:var(--color-danger,#dc2626);font-weight:600;">
               ⚠ Responsabilidade contratual sobre o conteúdo do link fica integralmente com você.

@@ -47,7 +47,7 @@ const PAGE_TITLES = {
   csat:               { title: 'CSAT' },
   // Serviços
   'content-calendar': { title: 'Calendário de Conteúdo' },
-  roteiros:           { title: 'Gerador de Roteiros' },
+  roteiros:           { title: 'Gerador de Cotações' },
   'portal-tips':      { title: 'Portal de Dicas' },
   'portal-areas':     { title: 'Templates de Áreas' },
   'portal-images':    { title: 'Banco de Imagens' },

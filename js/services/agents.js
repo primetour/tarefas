@@ -725,7 +725,7 @@ DASHBOARDS DISPONÍVEIS E SEUS ÍNDICES
 5. portal (Portal de Dicas)
    Índices: views, downloads, topDestinations, conversionToBriefing, avgTimeOnPage, sharesByChannel
 
-6. roteiro (Gerador de Roteiros)
+6. roteiro (Gerador de Cotações)
    Índices: geracoes, taxaAprovacao, tempoMedioGeracao, topDestinos, topPerfis, custoMedioIA
 
 ═══════════════════════════════════════════════════════════

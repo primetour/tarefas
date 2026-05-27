@@ -6,6 +6,77 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.62.13+20260527-rename-gerador-roteiros-para-cotacoes] — 2026-05-27
+
+Release **RENAME** — módulo principal vira "Gerador de Cotações".
+
+**Pedido Renê**: *"sidebar e página do módulo: gerador de roteiros passa a se
+chamar 'Gerador de Cotações'"*.
+
+### Renomeações user-facing aplicadas
+
+| Local | Antes | Agora |
+|---|---|---|
+| Sidebar item | "Gerador de Roteiros" | "Gerador de Cotações" |
+| Header title (rota `#roteiros`) | "Gerador de Roteiros" | "Gerador de Cotações" |
+| Page-header title | "Gerador de Roteiros" | "Gerador de Cotações" |
+| Page-header subtitle | "Crie e gerencie roteiros..." | "Crie e gerencie cotações..." |
+| Botão primário | "+ Novo Roteiro" | "+ Nova Cotação" |
+| Foco em Produto (dev_hours) | "Gerador de Roteiros" | "Gerador de Cotações" |
+| PDF Avanços em Produto (subtitle) | "...· Gerador de Roteiros" | "...· Gerador de Cotações" |
+| Modal `bankClientGuard` (Banco) | "(Gerador de Roteiros)" | "(Gerador de Cotações)" |
+| System prompt agentes IA | "6. roteiro (Gerador de Roteiros)" | "6. roteiro (Gerador de Cotações)" |
+| Help panel FAQ | "Como criar um roteiro? / + Novo Roteiro" | "Como criar uma cotação? / + Nova Cotação" |
+| Comentário sidebar | "Gerador de Roteiros — editor + dashboard..." | "Gerador de Cotações — editor + dashboard..." |
+| Comentário devHours (cabeçalho + diferenciador do Banco) | idem | idem |
+
+### O que NÃO mudou (intencional — preserva integridade)
+
+- `route: 'roteiros'` — hash de URL, deeplinks externos preservados
+- `MODULES[].id: 'roteiros'` — chave do filtro "Foco em Produto" no dev_hours.
+  138 entradas dev_hours existentes apontam `module: 'roteiros'` e
+  `modules: ['roteiros']` — preservado.
+- Collection Firestore `roteiros` — schema intacto
+- "Banco de Roteiros" (módulo separado) — não é o mesmo, continua "Banco
+  de Roteiros". Catálogo curado vs cotação cliente.
+- Permission `roteiro_access`, `roteiro_manage`, `canCreateRoteiro` — IDs
+  internos, sem impacto user
+- Função `fetchRoteiros`, classes `.rt-*`, route `#banco-roteiros` — código
+  interno
+
+### Princípio
+
+A distinção fica:
+- **"Banco de Roteiros"** = catálogo PRIMETOUR de roteiros prontos curados
+  (template / referência editorial / base IA)
+- **"Gerador de Cotações"** = produção de cotação personalizada pra cliente
+  específico (output = PDF/web link com cotação real)
+
+Antes ambos chamavam "roteiro" — confusão. Agora nomenclatura espelha
+finalidade: catálogo (Banco) vs produto entregável (Cotação).
+
+### Arquivos tocados (8)
+
+- `js/components/sidebar.js`: label + comentário
+- `js/components/header.js`: title mapping
+- `js/pages/roteiros.js`: page-header title + subtitle + botão primário
+- `js/services/devHours.js`: MODULES.label + 2 comentários
+- `js/services/agents.js`: system prompt (linha 728)
+- `js/services/bankClientGuard.js`: modal text
+- `js/services/devHoursPdf.js`: subtitle PDF
+- `js/components/helpPanel.js`: FAQ entry
+- `js/version.js`: 4.62.12 → 4.62.13
+- `index.html`: cache-bust
+- `CHANGELOG.md`: este bloco
+
+### Auditoria pós-rename
+
+```
+grep -rn "Gerador de Roteiros" js/  →  0 ocorrências em código
+```
+
+---
+
 ## [4.62.12+20260527-roteiros-filtros-padrao-visual-uikit] — 2026-05-27
 
 Release **UX/CONSISTÊNCIA VISUAL** — filtros do Gerador de Roteiros agora

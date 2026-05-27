@@ -81,7 +81,7 @@ export const exportDevHoursPdf = withExportGuard(async function exportDevHoursPd
   D.drawCover({
     title: isProducts ? 'Avanços em Produto' : 'Horas de Desenvolvimento',
     subtitle: isProducts
-      ? 'PRIMETOUR · Portal de Dicas · Banco de Imagens · Gerador de Roteiros'
+      ? 'PRIMETOUR · Portal de Dicas · Banco de Imagens · Gerador de Cotações'
       : 'PRIMETOUR  ·  Sistema de Gestão de Tarefas',
     meta: new Date().toLocaleDateString('pt-BR'),
   });

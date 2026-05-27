@@ -64,7 +64,7 @@ const NAV_GROUPS = [
     label: 'Serviços',
     items: [
       { route: 'content-calendar', icon: 'content-calendar', label: 'Calendário de Conteúdo', perm: 'content_calendar_view' },
-      { route: 'roteiros',         icon: 'roteiros',         label: 'Gerador de Roteiros',    perm: 'roteiro_access' },
+      { route: 'roteiros',         icon: 'roteiros',         label: 'Gerador de Cotações',    perm: 'roteiro_access' },
       // v4.50.0+ Banco de Roteiros: curadoria PRIMETOUR (Classic Collection etc.) que alimenta a IA. Visível a todos autenticados.
       { route: 'banco-roteiros',   icon: 'portal-areas',     label: 'Banco de Roteiros' },
       { route: 'portal-tips',      icon: 'portal-tips',      label: 'Portal de Dicas',        perm: 'portal_access'  },
@@ -558,7 +558,7 @@ export class Sidebar {
       'portal-import-manual':'portal-tips',
       // v4.50.0+ Banco de Roteiros — editor é filha
       'banco-roteiro-editor':'banco-roteiros',
-      // Gerador de Roteiros — editor + dashboard também são filhas
+      // Gerador de Cotações — editor + dashboard também são filhas
       'roteiro-editor':       'roteiros',
       'roteiro-dashboard':    'roteiros',
     };

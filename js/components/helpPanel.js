@@ -310,8 +310,8 @@ const HELP_CATEGORIES = [
         a: 'Permite criar roteiros de viagem completos e personalizados para clientes. Inclui: perfil do cliente, day-by-day narrativo, hotéis, valores, opcionais, políticas, informações práticas e galeria de imagens.',
       },
       {
-        q: 'Como criar um roteiro?',
-        a: 'Acesse "Roteiros de Viagem" e clique em "+ Novo Roteiro". O editor tem 12 seções: Cliente, Viagem, Dia a dia, Hotéis, Valores, Opcionais, Inclui/Não inclui, Pagamento, Cancelamento, Info Importantes, Imagens e Preview & Export.',
+        q: 'Como criar uma cotação?',
+        a: 'Acesse "Gerador de Cotações" e clique em "+ Nova Cotação". O editor tem 12 seções: Cliente, Viagem, Dia a dia, Hotéis, Valores, Opcionais, Inclui/Não inclui, Pagamento, Cancelamento, Info Importantes, Imagens e Preview & Export.',
       },
       {
         q: 'Como funciona a seção "Imagens"?',

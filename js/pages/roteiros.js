@@ -96,9 +96,9 @@ export async function renderRoteiros(container) {
   const canCreate = store.canCreateRoteiro();
   container.innerHTML = `
     ${renderPageHeader({
-      title: 'Gerador de Roteiros',
-      subtitle: 'Crie e gerencie roteiros personalizados para seus clientes',
-      primary: canCreate ? { label: '+ Novo Roteiro', action: 'new-roteiro' } : null,
+      title: 'Gerador de Cotações',
+      subtitle: 'Crie e gerencie cotações personalizadas para seus clientes',
+      primary: canCreate ? { label: '+ Nova Cotação', action: 'new-roteiro' } : null,
       // v4.49.82+ Removido botão "Criar com IA" duplicado — a geração via IA
       // agora vive dentro do briefing do roteiro (Seção 0). O fluxo certo é
       // "+ Novo Roteiro" → preenche briefing → gera IA dentro do editor.

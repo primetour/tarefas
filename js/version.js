@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 62,
-  patch: 12,
-  build: '20260527-roteiros-filtros-padrao-visual-uikit',
+  patch: 13,
+  build: '20260527-rename-gerador-roteiros-para-cotacoes',
 };
 
 /** "1.2.0" */

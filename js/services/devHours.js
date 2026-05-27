@@ -74,7 +74,7 @@ export const ENTRY_TYPES = [
  * 4.40.28+ MÓDULOS DE PRODUTO
  *
  * Classificação opcional de entries por módulo do produto pra dashboards
- * focados (Portal de Dicas / Banco de Imagens / Gerador de Roteiros).
+ * focados (Portal de Dicas / Banco de Imagens / Gerador de Cotações).
  *
  * Entradas podem ser taggeadas explicitamente via campo `modules: string[]`,
  * mas como a maioria das entries antigas não tem isso, oferecemos também
@@ -85,8 +85,8 @@ export const ENTRY_TYPES = [
  * Refactors internos / hardening / outros features ficam no track "Geral".
  */
 export const MODULES = [
-  { id: 'roteiros', label: 'Gerador de Roteiros', color: '#D4A843', icon: '🗺',
-    desc: 'Produção de roteiros personalizados (cliente + viajantes + dias + serviços + materiais).' },
+  { id: 'roteiros', label: 'Gerador de Cotações', color: '#D4A843', icon: '🗺',
+    desc: 'Produção de cotações personalizadas (cliente + viajantes + dias + serviços + materiais).' },
   { id: 'portal',   label: 'Portal de Dicas',     color: '#8B5CF6', icon: '💡',
     desc: 'Catálogo editorial de destinos, áreas e dicas reutilizáveis em materiais.' },
   { id: 'images',   label: 'Banco de Imagens',    color: '#3B82F6', icon: '🖼',
@@ -97,7 +97,7 @@ export const MODULES = [
   { id: 'iahub',    label: 'IA Hub',              color: '#10B981', icon: '🤖',
     desc: 'Plataforma de IA (agents, skills, multi-provider, governança e cost tracking).' },
   // v4.50.11+ Banco de Roteiros: curadoria PRIMETOUR (Classic Collection, etc.)
-  // que alimenta a IA do gerador. Distinto de "Gerador de Roteiros" (cotação
+  // que alimenta a IA do gerador. Distinto de "Gerador de Cotações" (cotação
   // de cliente). Inclui import PDF via Anthropic multimodal.
   { id: 'banco-roteiros', label: 'Banco de Roteiros', color: '#0EA5E9', icon: '📚',
     desc: 'Curadoria de roteiros prontos (Classic Collection, etc.) — referência manual + base de conhecimento da IA.' },
