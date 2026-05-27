@@ -19,14 +19,20 @@ import { actionIcon } from '../components/uiKit.js';
 
 const esc = s => s ? String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') : '';
 
+// v4.59.5: page size do lazy render. 50 = render rápido inicial,
+// IntersectionObserver carrega +50 quando user chega no fim da grade.
+const PAGE_SIZE = 50;
+
 let state = {
   list: [],
   loading: false,
   // v4.59.1: removido `continent` do filter (era código morto pós v4.58.2 — Envision não tem continente).
   // Adicionado `collection` (filtro novo) e `sort` (alphabet|recent|expiration|duration).
   filter: { search: '', status: '', country: '', collection: '', sort: 'recent' },
+  renderedCount: PAGE_SIZE,    // v4.59.5: lazy render incremental
   abortCtrl: null,          // v4.50.10+ AbortController dos listeners delegados
   heroResolveDone: new Set(), // v4.59.1: evita re-fetch após primeira falha (paralelo)
+  scrollObserver: null,        // v4.59.5: IntersectionObserver pro sentinel
 };
 
 function canEdit() {
@@ -228,11 +234,59 @@ function gridHTML() {
       ${canEdit() ? `<br><br><button class="btn btn-primary" data-action="new" style="margin-top:8px;">+ Novo roteiro</button>` : ''}
     </div>`;
   }
+  // v4.59.5: lazy render — só os primeiros `renderedCount`. Sentinel ativa
+  // IntersectionObserver pra carregar +PAGE_SIZE quando user chega no fim.
+  // Filtros são client-side (state.list inteira em memória), só o DOM é incremental.
+  const visible    = items.slice(0, state.renderedCount);
+  const hasMore    = items.length > state.renderedCount;
+  const counterTxt = hasMore
+    ? `Mostrando ${visible.length} de ${items.length}`
+    : `${items.length} ${items.length === 1 ? 'roteiro' : 'roteiros'}`;
   return `
+    <div style="font-size:0.78rem;color:var(--text-muted);margin-bottom:8px;">${esc(counterTxt)}</div>
     <div class="rb-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;">
-      ${items.map(cardHTML).join('')}
+      ${visible.map(cardHTML).join('')}
     </div>
+    ${hasMore ? `
+      <div data-rb-sentinel style="text-align:center;padding:24px 0;color:var(--text-muted);font-size:0.85rem;">
+        Carregando mais…
+      </div>
+    ` : ''}
   `;
+}
+
+/** v4.59.5: configura/reconfigura IntersectionObserver no sentinel pra incrementar
+ * renderedCount quando user scrolla até o fim. Idempotente — reset a cada re-render. */
+function _setupScrollObserver(container) {
+  // Cleanup anterior
+  if (state.scrollObserver) {
+    try { state.scrollObserver.disconnect(); } catch {}
+    state.scrollObserver = null;
+  }
+  const sentinel = container.querySelector('[data-rb-sentinel]');
+  if (!sentinel || typeof IntersectionObserver === 'undefined') return;
+  state.scrollObserver = new IntersectionObserver((entries) => {
+    if (entries.some(e => e.isIntersecting)) {
+      state.renderedCount += PAGE_SIZE;
+      const wrap = container.querySelector('#rb-list-wrap');
+      if (wrap) {
+        wrap.innerHTML = gridHTML();
+        _setupScrollObserver(container);  // re-arma pro novo sentinel (se houver mais)
+      }
+    }
+  }, { rootMargin: '200px' });   // pré-carrega antes do user chegar
+  state.scrollObserver.observe(sentinel);
+}
+
+/** v4.59.5: re-render do wrap + reconfigura observer. Reset renderedCount opcional
+ * (sempre que filtro mudou, queremos voltar pra primeira página).
+ */
+function refreshGrid(container, { resetPage = false } = {}) {
+  if (resetPage) state.renderedCount = PAGE_SIZE;
+  const wrap = container.querySelector('#rb-list-wrap');
+  if (!wrap) return;
+  wrap.innerHTML = gridHTML();
+  _setupScrollObserver(container);
 }
 
 export async function renderRoteiroBank(container) {
@@ -240,6 +294,9 @@ export async function renderRoteiroBank(container) {
   if (state.abortCtrl) state.abortCtrl.abort();
   state.abortCtrl = new AbortController();
   const signal = state.abortCtrl.signal;
+
+  // v4.59.5: cleanup do IntersectionObserver da invocação anterior
+  if (state.scrollObserver) { try { state.scrollObserver.disconnect(); } catch {} state.scrollObserver = null; }
 
   state.loading = true;
   container.innerHTML = `
@@ -288,8 +345,7 @@ export async function renderRoteiroBank(container) {
     state.list = [];
   }
   state.loading = false;
-  const wrap = container.querySelector('#rb-list-wrap');
-  if (wrap) wrap.innerHTML = gridHTML();
+  refreshGrid(container, { resetPage: true });
 
   // v4.58.8: re-renderiza dropdown país após o load (countryOptions depende
   // de state.list que só fica populado AGORA). Antes ficava só "Todos países"
@@ -302,12 +358,12 @@ export async function renderRoteiroBank(container) {
   }
 
   // v4.59.1: Hero auto-resolve em PARALELO (batch 5 simultâneos).
-  // Antes: loop sequencial bloqueava ~5min com 50+ docs sem hero.
-  // Agora: ~5-10s pra 50 docs. Re-render via debounce (não a cada doc).
-  // Inclui guard `heroResolveDone` pra evitar re-fetch quando user re-render
-  // a página com docs cuja primeira tentativa falhou (sem hero achado).
-  const missingHero = (state.list || []).filter(d => !d?.images?.hero && !state.heroResolveDone.has(d.id));
-  if (missingHero.length) {
+  // v4.59.5: PRIORIZA visíveis (primeiros `renderedCount` do filter atual).
+  // Antes carregava 236 docs de uma vez bloqueando ~5min. Agora:
+  // 1. Primeiro lote = visíveis (50) → user vê hero rápido nos cards renderizados
+  // 2. Segundo lote = resto (não-bloqueante, em segundo plano)
+  const allMissing = (state.list || []).filter(d => !d?.images?.hero && !state.heroResolveDone.has(d.id));
+  if (allMissing.length) {
     (async () => {
       const BATCH = 5;
       let pendingRerender = false;
@@ -317,13 +373,18 @@ export async function renderRoteiroBank(container) {
         setTimeout(() => {
           pendingRerender = false;
           if (signal.aborted) return;
-          const wrap2 = container.querySelector('#rb-list-wrap');
-          if (wrap2) wrap2.innerHTML = gridHTML();
+          refreshGrid(container);   // preserva renderedCount, só re-render
         }, 800);  // batch updates pra evitar render storm
       };
-      for (let i = 0; i < missingHero.length; i += BATCH) {
+      // Ordena: visíveis (filtered → primeiros renderedCount) primeiro.
+      const visibleIds = new Set(applyFilters().slice(0, state.renderedCount).map(d => d.id));
+      const prioritized = [
+        ...allMissing.filter(d => visibleIds.has(d.id)),
+        ...allMissing.filter(d => !visibleIds.has(d.id)),
+      ];
+      for (let i = 0; i < prioritized.length; i += BATCH) {
         if (signal.aborted) return;
-        const batch = missingHero.slice(i, i + BATCH);
+        const batch = prioritized.slice(i, i + BATCH);
         await Promise.allSettled(batch.map(async (d) => {
           try {
             const url = await ensureBankHero(d.id, d);
@@ -437,8 +498,7 @@ export async function renderRoteiroBank(container) {
           toast.success('Arquivado.');
           const d = state.list.find(x => x.id === id);
           if (d) d.status = 'archived';
-          const wrap = container.querySelector('#rb-list-wrap');
-          if (wrap) wrap.innerHTML = gridHTML();
+          refreshGrid(container);   // v4.59.5
         } catch (err) { toast.error(err.message); }
         return;
       }
@@ -454,31 +514,28 @@ export async function renderRoteiroBank(container) {
   // Filtros
   // v4.59.4: bug crítico Renê — handler procurava input[name=search]/[type=search]
   // mas uiKit gera <input type="text" id="rb-search">. Match com id explícito.
+  // v4.59.5: refreshGrid({ resetPage: true }) — filtro mudou, volta pra primeira página.
   container.addEventListener('input', (e) => {
     if (e.target.id === 'rb-search') {
       state.filter.search = e.target.value || '';
-      const wrap = container.querySelector('#rb-list-wrap');
-      if (wrap) wrap.innerHTML = gridHTML();
+      refreshGrid(container, { resetPage: true });
     }
   }, { signal });
   container.addEventListener('change', (e) => {
     // v4.59.1: handler #rb-filter-continent removido (era código morto pós v4.58.2 — audit).
     if (e.target.matches('#rb-filter-country')) {
       state.filter.country = e.target.value;
-      const wrap = container.querySelector('#rb-list-wrap');
-      if (wrap) wrap.innerHTML = gridHTML();
+      refreshGrid(container, { resetPage: true });
       return;
     }
     if (e.target.matches('#rb-filter-collection')) {
       state.filter.collection = e.target.value;
-      const wrap = container.querySelector('#rb-list-wrap');
-      if (wrap) wrap.innerHTML = gridHTML();
+      refreshGrid(container, { resetPage: true });
       return;
     }
     if (e.target.matches('#rb-filter-sort')) {
       state.filter.sort = e.target.value || 'recent';
-      const wrap = container.querySelector('#rb-list-wrap');
-      if (wrap) wrap.innerHTML = gridHTML();
+      refreshGrid(container, { resetPage: true });
       return;
     }
   }, { signal });
@@ -493,7 +550,6 @@ export async function renderRoteiroBank(container) {
     container.querySelectorAll('.uikit-status-pill').forEach(p => {
       p.classList.toggle('active', (p.dataset.filterStatus || '') === state.filter.status);
     });
-    const wrap = container.querySelector('#rb-list-wrap');
-    if (wrap) wrap.innerHTML = gridHTML();
+    refreshGrid(container, { resetPage: true });
   }, { signal });
 }

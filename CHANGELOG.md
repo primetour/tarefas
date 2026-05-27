@@ -6,6 +6,41 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.59.5+20260526-banco-lazy-render-hero-priority] — 2026-05-26
+
+Release **PATCH/PERF** — CRÍTICO #4 auditoria: paginação real via lazy render incremental + hero auto-resolve prioriza visíveis.
+
+**Antes**:
+- `fetchRoteiroBankList({ limit: 500 })` carregava TODOS em memória (OK pra 236).
+- Render despachava 236 cards no DOM de uma vez (HTML strings concatenadas).
+- Hero auto-resolve em paralelo (v4.59.1) processava TODOS os 50+ docs sem hero, mesmo os fora do viewport.
+
+**Agora** (`js/pages/roteiroBank.js`):
+
+- `PAGE_SIZE = 50` chunks. `gridHTML()` renderiza só os primeiros `state.renderedCount` items.
+- Sentinel `[data-rb-sentinel]` no fim da grade ativa `IntersectionObserver` com `rootMargin:'200px'` (pré-carrega antes do user chegar).
+- Cada hit do observer faz `state.renderedCount += PAGE_SIZE` + `refreshGrid(container)` + reconfigura observer pro novo sentinel.
+- Contador inline mostra "Mostrando 50 de 236" enquanto há mais, ou "236 roteiros" quando esgota.
+- Filtros (search, status pill, country, collection, sort) chamam `refreshGrid(container, { resetPage: true })` → volta pra primeira página. UX: filtro novo = lista nova.
+
+**Hero auto-resolve PRIORIZADO**:
+- Antes: ordem alfabética dos docs sem hero (Africa do Sul primeiro, Vietnã por último — mesmo se user só vê os 50 primeiros).
+- Agora: visíveis (primeiros `renderedCount` do filtro atual) processados PRIMEIRO; resto em segundo plano.
+- Resultado: user vê hero nos cards renderizados em ~5s. Background continua resolvendo o resto.
+
+**Filtros continuam client-side** (state.list em memória inteira) — só o DOM é incremental. Migração pra cursor-based Firestore precisa de filtros server-side (3 layers de mudança), adiada pra release MAJOR futura quando crescimento justificar.
+
+**Cleanup**: `state.scrollObserver.disconnect()` no início de `renderRoteiroBank` (re-entrada) + cleanup defensivo a cada `refreshGrid`.
+
+**Risco**: zero. Render fica visualmente mais rápido (1ª paint com 50 cards), filtros respondem instantâneo, hero aparece nos visíveis antes.
+
+**Próximos da auditoria** (v4.59.6+):
+- Editor mostra `envisionRaw` + `services[]` (curador dado fantasma) — MÉDIO
+- Risk técnicos: `saveRoteiroBank merge:true` campos removidos persistem; `isExpired()` timezone; `roteiroBankValidityCron` filter shortcut — RISK
+- Polish: hex hardcoded → CSS vars, emoji → SVG
+
+---
+
 ## [4.59.4+20260526-banco-fix-search-status-handlers] — 2026-05-26
 
 Release **HOTFIX** — bugs CRÍTICOS reportados por Renê: pesquisa por palavra + filtro por status pills nunca disparavam no Banco de Roteiros.

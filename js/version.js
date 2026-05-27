@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 59,
-  patch: 4,
-  build: '20260526-banco-fix-search-status-handlers',
+  patch: 5,
+  build: '20260526-banco-lazy-render-hero-priority',
 };
 
 /** "1.2.0" */
