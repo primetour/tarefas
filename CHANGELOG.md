@@ -6,6 +6,37 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.59.6+20260526-banco-envisionraw-risks-polish] — 2026-05-26
+
+Release **PATCH/FEATURE+FIX** — fecha 3 buckets restantes da auditoria Banco em uma única release.
+
+**Editor — seções novas (médio #3 auditoria)** — curador para de ter "dado fantasma":
+
+- `renderServices()`: lista estruturada de `services[]` (passeios/traslados/ingressos/trem/etc. vindos do Envision). Read-only por ora, mostra nome + categoria + dia + descrição truncada (180 chars) + supplier + flag OPCIONAL. Esconde section se `services.length === 0`.
+- `renderEnvisionMeta()`: mostra `envision.id`, `envision.url` (link "abrir no Envision ↗"), `envision.supplierId`, `envision.syncedAt` formatado pt-BR + 4 blocos `envisionRaw.{includes,cancellationPolicy,formOfPayment,generalInfo}` em `<details><iframe sandbox srcdoc="...">` (HTML bruto isolado, sem scripts, sem CSS vazando). Esconde section se nem envision.id nem nenhum raw block presente.
+- Helper local `stripTagsForPreview()` pra mostrar 180 chars de descrição de service sem injetar HTML.
+
+**Risk técnicos (§7 auditoria)**:
+
+- **`isExpired()` timezone fix** (`js/services/roteiroBank.js`, §12.a): `new Date(end + 'T23:59:59')` sem offset era ambíguo (UTC vs local) — em UTC-3 podia marcar expirado/não 1 dia errado. Refatorado pra comparação por string ISO usando `toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })` que retorna YYYY-MM-DD nativo. Comparação `endIso < todayIso` é determinística.
+- **`roteiroBankValidityCron` filtro de users com shortcut** (`functions/index.js`, §13.f): comentário admitia `(u.role && true)` listando TODOS users como curators → notif spam. Substituído por check real: `users.isMaster=true OR role in ['master','admin','head'] OR roles/{role}.permissions.portal_destinations_manage===true OR perms.portal_manage===true`. Respeita shape OBJECT `{key:bool}` (não array). Role cache evita N reads.
+- `saveRoteiroBank` `merge:true` campos removidos persistem (§7.9 auditoria): re-analisado. Schema atual usa apenas arrays e objects com chaves fixas — substituição de array funciona via merge (Firestore substitui o slot inteiro). Não há maps com chaves dinâmicas. Marcado como **falso positivo após inspeção**.
+
+**Polish (§4 + §7 auditoria)**:
+
+- `cardHTML` emoji → SVG inline (CLAUDE.md §11.m): 📅⏳📍⏱🏨 → Heroicons style 14px stroke 1.75. ICONS map reutilizável. Acessível + consistente em qualquer SO/fonte.
+- `statusBadge` + `expiredBadge` hex hardcoded → CSS vars semânticas (§11.l): `#374151`, `#92400e`, `#065f46`, `#991b1b` → `var(--text-secondary)`, `var(--color-warn-text)`, `var(--color-success-text)`, `var(--color-danger-text)`. Fallbacks preservados pra compat sem essas vars definidas.
+- Placeholder hero gradient (`linear-gradient(...,#1e3a8a)`) → `var(--bg-surface)` (dark-mode safe).
+
+**Próximos da auditoria** (v4.59.7+, se Renê quiser):
+- `bankClientGuard.js` `confirm()` (1 spot, fluxo crítico contratual — precisa UX dedicada)
+- `cancelRowHTML` rótulo "fromDays" confuso (polish minor)
+- editor section Imagens só URL hero (deveria ter upload + gallery + overrides per-city)
+- `envisionAdapter._envisionCurrency` campo lixo schema (mover pra `envision.currency`)
+- `envisionAdapter envisionRaw.imageUuids` redundante (UUIDs já viraram URL CDN em v4.58.2)
+
+---
+
 ## [4.59.5+20260526-banco-lazy-render-hero-priority] — 2026-05-26
 
 Release **PATCH/PERF** — CRÍTICO #4 auditoria: paginação real via lazy render incremental + hero auto-resolve prioriza visíveis.

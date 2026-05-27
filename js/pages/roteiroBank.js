@@ -41,12 +41,14 @@ function canEdit() {
       || store.can?.('portal_manage');
 }
 
+// v4.59.8 (CLAUDE.md §11.l): hex hardcoded → CSS vars semânticas.
+// Mantém label/bg/fg como dicionário pra reaproveitar e dark-mode-safe.
 function statusBadge(status) {
   const map = {
-    draft:    { label: 'Rascunho',  bg: 'rgba(107,114,128,0.12)', color: '#374151' },
-    review:   { label: 'Revisão',   bg: 'rgba(245,158,11,0.16)',  color: '#92400e' },
-    approved: { label: 'Publicado', bg: 'rgba(16,185,129,0.16)',  color: '#065f46' },
-    archived: { label: 'Arquivado', bg: 'rgba(220,38,38,0.12)',   color: '#991b1b' },
+    draft:    { label: 'Rascunho',  bg: 'var(--badge-muted-bg,rgba(107,114,128,0.12))', color: 'var(--text-secondary,#374151)' },
+    review:   { label: 'Revisão',   bg: 'var(--badge-warn-bg,rgba(245,158,11,0.16))',   color: 'var(--color-warn-text,#92400e)' },
+    approved: { label: 'Publicado', bg: 'var(--badge-success-bg,rgba(16,185,129,0.16))', color: 'var(--color-success-text,#065f46)' },
+    archived: { label: 'Arquivado', bg: 'var(--badge-danger-bg,rgba(220,38,38,0.12))',  color: 'var(--color-danger-text,#991b1b)' },
   };
   const it = map[status] || map.draft;
   return `<span style="display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;
@@ -56,18 +58,29 @@ function statusBadge(status) {
 function expiredBadge(doc) {
   if (!isExpired(doc)) return '';
   return `<span style="display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;
-    font-size:0.72rem;font-weight:600;background:rgba(220,38,38,0.16);color:#991b1b;margin-left:6px;"
+    font-size:0.72rem;font-weight:600;background:var(--badge-danger-bg,rgba(220,38,38,0.16));color:var(--color-danger-text,#991b1b);margin-left:6px;"
     title="Validade expirou em ${esc(doc.validity?.endDate || '')} — revisar">⚠ Expirado</span>`;
 }
 
+// v4.59.8 (CLAUDE.md §11.m): emoji → SVG inline (Heroicons style 16px, stroke 1.75).
+// Acessível + consistente em qualquer SO/fonte.
+const ICONS = {
+  pin:   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 1 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>',
+  clock: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>',
+  bed:   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;"><path d="M2 4v16M22 12v8M2 12h20M6 12V8a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v4"></path><circle cx="7" cy="10" r="1"></circle></svg>',
+  calStart: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;"><rect x="3" y="4" width="18" height="18" rx="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>',
+  calEnd: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 8 14"></polyline></svg>',
+};
+
 function cardHTML(d) {
   const hero = d.images?.hero || '';
+  // v4.59.8: placeholder usa --bg-surface (dark-mode safe) em vez de gradient hardcoded
   const placeholder = !hero
-    ? `<div style="width:100%;height:160px;background:linear-gradient(135deg,var(--brand-blue,#0A1628),#1e3a8a);
-        display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,0.4);font-size:0.85rem;">
+    ? `<div style="width:100%;height:160px;background:var(--bg-surface);border-bottom:1px solid var(--border-subtle);
+        display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:0.8rem;">
         sem imagem
       </div>`
-    : `<div style="width:100%;height:160px;background-image:url('${esc(hero)}');background-size:cover;background-position:center;"></div>`;
+    : `<div style="width:100%;height:160px;background-image:url('${esc(hero)}');background-size:cover;background-position:center;background-color:var(--bg-surface);"></div>`;
 
   const cities = (d.geo?.cities || []).map(c => c.city).filter(Boolean);
   const citiesText = cities.length > 4
@@ -109,8 +122,8 @@ function cardHTML(d) {
   const endIndef   = !d.validity?.endDate;
   const meta = `
     <div style="display:flex;gap:14px;color:var(--text-muted);font-size:0.72rem;flex-wrap:wrap;">
-      <span title="Validade início" style="${startIndef ? 'font-style:italic;' : ''}">📅 Início: <strong style="color:${startIndef ? 'var(--text-muted)' : 'var(--text-secondary)'};">${esc(startTxt)}</strong></span>
-      <span title="Validade fim"    style="${endIndef ? 'font-style:italic;' : ''}">⏳ Fim: <strong style="color:${endIndef ? 'var(--text-muted)' : 'var(--text-secondary)'};">${esc(endTxt)}</strong></span>
+      <span title="Validade início" style="${startIndef ? 'font-style:italic;' : ''}">${ICONS.calStart} Início: <strong style="color:${startIndef ? 'var(--text-muted)' : 'var(--text-secondary)'};">${esc(startTxt)}</strong></span>
+      <span title="Validade fim"    style="${endIndef ? 'font-style:italic;' : ''}">${ICONS.calEnd} Fim: <strong style="color:${endIndef ? 'var(--text-muted)' : 'var(--text-secondary)'};">${esc(endTxt)}</strong></span>
     </div>`;
 
   return `
@@ -131,9 +144,9 @@ function cardHTML(d) {
           ${esc(d.shortDescription?.slice(0, 140) || '')}${d.shortDescription?.length > 140 ? '…' : ''}
         </div>
         <div style="display:flex;gap:12px;align-items:center;color:var(--text-muted);font-size:0.78rem;margin-top:auto;padding-top:8px;border-top:1px solid var(--border-subtle);">
-          <span title="Cidades">📍 ${cities.length}</span>
-          <span title="Dias">⏱ ${days}d / ${nights}n</span>
-          <span title="Categorias hospedagem">🏨 ${cats}</span>
+          <span title="Cidades">${ICONS.pin} ${cities.length}</span>
+          <span title="Duração total">${ICONS.clock} ${days}d / ${nights}n</span>
+          <span title="Categorias de hospedagem">${ICONS.bed} ${cats}</span>
         </div>
         <div style="color:var(--text-muted);font-size:0.78rem;">${esc(citiesText)}</div>
         ${meta}

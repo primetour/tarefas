@@ -346,13 +346,21 @@ function autoCode(title, collectionLabel) {
   return `${pref}-${body || 'NEW'}`;
 }
 
-/** Verifica se um doc está expirado relativo a hoje. */
+/** Verifica se um doc está expirado relativo a hoje.
+ * v4.59.7 (CLAUDE.md §12.a): comparação por string ISO YYYY-MM-DD evita bug
+ * timezone do `new Date(end + 'T23:59:59')` (sem offset = ambíguo entre UTC e
+ * local em UTC-3, podia marcar expirado/não-expirado errado em ±1 dia).
+ * Hoje em BRT vira ISO 'YYYY-MM-DD' usando toLocaleDateString('en-CA').
+ */
 export function isExpired(doc) {
   const end = doc?.validity?.endDate;
   if (!end) return false;
-  try {
-    return new Date(end + 'T23:59:59') < new Date();
-  } catch { return false; }
+  // Normaliza pra YYYY-MM-DD se vier outro formato
+  const endIso = String(end).match(/^(\d{4})-(\d{2})-(\d{2})/)?.[0];
+  if (!endIso) return false;
+  // Hoje em America/Sao_Paulo formato ISO (en-CA usa YYYY-MM-DD nativo)
+  const todayIso = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+  return endIso < todayIso;
 }
 
 /* ═══════════════════════════════════════════════════════════════

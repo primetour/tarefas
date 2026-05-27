@@ -563,6 +563,108 @@ function renderDocs() {
   `;
 }
 
+/* ════════════════════════════════════════════════════════════════
+   v4.59.6: Seções "Serviços (Envision)" + "Origem Envision" —
+   curador para de ter "dado fantasma" no Firestore. Read-only por
+   ora (curadoria editorial vem depois). Auditoria §3.3 médio.
+   ════════════════════════════════════════════════════════════════ */
+
+function renderServices() {
+  const d = state.doc;
+  const services = Array.isArray(d.services) ? d.services : [];
+  if (!services.length) return '';   // não renderiza se não tem
+  const CATEGORY_LABELS = {
+    passeio: 'Passeio', transfer: 'Traslado', ingresso: 'Ingresso',
+    trem: 'Trem', 'mini-roteiro': 'Mini-roteiro', cruzeiro: 'Cruzeiro',
+    seguro: 'Seguro', outro: 'Outro',
+  };
+  return `
+    <section class="rb-section" data-section="services">
+      <h2 class="rb-section-title">
+        Serviços estruturados <span style="font-weight:400;color:var(--text-muted);font-size:0.8rem;">(${services.length} · vindos do Envision)</span>
+      </h2>
+      <p style="font-size:0.78rem;color:var(--text-muted);margin:-4px 0 12px;">
+        Lista completa de passeios, traslados, ingressos e outros serviços estruturados (vindos do Envision).
+        Bullets em "Inclui" são derivados destes. Edição inline em release futura.
+      </p>
+      <div style="display:grid;gap:8px;">
+        ${services.map((s, i) => {
+          const cat = CATEGORY_LABELS[s.category] || s.category || '—';
+          const dayTxt = s.day ? ` · Dia ${s.day}` : '';
+          const optTxt = s.optional ? ' <span style="color:var(--brand-gold,#D4A843);font-size:0.7rem;font-weight:600;">OPCIONAL</span>' : '';
+          const desc = s.descriptionHtml || s.description || '';
+          const preview = desc ? stripTagsForPreview(desc).slice(0, 180) : '';
+          return `
+            <div data-svc-idx="${i}" style="border:1px solid var(--border-subtle);border-radius:6px;padding:8px 10px;background:var(--bg-surface);">
+              <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;">
+                <div style="font-weight:600;font-size:0.88rem;color:var(--text-primary);flex:1;">${esc(s.name || '(sem nome)')}${optTxt}</div>
+                <div style="font-size:0.72rem;color:var(--text-muted);white-space:nowrap;">${esc(cat)}${esc(dayTxt)}</div>
+              </div>
+              ${preview ? `<div style="font-size:0.78rem;color:var(--text-secondary);margin-top:4px;line-height:1.4;">${esc(preview)}${preview.length === 180 ? '…' : ''}</div>` : ''}
+              ${s.supplier ? `<div style="font-size:0.7rem;color:var(--text-muted);margin-top:3px;">Fornecedor: ${esc(s.supplier)}</div>` : ''}
+            </div>
+          `;
+        }).join('')}
+      </div>
+    </section>
+  `;
+}
+
+function renderEnvisionMeta() {
+  const d = state.doc;
+  const env = d.envision || {};
+  const raw = d.envisionRaw || {};
+  // Não renderiza se não vier do Envision
+  if (!env.id && !raw.includes && !raw.cancellationPolicy && !raw.formOfPayment && !raw.generalInfo) return '';
+  const syncedTxt = env.syncedAt
+    ? (env.syncedAt?.toDate ? env.syncedAt.toDate().toLocaleString('pt-BR') : new Date(env.syncedAt).toLocaleString('pt-BR'))
+    : '—';
+  const rawBlocks = [
+    { key: 'includes',           label: 'Inclui (HTML bruto Envision)' },
+    { key: 'cancellationPolicy', label: 'Política de cancelamento (HTML bruto)' },
+    { key: 'formOfPayment',      label: 'Forma de pagamento (HTML bruto)' },
+    { key: 'generalInfo',        label: 'Informações gerais (HTML bruto)' },
+  ].filter(b => raw[b.key]);
+  return `
+    <section class="rb-section" data-section="envision-meta">
+      <h2 class="rb-section-title">
+        Origem Envision <span style="font-weight:400;color:var(--text-muted);font-size:0.8rem;">(read-only · dado bruto da fonte)</span>
+      </h2>
+      <p style="font-size:0.78rem;color:var(--text-muted);margin:-4px 0 12px;">
+        Dado original vindo do TravelAgent (Envision). Curadoria PRIMETOUR sobrepõe via campos editáveis; este bloco é apenas referência/auditoria.
+      </p>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin-bottom:12px;font-size:0.8rem;">
+        <div><strong style="color:var(--text-secondary);">ID Envision:</strong> <span style="color:var(--text-primary);">${esc(env.id || '—')}</span></div>
+        <div><strong style="color:var(--text-secondary);">Última sync:</strong> <span style="color:var(--text-primary);">${esc(syncedTxt)}</span></div>
+        ${env.supplierId ? `<div><strong style="color:var(--text-secondary);">Operador local:</strong> <span style="color:var(--text-primary);">${esc(env.supplierId)}</span></div>` : ''}
+        ${env.url ? `<div><strong style="color:var(--text-secondary);">Link:</strong> <a href="${esc(env.url)}" target="_blank" rel="noopener" style="color:var(--brand-gold,#D4A843);">abrir no Envision ↗</a></div>` : ''}
+      </div>
+      ${rawBlocks.length ? `
+        <div style="display:grid;gap:8px;">
+          ${rawBlocks.map(b => `
+            <details style="border:1px solid var(--border-subtle);border-radius:6px;background:var(--bg-surface);">
+              <summary style="cursor:pointer;padding:8px 12px;font-size:0.85rem;font-weight:600;color:var(--text-secondary);">${esc(b.label)}</summary>
+              <iframe sandbox="" srcdoc="${esc(raw[b.key])}"
+                style="width:100%;min-height:300px;border:none;border-top:1px solid var(--border-subtle);background:#fff;">
+              </iframe>
+            </details>
+          `).join('')}
+        </div>
+      ` : ''}
+    </section>
+  `;
+}
+
+/** Helper local — strip HTML tags pra preview seguro de texto. */
+function stripTagsForPreview(html) {
+  if (!html) return '';
+  return String(html)
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+    .replace(/\s+/g, ' ').trim();
+}
+
 function visaRowHTML(v, i) {
   return `
     <div class="rb-visa-row" data-visa-idx="${i}" style="display:grid;grid-template-columns:1fr 100px 2fr auto;gap:6px;align-items:end;">
@@ -664,6 +766,8 @@ export async function renderRoteiroBankEditor(container) {
       ${renderIncludes()}
       ${renderPayment()}
       ${renderDocs()}
+      ${renderServices()}
+      ${renderEnvisionMeta()}
 
       <div style="margin-top:24px;padding-top:16px;border-top:1px solid var(--border-subtle);text-align:right;">
         ${canEdit() ? `<button class="btn btn-primary" data-action="save-now">Salvar agora</button>` : ''}

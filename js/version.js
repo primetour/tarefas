@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 59,
-  patch: 5,
-  build: '20260526-banco-lazy-render-hero-priority',
+  patch: 6,
+  build: '20260526-banco-envisionraw-risks-polish',
 };
 
 /** "1.2.0" */

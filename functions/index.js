@@ -4375,13 +4375,40 @@ export const roteiroBankValidityCron = onSchedule({
   // Listar curadores pra notificar (master + roles com portal_destinations_manage)
   let curators = [];
   try {
+    // v4.59.7 (CLAUDE.md §13.f) — filtro real por permissão `portal_destinations_manage`
+    // ou `portal_manage`. Antes: `(u.role && true)` listava TODOS users como curators
+    // → notif spam. Agora: users.isMaster=true OR role in ADMIN_ROLES OR
+    // roles/{role}.permissions[key]=true (shape object {key:bool}, NÃO array — §13.f).
+    const ADMIN_ROLES = ['master', 'admin', 'head'];
     const usersSnap = await db.collection('users').get();
-    curators = usersSnap.docs.map(d => ({ id: d.id, ...d.data() }))
-      .filter(u => u.active !== false && u.id !== 'system')
-      .filter(u => u.isMaster === true || (u.role && true /* assumimos manager pra simplicidade — UI filtra depois */))
-      .map(u => u.id);
-    // Dedupe + cap
-    curators = [...new Set(curators)].slice(0, 50);
+    const candidates = usersSnap.docs
+      .map(d => ({ id: d.id, ...d.data() }))
+      .filter(u => u.active !== false && u.id !== 'system');
+    // Cache de roles pra evitar N reads
+    const roleCache = new Map();
+    async function userCanCurate(u) {
+      if (u.isMaster === true) return true;
+      const r = u.role || u.roleId;
+      if (!r) return false;
+      if (ADMIN_ROLES.includes(r)) return true;
+      if (!roleCache.has(r)) {
+        try {
+          const rd = await db.collection('roles').doc(r).get();
+          roleCache.set(r, rd.exists ? (rd.data() || {}) : null);
+        } catch { roleCache.set(r, null); }
+      }
+      const rd = roleCache.get(r);
+      if (!rd) return false;
+      if (rd.isSystem === true) return true;
+      const perms = rd.permissions || {};   // OBJETO {key:bool}, não Array
+      return perms.portal_destinations_manage === true
+          || perms.portal_manage === true;
+    }
+    const filtered = [];
+    for (const u of candidates) {
+      if (await userCanCurate(u)) filtered.push(u.id);
+    }
+    curators = [...new Set(filtered)].slice(0, 50);
   } catch (e) {
     console.warn('[roteiroBankValidityCron] users fetch fail:', e?.message);
   }
