@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 62,
-  patch: 10,
-  build: '20260527-aliases-tab-same-filters-as-destinos',
+  patch: 11,
+  build: '20260527-bank-continent-filter-cascata-pais',
 };
 
 /** "1.2.0" */

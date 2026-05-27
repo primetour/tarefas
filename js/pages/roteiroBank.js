@@ -14,6 +14,7 @@ import { store } from '../store.js';
 import { toast } from '../components/toast.js';
 import { renderPageHeader, renderFilterBar } from '../components/uiKit.js';
 import { fetchRoteiroBankList, archiveRoteiroBank, duplicateRoteiroBank, isExpired, ensureBankHero } from '../services/roteiroBank.js';
+import { continentLabel } from '../data/continents.js';
 import { generateRoteiroBankPDF } from '../services/roteiroBankGenerator.js';
 import { actionIcon } from '../components/uiKit.js';
 
@@ -26,9 +27,11 @@ const PAGE_SIZE = 50;
 let state = {
   list: [],
   loading: false,
-  // v4.59.1: removido `continent` do filter (era código morto pós v4.58.2 — Envision não tem continente).
-  // Adicionado `collection` (filtro novo) e `sort` (alphabet|recent|expiration|duration).
-  filter: { search: '', status: '', country: '', collection: '', sort: 'recent' },
+  // v4.62.11: re-adicionado `continent` no filter. Removido em v4.58.2 quando
+  // Envision não trazia continente, mas pós v4.62.0 todos os roteiros ancorados
+  // (184/236) têm `geo.continents[]` populado pelo SSOT. Cascata com país:
+  // selecionar continente restringe países disponíveis no select.
+  filter: { search: '', status: '', continent: '', country: '', collection: '', sort: 'recent' },
   renderedCount: PAGE_SIZE,    // v4.59.5: lazy render incremental
   abortCtrl: null,          // v4.50.10+ AbortController dos listeners delegados
   heroResolveDone: new Set(), // v4.59.1: evita re-fetch após primeira falha (paralelo)
@@ -190,10 +193,32 @@ function cardHTML(d) {
   `;
 }
 
-/** Países disponíveis: todos os países dos roteiros. */
-function countryOptions() {
+/**
+ * v4.62.11: Continentes disponíveis — usa geo.continentCodes (populado pelo SSOT)
+ * porque geo.continents está [] em todos os 236 docs (gap de migration —
+ * adapter Envision popula só continentCodes). Label vem de continentLabel(code).
+ * value = code (AF/AS/EU/NA/SA/OC/AN), label = nome pt-BR.
+ */
+function continentOptions() {
   const set = new Set();
   for (const d of state.list || []) {
+    (d.geo?.continentCodes || []).forEach(c => c && set.add(c));
+  }
+  const sorted = [...set].sort((a,b) =>
+    (continentLabel(a) || a).localeCompare(continentLabel(b) || b, 'pt-BR'));
+  return [{ value: '', label: 'Todos continentes' },
+    ...sorted.map(c => ({ value: c, label: continentLabel(c) || c }))];
+}
+
+/**
+ * v4.62.11 — Países disponíveis. Quando `filter.continent` ativo (code), restringe
+ * aos países dos roteiros desse continente. Senão, todos os países do banco.
+ */
+function countryOptions() {
+  const set = new Set();
+  const contCode = state.filter.continent;
+  for (const d of state.list || []) {
+    if (contCode && !(d.geo?.continentCodes || []).includes(contCode)) continue;
     (d.geo?.countries || []).forEach(c => c && set.add(c));
   }
   const sorted = [...set].sort((a,b) => a.localeCompare(b, 'pt-BR'));
@@ -240,6 +265,9 @@ function applyFilters() {
     } else if (state.filter.status && d.status !== state.filter.status) {
       return false;
     }
+    // v4.62.11: filtro continente — usa geo.continentCodes[] (code AF/AS/EU/etc),
+    // que é o campo realmente populado (vs geo.continents que está vazio em prod).
+    if (state.filter.continent && !(d.geo?.continentCodes || []).includes(state.filter.continent)) return false;
     if (state.filter.country && !d.geo.countries.includes(state.filter.country)) return false;
     if (state.filter.collection && d.collectionLabel !== state.filter.collection) return false;
     if (state.filter.search) {
@@ -543,11 +571,12 @@ export async function renderRoteiroBank(container) {
         ],
         activeStatus: state.filter.status,
         selects: [
-          // v4.58.2: filtro continente removido (Renê: "não precisamos do campo continente").
-          // v4.59.1: filtro continente código morto também removido (audit). Adicionados coleção + sort.
-          { id: 'rb-filter-country',    label: 'País',     value: state.filter.country,    options: countryOptions() },
-          { id: 'rb-filter-collection', label: 'Coleção',  value: state.filter.collection, options: collectionOptions() },
-          { id: 'rb-filter-sort',       label: 'Ordenar',  value: state.filter.sort,       options: [
+          // v4.62.11: filtro continente RE-adicionado — pós v4.62.0 SSOT geo,
+          // geo.continents[] está populado pra 184/236 roteiros.
+          { id: 'rb-filter-continent',  label: 'Continente', value: state.filter.continent,  options: continentOptions() },
+          { id: 'rb-filter-country',    label: 'País',       value: state.filter.country,    options: countryOptions() },
+          { id: 'rb-filter-collection', label: 'Coleção',    value: state.filter.collection, options: collectionOptions() },
+          { id: 'rb-filter-sort',       label: 'Ordenar',    value: state.filter.sort,       options: [
             { value: 'recent',     label: 'Mais recentes' },
             { value: 'alphabet',   label: 'Alfabética' },
             { value: 'expiration', label: 'Validade próxima' },
@@ -570,10 +599,15 @@ export async function renderRoteiroBank(container) {
   state.loading = false;
   refreshGrid(container, { resetPage: true });
 
-  // v4.58.8: re-renderiza dropdown país após o load (countryOptions depende
-  // de state.list que só fica populado AGORA). Antes ficava só "Todos países"
-  // + 1 option vazia porque countryOptions() era chamado no template inicial
-  // quando state.list ainda era [].
+  // v4.58.8 + v4.62.11: re-renderiza dropdowns continente + país após o load
+  // (options dependem de state.list que só fica populado AGORA). Antes ficava
+  // só "Todos" + 1 option vazia porque options() era chamado no template
+  // inicial quando state.list ainda era [].
+  const contSelectEl = container.querySelector('#rb-filter-continent');
+  if (contSelectEl) {
+    const v = contSelectEl.value;
+    contSelectEl.innerHTML = continentOptions().map(o => `<option value="${o.value}" ${o.value===v?'selected':''}>${o.label}</option>`).join('');
+  }
   const countrySelectEl = container.querySelector('#rb-filter-country');
   if (countrySelectEl) {
     const currentVal = countrySelectEl.value;
@@ -752,7 +786,26 @@ export async function renderRoteiroBank(container) {
     }
   }, { signal });
   container.addEventListener('change', (e) => {
-    // v4.59.1: handler #rb-filter-continent removido (era código morto pós v4.58.2 — audit).
+    // v4.62.11: handler continente — cascata com país (zera país se conflitar,
+    // re-popula select de país com opções restritas ao continente selecionado).
+    if (e.target.matches('#rb-filter-continent')) {
+      state.filter.continent = e.target.value;
+      // Se país atual não pertence ao novo continente, zera
+      if (state.filter.country) {
+        const validInCont = (state.list || []).some(d =>
+          (d.geo?.continentCodes || []).includes(state.filter.continent) &&
+          (d.geo?.countries      || []).includes(state.filter.country));
+        if (!validInCont) state.filter.country = '';
+      }
+      // Re-popula select de país com opções filtradas
+      const countrySel = container.querySelector('#rb-filter-country');
+      if (countrySel) {
+        const opts = countryOptions();
+        countrySel.innerHTML = opts.map(o => `<option value="${o.value}" ${o.value===state.filter.country?'selected':''}>${o.label}</option>`).join('');
+      }
+      refreshGrid(container, { resetPage: true });
+      return;
+    }
     if (e.target.matches('#rb-filter-country')) {
       state.filter.country = e.target.value;
       refreshGrid(container, { resetPage: true });

@@ -6,6 +6,91 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.62.11+20260527-bank-continent-filter-cascata-pais] — 2026-05-27
+
+Release **UX** — Banco de Roteiros recebe (de volta) filtro por continente
+com cascata para o filtro de país.
+
+**Pedido Renê**: *"banco de roteiros: ter filtro por continente"*.
+
+### Histórico — por que voltou
+
+- **v4.50.0**: filtro continente existia
+- **v4.58.2**: removido pelo Renê (*"não precisamos do campo continente"*) —
+  Envision não trazia continente; ficava sempre vazio
+- **v4.62.0**: SSOT geo introduzido, adapter Envision passou a popular
+  `geo.continentCodes[]` derivado do país (`countryContinent(countryCode)`)
+- **v4.62.11**: agora que está populado de verdade, filtro volta com cascata
+
+### Diagnóstico de schema antes do fix
+
+```
+roteiros_bank (236 docs):
+  geo.continents       → [] em 100% (campo nunca populado)
+  geo.continentCodes   → ['SA'], ['NA'], etc em 184/236 (populado pelo SSOT)
+```
+
+Lição aprendida: usar `continentCodes` (campo realmente populado) + helper
+`continentLabel(code)` pra renderizar nome legível. `geo.continents` (labels)
+ficou como TODO — backfill futuro pode preencher pra retrocompat, mas não
+é necessário enquanto reader usa codes.
+
+### Mudanças em `js/pages/roteiroBank.js`
+
+#### State
+
+```js
+filter: { search:'', status:'', continent:'', country:'', collection:'', sort:'recent' }
+//                                ^^^^^^^^^^ novo (value = code AF/AS/EU/NA/SA/OC/AN)
+```
+
+#### Filtro
+
+```js
+if (state.filter.continent && !(d.geo?.continentCodes || []).includes(state.filter.continent)) return false;
+```
+
+#### `continentOptions()` novo
+
+Extrai códigos únicos de `state.list.*.geo.continentCodes`, ordena por
+`continentLabel` pt-BR. `value = code`, `label = nome pt`.
+
+#### `countryOptions()` ganha cascata
+
+Quando `state.filter.continent` ativo, restringe países aos que aparecem nos
+roteiros desse continente.
+
+#### Handler novo
+
+```js
+if (e.target.matches('#rb-filter-continent')) {
+  state.filter.continent = e.target.value;
+  // zera país se conflitar com novo continente
+  // repopula select de país com opções filtradas
+  refreshGrid(container, { resetPage: true });
+}
+```
+
+#### Layout
+
+Select `#rb-filter-continent` adicionado **antes** do `#rb-filter-country`
+em `selects` do `renderFilterBar`. Re-populate post-load (igual país) pra
+preencher options vazias do template inicial.
+
+### Import novo
+
+`continentLabel` de `js/data/continents.js` pra renderizar nomes pt-BR
+("África" em vez de "AF") nos options.
+
+### Arquivos tocados
+
+- `js/pages/roteiroBank.js`: state, filter, options, handler, layout
+- `js/version.js`: 4.62.10 → 4.62.11
+- `index.html`: cache-bust
+- `CHANGELOG.md`: este bloco
+
+---
+
 ## [4.62.10+20260527-aliases-tab-same-filters-as-destinos] — 2026-05-27
 
 Release **UX/CONSISTÊNCIA** — aba "Variações de nome" ganha o mesmo conjunto
