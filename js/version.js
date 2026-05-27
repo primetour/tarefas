@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 62,
-  patch: 17,
-  build: '20260527-editor-fase-b-imagens-banco-picker-badge',
+  patch: 18,
+  build: '20260527-editor-fase-c-dia-3-botoes-origem-badge',
 };
 
 /** "1.2.0" */

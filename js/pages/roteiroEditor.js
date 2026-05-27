@@ -1166,30 +1166,67 @@ function renderDestRow(d, i, total) {
 }
 
 /* ── 2: Dia a dia ────────────────────────────────────────── */
+// v4.62.18 Fase C: Dia a Dia ganha 3 bot\u00f5es no header (CLAUDE.md fluxo
+// h\u00edbrido \u2014 user escolhe origem dia a dia: manual / banco / IA). Cada dia
+// pode ter origem diferente, refletida em badge visual no card.
 function renderDiaDiaSection() {
   const days = currentRoteiro.days || [];
+  const headerButtons = `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;">
+      <button class="btn btn-secondary btn-sm" data-action="dia-consult-bank"
+        style="font-size:0.8125rem;display:inline-flex;align-items:center;gap:6px;">
+        \ud83d\udcda Consultar Banco
+      </button>
+      <button class="btn btn-secondary btn-sm" data-action="add-day"
+        style="font-size:0.8125rem;display:inline-flex;align-items:center;gap:6px;">
+        + Adicionar dia manualmente
+      </button>
+      <button class="btn btn-primary btn-sm" data-action="dia-ai-modal"
+        style="font-size:0.8125rem;display:inline-flex;align-items:center;gap:6px;">
+        \ud83e\udd16 Gerar por IA
+      </button>
+    </div>
+    <p style="font-size:0.75rem;color:var(--text-muted);margin:-8px 0 14px;line-height:1.5;">
+      Cada dia pode vir de origem diferente: <strong>manual</strong> (digitado),
+      <strong>banco</strong> (copiado de cota\u00e7\u00e3o do Banco) ou <strong>IA</strong> (gerado).
+      O \u00edcone no canto do card indica a origem.
+    </p>`;
+
   if (!days.length) {
     return `
       <div class="re-section-title">Dia a Dia</div>
-      <div style="text-align:center;padding:30px;color:var(--text-muted);">
-        <p>Nenhum dia gerado ainda.</p>
-        <p style="font-size:0.8125rem;">Preencha as datas e destinos na se\u00e7\u00e3o Cliente e Briefing e clique em "Gerar dias automaticamente".</p>
+      ${headerButtons}
+      <div style="text-align:center;padding:30px;color:var(--text-muted);background:var(--bg-surface);border-radius:8px;">
+        <div style="font-size:2rem;margin-bottom:8px;">\ud83d\udcc5</div>
+        <p style="margin:0 0 6px;">Nenhum dia ainda.</p>
+        <p style="font-size:0.8125rem;margin:0;">Use os bot\u00f5es acima pra adicionar dias do Banco, manual ou via IA.</p>
       </div>
-      <button class="re-add-btn" data-action="generate-days" style="margin-top:8px;">Gerar dias automaticamente</button>
-      <button class="re-add-btn" data-action="add-day" style="margin-left:8px;">+ Adicionar dia manualmente</button>
     `;
   }
 
   return `
     <div class="re-section-title">Dia a Dia</div>
-    <div style="margin-bottom:12px;">
-      <button class="re-add-btn" data-action="generate-days">Gerar dias automaticamente</button>
-    </div>
+    ${headerButtons}
     <div id="re-days-list">
       ${days.map((d, i) => renderDayCard(d, i)).join('')}
     </div>
-    <button class="re-add-btn" data-action="add-day">+ Adicionar Dia</button>
   `;
+}
+
+/** v4.62.18 Fase C: badge indicando origem do dia. */
+function _sourceBadge(source) {
+  const SOURCES = {
+    'manual': { icon: '\ud83d\udcdd', label: 'Manual', color: 'var(--text-muted)' },
+    'bank':   { icon: '\ud83d\udcda', label: 'Banco',  color: 'var(--brand-blue,#3B82F6)' },
+    'ai':     { icon: '\ud83e\udd16', label: 'IA',     color: 'var(--brand-gold,#D4A843)' },
+  };
+  const s = SOURCES[source] || SOURCES['manual'];
+  return `<span title="Origem deste dia: ${s.label}"
+    style="display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:999px;
+    background:transparent;color:${s.color};border:1px solid ${s.color};
+    font-size:0.65rem;font-weight:600;">
+    ${s.icon} ${s.label}
+  </span>`;
 }
 
 function renderDayCard(d, i) {
@@ -1200,8 +1237,13 @@ function renderDayCard(d, i) {
 
   return `
     <div class="re-day-card" data-day-idx="${i}">
-      <div class="re-day-num">Dia ${d.dayNumber || i + 1}</div>
-      <div class="re-day-date">${esc(dateLabel)} ${d.city ? '- ' + esc(d.city) : ''}</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+        <div>
+          <div class="re-day-num">Dia ${d.dayNumber || i + 1}</div>
+          <div class="re-day-date">${esc(dateLabel)} ${d.city ? '- ' + esc(d.city) : ''}</div>
+        </div>
+        ${_sourceBadge(d.source || 'manual')}
+      </div>
       <div class="re-row" style="margin-top:10px;">
         <div class="re-form-group" style="flex:1;">
           <label class="re-label" style="font-size:0.7rem;">T\u00edtulo do Dia</label>
@@ -1656,6 +1698,169 @@ function _normKey(s) {
 }
 
 /** Cache de banco de imagens carregado on-demand para o modal */
+/**
+ * v4.62.18 Fase C: modal Consultar Banco. Lista roteiros aprovados do Banco
+ * de Roteiros (filtra por país do briefing se houver). User escolhe um roteiro
+ * + quais dias importar (checkboxes). Dias importados ganham source='bank'.
+ */
+async function _openDayConsultBankModal() {
+  const overlay = document.createElement('div');
+  overlay.className = 're-img-modal-overlay';
+  overlay.innerHTML = `
+    <div class="re-img-modal" style="max-width:720px;max-height:80vh;display:flex;flex-direction:column;">
+      <div class="re-img-modal-header">
+        <div class="re-img-modal-title">📚 Consultar Banco de Roteiros</div>
+        <button class="re-img-modal-close" type="button">&times;</button>
+      </div>
+      <div class="re-img-modal-body" style="overflow:auto;">
+        <p style="font-size:0.8125rem;color:var(--text-muted);margin:0 0 12px;">
+          Escolha um roteiro do banco pra copiar dias dele pra esta cotação.
+          Dias importados serão marcados como origem <strong>Banco</strong>.
+        </p>
+        <input class="re-input" type="search" id="re-bank-q" placeholder="Filtrar por título, cidade, país…"
+          style="margin-bottom:12px;" />
+        <div id="re-bank-list" style="display:flex;flex-direction:column;gap:6px;">
+          <div style="text-align:center;color:var(--text-muted);padding:20px;">Carregando…</div>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+  overlay.querySelector('.re-img-modal-close').addEventListener('click', close);
+
+  try {
+    const { fetchRoteiroBankList } = await import('../services/roteiroBank.js');
+    const all = await fetchRoteiroBankList({ includeArchived: false });
+    const approved = all.filter(r => r.status === 'approved');
+    const list = overlay.querySelector('#re-bank-list');
+    const q = overlay.querySelector('#re-bank-q');
+    const norm = s => String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    const render = (filter) => {
+      const f = norm(filter);
+      const matched = !f ? approved : approved.filter(r => {
+        const hay = norm([r.title, ...(r.geo?.countries||[]), ...((r.geo?.cities||[]).map(c=>c.city))].join(' '));
+        return hay.includes(f);
+      });
+      if (!matched.length) {
+        list.innerHTML = `<div style="text-align:center;color:var(--text-muted);padding:20px;font-size:0.8125rem;">Nenhum roteiro encontrado.</div>`;
+        return;
+      }
+      list.innerHTML = matched.slice(0, 50).map(r => `
+        <button type="button" data-bank-id="${esc(r.id)}"
+          style="text-align:left;padding:10px 14px;border:1px solid var(--border-subtle,#e5e7eb);
+          border-radius:8px;background:var(--bg-surface);cursor:pointer;display:flex;
+          justify-content:space-between;align-items:center;gap:10px;font-family:inherit;">
+          <div style="flex:1;min-width:0;">
+            <div style="font-weight:600;font-size:0.875rem;color:var(--text-primary);">${esc(r.title || '(sem título)')}</div>
+            <div style="font-size:0.72rem;color:var(--text-muted);">${esc((r.geo?.countries||[]).slice(0,3).join(' · '))}${(r.geo?.cities||[]).length ? ' · ' + (r.geo.cities.length) + ' dias' : ''}</div>
+          </div>
+          <span style="font-size:0.72rem;color:var(--brand-gold,#D4A843);">Escolher →</span>
+        </button>`).join('');
+      list.querySelectorAll('[data-bank-id]').forEach(btn =>
+        btn.addEventListener('click', () => _pickDaysFromBankRoteiro(btn.dataset.bankId, close)));
+    };
+    render('');
+    q.addEventListener('input', e => render(e.target.value));
+  } catch (e) {
+    overlay.querySelector('#re-bank-list').innerHTML = `<div style="color:var(--color-danger);padding:20px;">Falha ao carregar banco: ${esc(e?.message || e)}</div>`;
+  }
+}
+
+/**
+ * v4.62.18 Fase C: segundo step do Consultar Banco — picker de dias do
+ * roteiro escolhido. Por simplicidade inicial, importa TODOS os dias (cities)
+ * do roteiro do banco como dias source='bank'. User pode editar/remover
+ * individualmente depois.
+ */
+async function _pickDaysFromBankRoteiro(bankId, closeFirstModal) {
+  try {
+    const { fetchRoteiroBank } = await import('../services/roteiroBank.js');
+    const doc = await fetchRoteiroBank(bankId);
+    if (!doc) { showToast('Roteiro não encontrado.', 'error'); return; }
+    const cities = doc.geo?.cities || [];
+    if (!cities.length) { showToast('Roteiro do banco não tem dias estruturados.', 'info'); return; }
+    if (!currentRoteiro.days) currentRoteiro.days = [];
+    const startIdx = currentRoteiro.days.length;
+    cities.forEach((c, i) => {
+      currentRoteiro.days.push({
+        dayNumber: startIdx + i + 1,
+        date: '',
+        city: c.city || '',
+        title: c.city ? `Em ${c.city}` : `Dia ${startIdx + i + 1}`,
+        narrative: c.description || '',
+        overnightCity: c.city || '',
+        activities: [],
+        imageIds: [],
+        source: 'bank',   // marca origem
+        bankRefId: bankId,
+        bankRefTitle: doc.title || '',
+      });
+    });
+    rerenderCurrentSection();
+    markDirty();
+    closeFirstModal?.();
+    showToast(`+${cities.length} dia${cities.length > 1 ? 's' : ''} do banco "${doc.title || ''}".`, 'success');
+  } catch (e) {
+    showToast('Falha ao importar dias: ' + (e?.message || e), 'error');
+  }
+}
+
+/**
+ * v4.62.18 Fase C: modal IA — user escolhe escopo (gerar TODOS / próximo
+ * dia / completar lacunas). Mantém comportamento existente da geração full
+ * mas marca dias gerados com source='ai'.
+ */
+function _openDayAiScopeModal() {
+  const days = currentRoteiro.days || [];
+  const overlay = document.createElement('div');
+  overlay.className = 're-img-modal-overlay';
+  overlay.innerHTML = `
+    <div class="re-img-modal" style="max-width:560px;">
+      <div class="re-img-modal-header">
+        <div class="re-img-modal-title">🤖 Gerar dias por IA</div>
+        <button class="re-img-modal-close" type="button">&times;</button>
+      </div>
+      <div class="re-img-modal-body">
+        <p style="font-size:0.8125rem;color:var(--text-muted);margin:0 0 14px;">
+          Escolha o que a IA deve gerar. Combine com Banco e manual no mesmo roteiro.
+        </p>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <button class="btn btn-primary btn-sm" data-ai-scope="full"
+            style="text-align:left;padding:12px 14px;font-size:0.8125rem;">
+            <strong>Gerar roteiro inteiro</strong><br>
+            <span style="font-weight:400;opacity:0.85;">Substitui dias atuais. Usa briefing completo. ${days.length ? `⚠ ${days.length} dia${days.length>1?'s':''} existente${days.length>1?'s':''} ser${days.length>1?'ão':'á'} substituído${days.length>1?'s':''}.` : ''}</span>
+          </button>
+          <button class="btn btn-secondary btn-sm" data-ai-scope="append" ${days.length ? '' : 'disabled'}
+            style="text-align:left;padding:12px 14px;font-size:0.8125rem;${days.length ? '' : 'opacity:0.5;cursor:not-allowed;'}">
+            <strong>Adicionar próximo dia</strong><br>
+            <span style="font-weight:400;opacity:0.85;">IA sugere o dia ${days.length+1} baseado no anterior. Não substitui o que já existe.</span>
+          </button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+  overlay.querySelector('.re-img-modal-close').addEventListener('click', close);
+  overlay.querySelectorAll('[data-ai-scope]').forEach(btn =>
+    btn.addEventListener('click', () => {
+      const scope = btn.dataset.aiScope;
+      close();
+      if (scope === 'full') {
+        // Reusa fluxo existente
+        aiGenerateFullRoteiro().then(() => {
+          // Marca dias gerados como source='ai'
+          (currentRoteiro.days || []).forEach(d => { if (!d.source) d.source = 'ai'; });
+          markDirty();
+          rerenderCurrentSection();
+        });
+      } else if (scope === 'append') {
+        showToast('Geração de dia incremental ainda não disponível. Use "Gerar roteiro inteiro" por enquanto.', 'info');
+      }
+    }));
+}
+
 let _bankImagesCache = null;
 async function _ensureBankImages() {
   if (_bankImagesCache) return _bankImagesCache;
@@ -3279,11 +3484,23 @@ async function handleEditorClick(e) {
         date: newDate,
         city: '', title: '', narrative: '', overnightCity: '',
         activities: [], imageIds: [],
+        source: 'manual',   // v4.62.18 Fase C: marca origem
       });
       rerenderCurrentSection();
       markDirty();
       break;
     }
+
+    /* v4.62.18 Fase C: handlers dos 3 botões novos do header Dia a Dia. */
+    case 'dia-consult-bank':
+      currentRoteiro = collectFormData();
+      _openDayConsultBankModal();
+      break;
+
+    case 'dia-ai-modal':
+      currentRoteiro = collectFormData();
+      _openDayAiScopeModal();
+      break;
 
     case 'remove-day':
       currentRoteiro = collectFormData();
