@@ -175,8 +175,35 @@ export function showBankGuardModal({ bankName, clientName, module, contractNote,
   }
 
   document.getElementById('bg-cancel')?.addEventListener('click', () => close('cancel'));
-  document.getElementById('bg-force-link')?.addEventListener('click', () => {
-    if (!confirm(`Confirma geração de LINK WEB para ${bankName}?\nResponsabilidade contratual fica com você.`)) return;
+  document.getElementById('bg-force-link')?.addEventListener('click', async () => {
+    // v4.59.7 (CLAUDE.md §11.k): confirm() nativo → modal custom danger.
+    // Fluxo crítico contratual — reforço visual + texto explícito de
+    // responsabilidade legal antes de gerar link compartilhável.
+    try {
+      const { modal } = await import('../components/modal.js');
+      const ok = await modal.confirm({
+        title: '⚠ Confirma geração de LINK WEB?',
+        message: `
+          <div style="line-height:1.5;">
+            <p style="margin:0 0 10px;"><strong>Roteiro:</strong> ${bankName}</p>
+            <p style="margin:0 0 10px;">O LINK WEB do banco gera URL pública compartilhável com o cliente final.
+            Esse formato é destinado a roteiros <strong>cotados pra cliente</strong> (Gerador de Roteiros),
+            não a templates de curadoria.</p>
+            <p style="margin:0;color:var(--color-danger,#dc2626);font-weight:600;">
+              ⚠ Responsabilidade contratual sobre o conteúdo do link fica integralmente com você.
+              Confirme apenas se você é o consultor responsável por este cliente.
+            </p>
+          </div>
+        `,
+        confirmText: 'Sim, gerar link',
+        cancelText: 'Cancelar',
+        danger: true,
+      });
+      if (!ok) return;
+    } catch (err) {
+      // Fallback se modal.js falhar
+      if (!confirm(`Confirma geração de LINK WEB para ${bankName}?\nResponsabilidade contratual fica com você.`)) return;
+    }
     close('link');
   });
   document.getElementById('bg-pdf')?.addEventListener('click', () => close('pdf'));

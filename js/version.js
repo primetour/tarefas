@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 59,
-  patch: 6,
-  build: '20260526-banco-envisionraw-risks-polish',
+  patch: 7,
+  build: '20260526-banco-adapter-cleanup-clientguard-modal',
 };
 
 /** "1.2.0" */

@@ -520,15 +520,22 @@ function renderPayment() {
 }
 
 function cancelRowHTML(c, i) {
+  // v4.59.7 (auditoria §4): rótulo "Até X dias antes" era confuso — fromDays é o
+  // LIMITE SUPERIOR da faixa (ex: cancelar até 60d antes = multa Y%). Reformulado
+  // pra "Cancelando até [N] dias antes da viagem" + placeholder explicativo.
   return `
-    <div class="rb-cancel-row" data-cancel-idx="${i}" style="display:grid;grid-template-columns:1fr 1fr 2fr auto;gap:6px;align-items:end;">
-      <div><label class="form-label" style="font-size:0.7rem;">Até X dias antes</label>
-        <input class="form-input" type="number" min="0" data-cancel-bind="fromDays" data-cancel-idx="${i}" value="${c.fromDays||0}"></div>
+    <div class="rb-cancel-row" data-cancel-idx="${i}" style="display:grid;grid-template-columns:1.4fr 1fr 2fr auto;gap:6px;align-items:end;">
+      <div>
+        <label class="form-label" style="font-size:0.7rem;">Cancelando até N dias antes da viagem</label>
+        <input class="form-input" type="number" min="0" data-cancel-bind="fromDays" data-cancel-idx="${i}"
+          value="${c.fromDays||0}" placeholder="ex: 60"
+          title="Faixa: cancelamentos feitos até esse número de dias antes da partida pagam a multa abaixo. Ordene de maior pra menor (60d → 30d → 15d → 0d).">
+      </div>
       <div><label class="form-label" style="font-size:0.7rem;">Multa %</label>
         <input class="form-input" type="number" min="0" max="100" data-cancel-bind="multaPercent" data-cancel-idx="${i}" value="${c.multaPercent||0}"></div>
       <div><label class="form-label" style="font-size:0.7rem;">Notas</label>
-        <input class="form-input" data-cancel-bind="notes" data-cancel-idx="${i}" value="${esc(c.notes)}"></div>
-      <button class="btn btn-ghost btn-sm" data-action="remove-cancel" data-cancel-idx="${i}" style="color:#dc2626;">✕</button>
+        <input class="form-input" data-cancel-bind="notes" data-cancel-idx="${i}" value="${esc(c.notes)}" placeholder="Ex: penalidade do operador local"></div>
+      <button class="btn btn-ghost btn-sm" data-action="remove-cancel" data-cancel-idx="${i}" style="color:var(--color-danger,#dc2626);">✕</button>
     </div>
   `;
 }

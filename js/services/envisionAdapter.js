@@ -649,29 +649,28 @@ export function envisionItineraryToBank(envisionJson, opts = {}) {
     aiUsable:     true,
 
     // ─── Envision metadata ───
+    // v4.59.7: currency movido pra envision.currency (antes era _envisionCurrency
+    // com prefixo _, schema lixo no Firestore). Limpa em backfill futuro.
     envision: {
       id:                  it.Id,
       url:                 it.Url || null,
       loginInformationId:  it.LoginInformationId || null,
       supplierId:          it.SupplierId || null,
+      currency:            it.Currency || null,
       syncedAt:            new Date().toISOString(),
     },
 
     // ─── Envision RAW (HTML fallback — não renderizado por default) ───
     // v4.58.1: decodeEntities aplicado pra mostrar legível se UI renderizar como HTML.
+    // v4.59.7: imageUuids removido — desde v4.58.2 adapter constrói URL CDN
+    // (storage.googleapis.com/envision-ets-upload/{uuid}) em mapImages(). UUIDs
+    // ficam embutidos nas URLs em images.gallery, sem precisar de cópia separada.
     envisionRaw: {
       includes:           decodeEntities(g.Includes           || ''),
       generalInfo:        decodeEntities(g.GeneralInfo        || ''),
       cancellationPolicy: decodeEntities(g.CancellationPolicy || ''),
       formOfPayment:      decodeEntities(g.FormOfPayment      || ''),
-      // UUIDs originais Envision (filename.png) pra Fase 2 mirror R2.
-      // Hoje sem URL CDN conhecida → ficam só como referência.
-      imageUuids:         (it.Images || []).map(img => img.UrlImage).filter(Boolean),
     },
-
-    // Currency top-level (Envision tem 1 só) — adicionado pra debug
-    // (não é campo padrão do schema bank, mas guardamos)
-    _envisionCurrency: it.Currency || null,
 
     // Auditoria — preenchido por saveRoteiroBank()
     createdAt: null, createdBy: '',

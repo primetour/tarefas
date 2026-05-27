@@ -6,6 +6,37 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.59.7+20260526-banco-adapter-cleanup-clientguard-modal] — 2026-05-26
+
+Release **PATCH/CLEANUP** — fecha 3 itens não-bloqueantes pendentes da auditoria.
+
+**Schema cleanup** (`js/services/envisionAdapter.js` + `functions/cleanup-bank-envision-schema.cjs`):
+
+- `_envisionCurrency` (campo top-level com prefixo `_` — debug que vazou pra prod) **deletado**. Currency migrado pra `envision.currency` (campo canônico). 236/236 docs migrados via Admin SDK.
+- `envisionRaw.imageUuids` redundante removido. Desde v4.58.2 adapter constrói URL CDN completa (`storage.googleapis.com/envision-ets-upload/{uuid}`) em `mapImages()`; UUIDs ficam embutidos nas URLs de `images.gallery`, sem duplicação.
+- Backfill idempotente com dry-run+apply (padrão CLAUDE.md §14.e).
+
+**UX `bankClientGuard.js`** (CLAUDE.md §11.k — último `confirm()` nativo do módulo):
+
+- `confirm()` nativo → `modal.confirm` custom `danger:true`.
+- Modal explica:
+  - Roteiro afetado (bankName destacado)
+  - Por que link web é destinado a Gerador (cotação), não a curadoria
+  - Responsabilidade contratual em vermelho/bold
+- Fallback `confirm()` mantido se `modal.js` falhar (defensivo).
+
+**Polish — `cancelRowHTML` rótulo "fromDays"** (auditoria §4):
+
+- Antes: "Até X dias antes" (confuso — `fromDays` é o limite SUPERIOR da faixa).
+- Agora: "Cancelando até N dias antes da viagem" + `title=` explicativo: "Faixa: cancelamentos feitos até esse número de dias antes da partida pagam a multa abaixo. Ordene de maior pra menor (60d → 30d → 15d → 0d)."
+- Placeholder `ex: 60` no input. Notas com placeholder `Ex: penalidade do operador local`.
+- Botão X → `var(--color-danger)` (substitui hex `#dc2626`).
+
+**Items REALMENTE pendentes** (apenas 1):
+- Editor section Imagens com upload + gallery picker + overrides per-city (feature nova, v4.59.8 separado).
+
+---
+
 ## [4.59.6+20260526-banco-envisionraw-risks-polish] — 2026-05-26
 
 Release **PATCH/FEATURE+FIX** — fecha 3 buckets restantes da auditoria Banco em uma única release.
