@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 62,
-  patch: 7,
-  build: '20260527-destinations-hastip-real-lookup-portal-tips',
+  patch: 8,
+  build: '20260527-images-upload-bug-destino-descartado-hotel',
 };
 
 /** "1.2.0" */

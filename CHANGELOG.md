@@ -6,6 +6,106 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.62.8+20260527-images-upload-bug-destino-descartado-hotel] — 2026-05-27
+
+Release **BUGFIX CRÍTICO** — upload em lote descartava destino de hotéis.
+
+**Pedido Renê**: *"upload de fotos de hotéis: usuário relata que coloca destino
+para aplicação em lote nas fotos, o sistema faz o upload pro server, mas não
+exibe os destinos na lista de fotos que foram uploaded. verifique isso"*.
+
+### Diagnóstico via Admin SDK
+
+```
+Inspect últimas 20 portal_images:
+  17 fotos hotel (Plaza Atheneé Paris + Acqualina) → continent="" country="" city=""
+   3 fotos location (Patagônia Chilena)             → preenchidos corretamente
+```
+
+User preencheu o destino no form ("Aplicar a todas"), upload concluiu, MAS
+17 das 20 fotos ficaram com strings de localização VAZIAS no Firestore.
+
+### Causa raiz
+
+`js/pages/portalImages.js:814-816` (introduzido em v4.35.31):
+
+```js
+const continent = requiresLoc ? (form.value || defContinent) : '';
+const country   = requiresLoc ? (form.value || defCountry)   : '';
+const city      = requiresLoc ? (form.value || defCity)      : '';
+```
+
+O ternário **forçava string vazia** quando `categoryCfg.requiresLocation: false`
+(categorias `hotel`, `restaurant`, `train`, `cruise`, `logo`).
+
+Problema: 3 dessas categorias (`hotel`, `restaurant`, `train`) têm
+`showLocation: 'full'` — o **form EXIBE** os campos pro user preencher.
+Mas o save **descartava silenciosamente** o que ele digitou.
+
+`requiresLocation` foi pensado como "obrigatório?", mas virou "persiste?"
+no save — confundindo obrigatoriedade com presença.
+
+### Fix em `js/pages/portalImages.js`
+
+Usa o helper `_locDisplayFor()` (que já existia) pra decidir persistência
+baseado em `showLocation` (`'full' | 'continent' | 'none'`):
+
+```js
+const showLoc   = _locDisplayFor(assetCategory);
+const continent = (showLoc !== 'none') ? (...) : '';
+const country   = (showLoc === 'full') ? (...) : '';
+const city      = (showLoc === 'full') ? (...) : '';
+```
+
+Comportamento por categoria:
+
+| Categoria | showLocation | Form | Save (antes) | Save (agora) |
+|---|---|---|---|---|
+| `location` | full | exibe | persiste | persiste |
+| `hotel` | full | exibe | **descarta** | persiste |
+| `restaurant` | full | exibe | **descarta** | persiste |
+| `train` | full | exibe | **descarta** | persiste |
+| `cruise` | none | esconde | descarta | descarta |
+| `logo` | none | esconde | descarta | descarta |
+
+`requiresLoc` continua mediando só a **validação obrigatória** (linha 837):
+hotel/restaurant aceitam vazio, location bloqueia upload sem cont+país.
+
+### Backfill retroativo (`functions/backfill-hotel-photos-location.cjs`)
+
+Aplicado em produção 2026-05-27 — 17 fotos corrigidas:
+
+```
+Plaza Atheneé Paris 1-10  → Europa / França / Paris
+Acqualina 1-7             → América do Norte / Estados Unidos / Miami
+```
+
+Nomes alinhados ao SSOT `portal_destinations` (já tinha "Paris" e "Miami" como
+canônicos). Acqualina fica em Sunny Isles Beach (Miami-Dade County) — usei
+Miami pra bater com SSOT existente. Se quiser granularidade Sunny Isles, basta
+criar destination dedicado em Destinos e re-editar as 7 fotos.
+
+Script é idempotente (skipa docs já com loc preenchida) — pode rodar de novo
+se aparecerem mais casos do bug pré-fix.
+
+### Lição CLAUDE.md §11.f + §6 (auditoria contextual)
+
+`requiresLoc` era usado pra 2 coisas DIFERENTES (UI display + save), criando
+acoplamento implícito que quebrou silenciosamente quando categoria nova teve
+`requiresLocation:false + showLocation:'full'`. Lição: separar "exibir campo"
+de "persistir valor" — usar helpers dedicados pra cada concern.
+
+### Arquivos tocados
+
+- `js/pages/portalImages.js`: ternário requiresLoc → showLoc helper
+- `js/version.js`: 4.62.7 → 4.62.8
+- `index.html`: cache-bust
+- `functions/backfill-hotel-photos-location.cjs`: script Admin SDK (rodado)
+- `functions/inspect-recent-uploads.cjs`: diagnóstico (rodado)
+- `CHANGELOG.md`: este bloco
+
+---
+
 ## [4.62.7+20260527-destinations-hastip-real-lookup-portal-tips] — 2026-05-27
 
 Release **BUGFIX CRÍTICO** — tabela de Destinos não estava lendo `portal_tips`.

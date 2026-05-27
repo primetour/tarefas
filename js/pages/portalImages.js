@@ -810,10 +810,18 @@ async function uploadBatch() {
     const assetCategory = row.querySelector(`input[name="row-asset-category-${id}"]:checked`)?.value || defCategory;
     const categoryCfg   = ASSET_CATEGORIES.find(c => c.key === assetCategory) || ASSET_CATEGORIES[0];
     const requiresLoc   = categoryCfg.requiresLocation;
-
-    const continent = requiresLoc ? (row.querySelector(`.batch-continent[data-id="${id}"]`)?.value || defContinent) : '';
-    const country   = requiresLoc ? (row.querySelector(`.batch-country[data-id="${id}"]`)?.value   || defCountry) : '';
-    const city      = requiresLoc ? (row.querySelector(`.batch-city[data-id="${id}"]`)?.value      || defCity) : '';
+    // v4.62.8 BUG FIX: o ternário "requiresLoc ? ... : ''" descartava
+    // silenciosamente continent/country/city que o user PREENCHEU pra
+    // categorias com requiresLocation:false (hotel, restaurant, train).
+    // Essas categorias têm showLocation:'full' = exibem os campos pro user,
+    // mas o save zerava tudo. Resultado: 17 fotos Plaza Atheneé + Acqualina
+    // salvas sem destino em prod (2026-05-27).
+    // Fix: usa _locDisplayFor — se categoria NÃO esconde ('none'), persiste.
+    // requiresLoc segue mediando só validação obrigatória (linha abaixo).
+    const showLoc   = _locDisplayFor(assetCategory);            // 'full' | 'continent' | 'none'
+    const continent = (showLoc !== 'none') ? (row.querySelector(`.batch-continent[data-id="${id}"]`)?.value || defContinent) : '';
+    const country   = (showLoc === 'full') ? (row.querySelector(`.batch-country[data-id="${id}"]`)?.value   || defCountry)   : '';
+    const city      = (showLoc === 'full') ? (row.querySelector(`.batch-city[data-id="${id}"]`)?.value      || defCity)      : '';
     // 4.40.5+ Tipo fixo em 'galeria' (campo removido do form — definido no
     // momento de uso em /dicas ou /roteiros conforme a função da foto)
     const type      = defType;
