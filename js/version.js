@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 62,
-  patch: 28,
-  build: '20260527-editor-air-fare-parser-gds-pricing',
+  patch: 29,
+  build: '20260527-editor-air-gds-unified-modal',
 };
 
 /** "1.2.0" */

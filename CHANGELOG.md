@@ -6,6 +6,48 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.62.29+20260527-editor-air-gds-unified-modal] — 2026-05-27
+
+Release **EDITOR — UNIFICAR CODIFICAR DO GDS** — pedido do Renê pós-v4.62.28:
+
+> *"junte o codificar a tarifa e o preço em um único botao, pro usuario
+> mandar o texto todo de uma vez e ter as informações... se ele mandar só
+> a tarifa ou só o preço vc aceita também e entrega o que tiver disponível"*
+
+**Antes (v4.62.26-28)**: 2 botões separados no header dos voos —
+`✈ Codificar tarifa GDS` (PNR voos) + `💵 Codificar preços` (pricing display).
+User precisava escolher qual abrir, fazer paste, fechar, abrir o outro, paste
+de novo. Friction desnecessária.
+
+**Agora (v4.62.29)**: 1 botão único `✈ Codificar do GDS` que abre modal
+unificado:
+- **1 textarea** (10 rows) aceita itinerário + tarifa juntos OU separados
+- Roda os 2 parsers em paralelo on input debounced 250ms:
+  - `parsePNR(text)` → trechos
+  - `parseAirFareGds(text)` → pricing (base/taxas/total/breakdown/paxType)
+- **Preview dual** (cada bloco renderiza só se o parser detectou algo):
+  - `✈ Trechos identificados (N)` — tabela com cia/origem/destino/horários
+  - `💵 Tarifa decodificada [paxType]` — luxury gold + chips breakdown
+- **Cenários cobertos**:
+  - Só PNR → insere voos (preço fica em branco)
+  - Só tarifa → mostra radios de aplicação (distribute/single/metadata)
+  - Os dois → insere voos PRIMEIRO + radios incluem os recém-inseridos
+    no dropdown "voo único" e contagem do "distribuir"
+  - Nada detectado → erro contextual ("Verifique se contém trechos GDS
+    OU display de pricing")
+- **Toast resumo** combina: `Importado: +2 voos + tarifa US$ 6.373,20.`
+- Se tarifa importada tem currency, voos novos herdam currency dela
+  (em vez de default BRL).
+
+**Removido**: `_openFareDecodeModal` (substituído). `_openPnrDecodeModal`
+mantido como stub `→ _openAirGdsModal()` por defesa contra callers legados.
+
+**Princípio aplicado** (CLAUDE.md §11.c): cada ação canônica = 1 caminho.
+Botões duplicados pra mesma operação confundem. 1 botão + parser tolerante
+= UX consistente independente do que o user colou.
+
+---
+
 ## [4.62.28+20260527-editor-air-fare-parser-gds-pricing] — 2026-05-27
 
 Release **EDITOR — PARSER TARIFA AÉREA GDS** — segunda metade do pedido do
