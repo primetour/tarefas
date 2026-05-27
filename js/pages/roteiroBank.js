@@ -253,7 +253,7 @@ export async function renderRoteiroBank(container) {
         } : {}),
       })}
       ${renderFilterBar({
-        search: { value: state.filter.search, placeholder: 'Buscar por título, cidade, país ou tag…' },
+        search: { id: 'rb-search', value: state.filter.search, placeholder: 'Buscar por título, cidade, país ou tag…' },
         statusPills: [
           { value: '',         label: 'Todos' },
           { value: 'approved', label: 'Publicados' },
@@ -452,8 +452,10 @@ export async function renderRoteiroBank(container) {
   }, { signal });
 
   // Filtros
+  // v4.59.4: bug crítico Renê — handler procurava input[name=search]/[type=search]
+  // mas uiKit gera <input type="text" id="rb-search">. Match com id explícito.
   container.addEventListener('input', (e) => {
-    if (e.target.matches('input[name="search"], input[type="search"]')) {
+    if (e.target.id === 'rb-search') {
       state.filter.search = e.target.value || '';
       const wrap = container.querySelector('#rb-list-wrap');
       if (wrap) wrap.innerHTML = gridHTML();
@@ -481,12 +483,15 @@ export async function renderRoteiroBank(container) {
     }
   }, { signal });
   // Status pills
+  // v4.59.4: bug crítico Renê — handler procurava [data-status-value], mas
+  // uiKit gera classe .uikit-status-pill com data-filter-status. Replicado do
+  // pattern correto em roteiros.js:800-802.
   container.addEventListener('click', (e) => {
-    const pill = e.target.closest('[data-status-value]');
+    const pill = e.target.closest('.uikit-status-pill');
     if (!pill) return;
-    state.filter.status = pill.dataset.statusValue || '';
-    container.querySelectorAll('[data-status-value]').forEach(p => {
-      p.classList.toggle('active', (p.dataset.statusValue || '') === state.filter.status);
+    state.filter.status = pill.dataset.filterStatus || '';
+    container.querySelectorAll('.uikit-status-pill').forEach(p => {
+      p.classList.toggle('active', (p.dataset.filterStatus || '') === state.filter.status);
     });
     const wrap = container.querySelector('#rb-list-wrap');
     if (wrap) wrap.innerHTML = gridHTML();

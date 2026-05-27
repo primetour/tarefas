@@ -6,6 +6,31 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.59.4+20260526-banco-fix-search-status-handlers] — 2026-05-26
+
+Release **HOTFIX** — bugs CRÍTICOS reportados por Renê: pesquisa por palavra + filtro por status pills nunca disparavam no Banco de Roteiros.
+
+**Causa raiz** (drift uiKit vs caller, escapou da auditoria):
+
+| Componente | uiKit gera | roteiroBank.js procurava | Bate? |
+|---|---|---|---|
+| Search input | `<input type="text" id="uikit-search">` | `input[name="search"], input[type="search"]` | ❌ |
+| Status pill | `<button class="uikit-status-pill" data-filter-status="...">` | `[data-status-value]` + `dataset.statusValue` | ❌ |
+
+Page-sibling (`js/pages/roteiros.js`) usava o seletor correto desde sempre. Banco foi escrito com seletores inventados que nunca casaram. Bug passou despercebido porque sintoma é silencioso (filtros aparentes funcionam, só não filtram).
+
+**Fix** (`js/pages/roteiroBank.js`):
+
+- Search: passa `id: 'rb-search'` no `renderFilterBar` + handler `e.target.id === 'rb-search'` (mesmo pattern de `rt-search` em roteiros.js).
+- Status pill: handler `e.target.closest('.uikit-status-pill')` + `pill.dataset.filterStatus`.
+- Auditoria global: `grep "data-status-value"` confirmou que só `roteiroBank.js` tinha esse bug (outras pages usam o seletor correto).
+
+**Risco zero**: fix puro de seletor, sem mudança de lógica.
+
+**Lição**: drift entre componente reusável (`uiKit`) e caller é silencioso quando handler simplesmente "não dispara" (não joga erro). E2E de filtros precisa **validar comportamento**, não apenas "input existe + classe está lá". Adicionado em CLAUDE.md §14.k.
+
+---
+
 ## [4.59.3+20260526-banco-confirm-modal-saveindicator-dynamic] — 2026-05-26
 
 Release **PATCH/FIX** — anti-padrões CLAUDE.md §11.k (`confirm()` nativo) + §11.b (indicador "Salvando" estático) atacados no módulo Banco.

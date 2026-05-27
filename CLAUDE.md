@@ -1512,3 +1512,47 @@ Quando Renê manda múltiplas demandas + sai ("vai... mas testa tudo"), prioriza
 6. **Validar via curl** quando MCP cache stubborn — não bloquear sprint inteira esperando MCP.
 
 Resultado em ~1 sessão: 2 releases (v4.59.0 + v4.59.1), 1 auditoria completa, 1 doc operacional, 2 dev_hours entries, sem quebra cross-module.
+
+### k) ⚠ ARMADILHA: drift uiKit vs caller — handler nunca dispara (escape silencioso)
+
+**Descoberto v4.59.4** após Renê reportar: "pesquisa por palavra não funciona no banco de roteiros, filtro por status também não".
+
+**Bug**:
+- uiKit `renderFilterBar` gera: `<input type="text" id="uikit-search">` + `<button class="uikit-status-pill" data-filter-status="approved">`
+- roteiroBank.js handlers procuravam: `input[name="search"], input[type="search"]` + `[data-status-value]`
+- Nenhum dos seletores casava. Handler NUNCA disparava. Filtros visualmente presentes mas inertes.
+
+**Por que escapou da auditoria do agente** (sprint v4.59.0): agente verificou que filtros EXISTEM, classes presentes, applyFilters tem lógica certa. Não testou COMPORTAMENTO ("digito X e a lista filtra?"). Confirmou estática (existência de DOM), não dinâmica (handler dispara).
+
+**Lição structural**: drift entre componente reusável (uiKit) e caller é **silencioso quando handler simplesmente "não dispara"** (não joga erro). E2E de filtros precisa **validar comportamento ponta-a-ponta**:
+
+1. ❌ "Input existe + classe correta" (estática)
+2. ❌ "Handler está bound" (estática)
+3. ✅ "Digito X → lista vai de N → M itens" (dinâmica)
+4. ✅ "Clico pill 'Publicados' → conta no filtro batem com `where status==approved`" (dinâmica)
+
+**Padrão correto** estabelecido em roteiros.js (sibling do banco):
+```js
+// Search via id customizado
+search: { id: 'rt-search', value: searchTerm, placeholder: '...' }
+container.addEventListener('input', e => {
+  if (e.target.id === 'rt-search') { /* ... */ }
+});
+
+// Status pills via classe + dataset.filterStatus
+container.addEventListener('click', e => {
+  const pill = e.target.closest('.uikit-status-pill');
+  if (pill) activeStatus = pill.dataset.filterStatus || '';
+});
+```
+
+**Auditoria global preventiva**: `grep -rn "data-status-value\|name=\"search\"\]" js/pages/` confirma se mais alguma page tem o mesmo drift. v4.59.4 mostrou: só roteiroBank.js — outras pages usam o padrão correto.
+
+**Princípio mestre**: quando um componente reusável muda atributos (ex: uiKit migrou `data-status-value` → `data-filter-status` em versão antiga), todos os callers DEVEM seguir. Falha = handler inerte. Solução de fundo: uiKit poderia exportar **constantes/selectors** que callers importam:
+```js
+export const SELECTORS = {
+  STATUS_PILL: '.uikit-status-pill',
+  STATUS_DATA: 'filterStatus',
+};
+```
+Caller usa `SELECTORS.STATUS_PILL` — se uiKit mudar, callers atualizam automaticamente. **TODO**: refactor futuro do uiKit pra exportar contratos.

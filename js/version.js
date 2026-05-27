@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 59,
-  patch: 3,
-  build: '20260526-banco-confirm-modal-saveindicator-dynamic',
+  patch: 4,
+  build: '20260526-banco-fix-search-status-handlers',
 };
 
 /** "1.2.0" */
