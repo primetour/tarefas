@@ -6,6 +6,46 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.62.3+20260527-destinations-pending-source-badge-sort-recent] — 2026-05-27
+
+Release **UX/CLAREZA** — destinos pendentes ficavam confusos pra distinguir origem.
+
+**Pergunta Renê**: *"fiz várias correções em destinos sem geo, mas percebi que não espelhou para destinos pendentes. pode verificar? a fonte de informação é única (destinos)"*.
+
+**Diagnóstico real** (medido via Admin SDK):
+- 374 destinations totais
+- 178 pending (84 do bolsão `envision-auto`, 90 do populate inicial `banco-auto`, 4 outros)
+- Os 84 novos do bolsão **ESTAVAM lá**, mas misturados com 90 do populate sem distinção visual
+- Renê não conseguia ver "o que acabou de criar" porque sort era alfabético, sem origem mostrada
+
+**Fonte ÚNICA confirmada**: tudo está em `portal_destinations`. Não há duplicação. Bug era de **visibilidade**, não de dados.
+
+**Fix em 3 frentes** (`js/pages/portalDestinations.js`):
+
+### 1. Badge de origem na linha
+
+Ao lado do `⏳ Pendente` agora aparece pill com:
+- `🌍 Bolsão` (envision-auto) — criado via "Corrigir geo" no Banco
+- `📦 Banco` (banco-auto) — populate inicial v4.60.0
+- `Manual` — sem badge especial (default)
+
+Cor + tooltip explicativo distintos. Aparece em TODA linha (pendente ou aprovada), pra rastreabilidade contínua.
+
+### 2. Sort por `createdAt` DESC quando pill Pendentes ativo
+
+Ao filtrar `Pendentes`, lista vem ordenada do **mais recente pro mais antigo**. Os destinos que master acabou de criar via bolsão aparecem no TOPO. Não precisa rolar 178 itens pra achar.
+
+### 3. Breakdown numérico no contador
+
+Antes: `178 destinos`
+Agora: `178 destinos · 84 bolsão 🌍 · 90 banco 📦 · 4 manual`
+
+Master vê de relance "minha triagem gerou 84 pending hoje".
+
+**Pra ver**: `#portal-destinations` → pill **Pendentes** → topo da lista tem destinos com badge `🌍 Bolsão` (recém-criados via Corrigir geo). Banner mostra breakdown.
+
+---
+
 ## [4.62.2+20260527-destinations-linked-roteiros-button-modal] — 2026-05-27
 
 Release **FEATURE/UX** — botão "📋 Roteiro" em destinos (cross-module reverso) + validação E2E de edit não-destrutivo.

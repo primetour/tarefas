@@ -335,9 +335,34 @@ function renderTable() {
     );
   }
 
-  if (count) count.textContent = `${rows.length} destino${rows.length !== 1 ? 's' : ''}${
-    (filterSearch||filterCont||filterCoun||filterTip!=='all') ? ' (filtrado)' : ''
-  }`;
+  // v4.62.3: quando filtrando Pendentes, sort por createdAt DESC (mais recentes
+  // primeiro — o que o user acabou de criar via bolsão aparece no topo).
+  if (filterReview === 'pending') {
+    rows = rows.slice().sort((a, b) => {
+      const aMs = a.createdAt?.toMillis?.() || 0;
+      const bMs = b.createdAt?.toMillis?.() || 0;
+      return bMs - aMs;
+    });
+  }
+
+  if (count) {
+    // v4.62.3: breakdown por origem quando pending tab ativo
+    let extraInfo = '';
+    if (filterReview === 'pending' && rows.length) {
+      const bySource = rows.reduce((acc, d) => {
+        acc[d.source || 'manual'] = (acc[d.source || 'manual'] || 0) + 1;
+        return acc;
+      }, {});
+      const parts = [];
+      if (bySource['envision-auto']) parts.push(`${bySource['envision-auto']} bolsão 🌍`);
+      if (bySource['banco-auto'])    parts.push(`${bySource['banco-auto']} banco 📦`);
+      if (bySource.manual)           parts.push(`${bySource.manual} manual`);
+      if (parts.length) extraInfo = ` · ${parts.join(' · ')}`;
+    }
+    count.textContent = `${rows.length} destino${rows.length !== 1 ? 's' : ''}${
+      (filterSearch||filterCont||filterCoun||filterTip!=='all') ? ' (filtrado)' : ''
+    }${extraInfo}`;
+  }
 
   if (!rows.length) {
     tbody.innerHTML = `<tr><td colspan="5" style="padding:48px;text-align:center;color:var(--text-muted);">
@@ -348,7 +373,16 @@ function renderTable() {
 
   tbody.innerHTML = rows.map(d => {
     const isPending = (d.reviewStatus || 'approved') === 'pending';
-    const isAutoBank = d.source === 'banco-auto';
+    // v4.62.3: origem do destino — distingue manual/banco-auto/envision-auto
+    // Manual: criado pelo curador. Banco-auto: populate inicial v4.60.0.
+    // Envision-auto (do bolsão): triado via modal Corrigir geo no Banco.
+    const source = d.source || 'manual';
+    const SOURCE_BADGES = {
+      'manual':        { icon: '',       label: 'Manual',  color: 'var(--text-muted)' },
+      'banco-auto':    { icon: '📦',     label: 'Banco',   color: 'var(--brand-blue,#3B82F6)' },
+      'envision-auto': { icon: '🌍',     label: 'Bolsão',  color: 'var(--color-warn-text,#92400e)' },
+    };
+    const srcBadge = SOURCE_BADGES[source] || SOURCE_BADGES['manual'];
     return `
     <tr style="border-bottom:1px solid var(--border-subtle);transition:background .1s;background:${isPending?'rgba(245,158,11,0.05)':''};"
       onmouseover="this.style.background='${isPending?'rgba(245,158,11,0.10)':'var(--bg-surface)'}'"
@@ -360,8 +394,12 @@ function renderTable() {
         ${isPending ? `<span style="display:inline-block;margin-left:6px;font-size:0.65rem;padding:1px 6px;
           background:var(--badge-warn-bg,rgba(245,158,11,0.16));color:var(--color-warn-text,#92400e);
           border-radius:999px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;"
-          title="${isAutoBank ? `Auto-criada do banco de roteiros (${d.refCount || 0} ref${(d.refCount||0)!==1?'s':''}). Revisar antes de aprovar.` : 'Aguardando revisão master.'}">
-          ⏳ Pendente${isAutoBank ? ' (banco)' : ''}
+          title="Aguardando revisão master.">⏳ Pendente</span>` : ''}
+        ${srcBadge.icon ? `<span style="display:inline-block;margin-left:4px;font-size:0.65rem;padding:1px 6px;
+          background:transparent;color:${srcBadge.color};border:1px solid ${srcBadge.color};
+          border-radius:999px;font-weight:600;letter-spacing:.02em;"
+          title="${source === 'envision-auto' ? 'Criado via bolsão de triagem geo (Corrigir geo no Banco de Roteiros)' : source === 'banco-auto' ? 'Auto-criado pelo populate inicial v4.60.0 (cidades do banco sem destino canônico)' : 'Criado manualmente'}">
+          ${srcBadge.icon} ${esc(srcBadge.label)}
         </span>` : ''}
       </td>
       <td style="padding:10px 16px;">

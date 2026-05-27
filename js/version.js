@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 62,
-  patch: 2,
-  build: '20260527-destinations-linked-roteiros-button-modal',
+  patch: 3,
+  build: '20260527-destinations-pending-source-badge-sort-recent',
 };
 
 /** "1.2.0" */
