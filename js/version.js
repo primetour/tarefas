@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 59,
-  patch: 1,
-  build: '20260526-banco-audit-fixes-envision-help',
+  patch: 2,
+  build: '20260526-banco-conflict-detection-editor',
 };
 
 /** "1.2.0" */

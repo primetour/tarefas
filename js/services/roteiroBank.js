@@ -407,8 +407,32 @@ export async function fetchRoteiroBank(id) {
   return migrateRoteiroBank({ id: snap.id, ...snap.data() });
 }
 
-export async function saveRoteiroBank(id, data) {
+export async function saveRoteiroBank(id, data, opts = {}) {
   if (!canWrite()) throw new Error('Permissão negada pra editar Banco de Roteiros.');
+
+  // v4.59.2 (CLAUDE.md §13.c) — conflict detection multi-aba/multi-user.
+  // opts.expectedUpdatedAt = timestamp do snapshot que o editor abriu.
+  // Se outro user salvou DEPOIS, recusa pra não sobrescrever silenciosamente.
+  // Tolerância de 1s pra timestamp drift do server.
+  if (id && opts.expectedUpdatedAt) {
+    const existingSnap = await getDoc(doc(db, COL_BANK, id));
+    if (existingSnap.exists()) {
+      const existing = existingSnap.data();
+      if (existing?.updatedAt?.toMillis) {
+        const serverMs   = existing.updatedAt.toMillis();
+        const expectedMs = typeof opts.expectedUpdatedAt === 'number'
+          ? opts.expectedUpdatedAt
+          : (opts.expectedUpdatedAt?.toMillis?.() || 0);
+        if (expectedMs && serverMs > expectedMs + 1000) {
+          const err = new Error('Roteiro modificado por outro usuário. Recarregue antes de salvar.');
+          err.code = 'CONFLICT';
+          err.serverUpdatedAt = serverMs;
+          err.expectedUpdatedAt = expectedMs;
+          throw err;
+        }
+      }
+    }
+  }
 
   // Auto-fill: slug + code se vazios
   const slug = data.slug || slugify(data.title || 'roteiro');

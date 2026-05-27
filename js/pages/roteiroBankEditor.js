@@ -71,7 +71,10 @@ async function autosave() {
   const ind = document.getElementById('rb-save-indicator');
   if (ind) ind.textContent = 'Salvando…';
   try {
-    const id = await saveRoteiroBank(state.id, state.doc);
+    // v4.59.2 (CLAUDE.md §13.c) — passa expectedUpdatedAt pra conflict detection.
+    const id = await saveRoteiroBank(state.id, state.doc, {
+      expectedUpdatedAt: state._loadedAt,
+    });
     if (!state.id) {
       state.id = id;
       // Atualiza URL pra refletir o id
@@ -79,6 +82,8 @@ async function autosave() {
       history.replaceState(null, '', newHash);
     }
     state.dirty = false;
+    // Atualiza loadedAt pós save OK — próximo save vai usar este timestamp.
+    state._loadedAt = Date.now();
     if (ind) ind.textContent = `Salvo ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
     // v4.57.52 task #60: dispara sync inline com portal_destinations.
     // UI promete em linha 184 ("cidades novas viram destinos auto-criados
@@ -86,6 +91,16 @@ async function autosave() {
     // Não bloqueia auto-save: roda em background, toast só quando algo mudou.
     _syncDestinationsBackground();
   } catch (e) {
+    // v4.59.2 — CONFLICT (outro user salvou no meio do auto-save).
+    // Silent pra auto-save: NÃO mostra modal disruptivo. Marca indicador,
+    // mantém dirty=true pra próxima tentativa. Save manual mostra modal.
+    if (e?.code === 'CONFLICT') {
+      console.warn('[roteiroBankEditor] auto-save CONFLICT — pausando até user agir');
+      if (ind) ind.innerHTML = '<span style="color:var(--color-danger,#dc2626);">⚠ Outro usuário modificou — recarregue</span>';
+      // Pausa próximos auto-saves até user resolver
+      state.saving = false;
+      return;
+    }
     console.error('[roteiroBankEditor] autosave falhou:', e);
     if (ind) ind.textContent = '⚠ Falha ao salvar';
     toast.error('Auto-save falhou: ' + (e.message || e));
@@ -576,8 +591,12 @@ export async function renderRoteiroBankEditor(container) {
   if (state.id) {
     try {
       const d = await fetchRoteiroBank(state.id);
-      if (d) state.doc = d;
-      else { toast.warning('Roteiro não encontrado — abrindo novo.'); state.id = null; }
+      if (d) {
+        state.doc = d;
+        // v4.59.2 (CLAUDE.md §13.c) — captura timestamp do snapshot pra
+        // conflict detection multi-aba/multi-user em saves subsequentes.
+        state._loadedAt = d.updatedAt?.toMillis?.() ?? Date.now();
+      } else { toast.warning('Roteiro não encontrado — abrindo novo.'); state.id = null; }
     } catch (e) {
       console.error(e); toast.error('Falha ao carregar: ' + e.message);
     }

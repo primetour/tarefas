@@ -6,6 +6,33 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.59.2+20260526-banco-conflict-detection-editor] — 2026-05-26
+
+Release **PATCH/FIX** — CRÍTICO #3 da auditoria Banco: conflict detection multi-aba/multi-user no editor (auto-save).
+
+**Bug atacado**: editor de roteiros do banco usava last-write-wins silencioso. Dois usuários (ou duas abas) editando o mesmo doc resultava em perda de edits sem alerta. CLAUDE.md §13.c já tinha pattern estabelecido em `roteiros` (R5 v4.57.36) e `portal_tips` (PD5 v4.57.40) mas não tinha sido aplicado ao Banco.
+
+**Implementação** (`js/services/roteiroBank.js` + `js/pages/roteiroBankEditor.js`):
+
+- `saveRoteiroBank(id, data, opts)`: novo param `opts.expectedUpdatedAt`. Se passado, lê doc atual ANTES do save; se `serverUpdatedAt > expectedUpdatedAt + 1s` (tolerância drift), throw `Error.code='CONFLICT'` com `serverUpdatedAt`/`expectedUpdatedAt` no payload.
+- Editor: ao carregar doc, captura `state._loadedAt = doc.updatedAt?.toMillis?.() ?? Date.now()`.
+- `autosave()` passa `expectedUpdatedAt: state._loadedAt`. Pós save OK atualiza `_loadedAt = Date.now()` pra próximo round.
+- Auto-save em CONFLICT: SILENCIOSO (sem modal disruptivo). Indicador vira `⚠ Outro usuário modificou — recarregue` em vermelho. Pausa próximos auto-saves até user agir.
+- Save manual (futuro): será disruptivo com modal confirmando recarregar.
+
+**Por que tolerância 1s**: serverTimestamp + leitura podem ter drift de até ~1s entre escrita e leitura subsequente do mesmo client. Sem tolerância, falsos positivos.
+
+**Risco zero**: backward compat. Quem chamar `saveRoteiroBank(id, data)` sem `opts` continua funcionando (sem detection).
+
+**Próximos da auditoria** (v4.59.3+):
+- CRÍTICO #4: paginação cursor-based real (limit 500 atualmente)
+- Médio: `confirm()` nativos → `modal.confirm` custom (4 spots)
+- Médio: editor mostra `envisionRaw` + `services[]` (curador ver dado fantasma)
+- Médio: indicador "Salvando" com timer dinâmico
+- Polish: hex hardcoded → CSS vars, ícones emoji → SVG inline
+
+---
+
 ## [4.59.1+20260526-banco-audit-fixes-envision-help] — 2026-05-26
 
 Release **PATCH/FIX** — primeira rodada de fixes da auditoria Banco de Roteiros (CRÍTICO #1 #2 #5 + médios) + doc Envision sync.
