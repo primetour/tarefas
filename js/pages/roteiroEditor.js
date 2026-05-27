@@ -3568,6 +3568,30 @@ async function handleEditorClick(e) {
       _openDayAiScopeModal();
       break;
 
+    /* v4.62.20 Fase E: handlers do wizard de entrada (cotação nova em branco). */
+    case 'wizard-dismiss':
+      document.getElementById('re-wizard-entry')?.remove();
+      break;
+
+    case 'wizard-blank':
+      document.getElementById('re-wizard-entry')?.remove();
+      showToast('Pronto — preencha as seções na ordem que preferir.', 'info');
+      break;
+
+    case 'wizard-bank':
+      document.getElementById('re-wizard-entry')?.remove();
+      // Navega pra aba Dia a dia (índice 1) e abre o modal Consultar Banco
+      switchSection(1);
+      setTimeout(() => _openDayConsultBankModal(), 250);
+      break;
+
+    case 'wizard-ai':
+      document.getElementById('re-wizard-entry')?.remove();
+      // Navega pra Cliente e Briefing (índice 0) pra user preencher antes da IA
+      switchSection(0);
+      showToast('Preencha o briefing primeiro — depois vá em Dia a Dia → 🤖 Gerar por IA.', 'info', 6000);
+      break;
+
     case 'remove-day':
       currentRoteiro = collectFormData();
       currentRoteiro.days.splice(idx, 1);
@@ -4474,6 +4498,56 @@ export async function renderRoteiroEditor(container) {
     // Render page
     container.innerHTML = `
       <div id="re-editor-root">
+        ${(!roteiroId && !isAiGenerated) ? `
+        <!-- v4.62.20 Fase E: "Wizard de entrada" pra cotação nova em branco.
+             3 atalhos rápidos pra escolher origem. User pode dismissar pra ir
+             direto pras tabs. Wizard formal multi-step fica pra futura
+             iteração quando user pedir. -->
+        <div id="re-wizard-entry" class="card" style="padding:20px 24px;margin-bottom:20px;
+          background:linear-gradient(135deg, rgba(212,168,67,0.05), rgba(59,130,246,0.04));
+          border:1px solid rgba(212,168,67,0.3);border-radius:12px;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:14px;">
+            <div>
+              <div style="font-size:1rem;font-weight:700;color:var(--text-primary);margin-bottom:4px;">
+                ✨ Nova cotação — por onde começar?
+              </div>
+              <div style="font-size:0.8125rem;color:var(--text-muted);">
+                Escolha uma origem rápida ou pule e preencha do zero. Você pode combinar fontes depois (cada dia pode vir de origem diferente).
+              </div>
+            </div>
+            <button data-action="wizard-dismiss" title="Pular e preencher manualmente"
+              style="background:none;border:none;color:var(--text-muted);cursor:pointer;
+              font-size:1.25rem;padding:0 4px;flex-shrink:0;">×</button>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;">
+            <button class="btn btn-ghost" data-action="wizard-blank"
+              style="padding:14px;text-align:left;border:1px solid var(--border-subtle,#e5e7eb);
+              border-radius:8px;background:var(--bg-input,#fff);cursor:pointer;font-family:inherit;
+              display:flex;flex-direction:column;align-items:flex-start;gap:4px;">
+              <span style="font-size:1.4rem;">📝</span>
+              <span style="font-weight:600;font-size:0.875rem;color:var(--text-primary);">Em branco</span>
+              <span style="font-size:0.72rem;color:var(--text-muted);">Preencho tudo manual.</span>
+            </button>
+            <button class="btn btn-ghost" data-action="wizard-bank"
+              style="padding:14px;text-align:left;border:1px solid var(--border-subtle,#e5e7eb);
+              border-radius:8px;background:var(--bg-input,#fff);cursor:pointer;font-family:inherit;
+              display:flex;flex-direction:column;align-items:flex-start;gap:4px;">
+              <span style="font-size:1.4rem;">📚</span>
+              <span style="font-weight:600;font-size:0.875rem;color:var(--text-primary);">Do Banco de Roteiros</span>
+              <span style="font-size:0.72rem;color:var(--text-muted);">Copio dias de cotação já curada.</span>
+            </button>
+            <button class="btn btn-ghost" data-action="wizard-ai"
+              style="padding:14px;text-align:left;border:1px solid var(--border-subtle,#e5e7eb);
+              border-radius:8px;background:var(--bg-input,#fff);cursor:pointer;font-family:inherit;
+              display:flex;flex-direction:column;align-items:flex-start;gap:4px;">
+              <span style="font-size:1.4rem;">🤖</span>
+              <span style="font-weight:600;font-size:0.875rem;color:var(--text-primary);">Gerar com IA</span>
+              <span style="font-size:0.72rem;color:var(--text-muted);">IA cria baseado no briefing.</span>
+            </button>
+          </div>
+        </div>
+        ` : ''}
+
         ${isAiGenerated && !roteiroId ? `
         <!-- AI Banner -->
         <div style="background:#FEF3C720;border:1px solid #F59E0B33;border-radius:10px;

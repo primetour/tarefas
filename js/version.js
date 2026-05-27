@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 62,
-  patch: 19,
-  build: '20260527-editor-fase-d-servicos-consolidados-subtabs',
+  patch: 20,
+  build: '20260527-editor-fase-e-wizard-entry-cotacao-nova',
 };
 
 /** "1.2.0" */
