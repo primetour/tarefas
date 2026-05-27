@@ -1664,6 +1664,32 @@ async function _ensureBankImages() {
   return _bankImagesCache;
 }
 
+/**
+ * v4.62.17 Fase B: popula badges de contagem no botão "📚 Imagens" de cada
+ * linha. Filtro lazy match — busca imagens do banco cujo campo city/country/
+ * placeName/tags bate com a query gerada pro card (mesma lógica que o picker
+ * aplica internamente quando user filtra). Badge só aparece quando count > 0.
+ */
+function _populateBankCountBadges() {
+  const all = _bankImagesCache || [];
+  if (!all.length) return;
+  const norm = s => String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  document.querySelectorAll('[data-bank-badge-key]').forEach(badge => {
+    const btn = badge.closest('button[data-img-q]');
+    if (!btn) return;
+    const q = norm(btn.dataset.imgQ || '');
+    if (!q) return;
+    const count = all.filter(img => {
+      const hay = norm([img.city, img.country, img.continent, img.name, img.placeName, ...(img.tags||[])].filter(Boolean).join(' '));
+      return q.split(/\s+/).filter(Boolean).some(w => hay.includes(w));
+    }).length;
+    if (count > 0) {
+      badge.textContent = count;
+      badge.style.display = '';
+    }
+  });
+}
+
 /** Extrai cidades únicas (destinations + days) com cidade+país */
 function _collectCities() {
   const cities = new Map(); // key: slug, value: {city, country}
@@ -1690,6 +1716,26 @@ function renderImagensSection() {
 
   const heroLabel = heroOverride ? 'Personalizada' : 'Auto (1ª destinação)';
 
+  // v4.62.17 Fase B: triggera pré-fetch do banco em paralelo + popula badges
+  // após render (sem bloquear o paint inicial). Quando user clicar "Imagens
+  // do Banco", o modal abre instantâneo porque cache já está populado.
+  queueMicrotask(() => {
+    _ensureBankImages().then(() => _populateBankCountBadges()).catch(() => {});
+  });
+
+  // v4.62.17: helper de botão alinhado com sistema (.btn .btn-sm).
+  // Badge data-bank-badge-key recebe contagem do banco via _populateBankCountBadges.
+  const pickBtn = (imgKey, q) =>
+    `<button class="btn btn-secondary btn-sm" data-action="img-pick" data-img-key="${esc(imgKey)}" data-img-q="${esc(q)}"
+      style="font-size:0.75rem;display:inline-flex;align-items:center;gap:5px;">
+      <span>📚 Imagens</span>
+      <span data-bank-badge-key="${esc(imgKey)}" style="display:none;background:var(--brand-gold,#D4A843);color:#0A1628;padding:0 6px;border-radius:999px;font-size:0.65rem;font-weight:700;"></span>
+    </button>`;
+  const clearBtn = (imgKey) =>
+    `<button class="btn btn-ghost btn-sm" data-action="img-clear" data-img-key="${esc(imgKey)}"
+      style="font-size:0.75rem;color:var(--color-danger,#EF4444);">Limpar</button>`;
+
+  const heroQ = ((currentRoteiro.travel?.destinations?.[0]?.city || '') + ' ' + (currentRoteiro.travel?.destinations?.[0]?.country || '')).trim();
   const heroRow = `
     <div class="re-img-row" data-img-target="hero">
       <div class="re-img-thumb">
@@ -1698,12 +1744,12 @@ function renderImagensSection() {
           : `<span class="re-img-auto">AUTO</span>`}
       </div>
       <div class="re-img-meta">
-        <div class="re-img-name">Capa do Roteiro</div>
+        <div class="re-img-name">Capa da Cotação</div>
         <div class="re-img-sub">${heroLabel}</div>
       </div>
-      <div class="re-img-actions">
-        <button class="re-add-btn" data-action="img-pick" data-img-key="hero" data-img-q="${esc((currentRoteiro.travel?.destinations?.[0]?.city || '') + ' ' + (currentRoteiro.travel?.destinations?.[0]?.country || ''))}">Trocar</button>
-        ${heroOverride ? `<button class="re-remove-btn" data-action="img-clear" data-img-key="hero">Limpar</button>` : ''}
+      <div class="re-img-actions" style="display:flex;gap:6px;align-items:center;">
+        ${pickBtn('hero', heroQ)}
+        ${heroOverride ? clearBtn('hero') : ''}
       </div>
     </div>`;
 
@@ -1723,12 +1769,12 @@ function renderImagensSection() {
           <div class="re-img-name">${esc(label)}</div>
           <div class="re-img-sub">${url ? 'Personalizada' : 'Auto (banco → Unsplash)'}</div>
         </div>
-        <div class="re-img-actions">
-          <button class="re-add-btn" data-action="img-pick" data-img-key="${esc(ovKey)}" data-img-q="${esc(q)}">Trocar</button>
-          ${url ? `<button class="re-remove-btn" data-action="img-clear" data-img-key="${esc(ovKey)}">Limpar</button>` : ''}
+        <div class="re-img-actions" style="display:flex;gap:6px;align-items:center;">
+          ${pickBtn(ovKey, q)}
+          ${url ? clearBtn(ovKey) : ''}
         </div>
       </div>`;
-  }).join('') : `<div class="re-img-empty">Nenhuma cidade ainda — adicione destinos na seção Viagem.</div>`;
+  }).join('') : `<div class="re-img-empty">Nenhuma cidade ainda — adicione destinos na seção Cliente e Briefing.</div>`;
 
   const hotelRows = hotels.length ? hotels.map((h, i) => {
     const ovKey = `hotel_${i}`;
@@ -1746,12 +1792,12 @@ function renderImagensSection() {
           <div class="re-img-name">${esc(label)}</div>
           <div class="re-img-sub">${url ? 'Personalizada' : 'Auto'}</div>
         </div>
-        <div class="re-img-actions">
-          <button class="re-add-btn" data-action="img-pick" data-img-key="${esc(ovKey)}" data-img-q="${esc(q)}">Trocar</button>
-          ${url ? `<button class="re-remove-btn" data-action="img-clear" data-img-key="${esc(ovKey)}">Limpar</button>` : ''}
+        <div class="re-img-actions" style="display:flex;gap:6px;align-items:center;">
+          ${pickBtn(ovKey, q)}
+          ${url ? clearBtn(ovKey) : ''}
         </div>
       </div>`;
-  }).join('') : `<div class="re-img-empty">Nenhum hotel adicionado — vá em Hotéis.</div>`;
+  }).join('') : `<div class="re-img-empty">Nenhum hotel adicionado — vá em Aéreo e Hotéis.</div>`;
 
   return `
     <div class="re-section-title">Imagens</div>

@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 62,
-  patch: 16,
-  build: '20260527-editor-fase-a-rename-visual-esconde-avancado',
+  patch: 17,
+  build: '20260527-editor-fase-b-imagens-banco-picker-badge',
 };
 
 /** "1.2.0" */
