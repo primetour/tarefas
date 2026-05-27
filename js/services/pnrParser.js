@@ -245,3 +245,199 @@ export function parsePNRSync(text) {
 export function preloadIata() {
   return _loadIataData().catch(() => null);
 }
+
+/* ──────────────────────────────────────────────────────────────────────
+ * PARSER DE HOTEL — Amadeus/Sabre/Galileo
+ * v4.62.27+
+ *
+ * Formatos típicos:
+ *
+ *   Amadeus:
+ *     1 HHL HK1 GRU 23MAR-26MAR/3NT/HYATT REGENCY GUARULHOS/DBL
+ *     1 HK HYATT REGENCY GRU IN23MAR OUT26MAR/DBL/NRF
+ *
+ *   Sabre:
+ *     01 HHL HK1 GRU IN23MAR OUT26MAR/HYATT REGENCY GUARULHOS/DBL
+ *
+ *   Galileo:
+ *     1. HTL HK1 GRU IN23MAR OUT26MAR HYATT REGENCY GUARULHOS DBL
+ *
+ *   Simples (texto livre — booking confirmation copy/paste):
+ *     Hyatt Regency Guarulhos · GRU · Check-in 23/03 · Check-out 26/03 · Standard Room
+ *
+ * Output formato schema hotels[]:
+ *   { city, hotelName, roomType, regime, checkIn (ISO), checkOut (ISO),
+ *     nights, originIata?, gdsImported }
+ * ────────────────────────────────────────────────────────────────────── */
+
+const ROOM_TYPE_MAP = {
+  'DBL': 'Duplo', 'SGL': 'Single', 'TWN': 'Twin', 'TPL': 'Triplo',
+  'QUAD': 'Quádruplo', 'STD': 'Standard', 'DLX': 'Deluxe', 'STE': 'Suíte',
+  'JST': 'Junior Suíte', 'EXE': 'Executive', 'CLB': 'Club',
+};
+
+const REGIME_MAP = {
+  'BB':  'Café da manhã',
+  'HB':  'Meia pensão',
+  'FB':  'Pensão completa',
+  'AI':  'All-inclusive',
+  'EP':  'Sem refeições',
+  'CP':  'Café continental',
+  'AP':  'Pensão completa (American Plan)',
+  'MAP': 'Meia pensão (Modified American Plan)',
+};
+
+/** Diff de dias entre 2 ISO dates. */
+function _diffNights(checkIn, checkOut) {
+  if (!checkIn || !checkOut) return 0;
+  const d1 = new Date(checkIn + 'T12:00:00');
+  const d2 = new Date(checkOut + 'T12:00:00');
+  return Math.max(0, Math.round((d2 - d1) / 86400000));
+}
+
+/**
+ * Parse de UMA linha de reserva hotel. Retorna objeto ou null se inválido.
+ *
+ * Heurística:
+ *   - 2 datas DDMMM consecutivas (com qualquer separador) = check-in + check-out
+ *   - Padrão IN<DDMMM>OUT<DDMMM> ou IN<DDMMM> OUT<DDMMM> ou DDMMM-DDMMM
+ *   - IATA 3 letras isolado (não dentro de palavra) = cidade
+ *   - Resto = hotel name (sanitizado de tags HHL/HTL/HK/SS/segmentos)
+ *   - Sigla DBL/SGL/STD/DLX detectada vira roomType
+ *   - Sigla BB/HB/FB/AI detectada vira regime
+ */
+function _parseOneHotelLine(rawLine, airports) {
+  let line = String(rawLine || '').toUpperCase().trim();
+  if (!line) return null;
+
+  // Skip prefixo numérico tipo "1 ", "01 ", "1.", " 1.1 "
+  line = line.replace(/^[\d.\s]+/, '');
+  if (!line) return null;
+
+  // Extrai datas em qualquer formato:
+  //   IN23MAR / OUT26MAR
+  //   IN23MAR OUT26MAR
+  //   IN 23MAR OUT 26MAR
+  //   23MAR-26MAR
+  //   23MAR/26MAR
+  //   23/03 ... 26/03
+  let checkIn = '', checkOut = '';
+  const inMatch = /\bIN\s*(\d{2}[A-Z]{3})/i.exec(line);
+  const outMatch = /\bOUT\s*(\d{2}[A-Z]{3})/i.exec(line);
+  if (inMatch && outMatch) {
+    checkIn = _parseGdsDate(inMatch[1].toUpperCase());
+    checkOut = _parseGdsDate(outMatch[1].toUpperCase());
+  } else {
+    // Tenta achar 2 datas DDMMM consecutivas
+    const allDates = [...line.matchAll(/\b(\d{2}[A-Z]{3})\b/g)].map(m => m[1]);
+    if (allDates.length >= 2) {
+      checkIn = _parseGdsDate(allDates[0]);
+      checkOut = _parseGdsDate(allDates[1]);
+    } else {
+      // Tenta formato DD/MM (Booking-style)
+      const slashDates = [...line.matchAll(/(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/g)];
+      if (slashDates.length >= 2) {
+        const [d1, d2] = slashDates;
+        const year = new Date().getFullYear();
+        const toIso = (dd, mm, yy) => `${yy || year}-${String(mm).padStart(2,'0')}-${String(dd).padStart(2,'0')}`;
+        checkIn = toIso(parseInt(d1[1]), parseInt(d1[2]), d1[3] ? (parseInt(d1[3]) < 100 ? 2000 + parseInt(d1[3]) : parseInt(d1[3])) : null);
+        checkOut = toIso(parseInt(d2[1]), parseInt(d2[2]), d2[3] ? (parseInt(d2[3]) < 100 ? 2000 + parseInt(d2[3]) : parseInt(d2[3])) : null);
+      }
+    }
+  }
+  if (!checkIn || !checkOut) return null;
+
+  // Cidade: 1ª sequência 3 letras IATA isolada (não meio de palavra)
+  // Procura primeiro depois das tags de segmento, antes do nome do hotel
+  let cityIata = '';
+  const cleanLine = line.replace(/\b(HHL|HTL|HK\d?|SS\d?|HX|HN|HRG|RG)\b/g, ' ');
+  const iataMatch = cleanLine.match(/\b([A-Z]{3})\b/);
+  if (iataMatch) cityIata = iataMatch[1];
+  const cityName = cityIata
+    ? (airports?.[cityIata] || cityIata)
+    : '';
+
+  // Room type: 1º tenta sigla IATA (DBL, STE, etc); fallback palavras pt-BR/EN
+  let roomType = '';
+  for (const code of Object.keys(ROOM_TYPE_MAP)) {
+    if (new RegExp(`\\b${code}\\b`).test(line)) {
+      roomType = ROOM_TYPE_MAP[code];
+      break;
+    }
+  }
+  if (!roomType) {
+    const named = /\b(DELUXE|STANDARD|SUITE|JUNIOR\s*SUITE|EXECUTIVE|CLUB|PRESIDENTIAL|SUPERIOR|PREMIUM|ROYAL)\b/i.exec(line);
+    if (named) {
+      const norm = named[1].toLowerCase().replace(/\s+/g, ' ').trim();
+      roomType = norm.charAt(0).toUpperCase() + norm.slice(1);
+    }
+  }
+
+  // Regime
+  let regime = '';
+  for (const code of Object.keys(REGIME_MAP)) {
+    if (new RegExp(`\\b${code}\\b`).test(line)) {
+      regime = REGIME_MAP[code];
+      break;
+    }
+  }
+
+  // Hotel name: remove datas, sigla IATA, segmentos, room codes, regime codes,
+  // separadores e palavras de booking livre. O que sobra é o nome.
+  // Room type names em português (Standard, Duplo, etc) também removidos.
+  const roomTypeNames = Object.values(ROOM_TYPE_MAP).join('|');
+  let hotelName = line
+    .replace(/\bIN\s*\d{2}[A-Z]{3}/gi, ' ')
+    .replace(/\bOUT\s*\d{2}[A-Z]{3}/gi, ' ')
+    .replace(/\b\d{2}[A-Z]{3}\b/g, ' ')
+    .replace(/\b\d{1,2}\/\d{1,2}(?:\/\d{2,4})?\b/g, ' ')
+    .replace(/\b(HHL|HTL|HK\d?|SS\d?|HX|HN|HRG|RG|NRF|RF)\b/g, ' ')
+    .replace(/\b(\d+NT|\dNT|NIGHTS?)\b/gi, ' ')
+    // Palavras livres de Booking-style (case-insensitive):
+    .replace(/\b(CHECK[\s-]?IN|CHECK[\s-]?OUT|CHECKIN|CHECKOUT|ROOM|QUARTO|HOTEL|HOSPEDAGEM|RESERVA)\b/gi, ' ')
+    .replace(new RegExp(`\\b(${Object.keys(ROOM_TYPE_MAP).join('|')})\\b`, 'g'), ' ')
+    .replace(new RegExp(`\\b(${Object.keys(REGIME_MAP).join('|')})\\b`, 'g'), ' ')
+    .replace(new RegExp(`\\b(${roomTypeNames})\\b`, 'gi'), ' ')
+    .replace(/[\/\-·•|]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  // Remove IATA isolado (já capturado em cityIata)
+  if (cityIata) hotelName = hotelName.replace(new RegExp(`\\b${cityIata}\\b`, 'g'), '').replace(/\s+/g, ' ').trim();
+  // Converte CAPS LOCK em Title Case (Amadeus retorna tudo upper)
+  hotelName = hotelName.toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+
+  if (!hotelName) return null;
+
+  return {
+    city: cityName || cityIata,
+    cityIata,
+    hotelName,
+    roomType,
+    regime,
+    checkIn,
+    checkOut,
+    nights: _diffNights(checkIn, checkOut),
+    gdsImported: true,
+  };
+}
+
+/**
+ * Parse PNR de hotel multi-linha. Cada linha = uma reserva.
+ */
+export async function parseHotelPNR(text) {
+  if (!text || typeof text !== 'string') return [];
+  const { airports } = await _loadIataData();
+  const lines = text.split(/\r?\n/).filter(l => l.trim());
+  return lines
+    .map(line => _parseOneHotelLine(line, airports))
+    .filter(Boolean);
+}
+
+/** Sync version (cache only). */
+export function parseHotelPNRSync(text) {
+  if (!text || typeof text !== 'string') return [];
+  const lines = text.split(/\r?\n/).filter(l => l.trim());
+  return lines
+    .map(line => _parseOneHotelLine(line, _airportsCache || {}))
+    .filter(Boolean);
+}

@@ -1467,7 +1467,14 @@ function renderHoteisSection() {
     <button class="btn btn-secondary btn-sm" data-action="add-flight"
       style="margin-top:8px;margin-bottom:24px;font-size:0.8125rem;">+ Adicionar Voo</button>
 
-    <h3 class="re-subsection-title" style="font-size:1rem;font-weight:600;color:var(--text-primary);margin-top:32px;padding-top:20px;border-top:1px solid var(--border-subtle);margin-bottom:8px;">Hot\u00e9is</h3>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:32px;padding-top:20px;border-top:1px solid var(--border-subtle);margin-bottom:8px;flex-wrap:wrap;gap:8px;">
+      <h3 class="re-subsection-title" style="font-size:1rem;font-weight:600;color:var(--text-primary);margin:0;">Hot\u00e9is</h3>
+      <!-- v4.62.27: codifica reserva hotel GDS (HHL/HTL Amadeus/Sabre/Galileo) -->
+      <button class="btn btn-secondary btn-sm" data-action="hotel-decode"
+        style="font-size:0.8125rem;display:inline-flex;align-items:center;gap:6px;">
+        \ud83c\udfe8 Codificar reserva hotel
+      </button>
+    </div>
     <table class="re-dyn-table">
       <thead>
         <tr>
@@ -1479,7 +1486,7 @@ function renderHoteisSection() {
       <tbody id="re-hotels-body">
         ${hotels.length
           ? hotels.map((h, i) => renderHotelRow(h, i)).join('')
-          : `<tr><td colspan="10" style="text-align:center;padding:14px;color:var(--text-muted);font-size:0.8125rem;">Nenhum hotel cadastrado.</td></tr>`}
+          : `<tr><td colspan="10" style="text-align:center;padding:14px;color:var(--text-muted);font-size:0.8125rem;">Nenhum hotel cadastrado. Cole reserva GDS ou adicione manual.</td></tr>`}
       </tbody>
     </table>
     <button class="btn btn-secondary btn-sm" data-action="add-hotel"
@@ -2408,6 +2415,154 @@ async function _openPnrDecodeModal() {
     close();
     const n = parsed.length;
     showToast(`+${n} voo${n > 1 ? 's' : ''} do GDS. Preço fica pra preencher.`, 'success');
+  });
+
+  input.focus();
+}
+
+/**
+ * v4.62.27: modal "Codificar reserva hotel" — cola reservas GDS HHL/HTL
+ * (Amadeus/Sabre/Galileo) ou texto livre, preview formatado, insere como
+ * hotels[]. Preço fica null pra preencher depois.
+ */
+async function _openHotelDecodeModal() {
+  const overlay = document.createElement('div');
+  overlay.className = 're-img-modal-overlay';
+  overlay.innerHTML = `
+    <div class="re-img-modal" style="max-width:820px;max-height:85vh;display:flex;flex-direction:column;">
+      <div class="re-img-modal-header">
+        <div class="re-img-modal-title">🏨 Codificar reserva hotel</div>
+        <button class="re-img-modal-close" type="button">&times;</button>
+      </div>
+      <div class="re-img-modal-body" style="overflow:auto;">
+        <p style="font-size:0.8125rem;color:var(--text-muted);margin:0 0 12px;line-height:1.5;">
+          Cole a reserva GDS (HHL/HTL Amadeus, Sabre ou Galileo) ou confirmation Booking-style — uma linha por hotel.
+          Decodifica IATA → cidade, datas IN/OUT, sigla DBL/STE → categoria, BB/HB/AI → regime.
+        </p>
+        <textarea id="re-hotel-input" rows="6"
+          placeholder="Ex (Amadeus):&#10;1 HHL HK1 GRU 23MAR-26MAR/3NT/HYATT REGENCY GUARULHOS/DBL&#10;01 HHL HK1 DXB IN10APR OUT15APR/BURJ AL ARAB JUMEIRAH/STE/BB&#10;&#10;Ex (livre):&#10;Mandarin Oriental Tokyo · NRT · Check-in 20/04 · Check-out 23/04 · Deluxe"
+          style="width:100%;font-family:'SF Mono','Monaco','Cascadia Mono',monospace;font-size:0.78rem;
+          padding:10px 12px;border:1px solid var(--border-subtle,#e5e7eb);border-radius:6px;
+          resize:vertical;line-height:1.5;background:var(--bg-input,#fff);color:var(--text-primary);"></textarea>
+        <div id="re-hotel-status" style="font-size:0.75rem;color:var(--text-muted);margin-top:6px;min-height:18px;"></div>
+        <div id="re-hotel-preview" style="margin-top:14px;"></div>
+      </div>
+      <div style="padding:14px 20px;border-top:1px solid var(--border-subtle,#e5e7eb);display:flex;justify-content:space-between;align-items:center;gap:8px;">
+        <span style="font-size:0.72rem;color:var(--text-muted);">
+          Reservas identificadas vão pra Hotéis. Preço fica em branco pra preencher.
+        </span>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-ghost btn-sm" type="button" data-cancel
+            style="font-size:0.8125rem;">Cancelar</button>
+          <button class="btn btn-primary btn-sm" type="button" data-insert disabled
+            style="font-size:0.8125rem;">Inserir como hotéis →</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+  overlay.querySelector('.re-img-modal-close').addEventListener('click', close);
+  overlay.querySelector('[data-cancel]').addEventListener('click', close);
+
+  const input = overlay.querySelector('#re-hotel-input');
+  const status = overlay.querySelector('#re-hotel-status');
+  const preview = overlay.querySelector('#re-hotel-preview');
+  const insertBtn = overlay.querySelector('[data-insert]');
+  let parsed = [];
+
+  status.textContent = 'Carregando dicionário IATA…';
+  let parser;
+  try {
+    parser = await import('../services/pnrParser.js');
+    await parser.preloadIata();
+    status.textContent = 'Pronto. Cole a reserva acima.';
+  } catch (e) {
+    status.textContent = 'Falha ao carregar parser: ' + (e?.message || e);
+    return;
+  }
+
+  let dbTimer = null;
+  input.addEventListener('input', () => {
+    clearTimeout(dbTimer);
+    dbTimer = setTimeout(async () => {
+      const text = input.value.trim();
+      if (!text) {
+        preview.innerHTML = '';
+        status.textContent = 'Cole a reserva acima.';
+        insertBtn.disabled = true;
+        return;
+      }
+      try {
+        parsed = await parser.parseHotelPNR(text);
+      } catch (e) {
+        parsed = [];
+        status.textContent = 'Erro: ' + (e?.message || e);
+        return;
+      }
+      if (!parsed.length) {
+        preview.innerHTML = `<div style="padding:14px;color:var(--color-danger,#EF4444);background:rgba(239,68,68,0.06);border:1px solid rgba(239,68,68,0.2);border-radius:6px;font-size:0.8125rem;">
+          ⚠ Nenhuma reserva válida identificada. Precisa ter 2 datas (IN+OUT ou DDMMM-DDMMM ou DD/MM ... DD/MM) + nome do hotel.
+        </div>`;
+        status.textContent = '';
+        insertBtn.disabled = true;
+        return;
+      }
+      status.textContent = `${parsed.length} reserva${parsed.length > 1 ? 's' : ''} identificada${parsed.length > 1 ? 's' : ''}.`;
+      insertBtn.disabled = false;
+      preview.innerHTML = `
+        <table style="width:100%;border-collapse:collapse;font-size:0.78rem;">
+          <thead style="background:var(--bg-surface);">
+            <tr>
+              <th style="text-align:left;padding:8px 10px;border-bottom:1px solid var(--border-subtle,#e5e7eb);color:var(--text-muted);font-weight:700;text-transform:uppercase;font-size:0.65rem;letter-spacing:.06em;">Hotel</th>
+              <th style="text-align:left;padding:8px 10px;border-bottom:1px solid var(--border-subtle,#e5e7eb);color:var(--text-muted);font-weight:700;text-transform:uppercase;font-size:0.65rem;letter-spacing:.06em;">Cidade</th>
+              <th style="text-align:left;padding:8px 10px;border-bottom:1px solid var(--border-subtle,#e5e7eb);color:var(--text-muted);font-weight:700;text-transform:uppercase;font-size:0.65rem;letter-spacing:.06em;">Categoria</th>
+              <th style="text-align:left;padding:8px 10px;border-bottom:1px solid var(--border-subtle,#e5e7eb);color:var(--text-muted);font-weight:700;text-transform:uppercase;font-size:0.65rem;letter-spacing:.06em;">Regime</th>
+              <th style="text-align:left;padding:8px 10px;border-bottom:1px solid var(--border-subtle,#e5e7eb);color:var(--text-muted);font-weight:700;text-transform:uppercase;font-size:0.65rem;letter-spacing:.06em;">Check-in</th>
+              <th style="text-align:left;padding:8px 10px;border-bottom:1px solid var(--border-subtle,#e5e7eb);color:var(--text-muted);font-weight:700;text-transform:uppercase;font-size:0.65rem;letter-spacing:.06em;">Check-out</th>
+              <th style="text-align:left;padding:8px 10px;border-bottom:1px solid var(--border-subtle,#e5e7eb);color:var(--text-muted);font-weight:700;text-transform:uppercase;font-size:0.65rem;letter-spacing:.06em;">Noites</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${parsed.map(h => `
+              <tr style="border-bottom:1px solid var(--border-subtle,#e5e7eb);">
+                <td style="padding:8px 10px;font-weight:600;color:var(--text-primary);">${esc(h.hotelName)}</td>
+                <td style="padding:8px 10px;color:var(--text-secondary);">${esc(h.city)}</td>
+                <td style="padding:8px 10px;color:var(--text-secondary);">${esc(h.roomType || '—')}</td>
+                <td style="padding:8px 10px;color:var(--text-secondary);">${esc(h.regime || '—')}</td>
+                <td style="padding:8px 10px;color:var(--text-muted);font-family:monospace;font-size:0.72rem;">${esc(h.checkIn)}</td>
+                <td style="padding:8px 10px;color:var(--text-muted);font-family:monospace;font-size:0.72rem;">${esc(h.checkOut)}</td>
+                <td style="padding:8px 10px;color:var(--text-muted);font-family:monospace;font-size:0.72rem;text-align:center;">${h.nights}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>`;
+    }, 250);
+  });
+
+  insertBtn.addEventListener('click', () => {
+    if (!parsed.length) return;
+    if (!currentRoteiro.hotels) currentRoteiro.hotels = [];
+    parsed.forEach(h => {
+      currentRoteiro.hotels.push({
+        city:      h.city,
+        cityIata:  h.cityIata,
+        hotelName: h.hotelName,
+        roomType:  h.roomType,
+        regime:    h.regime,
+        checkIn:   h.checkIn,
+        checkOut:  h.checkOut,
+        nights:    h.nights,
+        price:     null,
+        currency:  'BRL',
+        gdsImported: true,
+      });
+    });
+    rerenderCurrentSection();
+    markDirty();
+    close();
+    const n = parsed.length;
+    showToast(`+${n} hotel${n > 1 ? 'éis' : ''} do GDS. Preço fica pra preencher.`, 'success');
   });
 
   input.focus();
@@ -4092,6 +4247,12 @@ async function handleEditorClick(e) {
     case 'pnr-decode':
       currentRoteiro = collectFormData();
       _openPnrDecodeModal();
+      break;
+
+    /* v4.62.27: handler do botão "Codificar reserva hotel" (HHL/HTL Amadeus/Sabre/Galileo) */
+    case 'hotel-decode':
+      currentRoteiro = collectFormData();
+      _openHotelDecodeModal();
       break;
 
     /* v4.62.20 Fase E: handlers do wizard de entrada (cotação nova em branco). */
