@@ -9,6 +9,10 @@ import {
   CONTINENTS,
 } from '../services/portal.js';
 import { openDestinationsImport } from '../components/destinationsImport.js';
+// v4.61.1: SSOT geográfico — validação + auto-fill continente + datalist
+import { COUNTRIES } from '../data/countries.js';
+import { CONTINENTS_BY_CODE } from '../data/continents.js';
+import { resolveCountry, resolveContinent, LEGACY_CONTINENT_TO_CODE } from '../services/geoResolver.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g, c =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -569,9 +573,20 @@ function showDestModal(dest) {
           </select>
         </div>
         <div>
-          <label style="font-size:0.8125rem;font-weight:600;display:block;margin-bottom:6px;">País *</label>
+          <label style="font-size:0.8125rem;font-weight:600;display:block;margin-bottom:6px;">
+            País *
+            <span style="font-weight:400;color:var(--text-muted);">— digite ou escolha da lista</span>
+          </label>
           <input type="text" id="dest-country" class="filter-select" style="width:100%;"
-            placeholder="Ex: França" value="${esc(dest?.country || '')}">
+            placeholder="Ex: França" value="${esc(dest?.country || '')}"
+            list="dest-countries-datalist" autocomplete="off">
+          <datalist id="dest-countries-datalist">
+            ${COUNTRIES.slice()
+              .sort((a, b) => a.pt.localeCompare(b.pt, 'pt-BR'))
+              .map(c => `<option value="${esc(c.pt)}">${esc(c.en)}${c.aliases ? ' · ' + esc(c.aliases.slice(0,2).join(', ')) : ''}</option>`)
+              .join('')}
+          </datalist>
+          <div id="dest-country-feedback" style="font-size:0.7rem;margin-top:4px;min-height:14px;"></div>
         </div>
         <div>
           <label style="font-size:0.8125rem;font-weight:600;display:block;margin-bottom:6px;">
@@ -616,6 +631,64 @@ function showDestModal(dest) {
   const close = () => { modal.style.display = 'none'; modal.innerHTML = ''; };
   document.getElementById('dest-modal-close')?.addEventListener('click', close);
   document.getElementById('dest-modal-cancel')?.addEventListener('click', close);
+
+  // v4.61.1 — validação live país + auto-fill continente
+  // Mapa continentCode SSOT (UN M.49) → label legacy CONTINENTS (pt) usado no select.
+  const CONTINENT_CODE_TO_LEGACY = {
+    AF: 'África', AS: 'Ásia', EU: 'Europa',
+    NA: 'América do Norte', SA: 'América do Sul',
+    OC: 'Oceania', AN: 'Antártica',
+  };
+  const countryEl = document.getElementById('dest-country');
+  const contEl = document.getElementById('dest-continent');
+  const feedbackEl = document.getElementById('dest-country-feedback');
+  function _validateCountry() {
+    if (!countryEl || !feedbackEl) return null;
+    const raw = (countryEl.value || '').trim();
+    if (!raw) {
+      feedbackEl.textContent = '';
+      countryEl.style.borderColor = '';
+      return null;
+    }
+    const resolved = resolveCountry(raw);
+    if (!resolved) {
+      feedbackEl.innerHTML = `<span style="color:var(--color-danger,#dc2626);">⚠ "${esc(raw)}" não está na lista de países. Escolha da lista pra evitar typo.</span>`;
+      countryEl.style.borderColor = 'var(--color-danger,#dc2626)';
+      return null;
+    }
+    countryEl.style.borderColor = 'var(--color-success,#10b981)';
+    // Normaliza valor pro canônico pt-BR (corrige case/grafias en)
+    if (raw !== resolved.pt) {
+      feedbackEl.innerHTML = `<span style="color:var(--color-success,#10b981);">✓ Reconhecido como "${esc(resolved.pt)}" (${esc(resolved.code)})</span>`;
+    } else {
+      feedbackEl.innerHTML = `<span style="color:var(--color-success,#10b981);">✓ ${esc(resolved.code)} · ${esc(CONTINENT_CODE_TO_LEGACY[resolved.continent] || '')}</span>`;
+    }
+    return resolved;
+  }
+  if (countryEl) {
+    countryEl.addEventListener('input', () => {
+      const r = _validateCountry();
+      // Auto-fill continente se vazio (não sobrescreve escolha do user)
+      if (r && contEl && !contEl.value) {
+        const legacyLabel = CONTINENT_CODE_TO_LEGACY[r.continent];
+        if (legacyLabel) contEl.value = legacyLabel;
+      }
+    });
+    countryEl.addEventListener('change', () => {
+      // Ao escolher do datalist (browser dispara change), normaliza pro canônico
+      const r = _validateCountry();
+      if (r && countryEl.value !== r.pt) {
+        countryEl.value = r.pt;
+        _validateCountry();
+      }
+      // Auto-fill continente se vazio
+      if (r && contEl && !contEl.value) {
+        const legacyLabel = CONTINENT_CODE_TO_LEGACY[r.continent];
+        if (legacyLabel) contEl.value = legacyLabel;
+      }
+    });
+    _validateCountry();   // valida estado inicial (edit mode)
+  }
 
   // v4.61.0 Feature A: state + render de chips de aliases
   let aliases = Array.isArray(dest?.cityAliases) ? [...dest.cityAliases] : [];
@@ -664,9 +737,20 @@ function showDestModal(dest) {
 
   document.getElementById('dest-modal-save')?.addEventListener('click', async () => {
     const continent = document.getElementById('dest-continent')?.value;
-    const country   = document.getElementById('dest-country')?.value?.trim();
+    let country     = document.getElementById('dest-country')?.value?.trim();
     if (!continent) { toast.error('Selecione o continente.'); return; }
     if (!country)   { toast.error('País obrigatório.'); return; }
+    // v4.61.1: valida país contra SSOT — rejeita typos antes de gravar
+    const resolved = resolveCountry(country);
+    if (!resolved) {
+      toast.error(`"${country}" não está na lista. Escolha um país válido (datalist sugere ao digitar).`);
+      document.getElementById('dest-country')?.focus();
+      return;
+    }
+    // Normaliza pro canônico pt-BR antes de salvar
+    country = resolved.pt;
+    const countryEl2 = document.getElementById('dest-country');
+    if (countryEl2 && countryEl2.value !== country) countryEl2.value = country;
     // v4.61.0: pega valor pending do input de aliases (se user esqueceu de pressionar Enter)
     const pendingAlias = (document.getElementById('dest-alias-input')?.value || '').trim();
     if (pendingAlias) {

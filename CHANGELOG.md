@@ -6,6 +6,45 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.61.1+20260526-destinations-country-datalist-ssot-validation] — 2026-05-26
+
+Release **PATCH/SAFETY** — input país do modal de destino vira datalist SSOT + validação bloqueante + auto-fill continente.
+
+**Pergunta Renê**: *"no modal de edicao de destinos deveria vir a lista de paises + pesquisa por palavra, certo? assim nao permite escrever nome de pais errado"*.
+
+**Antes**: `<input type="text">` livre. User podia digitar "Frnaça", "France", "Brassil" → gravava com typo silencioso → quebra cross-module (search, filtros).
+
+**Agora** (`js/pages/portalDestinations.js`):
+
+- Input ganha `list="dest-countries-datalist"` (HTML5 datalist nativo — browser fornece busca + dropdown sem JS extra).
+- Datalist populado com **todos os 196 países do SSOT** (`js/data/countries.js`), label `pt-BR` canônico + secondary text en + aliases visíveis (ex: "Brasil — Brazil · brazil").
+- Browser handle: digitar "Fra" filtra pra "França", clicar mostra dropdown alfabético.
+
+**Validação em 3 camadas**:
+
+1. **Live (on input/change)**: feedback inline embaixo do campo.
+   - "✓ Reconhecido como Brasil (BR)" (verde) — quando bate em alias e normaliza
+   - "⚠ 'Frnaça' não está na lista..." (vermelho) — typo
+   - Border do input fica vermelho/verde conforme estado
+2. **No save (bloqueante)**: `resolveCountry(country)` chamado antes do `saveDestination`. Se null → toast erro + foco no input. **Impossível gravar país inválido via UI**.
+3. **Normalização auto**: se user digita "Brazil" ou "brasil" → save grava "Brasil" canônico.
+
+**Auto-fill continente**:
+
+- Quando user escolhe país (input/change event), continent select é populado **automaticamente** SE estiver vazio.
+- Mapa interno `CONTINENT_CODE_TO_LEGACY`: `AF`→'África', `EU`→'Europa', `SA`→'América do Sul', etc.
+- Não sobrescreve escolha existente do user (Brasil → "América do Sul" auto, mas Renê pode mudar pra "Brasil" se quiser categorizar diferente).
+
+**Casos especiais cobertos**:
+
+- Países com aliases ("Tóquio"/"Tokyo"/"japao") todos resolvem pro mesmo doc.
+- Inglaterra/Escócia (constituintes UK) estão no SSOT como GB-ENG/GB-SCT — funcionam.
+- "Singapura" como cidade-estado: país=Singapura é válido (ISO SG).
+
+**Impacto cross-module**: dado SSOT é a foundation pra IA usar Banco como knowledge base. Sem isso, IA recebe "Frnaça" e "França" como 2 países distintos. Agora **impossível**.
+
+---
+
 ## [4.61.0+20260526-destinations-aliases-chips-central-tab-bugfix-ux] — 2026-05-26
 
 Release **MINOR/FEATURE** — gerenciamento colaborativo de variações de nome (aliases) + UX fix do confusion edit/dica.

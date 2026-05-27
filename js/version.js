@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 61,
-  patch: 0,
-  build: '20260526-destinations-aliases-chips-central-tab-bugfix-ux',
+  patch: 1,
+  build: '20260526-destinations-country-datalist-ssot-validation',
 };
 
 /** "1.2.0" */
