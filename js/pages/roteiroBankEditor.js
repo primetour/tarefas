@@ -65,6 +65,31 @@ function dirty() {
   if (ind) ind.textContent = 'Alterações não salvas…';
 }
 
+/**
+ * v4.59.3 (CLAUDE.md §11.b) — indicador dinâmico de auto-save.
+ * "Salvo agora" → "Salvo há 12s" → "Salvo há 3min" → "Salvo há 2h".
+ */
+function _renderSaveIndicator() {
+  const ind = document.getElementById('rb-save-indicator');
+  if (!ind || !state._lastSavedAt) return;
+  const elapsed = Math.floor((Date.now() - state._lastSavedAt) / 1000);
+  let label;
+  if (elapsed < 5)        label = 'Salvo agora';
+  else if (elapsed < 60)  label = `Salvo há ${elapsed}s`;
+  else if (elapsed < 3600) label = `Salvo há ${Math.floor(elapsed / 60)} min`;
+  else                    label = `Salvo há ${Math.floor(elapsed / 3600)}h`;
+  ind.textContent = label;
+}
+
+function _scheduleSaveIndicatorTick() {
+  if (state._saveTickInterval) return;
+  state._saveTickInterval = setInterval(_renderSaveIndicator, 10000);   // 10s
+}
+
+function _stopSaveIndicatorTick() {
+  if (state._saveTickInterval) { clearInterval(state._saveTickInterval); state._saveTickInterval = null; }
+}
+
 async function autosave() {
   if (!state.dirty || state.saving) return;
   state.saving = true;
@@ -84,7 +109,10 @@ async function autosave() {
     state.dirty = false;
     // Atualiza loadedAt pós save OK — próximo save vai usar este timestamp.
     state._loadedAt = Date.now();
-    if (ind) ind.textContent = `Salvo ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+    // v4.59.3 (CLAUDE.md §11.b): indicador DINÂMICO — "Salvo agora" → "há Xs/min".
+    state._lastSavedAt = Date.now();
+    _renderSaveIndicator();
+    _scheduleSaveIndicatorTick();
     // v4.57.52 task #60: dispara sync inline com portal_destinations.
     // UI promete em linha 184 ("cidades novas viram destinos auto-criados
     // ao salvar") mas comportamento nunca foi wired. Agora honra a promessa.
@@ -839,7 +867,16 @@ export async function renderRoteiroBankEditor(container) {
       dirty(); return;
     }
     if (action === 'remove-category') {
-      if (!confirm('Remover esta categoria?')) return;
+      // v4.59.3 (CLAUDE.md §11.k): confirm() nativo → modal custom.
+      const { modal } = await import('../components/modal.js');
+      const ok = await modal.confirm({
+        title: 'Remover categoria',
+        message: 'Tem certeza? Hotéis e pricing dessa categoria também são removidos do roteiro. Outros roteiros não são afetados.',
+        confirmText: 'Remover',
+        cancelText: 'Cancelar',
+        danger: true,
+      });
+      if (!ok) return;
       const i = +btn.dataset.catIdx;
       state.doc.categories.splice(i, 1);
       const wrap = container.querySelector('#rb-cats-list');
@@ -1008,7 +1045,16 @@ async function openMetaModal({ title, items, kind, save, del, onChange }) {
     overlay.querySelectorAll('.rb-meta-del').forEach(btn => {
       btn.addEventListener('click', async () => {
         const key = btn.dataset.key;
-        if (!confirm('Remover este item? Roteiros que já usam continuam funcionando.')) return;
+        // v4.59.3 (CLAUDE.md §11.k): confirm() nativo → modal custom.
+        const { modal } = await import('../components/modal.js');
+        const ok = await modal.confirm({
+          title: `Remover ${kind}`,
+          message: 'Roteiros que já usam continuam funcionando — a remoção é apenas no catálogo (sem cascata). Pode ser refeita depois.',
+          confirmText: 'Remover',
+          cancelText: 'Cancelar',
+          danger: true,
+        });
+        if (!ok) return;
         try {
           await del(key);
           toast.success('Removido.');
@@ -1037,7 +1083,9 @@ async function openMetaModal({ title, items, kind, save, del, onChange }) {
 }
 
 export function destroyRoteiroBankEditor() {
-  if (state.autosaveTimer) { clearTimeout(state.autosaveTimer); state.autosaveTimer = null; }
-  if (state.abortCtrl)    { state.abortCtrl.abort(); state.abortCtrl = null; }
+  if (state.autosaveTimer)     { clearTimeout(state.autosaveTimer); state.autosaveTimer = null; }
+  if (state.abortCtrl)         { state.abortCtrl.abort(); state.abortCtrl = null; }
+  // v4.59.3: cleanup interval do indicador dinâmico
+  _stopSaveIndicatorTick();
   state = { id: null, doc: null, dirty: false, saving: false, autosaveTimer: null, abortCtrl: null, categories: DEFAULT_CATEGORIES, collections: DEFAULT_COLLECTIONS };
 }

@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 59,
-  patch: 2,
-  build: '20260526-banco-conflict-detection-editor',
+  patch: 3,
+  build: '20260526-banco-confirm-modal-saveindicator-dynamic',
 };
 
 /** "1.2.0" */

@@ -423,7 +423,15 @@ export async function renderRoteiroBank(container) {
         return;
       }
       if (action === 'archive') {
-        if (!confirm('Arquivar este roteiro? Ele some das buscas mas pode ser restaurado.')) return;
+        // v4.59.3 (CLAUDE.md §11.k): confirm() nativo → modal custom.
+        const { modal } = await import('../components/modal.js');
+        const ok = await modal.confirm({
+          title: 'Arquivar roteiro',
+          message: 'Ele some das buscas (filtros padrão), mas pode ser restaurado depois — não é destrutivo.',
+          confirmText: 'Arquivar',
+          cancelText: 'Cancelar',
+        });
+        if (!ok) return;
         try {
           await archiveRoteiroBank(id);
           toast.success('Arquivado.');

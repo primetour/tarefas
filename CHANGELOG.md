@@ -6,6 +6,32 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.59.3+20260526-banco-confirm-modal-saveindicator-dynamic] — 2026-05-26
+
+Release **PATCH/FIX** — anti-padrões CLAUDE.md §11.k (`confirm()` nativo) + §11.b (indicador "Salvando" estático) atacados no módulo Banco.
+
+**Fixes**:
+
+- **§11.k**: 3 `confirm()` nativos no Banco → `modal.confirm` custom com `danger:true` onde aplica:
+  - `roteiroBank.js` "Arquivar este roteiro" — reversível, sem danger
+  - `roteiroBankEditor.js` "Remover categoria" — destrutivo, danger:true
+  - `roteiroBankEditor.js` "Remover categoria/coleção do catálogo" — danger:true, mas com nota que roteiros existentes seguem ok
+
+- **§11.b**: indicador `#rb-save-indicator` agora é DINÂMICO:
+  - Antes: `Salvo 15:34` (estático, parecia HH:MM atual sempre)
+  - Agora: `Salvo agora` → `Salvo há 12s` → `Salvo há 3 min` → `Salvo há 2h`
+  - `setInterval` 10s atualiza texto sem re-render.
+  - Cleanup do interval em `destroyRoteiroBankEditor` (memory leak prevention).
+
+- Restante do `bankClientGuard.js` `confirm()` mantido por ora (é fluxo crítico legal — vai pra release dedicada com revisão UX da modal de "responsabilidade contratual").
+
+**Próximos da auditoria** (v4.59.4+):
+- CRÍTICO #4: paginação cursor-based real (limit 500 atualmente — adia loading com 50+ docs adicionais)
+- Médio: editor mostra `envisionRaw` + `services[]` (curador ver dado fantasma)
+- Polish: hex hardcoded → CSS vars, ícones emoji → SVG inline
+
+---
+
 ## [4.59.2+20260526-banco-conflict-detection-editor] — 2026-05-26
 
 Release **PATCH/FIX** — CRÍTICO #3 da auditoria Banco: conflict detection multi-aba/multi-user no editor (auto-save).
