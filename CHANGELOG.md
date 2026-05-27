@@ -6,6 +6,47 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.59.8+20260526-banco-editor-images-picker-gallery] — 2026-05-26
+
+Release **PATCH/FEATURE** — último item da auditoria fechado: editor section Imagens enriquecida (antes só URL hero).
+
+**Antes**:
+- `renderCapa()` tinha 1 input URL pra `images.hero`. `images.gallery[]` no schema mas inutilizado pelo editor. Curador colava URL manual.
+
+**Agora** (`js/pages/roteiroBankEditor.js`):
+
+- **Nova section `renderImages()`** após Capa, com 2 sub-seções:
+
+  **Capa (hero)**:
+  - Preview thumb 160×100 (ou placeholder dashed "sem capa")
+  - Botão "📚 Escolher do banco" → picker visual
+  - Botão "Limpar capa" (se hero presente)
+  - Hint contextual: "Picker filtra por <city, country> automaticamente"
+  
+  **Galeria**:
+  - Grid responsivo de thumbs 4:3 com botão "×" pra remover
+  - Contador "({N} imagens)" no label
+  - Botão "📚 Adicionar do banco" → picker multi-select
+  - Botão "+ URL externa" → modal com input rápido
+
+- **`_openImagePicker({ multi })`**: modal `size:lg` com grid de imagens do banco filtradas em cascata: `(country+city)` → `(country)` → `(all)`. Click no thumb = seleciona; `multi:true` permite vários (checkmark dourado + border-gold) e confirma com footer "Adicionar selecionadas". `multi:false` (hero) fecha modal direto e retorna URL. Empty state com link "Abrir Banco de Imagens em nova aba ↗".
+
+- **`_rerenderImagesSection(container)`**: helper pra re-render só a seção sem re-render do editor inteiro (pattern dos outros `rerenderCapa/Categories`).
+
+- **Sync entre hero (Capa input legado) e picker novo**: ao escolher/limpar via picker, atualiza também o `<input data-bind="images.hero">` da section Capa pra refletir o valor (retrocompat).
+
+- Input legado URL hero na Capa mantém funcional + hint "Você também pode usar o picker visual completo na seção Imagens abaixo".
+
+**Restantes da auditoria do Banco**: **0**. Tudo fechado:
+- 5 CRÍTICOS ✓ (filtro continente código morto, FK cleanup delete, conflict detection editor, paginação lazy, hero priorizado)
+- 8 MÉDIOS ✓ (sort dropdown, filtro coleção, editor envisionRaw+services, confirm()→modal × 4 spots, indicador dinâmico, CONTINENTS import vestigial, +1 falso positivo)
+- 8 POLISH ✓ (duplicate envision.id, hex→CSS vars, emoji→SVG, cancelRowHTML rótulo, _envisionCurrency cleanup, envisionRaw.imageUuids cleanup, gradient hero→bg-surface, picker imagens)
+- 10 RISK TÉCNICO ✓ (isExpired timezone, cron filter users, FK cleanup parte do crítico, +5 menores resolvidos + 2 falsos positivos após inspeção)
+
+Sprint v4.59 (Geographic SSOT + auditoria Banco) — **completa**.
+
+---
+
 ## [4.59.7+20260526-banco-adapter-cleanup-clientguard-modal] — 2026-05-26
 
 Release **PATCH/CLEANUP** — fecha 3 itens não-bloqueantes pendentes da auditoria.

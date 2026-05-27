@@ -266,8 +266,73 @@ function renderCapa() {
       <div class="form-row">
         <label class="form-label">URL da imagem de capa (R2 ou Unsplash)</label>
         <input class="form-input" type="url" data-bind="images.hero" value="${esc(d.images?.hero||'')}" placeholder="https://...">
+        <p style="font-size:0.72rem;color:var(--text-muted);margin:4px 0 0;">
+          Você também pode usar o picker visual completo na seção <strong>Imagens</strong> abaixo (capa + galeria do banco).
+        </p>
       </div>
     </section>
+  `;
+}
+
+/**
+ * v4.59.8 (auditoria §4 — section Imagens só URL hero): seção Imagens enriquecida.
+ * Mostra hero atual como thumb + ações (limpar / picker do banco) + gallery
+ * editável (thumbs com remove + add URL externa + add do banco).
+ * Overrides per-city ficam pra release futura quando houver demanda.
+ */
+function renderImages() {
+  const d = state.doc;
+  const hero = d.images?.hero || '';
+  const gallery = Array.isArray(d.images?.gallery) ? d.images.gallery : [];
+  const country = (d.geo?.countries || [])[0] || '';
+  const city = (d.geo?.cities || [])[0]?.city || '';
+  const ctxLabel = [city, country].filter(Boolean).join(', ');
+  return `
+    <section class="rb-section" data-section="images">
+      <h2 class="rb-section-title">Imagens</h2>
+
+      <div style="margin-bottom:18px;">
+        <label class="form-label">Capa (hero)</label>
+        <div style="display:flex;gap:12px;align-items:flex-start;">
+          ${hero
+            ? `<div style="width:160px;height:100px;background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:6px;overflow:hidden;flex-shrink:0;background-image:url('${esc(hero)}');background-size:cover;background-position:center;"></div>`
+            : `<div style="width:160px;height:100px;background:var(--bg-surface);border:1px dashed var(--border-default,var(--border-subtle));border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:0.78rem;flex-shrink:0;">sem capa</div>`}
+          <div style="flex:1;display:flex;flex-direction:column;gap:6px;">
+            <div style="display:flex;gap:6px;flex-wrap:wrap;">
+              <button class="btn btn-secondary btn-sm" data-action="pick-hero-from-bank" title="Procurar no banco de imagens">📚 Escolher do banco</button>
+              ${hero ? `<button class="btn btn-ghost btn-sm" data-action="clear-hero" style="color:var(--color-danger,#dc2626);">Limpar capa</button>` : ''}
+            </div>
+            <p style="font-size:0.72rem;color:var(--text-muted);margin:0;">
+              ${ctxLabel ? `Picker filtra por <strong>${esc(ctxLabel)}</strong> automaticamente.` : 'Adicione país e cidade na Geografia pra picker filtrar contextualmente.'}
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <label class="form-label">Galeria (${gallery.length} ${gallery.length === 1 ? 'imagem' : 'imagens'})</label>
+        <p style="font-size:0.72rem;color:var(--text-muted);margin:0 0 8px;">
+          Imagens adicionais que podem ser usadas em export PDF / visualização web. A capa atual é mostrada acima.
+        </p>
+        <div id="rb-gallery-list" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;margin-bottom:10px;">
+          ${gallery.map((url, i) => galleryThumbHTML(url, i)).join('') || `<div style="color:var(--text-muted);font-size:0.78rem;padding:16px 0;grid-column:1/-1;text-align:center;">Galeria vazia.</div>`}
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <button class="btn btn-secondary btn-sm" data-action="pick-gallery-from-bank">📚 Adicionar do banco</button>
+          <button class="btn btn-ghost btn-sm" data-action="add-gallery-url">+ URL externa</button>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function galleryThumbHTML(url, i) {
+  return `
+    <div data-gallery-idx="${i}" style="position:relative;width:100%;aspect-ratio:4/3;background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:6px;overflow:hidden;background-image:url('${esc(url)}');background-size:cover;background-position:center;">
+      <button class="btn-icon" data-action="remove-gallery-item" data-gallery-idx="${i}"
+        title="Remover da galeria"
+        style="position:absolute;top:4px;right:4px;width:24px;height:24px;border-radius:50%;background:rgba(0,0,0,0.65);color:#fff;border:none;cursor:pointer;font-size:0.85rem;line-height:1;display:flex;align-items:center;justify-content:center;">×</button>
+    </div>
   `;
 }
 
@@ -767,6 +832,7 @@ export async function renderRoteiroBankEditor(container) {
       </div>
 
       ${renderCapa()}
+      ${renderImages()}
       ${renderGeo()}
       ${renderDays()}
       ${renderCategories()}
@@ -1055,6 +1121,80 @@ export async function renderRoteiroBankEditor(container) {
       if (wrap) wrap.innerHTML = state.doc.documentation.visas.map((v,i)=>visaRowHTML(v,i)).join('');
       dirty(); return;
     }
+
+    // v4.59.8 — section Imagens
+    if (action === 'clear-hero') {
+      if (!state.doc.images) state.doc.images = {};
+      state.doc.images.hero = '';
+      _rerenderImagesSection(container);
+      // sync com input bind images.hero do Capa
+      const heroInput = container.querySelector('input[data-bind="images.hero"]');
+      if (heroInput) heroInput.value = '';
+      dirty(); return;
+    }
+    if (action === 'remove-gallery-item') {
+      const i = +btn.dataset.galleryIdx;
+      if (!Array.isArray(state.doc.images?.gallery)) return;
+      state.doc.images.gallery.splice(i, 1);
+      _rerenderImagesSection(container);
+      dirty(); return;
+    }
+    if (action === 'add-gallery-url') {
+      const { modal } = await import('../components/modal.js');
+      // Prompt simples via modal — usa open com input
+      let url = '';
+      await new Promise(resolve => {
+        modal.open({
+          title: 'Adicionar URL à galeria',
+          size: 'sm', closeOnEsc: true,
+          content: `
+            <div style="line-height:1.4;">
+              <label style="font-size:0.85rem;font-weight:600;display:block;margin-bottom:6px;">URL da imagem</label>
+              <input id="rb-add-gal-input" type="url" class="form-input" placeholder="https://..."
+                style="width:100%;padding:8px 10px;border:1px solid var(--border-default,var(--border-subtle));border-radius:6px;">
+              <p style="font-size:0.72rem;color:var(--text-muted);margin:6px 0 0;">Cole URL pública (R2, Unsplash, etc).</p>
+            </div>
+          `,
+          footer: [
+            { label: 'Cancelar', class: 'btn-secondary' },
+            { label: 'Adicionar', class: 'btn-primary', onClick: () => { url = (document.getElementById('rb-add-gal-input')?.value || '').trim(); } },
+          ],
+          onClose: resolve,
+        });
+        setTimeout(() => document.getElementById('rb-add-gal-input')?.focus(), 50);
+      });
+      if (!url) return;
+      if (!state.doc.images) state.doc.images = {};
+      if (!Array.isArray(state.doc.images.gallery)) state.doc.images.gallery = [];
+      state.doc.images.gallery.push(url);
+      _rerenderImagesSection(container);
+      dirty(); return;
+    }
+    if (action === 'pick-hero-from-bank') {
+      const url = await _openImagePicker({ multi: false });
+      if (url) {
+        if (!state.doc.images) state.doc.images = {};
+        state.doc.images.hero = url;
+        _rerenderImagesSection(container);
+        const heroInput = container.querySelector('input[data-bind="images.hero"]');
+        if (heroInput) heroInput.value = url;
+        dirty();
+      }
+      return;
+    }
+    if (action === 'pick-gallery-from-bank') {
+      const urls = await _openImagePicker({ multi: true });
+      if (Array.isArray(urls) && urls.length) {
+        if (!state.doc.images) state.doc.images = {};
+        if (!Array.isArray(state.doc.images.gallery)) state.doc.images.gallery = [];
+        for (const u of urls) {
+          if (u && !state.doc.images.gallery.includes(u)) state.doc.images.gallery.push(u);
+        }
+        _rerenderImagesSection(container);
+        dirty();
+      }
+      return;
+    }
   }, { signal });
 }
 
@@ -1072,6 +1212,114 @@ function rerenderCapa(container) {
 function rerenderCategories(container) {
   const sec = container.querySelector('[data-section="categories"]');
   if (sec) sec.outerHTML = renderCategories();
+}
+
+/** v4.59.8: re-render só da section Imagens (após edição da gallery/hero). */
+function _rerenderImagesSection(container) {
+  const sec = container.querySelector('[data-section="images"]');
+  if (sec) sec.outerHTML = renderImages();
+}
+
+/**
+ * v4.59.8: picker visual do banco de imagens.
+ * Filtra por país+cidade principal do roteiro (se houver) + assetCategory=location.
+ * Modo `multi:true` retorna array de URLs selecionadas; `multi:false` retorna URL única.
+ * Resolve undefined se user cancelar.
+ */
+async function _openImagePicker({ multi = false } = {}) {
+  const country = (state.doc?.geo?.countries || [])[0] || '';
+  const city = (state.doc?.geo?.cities || [])[0]?.city || '';
+  const { fetchImages } = await import('../services/portal.js');
+  const { modal } = await import('../components/modal.js');
+
+  let images = [];
+  try {
+    // Tenta filtrado primeiro (mais relevante); se vazio, tenta global
+    images = await fetchImages({ country, city, assetCategory: 'location' }) || [];
+    if (!images.length && country) {
+      images = await fetchImages({ country, assetCategory: 'location' }) || [];
+    }
+    if (!images.length) {
+      images = await fetchImages({ assetCategory: 'location' }) || [];
+    }
+  } catch (e) {
+    console.warn('[_openImagePicker] fetch falhou:', e?.message);
+  }
+
+  const selected = new Set();
+
+  function thumbHTML(img) {
+    const isSel = selected.has(img.url);
+    return `
+      <div data-img-url="${esc(img.url)}" style="position:relative;cursor:pointer;
+        border:2px solid ${isSel ? 'var(--brand-gold,#D4A843)' : 'var(--border-subtle)'};
+        border-radius:6px;overflow:hidden;background:var(--bg-surface);aspect-ratio:4/3;
+        transition:border-color 0.15s;">
+        <div style="width:100%;height:100%;background-image:url('${esc(img.url)}');background-size:cover;background-position:center;"></div>
+        ${isSel ? `<div style="position:absolute;top:4px;right:4px;width:20px;height:20px;border-radius:50%;background:var(--brand-gold,#D4A843);color:#fff;display:flex;align-items:center;justify-content:center;font-size:0.7rem;font-weight:700;">✓</div>` : ''}
+        <div style="position:absolute;bottom:0;left:0;right:0;background:linear-gradient(transparent, rgba(0,0,0,0.7));color:#fff;padding:4px 6px;font-size:0.65rem;line-height:1.2;">
+          ${esc([img.city, img.country].filter(Boolean).join(' · ') || 'sem geo')}
+        </div>
+      </div>
+    `;
+  }
+
+  return new Promise(resolve => {
+    let resolved = false;
+    const handle = modal.open({
+      title: multi ? `Adicionar imagens à galeria${country?` — filtro: ${esc([city, country].filter(Boolean).join(', '))}`:''}` : `Escolher capa${country?` — filtro: ${esc([city, country].filter(Boolean).join(', '))}`:''}`,
+      size: 'lg',
+      closeOnEsc: true,
+      content: `
+        <div style="max-height:60vh;overflow:auto;">
+          ${images.length
+            ? `<div id="rb-picker-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:8px;">${images.map(thumbHTML).join('')}</div>`
+            : `<div style="text-align:center;color:var(--text-muted);padding:32px 0;">
+                Nenhuma imagem encontrada no banco com esse filtro.
+                <br><br>
+                <a href="#portal-images" target="_blank" style="color:var(--brand-gold,#D4A843);">Abrir Banco de Imagens em nova aba ↗</a>
+              </div>`}
+          ${images.length ? `<p style="font-size:0.72rem;color:var(--text-muted);margin:8px 0 0;text-align:center;">${images.length} ${images.length === 1 ? 'imagem' : 'imagens'}${multi ? ' · clique pra selecionar várias' : ' · clique pra escolher'}</p>` : ''}
+        </div>
+      `,
+      footer: multi
+        ? [
+            { label: 'Cancelar', class: 'btn-secondary' },
+            { label: 'Adicionar selecionadas', class: 'btn-primary', onClick: () => { resolved = true; resolve([...selected]); } },
+          ]
+        : [{ label: 'Cancelar', class: 'btn-secondary' }],
+      onClose: () => { if (!resolved) resolve(multi ? [] : null); },
+    });
+    // Wire click após render (dentro do backdrop do modal específico)
+    setTimeout(() => {
+      const root = handle?.getElement?.() || document;
+      const grid = root.querySelector('#rb-picker-grid');
+      if (!grid) return;
+      grid.addEventListener('click', (e) => {
+        const tile = e.target.closest('[data-img-url]');
+        if (!tile) return;
+        const url = tile.dataset.imgUrl;
+        if (multi) {
+          if (selected.has(url)) selected.delete(url); else selected.add(url);
+          const img = images.find(i => i.url === url);
+          if (img) {
+            // Substitui sem perder ref do parent — innerHTML do tile
+            tile.style.borderColor = selected.has(url) ? 'var(--brand-gold,#D4A843)' : 'var(--border-subtle)';
+            const checkmark = tile.querySelector('[data-pick-check]');
+            if (selected.has(url) && !checkmark) {
+              tile.insertAdjacentHTML('beforeend', `<div data-pick-check style="position:absolute;top:4px;right:4px;width:20px;height:20px;border-radius:50%;background:var(--brand-gold,#D4A843);color:#fff;display:flex;align-items:center;justify-content:center;font-size:0.7rem;font-weight:700;">✓</div>`);
+            } else if (!selected.has(url) && checkmark) {
+              checkmark.remove();
+            }
+          }
+        } else {
+          resolved = true;
+          handle?.close?.();
+          resolve(url);
+        }
+      });
+    }, 80);
+  });
 }
 
 /**

@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 59,
-  patch: 7,
-  build: '20260526-banco-adapter-cleanup-clientguard-modal',
+  patch: 8,
+  build: '20260526-banco-editor-images-picker-gallery',
 };
 
 /** "1.2.0" */
