@@ -2000,9 +2000,147 @@ function _openDayAiScopeModal() {
           rerenderCurrentSection();
         });
       } else if (scope === 'append') {
-        showToast('Geração de dia incremental ainda não disponível. Use "Gerar roteiro inteiro" por enquanto.', 'info');
+        _aiGenerateNextDay();   // v4.62.22
       }
     }));
+}
+
+/**
+ * v4.62.22: Gera UM dia incremental via chatWithAI (sem fila pesada).
+ * Usa briefing + último dia como contexto. ~15s.
+ */
+async function _aiGenerateNextDay() {
+  const days = currentRoteiro.days || [];
+  const lastDay = days[days.length - 1];
+  const c = currentRoteiro.client || {};
+  const travelers = currentRoteiro.travelers || [];
+  const travel = currentRoteiro.travel || {};
+  const destinations = (travel.destinations || []).filter(d => d.city || d.country);
+
+  // Modal pedindo cidade do próximo dia + contexto opcional
+  const cities = destinations.map(d => d.city).filter(Boolean);
+  const overlay = document.createElement('div');
+  overlay.className = 're-img-modal-overlay';
+  overlay.innerHTML = `
+    <div class="re-img-modal" style="max-width:520px;">
+      <div class="re-img-modal-header">
+        <div class="re-img-modal-title">🤖 Adicionar dia ${days.length + 1}</div>
+        <button class="re-img-modal-close" type="button">&times;</button>
+      </div>
+      <div class="re-img-modal-body">
+        <p style="font-size:0.8125rem;color:var(--text-muted);margin:0 0 14px;">
+          IA vai sugerir um dia coerente com o briefing${lastDay ? ` e o dia anterior (${esc(lastDay.city || 'sem cidade')})` : ''}.
+        </p>
+        <label class="re-label" style="margin-bottom:6px;display:block;">Cidade deste dia *</label>
+        <input class="re-input" type="text" id="re-aiday-city" list="re-aiday-cities"
+          value="${esc(lastDay?.city || cities[0] || '')}" placeholder="Ex: Paris" autofocus />
+        ${cities.length ? `
+          <datalist id="re-aiday-cities">
+            ${cities.map(c => `<option value="${esc(c)}">`).join('')}
+          </datalist>` : ''}
+        <label class="re-label" style="margin:14px 0 6px;display:block;">Foco do dia (opcional)</label>
+        <input class="re-input" type="text" id="re-aiday-focus"
+          placeholder="Ex: gastronomia local, museus, dia livre, transfer..." />
+      </div>
+      <div style="padding:14px 20px;border-top:1px solid var(--border-subtle,#e5e7eb);display:flex;justify-content:flex-end;gap:8px;">
+        <button class="btn btn-ghost btn-sm" type="button" data-cancel
+          style="font-size:0.8125rem;">Cancelar</button>
+        <button class="btn btn-primary btn-sm" type="button" data-gen
+          style="font-size:0.8125rem;">🤖 Gerar dia →</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+  overlay.querySelector('.re-img-modal-close').addEventListener('click', close);
+  overlay.querySelector('[data-cancel]').addEventListener('click', close);
+  overlay.querySelector('#re-aiday-city').focus();
+
+  overlay.querySelector('[data-gen]').addEventListener('click', async () => {
+    const city  = overlay.querySelector('#re-aiday-city').value.trim();
+    const focus = overlay.querySelector('#re-aiday-focus').value.trim();
+    if (!city) { showToast('Informe a cidade.', 'error'); return; }
+    const genBtn = overlay.querySelector('[data-gen]');
+    genBtn.disabled = true;
+    genBtn.innerHTML = '⟳ Gerando…';
+
+    try {
+      const { chatWithAI } = await import('../services/ai.js');
+      const prevDayLine = lastDay
+        ? `\nDia anterior (${lastDay.city || '?'}): ${(lastDay.title || '')} — ${(lastDay.narrative || '').slice(0, 200)}`
+        : '';
+      const prefs = Array.isArray(c.preferences) && c.preferences.length ? c.preferences.join(', ') : '—';
+      const rests = Array.isArray(c.restrictions) && c.restrictions.length ? c.restrictions.join(', ') : '—';
+      const profLabel = ({standard:'Standard',premium:'Premium',luxury:'Luxury'}[c.economicProfile] || '—');
+
+      const prompt = `Você é consultor de roteiros de luxo PRIMETOUR. Gere UM dia (Dia ${days.length + 1}) pra:
+
+Cliente: ${c.name || '—'} (${profLabel})
+Preferências: ${prefs}
+Restrições: ${rests}
+Cidade do dia: ${city}
+${focus ? `Foco solicitado: ${focus}` : ''}
+${prevDayLine}
+
+Retorne APENAS JSON neste formato exato (sem markdown fences, sem texto extra):
+{
+  "title": "Título curto do dia",
+  "narrative": "1-2 parágrafos descrevendo o dia",
+  "activities": [
+    {"time": "09:00", "description": "...", "type": "passeio|refeicao|transfer|livre"},
+    {"time": "12:30", "description": "...", "type": "refeicao"}
+  ]
+}
+
+Atividades: 3 a 6 cronologicamente ordenadas. Use tipo apropriado.`;
+
+      const result = await chatWithAI(prompt, {}, { moduleId: 'roteiros' });
+      const text = typeof result === 'string' ? result : (result?.text || result?.response || JSON.stringify(result));
+      // Tenta parsear JSON (modelo às vezes embrulha)
+      let parsed = null;
+      try {
+        const cleaned = text.trim().replace(/^```(?:json)?\n?/i, '').replace(/\n?```$/, '');
+        const match = cleaned.match(/\{[\s\S]*\}/);
+        parsed = match ? JSON.parse(match[0]) : null;
+      } catch {}
+
+      if (!parsed || !parsed.title) {
+        // Fallback: usa texto cru como narrative
+        parsed = {
+          title: `Dia em ${city}`,
+          narrative: text.slice(0, 800),
+          activities: [],
+        };
+      }
+
+      if (!currentRoteiro.days) currentRoteiro.days = [];
+      const newDayNum = currentRoteiro.days.length + 1;
+      const newDate = lastDay?.date ? addDaysToDate(lastDay.date, 1) : '';
+      currentRoteiro.days.push({
+        dayNumber: newDayNum,
+        date: newDate,
+        city: city,
+        title: parsed.title || `Dia em ${city}`,
+        narrative: parsed.narrative || '',
+        overnightCity: city,
+        activities: Array.isArray(parsed.activities) ? parsed.activities.map(a => ({
+          time: a.time || '',
+          description: a.description || '',
+          type: ['passeio','refeicao','transfer','livre'].includes(a.type) ? a.type : 'passeio',
+        })) : [],
+        imageIds: [],
+        source: 'ai',
+      });
+      rerenderCurrentSection();
+      markDirty();
+      close();
+      showToast(`Dia ${newDayNum} (${city}) gerado por IA. Revise antes de salvar.`, 'success');
+    } catch (e) {
+      genBtn.disabled = false;
+      genBtn.innerHTML = '🤖 Gerar dia →';
+      showToast('Falha na geração: ' + (e?.message || e), 'error');
+    }
+  });
 }
 
 let _bankImagesCache = null;
