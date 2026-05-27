@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 62,
-  patch: 5,
-  build: '20260527-destinations-country-standalone-remove-dica-col',
+  patch: 6,
+  build: '20260527-aliases-tab-autosave-on-enter',
 };
 
 /** "1.2.0" */

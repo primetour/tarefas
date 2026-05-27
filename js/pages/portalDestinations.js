@@ -88,6 +88,7 @@ export async function renderPortalDestinations(container) {
           <div style="font-size:0.78rem;color:var(--text-muted);margin-top:2px;">
             Adicione grafias alternativas (ex: "Cape Town" como alias de "Cidade do Cabo").
             Sistema reconhece como mesma cidade no cross-module.
+            <span style="color:var(--brand-blue,#3B82F6);font-weight:500;">Salva automaticamente ao pressionar Enter.</span>
           </div>
         </div>
         <input type="search" id="dest-aliases-search" placeholder="Buscar cidade ou alias…"
@@ -100,7 +101,7 @@ export async function renderPortalDestinations(container) {
               <th style="padding:10px 16px;text-align:left;font-size:0.6875rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);border-bottom:1px solid var(--border-subtle);">País</th>
               <th style="padding:10px 16px;text-align:left;font-size:0.6875rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);border-bottom:1px solid var(--border-subtle);">Cidade (canônico)</th>
               <th style="padding:10px 16px;text-align:left;font-size:0.6875rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);border-bottom:1px solid var(--border-subtle);">Variações (aliases)</th>
-              <th style="padding:10px 16px;width:60px;border-bottom:1px solid var(--border-subtle);"></th>
+              <th style="padding:10px 16px;width:110px;border-bottom:1px solid var(--border-subtle);"></th>
             </tr>
           </thead>
           <tbody id="aliases-tbody">
@@ -606,9 +607,10 @@ function _renderAliasesTab() {
           </div>
         </td>
         <td style="padding:10px 16px;text-align:right;white-space:nowrap;">
-          <button class="btn btn-ghost btn-sm" data-row-save="${d.id}"
-            style="font-size:0.72rem;padding:3px 10px;color:var(--brand-blue,#3B82F6);" disabled
-            title="Salvar variações desta linha">Salvar</button>
+          <!-- v4.62.6: indicador status do autosave (CLAUDE.md §11.b).
+               Atualizado dinamicamente por _setAliasSaveStatus(id, state). -->
+          <span data-save-status="${d.id}" style="font-size:0.72rem;color:var(--text-muted);
+            opacity:0;transition:opacity .25s;">—</span>
         </td>
       </tr>
     `;
@@ -617,7 +619,6 @@ function _renderAliasesTab() {
   // Handlers por linha
   tbody.querySelectorAll('[data-row-alias-input]').forEach(input => {
     const id = input.dataset.rowAliasInput;
-    const saveBtn = tbody.querySelector(`[data-row-save="${id}"]`);
     input.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.key === ',') {
         e.preventDefault();
@@ -630,14 +631,10 @@ function _renderAliasesTab() {
         if (aliases.some(a => norm(a) === norm(val))) { toast.info('Já adicionado.'); input.value=''; return; }
         aliases.push(val);
         dest.cityAliases = aliases;
-        _renderAliasesTab();   // re-render mantém o input em foco visual via search
-        // Habilita botão Salvar
-        const saveBtn2 = document.querySelector(`[data-row-save="${id}"]`);
-        if (saveBtn2) saveBtn2.disabled = false;
+        _renderAliasesTab();    // re-render reflete chip novo
+        // v4.62.6: autosave silencioso imediato (sem botão Salvar manual)
+        _saveAliasesForId(id, { silent: true });
       }
-    });
-    input.addEventListener('input', () => {
-      if (saveBtn) saveBtn.disabled = !input.value.trim();
     });
   });
   tbody.querySelectorAll('[data-row-remove-alias]').forEach(btn =>
@@ -648,18 +645,48 @@ function _renderAliasesTab() {
       if (!dest || !Array.isArray(dest.cityAliases)) return;
       dest.cityAliases.splice(idx, 1);
       _renderAliasesTab();
-      // Auto-save remoção
-      _saveAliasesForId(id);
+      _saveAliasesForId(id, { silent: true });   // autosave remoção
     }));
-  tbody.querySelectorAll('[data-row-save]').forEach(btn => {
-    btn.disabled = true;   // só habilita após digitar
-    btn.addEventListener('click', () => _saveAliasesForId(btn.dataset.rowSave));
-  });
 }
 
-async function _saveAliasesForId(id) {
+/**
+ * v4.62.6 — atualiza indicador inline do autosave da linha.
+ * Estados: 'saving' | 'saved' | 'error' | 'idle'.
+ * 'saved' faz fade-out automático após 2.5s (volta pra idle invisível).
+ */
+function _setAliasSaveStatus(id, state, msg) {
+  const el = document.querySelector(`[data-save-status="${id}"]`);
+  if (!el) return;
+  // Cancela timer anterior se houver
+  if (el._fadeTimer) { clearTimeout(el._fadeTimer); el._fadeTimer = null; }
+
+  if (state === 'saving') {
+    el.textContent = '⟳ Salvando…';
+    el.style.color = 'var(--text-muted)';
+    el.style.opacity = '1';
+  } else if (state === 'saved') {
+    el.textContent = '✓ Salvo';
+    el.style.color = 'var(--brand-green,#10B981)';
+    el.style.opacity = '1';
+    el._fadeTimer = setTimeout(() => { el.style.opacity = '0'; }, 2500);
+  } else if (state === 'error') {
+    el.textContent = '⚠ ' + (msg || 'Erro — tente de novo');
+    el.style.color = 'var(--color-danger,#EF4444)';
+    el.style.opacity = '1';
+  } else {
+    el.style.opacity = '0';
+  }
+}
+
+/**
+ * v4.62.6 — opts.silent suprime toast.success (mantém toast.error)
+ * + atualiza indicador inline via _setAliasSaveStatus.
+ */
+async function _saveAliasesForId(id, opts = {}) {
+  const { silent = false } = opts;
   const dest = allDests.find(d => d.id === id);
   if (!dest) return;
+  _setAliasSaveStatus(id, 'saving');
   try {
     await saveDestination(id, {
       continent: dest.continent,
@@ -672,13 +699,14 @@ async function _saveAliasesForId(id) {
       reviewStatus: dest.reviewStatus || 'approved',
       source:       dest.source || 'manual',
     });
-    toast.success(`${dest.city}: variações atualizadas.`);
-    const btn = document.querySelector(`[data-row-save="${id}"]`);
-    if (btn) btn.disabled = true;
+    _setAliasSaveStatus(id, 'saved');
+    if (!silent) toast.success(`${dest.city}: variações atualizadas.`);
   } catch (e) {
     if (e?.code === 'DUPLICATE') {
+      _setAliasSaveStatus(id, 'error', 'Colide com canônico');
       toast.error(`"${dest.city}" colide com canônico existente "${e.mergeTargetCity}". Abra "Destinos" pra mesclar.`);
     } else {
+      _setAliasSaveStatus(id, 'error', 'Erro salvar');
       toast.error('Erro ao salvar: ' + e.message);
     }
   }

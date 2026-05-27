@@ -6,6 +6,112 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.62.6+20260527-aliases-tab-autosave-on-enter] — 2026-05-27
+
+Release **UX/AUTO-SAVE** — aba "Variações de nome" ganha autosave imediato.
+
+**Pedido Renê**: *"aba variações de nome - aplicar autosave ao inserir a tag alias"*.
+
+### Antes (v4.61.0+)
+
+Fluxo manual em 2 passos:
+1. Digite alias + Enter → chip aparece na célula, botão "Salvar" da linha
+   é HABILITADO (azul)
+2. User precisa CLICAR no botão Salvar pra persistir no Firestore
+
+Anti-padrão: CLAUDE.md §11.b ("Auto-save em formulários longos é obrigatório").
+2 cliques pra cada alias = fricção, esquecimento, alias perdido se trocou de
+linha sem salvar.
+
+### Depois (v4.62.6)
+
+Fluxo de 1 passo + indicador inline:
+1. Digite alias + Enter → chip aparece + **save imediato silencioso** dispara
+2. Indicador na 4ª coluna mostra estado dinâmico (CLAUDE.md §11.b):
+   - `⟳ Salvando…` (cinza) — durante o write
+   - `✓ Salvo` (verde) — fade-out automático após 2.5s
+   - `⚠ Erro — tente de novo` (vermelho) — persiste até nova ação
+   - `idle` (invisível) — estado neutro
+
+### Mudanças em `js/pages/portalDestinations.js`
+
+#### 1. Botão Salvar → indicador de status
+
+```html
+<!-- antes -->
+<button data-row-save="${id}" disabled>Salvar</button>
+
+<!-- agora -->
+<span data-save-status="${id}" style="opacity:0;transition:opacity .25s;"></span>
+```
+
+Largura da coluna ajustada de 60px → 110px pra caber "⟳ Salvando…".
+
+#### 2. Handler Enter dispara save imediato
+
+```js
+// antes
+aliases.push(val);
+dest.cityAliases = aliases;
+_renderAliasesTab();
+saveBtn2.disabled = false;   // user precisa clicar
+
+// agora
+aliases.push(val);
+dest.cityAliases = aliases;
+_renderAliasesTab();
+_saveAliasesForId(id, { silent: true });   // autosave instantâneo
+```
+
+#### 3. `_saveAliasesForId` ganha opts.silent + indicador
+
+```js
+async function _saveAliasesForId(id, opts = {}) {
+  const { silent = false } = opts;
+  _setAliasSaveStatus(id, 'saving');
+  try {
+    await saveDestination(id, {...});
+    _setAliasSaveStatus(id, 'saved');     // fade-out auto
+    if (!silent) toast.success(...);      // toast só em manual call
+  } catch (e) {
+    _setAliasSaveStatus(id, 'error', msg);
+    toast.error(...);                     // erro sempre toast (visibilidade)
+  }
+}
+```
+
+Padrão `silent: true` segue CLAUDE.md §11.b — auto-save não polui toast,
+manual mantém feedback explícito (mas atualmente toda chamada é silent porque
+não há mais botão manual; flag fica reservada se voltar a precisar).
+
+#### 4. `_setAliasSaveStatus(id, state, msg)` novo helper
+
+Atualiza o `<span data-save-status>` com texto + cor + fade-out timer.
+Cancela timer anterior se houver (evita race quando user adiciona 2 aliases
+muito rápido — segundo `saved` reseta o fade).
+
+#### 5. Helper text adicionado abaixo do título da aba
+
+> "Salva automaticamente ao pressionar Enter."
+
+Visível em azul, deixa explícito pro user que não precisa botão Salvar.
+
+### Cobertura adicional
+
+- **Remove alias (×)**: também passou pra `{ silent: true }`. Antes mostrava
+  toast.success em cada remoção (poluição visual).
+- **Conflito DUPLICATE**: erro mostra status `⚠ Colide com canônico` na linha
+  + toast com mensagem completa pra ação.
+
+### Arquivos tocados
+
+- `js/pages/portalDestinations.js`: thead, tbody, handlers, helper, save fn
+- `js/version.js`: 4.62.5 → 4.62.6
+- `index.html`: cache-bust
+- `CHANGELOG.md`: este bloco
+
+---
+
 ## [4.62.5+20260527-destinations-country-standalone-remove-dica-col] — 2026-05-27
 
 Release **UX/CLAREZA** — listagem de Destinos com 2 fixes pedidos pelo Renê.
