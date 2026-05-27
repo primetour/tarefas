@@ -59,7 +59,9 @@ const SECTIONS = [
   { icon: '\u2139',    label: 'Informa\u00e7\u00f5es Importantes' },
   { icon: '\u{1F5BC}', label: 'Imagens' },
   { icon: '\u{1F4A1}', label: 'Dicas anexas' },  // 4.42.0+ Sprint 3 \u2014 embed do Portal de Dicas
-  { icon: '\u2699',    label: 'Avan\u00e7ado' },        // 4.41.0+ Sprint 2 \u2014 colaboradores, workflow, custo
+  // v4.62.16: Aba Avan\u00e7ado oculta (Ren\u00ea: "vamos tratar disso em outro momento").
+  // hidden:true filtra do sidebar mas mant\u00e9m \u00edndice 11 pra switch n\u00e3o quebrar.
+  { icon: '\u2699',    label: 'Avan\u00e7ado', hidden: true },
   { icon: '\u{1F4C4}', label: 'Preview & Export' },
   { icon: '\u2728',    label: 'Observa\u00e7\u00f5es IA' },  // v4.49.74+ fontes consultadas + notas internas
 ];
@@ -118,10 +120,12 @@ const EDITOR_CSS = `
   font-size: 0.875rem; color: var(--text-secondary); transition: all 0.15s;
   margin-bottom: 2px; user-select: none;
 }
-.re-nav-item:hover { background: var(--bg-hover, rgba(255,255,255,0.05)); }
+/* v4.62.16: hover/active alinhados com identidade PRIMETOUR (dourado = brand
+   color em luxury; brand-blue era genérico). CLAUDE.md §11.f. */
+.re-nav-item:hover { background: var(--bg-hover, rgba(212,168,67,0.06)); }
 .re-nav-item.active {
-  background: var(--bg-hover, rgba(255,255,255,0.05));
-  border-left-color: var(--brand-blue, #3B82F6);
+  background: rgba(212,168,67,0.10);
+  border-left-color: var(--brand-gold, #D4A843);
   color: var(--text-primary); font-weight: 600;
 }
 .re-content {
@@ -138,16 +142,20 @@ const EDITOR_CSS = `
   font-size: 0.75rem; font-weight: 600; color: var(--text-muted);
   text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem; display: block;
 }
+/* v4.62.16: inputs alinhados com .form-input/.filter-select do sistema:
+   - fallbacks light-first (#fff em vez de #1a1a2e dark hardcoded)
+   - border-subtle (#e5e7eb), focus dourado consistente com nav active. */
 .re-input, .re-select, .re-textarea {
   width: 100%; padding: 0.5rem 0.75rem;
-  background: var(--bg-input, var(--bg-card, #1a1a2e));
-  border: 1px solid var(--border, #333); border-radius: 6px;
+  background: var(--bg-input, #fff);
+  border: 1px solid var(--border-subtle, var(--border, #e5e7eb)); border-radius: 6px;
   color: var(--text-primary); font-size: 0.875rem;
   font-family: inherit; box-sizing: border-box;
+  transition: border-color 0.12s;
 }
 .re-textarea { resize: vertical; min-height: 60px; }
 .re-input:focus, .re-select:focus, .re-textarea:focus {
-  outline: none; border-color: var(--brand-blue, #3B82F6);
+  outline: none; border-color: var(--brand-gold, #D4A843);
 }
 .re-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
 .re-row > .re-form-group { flex: 1; min-width: 180px; margin-bottom: 0; }
@@ -517,7 +525,7 @@ const EDITOR_CSS = `
   .re-layout { grid-template-columns: 1fr; }
   .re-sidebar { position: static; display: flex; flex-wrap: wrap; gap: 4px; }
   .re-nav-item { padding: 6px 10px; font-size: 0.75rem; border-left: none; border-bottom: 2px solid transparent; }
-  .re-nav-item.active { border-bottom-color: var(--brand-blue, #3B82F6); border-left-color: transparent; }
+  .re-nav-item.active { border-bottom-color: var(--brand-gold, #D4A843); border-left-color: transparent; }
   .re-grid-2, .re-grid-3, .re-two-cols { grid-template-columns: 1fr; }
   .re-row { flex-direction: column; }
 }
@@ -2194,7 +2202,7 @@ function renderPreviewSection() {
       </select>
     </div>
     <div class="re-preview-summary">
-      <strong>Resumo do Roteiro:</strong><br/>
+      <strong>Resumo da Cotação:</strong><br/>
       <strong>T\u00edtulo:</strong> ${esc(r.title) || '(sem t\u00edtulo)'}<br/>
       <strong>Cliente:</strong> ${esc(c.name) || '(n\u00e3o informado)'}<br/>
       <strong>Destinos:</strong> ${esc(dests) || '(nenhum)'}<br/>
@@ -2899,7 +2907,7 @@ function markDirty() {
   // dado a salvar; evita retry chain inútil que pode parecer "loop").
   isDirty = true;
   if (!currentRoteiro?.id && _isRoteiroEffectivelyEmpty(collectFormData())) {
-    _setAutoSaveStatus('Novo roteiro');
+    _setAutoSaveStatus('Nova cotação');
     return;
   }
   _setAutoSaveStatus('Alterações não salvas');
@@ -4109,7 +4117,9 @@ export async function renderRoteiroEditor(container) {
     // v4.49.86+ bloco "briefing" removido — campos migrados pra client.*
 
     const isAiGenerated = currentRoteiro.aiGenerated === true;
-    const pageTitle = roteiroId ? 'Editar Roteiro' : (isAiGenerated ? 'Roteiro Gerado por IA' : 'Novo Roteiro');
+    // v4.62.16: renomeado "Roteiro" → "Cotação" (sidebar e módulo passaram a se
+    // chamar Gerador de Cotações). Schema, route e código preservam "roteiro".
+    const pageTitle = roteiroId ? 'Editar Cotação' : (isAiGenerated ? 'Cotação Gerada por IA' : 'Nova Cotação');
     const statusLabel = currentRoteiro.status || 'draft';
 
     // v4.57.35 fix integração R14: safety-net pra estado "approved mas tasks
@@ -4142,7 +4152,7 @@ export async function renderRoteiroEditor(container) {
           <span style="font-size:1.25rem;">◈</span>
           <div style="flex:1;">
             <div style="font-size:0.875rem;font-weight:600;color:var(--color-warning, #F59E0B);margin-bottom:4px;">
-              Roteiro gerado por Intelig\u00eancia Artificial
+              Cota\u00e7\u00e3o gerada por Intelig\u00eancia Artificial
             </div>
             <div style="font-size:0.8125rem;color:var(--text-muted);line-height:1.5;">
               Revise todas as se\u00e7\u00f5es antes de salvar. Verifique nomes de hot\u00e9is, pre\u00e7os,
@@ -4166,15 +4176,15 @@ export async function renderRoteiroEditor(container) {
           <button class="btn btn-ghost btn-sm" data-action="back">\u2190 Voltar</button>
           <h1 class="page-title" style="margin:0;font-size:1.25rem;font-weight:700;">${esc(pageTitle)}</h1>
           ${_renderStatusDropdown(statusLabel)}
-          <span id="re-autosave-status" style="font-size:0.75rem;color:var(--text-muted);">${roteiroId ? '' : (isAiGenerated ? 'Gerado por IA — n\u00e3o salvo' : 'Novo roteiro')}</span>
+          <span id="re-autosave-status" style="font-size:0.75rem;color:var(--text-muted);">${roteiroId ? '' : (isAiGenerated ? 'Gerado por IA — n\u00e3o salvo' : 'Nova cotação')}</span>
           <button class="btn btn-primary btn-sm" data-action="save">Salvar</button>
         </div>
 
         <!-- Two-column layout -->
         <div class="re-layout">
-          <!-- Sidebar nav -->
+          <!-- Sidebar nav — v4.62.16 filtra sections hidden (Avançado) -->
           <div class="re-sidebar" id="re-sidebar-nav">
-            ${SECTIONS.map((s, i) => `
+            ${SECTIONS.map((s, i) => s.hidden ? '' : `
               <div class="re-nav-item${i === 0 ? ' active' : ''}" data-section-idx="${i}">
                 <span>${s.icon}</span>
                 <span>${s.label}</span>

@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 62,
-  patch: 15,
-  build: '20260527-portal-new-request-handler-hotfix',
+  patch: 16,
+  build: '20260527-editor-fase-a-rename-visual-esconde-avancado',
 };
 
 /** "1.2.0" */

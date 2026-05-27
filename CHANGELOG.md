@@ -6,6 +6,111 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.62.16+20260527-editor-fase-a-rename-visual-esconde-avancado] — 2026-05-27
+
+Release **EDITOR FASE A** — primeira fase do redesign do editor (resposta ao
+print do Renê + briefing de wizard/serviços/imagens em fases futuras).
+
+**Pedido completo do Renê** (registrado pra orientar Fases B-E):
+> *"precisamos ajustar a nomenclatura aqui para cotações nos pontos em que
+> fala roteiros e precisamos rever o design system. estou cogitando fazer
+> isso em formato wizard. dia a dia: botões 'Consultar Roteiros', '+
+> Adicionar dia manualmente' e 'Gerar por IA'. Aéreo e Hotéis + Valores +
+> Opcionais → uma aba só 'Serviços'. Imagens: conexão direta com Banco de
+> Imagens. Aba Avançado: ocultar."*
+
+**Decisões alinhadas via AskUserQuestion**:
+1. Wizard só pra cotação **nova** (existente abre nas tabs)
+2. Serviços com **sub-tabs** (preserva schema)
+3. Consultar Banco: modal pra escolher dias específicos
+4. Gerar por IA: **híbrido por dia** (user marca quais dias quer manual /
+   banco / IA — cada dia pode ter origem diferente)
+
+**Roadmap** (incremental, baixo risco):
+- **Fase A** (esta release) — rename + audit visual + esconder Avançado
+- Fase B — Imagens com picker Banco de Imagens
+- Fase C — Dia a Dia ganha 3 botões + indicador de origem por dia
+- Fase D — Consolidar Serviços (sub-tabs)
+- Fase E — Wizard pra cotação nova
+
+### Mudanças desta release (Fase A)
+
+#### 1. Aba Avançado oculta
+
+```js
+// SECTIONS array
+{ icon: '⚙', label: 'Avançado', hidden: true },
+// Sidebar nav filter
+${SECTIONS.map((s, i) => s.hidden ? '' : `<div ...></div>`)}
+```
+
+Avançado some do sidebar mas **mantém índice 11** no array — switch
+interno (`case 11: return renderAdvancedSection()`) preserva. Renê pode
+re-habilitar trocando `hidden:true` → `hidden:false`.
+
+#### 2. Renomeações user-facing
+
+| Antes | Agora |
+|---|---|
+| `Novo Roteiro` (pageTitle, autosave) | `Nova Cotação` |
+| `Editar Roteiro` | `Editar Cotação` |
+| `Roteiro Gerado por IA` | `Cotação Gerada por IA` |
+| Banner: "Roteiro gerado por Inteligência Artificial" | "Cotação gerada por…" |
+| `Resumo do Roteiro` (Preview section) | `Resumo da Cotação` |
+
+Alinhado com renomeação v4.62.13 (sidebar/header do módulo).
+
+#### 3. Visual: identidade PRIMETOUR (gold, não blue)
+
+```css
+/* nav active: brand-blue → brand-gold (CLAUDE.md §11.f) */
+.re-nav-item.active {
+  background: rgba(212,168,67,0.10);
+  border-left-color: var(--brand-gold, #D4A843);
+  color: var(--text-primary); font-weight: 600;
+}
+
+/* inputs: light-first fallbacks (era dark hardcoded #1a1a2e/#333) */
+.re-input, .re-select, .re-textarea {
+  background: var(--bg-input, #fff);
+  border: 1px solid var(--border-subtle, var(--border, #e5e7eb));
+  transition: border-color 0.12s;
+}
+.re-input:focus, .re-select:focus, .re-textarea:focus {
+  border-color: var(--brand-gold, #D4A843);  /* era brand-blue */
+}
+```
+
+Antes: fallbacks dark (`#1a1a2e`, `#333`) estouravam no light theme (que é
+o default do sistema pós v4.55.7). Agora light-first com fallback gracioso
+caso variable não resolva.
+
+### Schema/code preservados (intencional)
+
+- Route `#roteiro-editor`, `roteiroId` query param
+- Funções: `renderRoteiroEditor`, `currentRoteiro`, etc
+- Collection Firestore `roteiros`
+- Classes CSS `.re-*` (consistente entre Editor de Cotações e Banco)
+- Aba Avançado preservada no array (`hidden:true` flag, switch case 11 intacto)
+- Schema do doc inteiramente intacto — só labels visuais mudaram
+
+### Arquivos tocados
+
+- `js/pages/roteiroEditor.js`: SECTIONS hidden, pageTitle, banner, autosave,
+  resumo, EDITOR_CSS (nav active + inputs)
+- `js/version.js`: 4.62.15 → 4.62.16
+- `index.html`: cache-bust
+- `CHANGELOG.md`: este bloco
+
+### Próximo
+
+Fase B — Imagens com picker Banco de Imagens (escopo: substituir upload
+manual + Unsplash fallback por seleção direta do `portal_images` filtrado
+por destino, mantendo fallback Unsplash quando vazio). Aguarda OK do Renê
+pra começar.
+
+---
+
 ## [4.62.15+20260527-portal-new-request-handler-hotfix] — 2026-05-27
 
 Release **HOTFIX** — botão "Fazer nova solicitação" do v4.62.14 não funcionou
