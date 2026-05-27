@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 62,
-  patch: 24,
-  build: '20260527-editor-servicos-preco-inline-voos-hoteis-opcionais',
+  patch: 25,
+  build: '20260527-editor-servicos-totals-realtime-recalc',
 };
 
 /** "1.2.0" */

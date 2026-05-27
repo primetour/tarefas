@@ -1362,13 +1362,56 @@ function _sumServicePrices() {
     const c = cur || 'BRL';
     byCurrency[c] = (byCurrency[c] || 0) + v;
   };
-  (currentRoteiro.flights || []).forEach(f => add(f.price, f.currency));
-  (currentRoteiro.hotels  || []).forEach(h => add(h.price, h.currency));
-  (currentRoteiro.optionals || []).forEach(o => {
-    add(o.priceAdult, o.currency);
-    add(o.priceChild, o.currency);
-  });
+  // v4.62.25: prioriza valores LIVE do DOM (real-time) sobre state salvo,
+  // pra refletir digitação imediata sem precisar trigger collectFormData.
+  // Sub-tabs inativas (sem rows no DOM) caem pro state — cobre cross-tab.
+  const fRows = document.querySelectorAll('[data-flight-idx]');
+  fRows.length
+    ? fRows.forEach(r => add(r.querySelector('[data-flight="price"]')?.value, r.querySelector('[data-flight="currency"]')?.value))
+    : (currentRoteiro.flights || []).forEach(f => add(f.price, f.currency));
+  const hRows = document.querySelectorAll('[data-hotel-idx]');
+  hRows.length
+    ? hRows.forEach(r => add(r.querySelector('[data-hotel="price"]')?.value, r.querySelector('[data-hotel="currency"]')?.value))
+    : (currentRoteiro.hotels || []).forEach(h => add(h.price, h.currency));
+  const oRows = document.querySelectorAll('[data-opt-idx]');
+  if (oRows.length) {
+    oRows.forEach(r => {
+      const cur = r.querySelector('[data-opt="currency"]')?.value;
+      add(r.querySelector('[data-opt="priceAdult"]')?.value, cur);
+      add(r.querySelector('[data-opt="priceChild"]')?.value, cur);
+    });
+  } else {
+    (currentRoteiro.optionals || []).forEach(o => {
+      add(o.priceAdult, o.currency);
+      add(o.priceChild, o.currency);
+    });
+  }
   return byCurrency;
+}
+
+/**
+ * v4.62.25: atualiza só o bloco #re-svc-totals com totais frescos do DOM,
+ * sem re-renderizar a section inteira (preserva foco no input que user digita).
+ * CLAUDE.md §11.g. Cria o bloco se não existir + remove se totais zerados.
+ */
+function _recalcServiceTotalsInPlace() {
+  const el = document.getElementById('re-svc-totals');
+  const tpl = _renderServiceTotals();
+  if (!tpl) {
+    if (el) el.remove();
+    return;
+  }
+  const wrap = document.createElement('div');
+  wrap.innerHTML = tpl.trim();
+  const fresh = wrap.firstElementChild;
+  if (el) {
+    el.replaceWith(fresh);
+  } else {
+    // Bloco ainda não foi criado (primeiro preço) — anexa ao fim do conteúdo
+    // da seção atual de Serviços.
+    document.getElementById('re-servicos-body')?.appendChild(fresh) ||
+      document.getElementById('re-content-area')?.appendChild(fresh);
+  }
 }
 function _renderServiceTotals() {
   const totals = _sumServicePrices();
@@ -4543,6 +4586,15 @@ function handleEditorChange(e) {
         nightsInput.value = diffDays(ci, co);
       }
     }
+  }
+
+  // v4.62.25: real-time recalc do bloco "Total dos serviços" quando user
+  // edita preço/moeda em voo/hotel/opcional. Atualiza só o span, sem
+  // re-renderizar a section (preserva foco no input — CLAUDE.md §11.g).
+  if (target.dataset.flight === 'price' || target.dataset.flight === 'currency' ||
+      target.dataset.hotel  === 'price' || target.dataset.hotel  === 'currency' ||
+      target.dataset.opt    === 'priceAdult' || target.dataset.opt === 'priceChild' || target.dataset.opt === 'currency') {
+    _recalcServiceTotalsInPlace();
   }
 
   // Recalc travel totals
