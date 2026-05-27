@@ -703,6 +703,13 @@ async function renderForm(db, taskTypes, auth) {
         // newsletter (paridade com handler #new-request-btn do success-view).
         onNewRequest: () => showNewsletterPrompt(db, taskTypes),
       });
+      // v4.62.14 BUG FIX: handler do botão "Fazer nova solicitação" da tela
+      // #success-view era wireado SÓ dentro de bindFormEvents (linha 3355),
+      // que não é chamada no path wizard. Resultado: user finaliza envio,
+      // vê tela de sucesso, clica no botão e nada acontece. Wirea aqui pro
+      // path wizard padrão. Mantém handler dentro de bindFormEvents pra
+      // fallback legacy.
+      _wireNewRequestBtn(db, taskTypes);
     } catch (e) {
       console.error('[portal] wizard failed, fallback pro form antigo:', e);
       bindFormEvents(db, taskTypes);
@@ -710,6 +717,48 @@ async function renderForm(db, taskTypes, auth) {
   } else {
     bindFormEvents(db, taskTypes);
   }
+}
+
+/**
+ * v4.62.14: handler do botão "Fazer nova solicitação" pra path wizard. Usa
+ * clone+replace pra zerar listeners antigos (idempotente — chamar N vezes
+ * não acumula handlers). Reseta success-view, mostra form-view, re-renderiza
+ * wizard limpo + popup newsletter.
+ */
+function _wireNewRequestBtn(db, taskTypes) {
+  const oldBtn = document.getElementById('new-request-btn');
+  if (!oldBtn) return;
+  // Clone+replace remove TODOS os listeners antigos — evita acumulação se
+  // o ciclo "fazer nova → enviar → fazer nova" repetir várias vezes na sessão.
+  const btn = oldBtn.cloneNode(true);
+  oldBtn.parentNode.replaceChild(btn, oldBtn);
+  btn.addEventListener('click', async () => {
+    document.getElementById('success-view')?.classList.remove('visible');
+    const formView = document.getElementById('form-view');
+    if (formView) formView.style.display = 'block';
+
+    if (document.getElementById('pw-host')) {
+      try {
+        const { renderPortalWizard } = await import('./portalWizard.js?v=' + WIZARD_VERSION);
+        document.getElementById('pw-host').innerHTML = '';
+        renderPortalWizard(document.getElementById('pw-host'), {
+          db: window._portalDb || db,
+          taskTypes: window._portalTaskTypes || taskTypes,
+          user: portalUser,
+          onSuccess: () => {
+            document.getElementById('form-view')?.style.setProperty('display', 'none');
+            document.getElementById('success-view')?.classList.add('visible');
+          },
+          onNewRequest: () => showNewsletterPrompt(db, taskTypes),
+        });
+        // Re-wirea o botão pra próxima rodada (clone+replace é idempotente).
+        _wireNewRequestBtn(db, taskTypes);
+        showNewsletterPrompt(db, taskTypes);
+      } catch (e) {
+        console.warn('[portal] re-render wizard falhou:', e?.message || e);
+      }
+    }
+  });
 }
 
 /* ─── Calendar slots + Newsletter mini-calendar ────────────── */

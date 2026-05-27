@@ -1291,7 +1291,7 @@ function _renderStep4() {
           ${variation ? _summaryRow('Variação', esc(variation.name) + ((variation.slaDays || variation.sla)?` (SLA ${variation.slaDays || variation.sla}d)`:'')) : ''}
           ${_summaryRow('Título', esc(d.title))}
           ${_summaryRow('Descrição', `<div style="max-height:80px;overflow:auto;white-space:pre-wrap;">${esc(d.description)}</div>`)}
-          ${d.contentLink ? _summaryRow('Link', `<a href="${esc(d.contentLink)}" target="_blank" rel="noopener">${esc(d.contentLink)}</a>`) : ''}
+          ${d.contentLink ? _summaryRow('Link', `<a href="${esc(d.contentLink)}" target="_blank" rel="noopener" style="word-break:break-all;overflow-wrap:anywhere;display:inline-block;max-width:100%;">${esc(d.contentLink)}</a>`) : ''}
           ${d.outOfCalendar ? _summaryRow('Sinaliz.', '<span style="color:var(--brand-gold);">Fora do calendário editorial</span>') : ''}
         </div>
       </div>
@@ -1318,9 +1318,11 @@ function _wireStep4() {
 }
 
 function _summaryRow(label, value) {
+  // v4.62.14: min-width:0 no value cell pra grid (120px 1fr) não estourar
+  // quando conteúdo longo sem break natural (URL, etc) força largura mínima.
   return `
     <div style="color:var(--text-muted);">${esc(label)}:</div>
-    <div style="color:var(--text-primary);">${value}</div>
+    <div style="color:var(--text-primary);min-width:0;overflow-wrap:anywhere;">${value}</div>
   `;
 }
 

@@ -6,6 +6,103 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.62.14+20260527-portal-link-overflow-e-new-request-handler] — 2026-05-27
+
+Release **2 BUGFIXES** no Portal de Solicitações reportados via screenshot.
+
+### Bug 1: Link estourando a área do form
+
+**Sintoma**: no card "📋 Resumo da solicitação" (Step 4 do wizard), URLs longas
+no campo "Link" estouravam horizontalmente o container do form, quebrando
+layout. Visível no screenshot: URL com `?ReturnUrl=%2fMyPlace%2f...` (250+
+chars sem espaço) ultrapassava a borda direita do card.
+
+**Causa raiz**: `<a>` sem `word-break`/`overflow-wrap` + cell do grid
+(`grid-template-columns:120px 1fr`) sem `min-width:0` — child com conteúdo
+sem ponto de quebra natural força a coluna além do 1fr (comportamento
+default do CSS grid).
+
+**Fix em `js/portal/portalWizard.js`**:
+
+```js
+// _summaryRow: cell value ganha min-width:0 + overflow-wrap:anywhere
+<div style="color:var(--text-primary);min-width:0;overflow-wrap:anywhere;">${value}</div>
+
+// Linha do Link: anchor também tem word-break + max-width:100%
+<a href="..." style="word-break:break-all;overflow-wrap:anywhere;display:inline-block;max-width:100%;">
+```
+
+Defesa em 2 camadas: cell grid permite shrink (min-width:0) + anchor quebra
+em qualquer char. Funciona pra qualquer URL/string longa, não só Link.
+
+### Bug 2: Botão "Fazer nova solicitação" não funcionava
+
+**Sintoma**: após enviar solicitação e clicar em "Voltar ao início", a tela
+de sucesso (`#success-view`) aparecia com botão "Fazer nova solicitação" que
+**não respondia** a clicks.
+
+**Causa raiz**: O handler do `#new-request-btn` (linha 3355) vive **dentro
+de `bindFormEvents`** — função do form legado pré-wizard. No path padrão (com
+wizard rodando), `bindFormEvents` **só é chamada no fallback** quando o
+import do wizard falha (linha 708). No path normal:
+
+```js
+if (formView) {
+  try {
+    renderPortalWizard(...)   // ← chamado no path normal
+  } catch (e) {
+    bindFormEvents(...)        // ← só roda no catch
+  }
+} else {
+  bindFormEvents(...)          // ← só sem form-view (raríssimo)
+}
+```
+
+Resultado: usuários no path wizard padrão (99% dos casos) **nunca tiveram o
+handler bindado**. Bug latente desde v4.54.0 (introdução do wizard).
+
+**Fix em `js/portal/portal.js`**:
+
+1. Extraí o handler em função `_wireNewRequestBtn(db, taskTypes)` —
+   re-renderiza wizard limpo + mostra popup newsletter
+2. Chamo `_wireNewRequestBtn` **logo após `renderPortalWizard`** no path
+   padrão (linha 706)
+3. Função usa **clone+replace** do botão antes de adicionar listener —
+   idempotente, evita acumulação se ciclo "fazer nova → enviar → fazer
+   nova" repetir várias vezes
+
+```js
+function _wireNewRequestBtn(db, taskTypes) {
+  const oldBtn = document.getElementById('new-request-btn');
+  if (!oldBtn) return;
+  const btn = oldBtn.cloneNode(true);
+  oldBtn.parentNode.replaceChild(btn, oldBtn);
+  btn.addEventListener('click', async () => { ... });
+}
+```
+
+Handler legado dentro de `bindFormEvents` mantido pra fallback — paths
+mutuamente exclusivos.
+
+### Cenários cobertos
+
+| Path | Antes | Agora |
+|---|---|---|
+| Wizard (path padrão) | ❌ botão inerte | ✅ funciona |
+| Wizard catch → fallback | ✅ funciona (bindFormEvents) | ✅ funciona |
+| Sem form-view | ✅ funciona (bindFormEvents) | ✅ funciona |
+| Ciclo "fazer nova" N vezes | — | ✅ idempotente (clone+replace) |
+
+### Arquivos tocados
+
+- `js/portal/portalWizard.js`: `_summaryRow` + linha do Link
+- `js/portal/portal.js`: novo `_wireNewRequestBtn` + call no boot wizard
+- `js/version.js`: 4.62.13 → 4.62.14
+- `index.html`: cache-bust
+- `CHANGELOG.md`: este bloco
+
+---
+
 ## [4.62.13+20260527-rename-gerador-roteiros-para-cotacoes] — 2026-05-27
 
 Release **RENAME** — módulo principal vira "Gerador de Cotações".

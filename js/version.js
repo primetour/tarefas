@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 62,
-  patch: 13,
-  build: '20260527-rename-gerador-roteiros-para-cotacoes',
+  patch: 14,
+  build: '20260527-portal-link-overflow-e-new-request-handler',
 };
 
 /** "1.2.0" */
