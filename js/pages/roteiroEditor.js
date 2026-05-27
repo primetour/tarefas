@@ -48,23 +48,33 @@ const SECTIONS = [
   // + travelers[] já cobre todo o briefing — não precisava de schema novo.
   // v4.49.88+ "Viagem" (datas + destinos) absorvida em "Cliente e Briefing"
   // — só tinha 2 campos efetivos (datas + destinos). Tudo num lugar só.
-  { icon: '\u{1F464}', label: 'Cliente e Briefing' },
-  { icon: '\u{1F4C5}', label: 'Dia a dia' },
-  { icon: '\u2708',    label: 'A\u00e9reo e Hot\u00e9is' },
-  { icon: '\u{1F4B0}', label: 'Valores' },
-  { icon: '\u2B50',    label: 'Opcionais' },
-  { icon: '\u2713',    label: 'Inclui / N\u00e3o inclui' },
-  { icon: '\u{1F4B3}', label: 'Pagamento' },
-  { icon: '\u274C',    label: 'Cancelamento' },
-  { icon: '\u2139',    label: 'Informa\u00e7\u00f5es Importantes' },
-  { icon: '\u{1F5BC}', label: 'Imagens' },
-  { icon: '\u{1F4A1}', label: 'Dicas anexas' },  // 4.42.0+ Sprint 3 \u2014 embed do Portal de Dicas
-  // v4.62.16: Aba Avan\u00e7ado oculta (Ren\u00ea: "vamos tratar disso em outro momento").
-  // hidden:true filtra do sidebar mas mant\u00e9m \u00edndice 11 pra switch n\u00e3o quebrar.
-  { icon: '\u2699',    label: 'Avan\u00e7ado', hidden: true },
-  { icon: '\u{1F4C4}', label: 'Preview & Export' },
-  { icon: '\u2728',    label: 'Observa\u00e7\u00f5es IA' },  // v4.49.74+ fontes consultadas + notas internas
+  { icon: '\u{1F464}', label: 'Cliente e Briefing' },         // 0
+  { icon: '\u{1F4C5}', label: 'Dia a dia' },                  // 1
+  // v4.62.19 Fase D: A\u00e9reo/Hot\u00e9is/Valores/Opcionais consolidados em
+  // "Servi\u00e7os" (index 14, ordem visual logo ap\u00f3s Dia a dia via SIDEBAR_ORDER).
+  { icon: '\u2708',    label: 'A\u00e9reo e Hot\u00e9is', hidden: true },  // 2
+  { icon: '\u{1F4B0}', label: 'Valores', hidden: true },       // 3
+  { icon: '\u2B50',    label: 'Opcionais', hidden: true },     // 4
+  { icon: '\u2713',    label: 'Inclui / N\u00e3o inclui' },    // 5
+  { icon: '\u{1F4B3}', label: 'Pagamento' },                   // 6
+  { icon: '\u274C',    label: 'Cancelamento' },                // 7
+  { icon: '\u2139',    label: 'Informa\u00e7\u00f5es Importantes' }, // 8
+  { icon: '\u{1F5BC}', label: 'Imagens' },                     // 9
+  { icon: '\u{1F4A1}', label: 'Dicas anexas' },                // 10
+  // v4.62.16: Aba Avan\u00e7ado oculta. hidden:true filtra do sidebar mas mant\u00e9m
+  // \u00edndice 11 pra switch n\u00e3o quebrar.
+  { icon: '\u2699',    label: 'Avan\u00e7ado', hidden: true },     // 11
+  { icon: '\u{1F4C4}', label: 'Preview & Export' },            // 12
+  { icon: '\u2728',    label: 'Observa\u00e7\u00f5es IA' },    // 13
+  // v4.62.19 Fase D: nova aba consolidada "Servi\u00e7os" \u2014 sub-tabs internas
+  // delegam pra renderHoteisSection/renderValoresSection/renderOpcionaisSection.
+  { icon: '\u{1F9F3}', label: 'Servi\u00e7os' },                    // 14
 ];
+
+// v4.62.19 Fase D: ordem de exibi\u00e7\u00e3o no sidebar (preserva \u00edndices originais
+// do array SECTIONS, s\u00f3 re-ordena visualmente). "Servi\u00e7os" aparece logo
+// ap\u00f3s "Dia a dia".
+const SIDEBAR_ORDER = [0, 1, 14, 5, 6, 7, 8, 9, 10, 12, 13];
 
 /* ─── Preferences & Restrictions options ──────────────────── */
 const PREF_OPTIONS = ['Gastronomia','Cultura','Aventura','Relaxamento','Compras','Natureza'];
@@ -550,8 +560,53 @@ function renderSectionContent(index) {
     case 11: return renderAdvancedSection();
     case 12: return renderPreviewSection();
     case 13: return renderAiObservationsSection();
+    case 14: return renderServicosSection();   // v4.62.19 Fase D
     default: return '';
   }
+}
+
+/**
+ * v4.62.19 Fase D: aba "Serviços" consolida Aéreo/Hotéis (2), Valores (3) e
+ * Opcionais (4) em sub-tabs internos. Cada sub-tab delega pro renderer
+ * existente — schema preservado, só agrupa visualmente. Estado da sub-tab
+ * ativa fica em _servicosActiveSubtab module-scope (default 'aereo').
+ */
+let _servicosActiveSubtab = 'aereo';
+
+function renderServicosSection() {
+  const subs = [
+    { id: 'aereo',     label: 'Aéreo e Hotéis', icon: '✈' },
+    { id: 'valores',   label: 'Valores',         icon: '💰' },
+    { id: 'opcionais', label: 'Opcionais',       icon: '⭐' },
+  ];
+  const active = _servicosActiveSubtab;
+  const body = active === 'valores'  ? renderValoresSection()
+             : active === 'opcionais' ? renderOpcionaisSection()
+             : renderHoteisSection();
+
+  return `
+    <div class="re-section-title">Serviços</div>
+    <p style="font-size:0.8125rem;color:var(--text-muted);margin:-4px 0 14px;line-height:1.5;">
+      Aéreo, hotéis, valores e opcionais agora num só lugar — alterne nas abas abaixo.
+    </p>
+
+    <div class="re-servicos-subtabs" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:18px;
+      border-bottom:1px solid var(--border-subtle,#e5e7eb);padding-bottom:0;">
+      ${subs.map(s => `
+        <button class="re-servicos-subtab" data-subtab="${s.id}"
+          style="padding:8px 16px;background:transparent;border:none;border-bottom:2px solid ${active === s.id ? 'var(--brand-gold,#D4A843)' : 'transparent'};
+          color:${active === s.id ? 'var(--text-primary)' : 'var(--text-muted)'};
+          font-size:0.8125rem;font-weight:${active === s.id ? '600' : '500'};
+          cursor:pointer;font-family:inherit;transition:all 0.12s;display:inline-flex;align-items:center;gap:6px;">
+          <span>${s.icon}</span><span>${esc(s.label)}</span>
+        </button>
+      `).join('')}
+    </div>
+
+    <div id="re-servicos-body">
+      ${body}
+    </div>
+  `;
 }
 
 /* ── 14: Observações IA (v4.49.74+) ───────────────────────
@@ -3348,6 +3403,17 @@ function generateDaysFromTravel() {
 /* ─── Event delegation handler ────────────────────────────── */
 // 4.43.0+ Sprint 4 — async porque alguns handlers (generate-tasks) usam await.
 async function handleEditorClick(e) {
+  // v4.62.19 Fase D: sub-tabs internas da aba Serviços. Capturado ANTES do
+  // resto pra interceptar antes do [data-action] filter.
+  const subtabBtn = e.target.closest('.re-servicos-subtab');
+  if (subtabBtn) {
+    e.preventDefault();
+    currentRoteiro = collectFormData();
+    _servicosActiveSubtab = subtabBtn.dataset.subtab || 'aereo';
+    rerenderCurrentSection();
+    return;
+  }
+
   const target = e.target.closest('[data-action]');
   if (!target) {
     // 4.41.0+ (Sprint 2) Handle collaborator pills toggle
@@ -4445,14 +4511,17 @@ export async function renderRoteiroEditor(container) {
 
         <!-- Two-column layout -->
         <div class="re-layout">
-          <!-- Sidebar nav — v4.62.16 filtra sections hidden (Avançado) -->
+          <!-- Sidebar nav — v4.62.19: ordem via SIDEBAR_ORDER (Serviços vem
+               após Dia a dia, Avançado oculto, índices originais preservados). -->
           <div class="re-sidebar" id="re-sidebar-nav">
-            ${SECTIONS.map((s, i) => s.hidden ? '' : `
-              <div class="re-nav-item${i === 0 ? ' active' : ''}" data-section-idx="${i}">
+            ${SIDEBAR_ORDER.map(i => {
+              const s = SECTIONS[i];
+              if (!s || s.hidden) return '';
+              return `<div class="re-nav-item${i === 0 ? ' active' : ''}" data-section-idx="${i}">
                 <span>${s.icon}</span>
                 <span>${s.label}</span>
-              </div>
-            `).join('')}
+              </div>`;
+            }).join('')}
           </div>
 
           <!-- Content area -->

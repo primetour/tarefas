@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 62,
-  patch: 18,
-  build: '20260527-editor-fase-c-dia-3-botoes-origem-badge',
+  patch: 19,
+  build: '20260527-editor-fase-d-servicos-consolidados-subtabs',
 };
 
 /** "1.2.0" */
