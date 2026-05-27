@@ -249,50 +249,8 @@ export async function renderRoteiros(container) {
         border-color:var(--brand-gold, #D4A843); outline:none;
       }
 
-      /* v4.49.98+ Filtros sempre visíveis (Renê: "default visível", CLAUDE.md §10).
-         Wrapper inline, label "FILTROS" uppercase tracked (gêmeo do "PERÍODO"). */
-      .rt-advanced-filters {
-        display:flex; align-items:center; gap:8px; flex-wrap:wrap;
-        margin-top:8px; margin-bottom:14px;
-      }
-      .rt-advanced-label {
-        font-size:0.6875rem; font-weight:600; color:var(--text-muted);
-        text-transform:uppercase; letter-spacing:0.06em;
-      }
-      .rt-advanced-body {
-        display:flex; gap:8px; flex-wrap:wrap; align-items:center;
-      }
-      .rt-advanced-select {
-        height:32px; padding:0 12px;
-        font-size:0.75rem; font-family:inherit;
-        min-width:150px; max-width:200px;
-        border:1px solid var(--border, #e5e7eb); border-radius:999px;
-        background:#fff; color:var(--text-primary);
-        cursor:pointer; transition:border-color 0.12s;
-      }
-      .rt-advanced-select:hover, .rt-advanced-select:focus {
-        border-color:var(--brand-gold, #D4A843); outline:none;
-      }
-      .rt-advanced-select:not([value=""]):not(:invalid) {
-        /* selecionado: leve destaque */
-        border-color:rgba(212,168,67,0.4);
-      }
-      .rt-advanced-badge {
-        display:inline-flex; align-items:center; padding:3px 9px;
-        border-radius:999px; background:var(--brand-gold, #D4A843); color:#0A1628;
-        font-size:0.6875rem; font-weight:700; letter-spacing:0.01em;
-      }
-      .rt-advanced-clear {
-        padding:5px 12px; border-radius:999px;
-        background:transparent; border:1px solid var(--border, #e5e7eb);
-        font-size:0.6875rem; font-weight:600; font-family:inherit;
-        color:var(--text-muted); cursor:pointer; transition:all 0.12s;
-        line-height:1;
-      }
-      .rt-advanced-clear:hover {
-        border-color:#EF4444; color:#EF4444;
-        background:rgba(239,68,68,0.05);
-      }
+      /* v4.62.12: CSS .rt-advanced-* removido — filtros migraram pra uiKit
+         renderFilterBar (mesma classe .filter-select de Banco/Destinos). */
 
       /* Paginação */
       .rt-pg-btn {
@@ -421,26 +379,25 @@ export async function renderRoteiros(container) {
       { value: 'archived', label: 'Arquivado' },
     ];
 
-    const advancedSelects = [
-      { id: 'rt-area',        label: '— Todas áreas —',     options: areaOptions,        value: selectedAreaId },
-      { id: 'rt-destino',     label: '— Todos destinos —',  options: destOptions,        value: selectedDestino },
-      { id: 'rt-clienttype',  label: '— Todo tipo —',        options: clientTypeOptions,  value: selectedClientType },
+    // v4.62.12: filtros área/destino/tipo/consultor migrados pra `selects` do
+    // uiKit renderFilterBar (mesmo padrão visual de Banco/Destinos —
+    // .filter-select com seta nativa). Bloco custom .rt-advanced-* removido.
+    const selects = [
+      { id: 'rt-area',       label: 'Todas áreas',       options: areaOptions,       value: selectedAreaId },
+      { id: 'rt-destino',    label: 'Todos destinos',    options: destOptions,       value: selectedDestino },
+      { id: 'rt-clienttype', label: 'Todo tipo',         options: clientTypeOptions, value: selectedClientType },
     ];
     if (consultantOptions.length) {
-      advancedSelects.push({ id: 'rt-consultant', label: '— Todos consultores —', options: consultantOptions, value: selectedConsultant });
+      selects.push({ id: 'rt-consultant', label: 'Todos consultores', options: consultantOptions, value: selectedConsultant });
     }
-
-    // v4.49.82+ Filtros essenciais (search + status + período) sempre visíveis.
-    // Filtros avançados (área/destino/tipo/consultor) vão pra <details> colapsável.
-    // Reduz a poluição inicial — só aparece quando user explicitamente quer.
-    const advancedActive = !!(selectedAreaId || selectedDestino || selectedClientType || selectedConsultant);
+    const activeCount = [selectedAreaId, selectedDestino, selectedClientType, selectedConsultant].filter(Boolean).length;
 
     mount.innerHTML = `
       ${renderFilterBar({
         statusPills,
         activeStatus,
         search: { id: 'rt-search', placeholder: 'Buscar cliente, título ou destino...', value: searchTerm },
-        selects: [],
+        selects,
         periodPills: { active: periodKey, customRange: periodKey === 'custom' ? { from: periodFrom, to: periodTo } : null },
         metaText: '',
         paginationHTML: '',
@@ -460,25 +417,17 @@ export async function renderRoteiros(container) {
           </label>
         </div>
       ` : ''}
-      <div class="rt-advanced-filters">
-        <span class="rt-advanced-label">Filtros</span>
-        <div class="rt-advanced-body">
-          ${advancedSelects.map(s => `
-            <select id="${esc(s.id)}" class="rt-advanced-select">
-              <option value="">${esc(s.label || '— Filtrar —')}</option>
-              ${(s.options || []).map(o => `
-                <option value="${esc(o.value)}" ${o.value === s.value ? 'selected' : ''}>${esc(o.label)}</option>
-              `).join('')}
-            </select>
-          `).join('')}
-          ${advancedActive ? `
-            <span class="rt-advanced-badge">${
-              [selectedAreaId, selectedDestino, selectedClientType, selectedConsultant].filter(Boolean).length
-            } ativo${[selectedAreaId, selectedDestino, selectedClientType, selectedConsultant].filter(Boolean).length > 1 ? 's' : ''}</span>
-            <button type="button" class="rt-advanced-clear" data-action="clear-advanced">Limpar</button>
-          ` : ''}
+      ${activeCount ? `
+        <div style="display:flex;gap:8px;align-items:center;margin:-2px 0 12px 0;">
+          <span style="font-size:0.72rem;color:var(--text-muted);">
+            ${activeCount} filtro${activeCount > 1 ? 's' : ''} ativo${activeCount > 1 ? 's' : ''}
+          </span>
+          <button type="button" class="btn btn-ghost btn-sm" data-action="clear-advanced"
+            style="font-size:0.72rem;color:var(--color-danger,#EF4444);padding:2px 10px;">
+            ✕ Limpar
+          </button>
         </div>
-      </div>
+      ` : ''}
     `;
   }
 

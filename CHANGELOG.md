@@ -6,6 +6,103 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.62.12+20260527-roteiros-filtros-padrao-visual-uikit] — 2026-05-27
+
+Release **UX/CONSISTÊNCIA VISUAL** — filtros do Gerador de Roteiros agora
+seguem o padrão do sistema.
+
+**Pedido Renê**: *"gerador de roteiros: filtros de áreas, destinos, tipo e
+consultores está fora do padrão visual do sistema"*.
+
+### Antes
+
+Filtros área/destino/tipo/consultor usavam **classes próprias**:
+- `.rt-advanced-filters` (wrapper)
+- `.rt-advanced-label` (uppercase "Filtros")
+- `.rt-advanced-body` (flex container)
+- `.rt-advanced-select` — selects **rounded com border-radius:999px** (pill
+  format), `height:32px`, `min-width:150px`
+- `.rt-advanced-badge` (badge dourado "N ativos")
+- `.rt-advanced-clear` (botão pill outline)
+
+Outros módulos (Banco, Destinos, Tasks, etc) usam o uiKit `renderFilterBar`
+com `.filter-select` (selects retangulares com seta SVG nativa, height:34px,
+min-width:160px). Conflito visual: pílulas vs retangulares.
+
+Anti-padrão clássico CLAUDE.md §4 (*"não invente componente UI antes de
+auditar o sistema — replica o padrão existente"*).
+
+### Agora
+
+Os 4 selects migraram pro array `selects:` do `renderFilterBar` (uiKit) —
+mesma API que Banco usa pros filtros continente/país/coleção/sort:
+
+```js
+const selects = [
+  { id: 'rt-area',       label: 'Todas áreas',       options: areaOptions,       value: selectedAreaId },
+  { id: 'rt-destino',    label: 'Todos destinos',    options: destOptions,       value: selectedDestino },
+  { id: 'rt-clienttype', label: 'Todo tipo',         options: clientTypeOptions, value: selectedClientType },
+];
+if (consultantOptions.length) {
+  selects.push({ id: 'rt-consultant', label: 'Todos consultores', options: consultantOptions, value: selectedConsultant });
+}
+
+renderFilterBar({ statusPills, activeStatus, search, selects, periodPills, ... });
+```
+
+Selects ficam **na mesma linha** da busca, com mesmo `.filter-select` (seta
+SVG nativa). Layout responsivo já cuida do wrap em mobile.
+
+### Badge "N ativos" + Limpar
+
+Mantido mas simplificado — agora aparece como linha sutil abaixo do filterBar
+SÓ quando há filtro avançado ativo, usando `.btn .btn-ghost .btn-sm` do
+sistema:
+
+```html
+<div style="display:flex;gap:8px;align-items:center;margin:-2px 0 12px 0;">
+  <span>N filtros ativos</span>
+  <button class="btn btn-ghost btn-sm" data-action="clear-advanced"
+    style="color:var(--color-danger);">✕ Limpar</button>
+</div>
+```
+
+### CSS legado removido
+
+50 linhas de `.rt-advanced-*` CSS removidas — não são mais usadas. Reduz
+peso da page + elimina divergência futura. Bloco substituído por comentário:
+
+```css
+/* v4.62.12: CSS .rt-advanced-* removido — filtros migraram pra uiKit
+   renderFilterBar (mesma classe .filter-select de Banco/Destinos). */
+```
+
+### Handlers preservados
+
+IDs dos selects (`rt-area`, `rt-destino`, `rt-clienttype`, `rt-consultant`)
+mantidos idênticos — change handler em linhas 789-792 continua funcionando
+sem modificação. Action `data-action="clear-advanced"` idem (linha 654).
+
+### Lição CLAUDE.md §4
+
+*"Antes de codar UI nova, leia 1 arquivo de página similar e responda em voz
+alta: 'Que classe esse botão tem? Que variável de cor? Qual layout wrapper?'.
+Depois replica. Só inventa quando o sistema realmente não oferece a
+primitiva."*
+
+Aqui o sistema oferecia (`renderFilterBar` + `.filter-select`) desde antes
+desses filtros existirem. Foi descuido — agora alinhado.
+
+### Arquivos tocados
+
+- `js/pages/roteiros.js`: bloco selects no `selects:`, badge/limpar simplificado,
+  ~50 linhas de CSS legado removidas
+- `js/version.js`: 4.62.11 → 4.62.12
+- `index.html`: cache-bust
+- `CHANGELOG.md`: este bloco
+
+---
+
 ## [4.62.11+20260527-bank-continent-filter-cascata-pais] — 2026-05-27
 
 Release **UX** — Banco de Roteiros recebe (de volta) filtro por continente

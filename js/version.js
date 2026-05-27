@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 62,
-  patch: 11,
-  build: '20260527-bank-continent-filter-cascata-pais',
+  patch: 12,
+  build: '20260527-roteiros-filtros-padrao-visual-uikit',
 };
 
 /** "1.2.0" */
