@@ -1556,3 +1556,43 @@ export const SELECTORS = {
 };
 ```
 Caller usa `SELECTORS.STATUS_PILL` — se uiKit mudar, callers atualizam automaticamente. **TODO**: refactor futuro do uiKit pra exportar contratos.
+
+### l) ⚠ ARMADILHA: Mismatch de versão Firebase SDK em imports dinâmicos é SILENCIOSO
+
+**Descoberto v4.61.4** após Renê "teste!" forçar E2E real. Eu tinha escrito `geoResolver.js` (novo file v4.59.0) importando:
+```js
+import { collection, ... } from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js';
+```
+
+Mas TODO o resto do sistema usa `10.12.2` (em `firebase.js`, `portal.js`, `roteiroBank.js` e ~47 outros call sites). Resultado runtime:
+
+```
+FirebaseError: Expected first argument to collection() to be
+a CollectionReference, a DocumentReference or FirebaseFirestore
+```
+
+O `db` foi inicializado pela versão 10.12.2 (em `firebase.js`). Quando passo pra `collection(db, ...)` do 10.13.2, ele não reconhece o tipo. **MAS** o `try/catch` do `ensureDestination` capturava esse erro e caía pro fallback (slugify simples sem aliases), criando duplicata silenciosa.
+
+**Por que escapou de N camadas de validação**:
+- `node --check`: ✓ passa (import URL é só string)
+- `curl` pra confirmar deploy: ✓ código no ar
+- E2E visual: ✓ UI principal funciona (não passa por geoResolver)
+- E2E chamada direta: ✗ **só pegou aqui** (`ensureDestination` no console autenticado)
+
+**Lição estrutural**:
+1. **Sempre** verificar versão SDK em imports novos. `grep -rn "firebasejs/[0-9]" js/` confirma uniformidade.
+2. **Try/catch em torno de chamadas Firebase** mascara version mismatch. Considerar logar `console.warn(JSON.stringify({err: e.code || e.name, msg: e.message?.slice(0,150)}))` antes de cair no fallback pra ter rastro.
+3. **E2E real é mandatório** quando código novo tem caminhos não tocados pela UI principal (helper usado só por adapter/service). `node --check` + curl + UI visual NÃO cobrem.
+
+**Pattern de prevenção**: adicionar `const FB_SDK = 'https://www.gstatic.com/firebasejs/10.12.2'` em um arquivo central tipo `js/firebase.js` exportado, e todos os imports dinâmicos usarem `import(FB_SDK + '/firebase-firestore.js')`. Mudança em 1 lugar propaga.
+
+```js
+// js/firebase.js (proposta v4.62+)
+export const FB_SDK_BASE = 'https://www.gstatic.com/firebasejs/10.12.2';
+
+// Em qualquer arquivo:
+import { FB_SDK_BASE } from '../firebase.js';
+const { collection, getDocs } = await import(`${FB_SDK_BASE}/firebase-firestore.js`);
+```
+
+Versão central, mismatch impossível.
