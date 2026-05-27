@@ -18,6 +18,7 @@ const esc = s => String(s||'').replace(/[&<>"']/g, c =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
 let allDests   = [];
+let roteirosByDestId = new Map();   // v4.62.2: destId → [{id, title}] (vinculação reversa)
 let filterCont = '';
 let filterCoun = '';
 let filterReview = 'approved';   // v4.60.0: default só aprovados; toggle pra ver pending
@@ -250,8 +251,40 @@ export async function renderPortalDestinations(container) {
   });
 
   allDests = await fetchDestinations();   // default 'all' agora — UI filtra in-memory
+  await _loadRoteiroLinks();   // v4.62.2: carrega map destId → roteiros vinculados
   updateCountryFilter();
   renderTable();
+}
+
+/**
+ * v4.62.2 — carrega vinculação reversa destId → roteiros do banco.
+ * 1 fetch grande (236 docs) em vez de N queries individuais. Cache em memória
+ * dura a sessão do user na página de destinos. Atualizado ao re-fetch.
+ */
+async function _loadRoteiroLinks() {
+  try {
+    const { db } = await import('../firebase.js');
+    const { collection, getDocs, query, limit } = await import(
+      'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js'
+    );
+    const snap = await getDocs(query(collection(db, 'roteiros_bank'), limit(1000)));
+    roteirosByDestId = new Map();
+    snap.forEach(d => {
+      const data = d.data();
+      const ids = data.geo?.destinationIds || [];
+      for (const destId of ids) {
+        if (!roteirosByDestId.has(destId)) roteirosByDestId.set(destId, []);
+        roteirosByDestId.get(destId).push({
+          id: d.id,
+          title: data.title || '(sem título)',
+          status: data.status || 'draft',
+        });
+      }
+    });
+  } catch (e) {
+    console.warn('[portalDestinations] _loadRoteiroLinks falhou (não-bloqueante):', e?.message);
+    roteirosByDestId = new Map();
+  }
 }
 
 function updateCountryFilter() {
@@ -352,8 +385,17 @@ function renderTable() {
           <a href="#portal-tip-editor?destId=${d.id}" class="btn btn-ghost btn-sm"
             style="font-size:0.75rem;color:var(--brand-gold);text-decoration:none;"
             title="${d.hasTip ? 'Editar a dica deste destino' : 'Cadastrar dica pra este destino'}">
-            💡 Dica
+            💡 Dica${d.hasTip ? ' ✓' : ''}
           </a>
+          ${(() => {
+            const refs = roteirosByDestId.get(d.id) || [];
+            if (!refs.length) return `<span class="btn btn-ghost btn-sm" style="font-size:0.75rem;color:var(--text-muted);opacity:0.5;cursor:default;" title="Sem roteiros vinculados">📋 Roteiro</span>`;
+            return `<button class="btn btn-ghost btn-sm" data-view-roteiros="${d.id}"
+              style="font-size:0.75rem;color:var(--brand-blue,#3B82F6);"
+              title="Ver ${refs.length} roteiro(s) vinculado(s) a este destino">
+              📋 Roteiro <span style="background:var(--brand-blue,#3B82F6);color:#fff;padding:0 6px;border-radius:999px;font-size:0.65rem;font-weight:700;margin-left:2px;">${refs.length}</span>
+            </button>`;
+          })()}
           <button class="btn btn-ghost btn-sm" data-delete="${d.id}"
             style="font-size:0.75rem;color:var(--color-danger,#EF4444);" title="Excluir destino">✕</button>
         </div>
@@ -370,6 +412,75 @@ function renderTable() {
   tbody.querySelectorAll('[data-approve]').forEach(btn =>
     btn.addEventListener('click', () => handleApprove(btn.dataset.approve,
       allDests.find(d => d.id === btn.dataset.approve))));
+  // v4.62.2: handler ver roteiros vinculados (cross-module reverso)
+  tbody.querySelectorAll('[data-view-roteiros]').forEach(btn =>
+    btn.addEventListener('click', () => _openLinkedRoteirosModal(
+      btn.dataset.viewRoteiros,
+      allDests.find(d => d.id === btn.dataset.viewRoteiros))));
+}
+
+/**
+ * v4.62.2 — modal lista roteiros do banco vinculados a este destination.
+ * UX paralela ao botão 💡 Dica — fecha o ciclo reverso (destino → roteiros).
+ */
+async function _openLinkedRoteirosModal(destId, dest) {
+  const refs = roteirosByDestId.get(destId) || [];
+  if (!refs.length) return;
+  const { modal } = await import('../components/modal.js');
+  const cityLabel = [dest?.city, dest?.country].filter(Boolean).join(', ');
+
+  // Status badges (cores semânticas alinhadas ao Banco)
+  const STATUS_STYLES = {
+    approved: { label: 'Publicado',  bg: 'rgba(16,185,129,0.16)',  color: '#065f46' },
+    review:   { label: 'Em revisão', bg: 'rgba(245,158,11,0.16)',  color: '#92400e' },
+    draft:    { label: 'Rascunho',   bg: 'rgba(107,114,128,0.12)', color: '#374151' },
+    archived: { label: 'Arquivado',  bg: 'rgba(220,38,38,0.12)',   color: '#991b1b' },
+  };
+
+  // Sort: approved primeiro, depois review, depois resto
+  const sortOrder = { approved: 1, review: 2, draft: 3, archived: 4 };
+  const sortedRefs = [...refs].sort((a, b) =>
+    (sortOrder[a.status] || 99) - (sortOrder[b.status] || 99) ||
+    a.title.localeCompare(b.title, 'pt-BR'));
+
+  modal.open({
+    title: `📋 Roteiros vinculados — ${esc(cityLabel)}`,
+    size: 'md',
+    closeOnEsc: true,
+    content: `
+      <div style="line-height:1.5;">
+        <p style="margin:0 0 14px;font-size:0.8rem;color:var(--text-muted);">
+          <strong>${refs.length}</strong> roteiro${refs.length !== 1 ? 's' : ''} do banco
+          ${refs.length === 1 ? 'vincula' : 'vinculam'} este destino em ${esc(dest?.city || 'cidade')}.
+          Clique pra abrir no editor.
+        </p>
+        <div style="display:flex;flex-direction:column;gap:6px;max-height:50vh;overflow:auto;">
+          ${sortedRefs.map(r => {
+            const st = STATUS_STYLES[r.status] || STATUS_STYLES.draft;
+            return `
+              <a href="#banco-roteiro-editor?id=${esc(r.id)}"
+                style="display:flex;align-items:center;gap:10px;padding:8px 12px;
+                border:1px solid var(--border-subtle);border-radius:6px;
+                text-decoration:none;color:var(--text-primary);
+                background:var(--bg-surface);transition:background 0.1s;"
+                onmouseover="this.style.background='var(--bg-hover,rgba(0,0,0,0.04))'"
+                onmouseout="this.style.background='var(--bg-surface)'">
+                <span style="flex:1;font-size:0.85rem;font-weight:500;">${esc(r.title)}</span>
+                <span style="padding:2px 8px;border-radius:999px;font-size:0.65rem;
+                  font-weight:600;background:${st.bg};color:${st.color};white-space:nowrap;">
+                  ${esc(st.label)}
+                </span>
+              </a>
+            `;
+          }).join('')}
+        </div>
+        <p style="margin:12px 0 0;font-size:0.72rem;color:var(--text-muted);">
+          💡 Vinculação por ID. Renomear/editar este destino preserva refs cross-module.
+        </p>
+      </div>
+    `,
+    footer: [{ label: 'Fechar', class: 'btn-primary' }],
+  });
 }
 
 /** v4.60.0: aprova destino pending → reviewStatus='approved'.

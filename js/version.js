@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 62,
-  patch: 1,
-  build: '20260527-bank-triage-no-geo-bolsao-fix-modal',
+  patch: 2,
+  build: '20260527-destinations-linked-roteiros-button-modal',
 };
 
 /** "1.2.0" */

@@ -6,6 +6,50 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.62.2+20260527-destinations-linked-roteiros-button-modal] — 2026-05-27
+
+Release **FEATURE/UX** — botão "📋 Roteiro" em destinos (cross-module reverso) + validação E2E de edit não-destrutivo.
+
+**Pergunta Renê**: *"teste a funcionalidade disso, a edicao dos destinos sem perder a vinculacao com o roteiro... e em destinos, alem do botão 'dica', acrescente o botao 'roteiro', que vai exibir o que esta vinculado. ajuda no UX"*.
+
+### Parte 1 — Validação E2E (testes 1+2 antes de implementar)
+
+| Teste | Editou | Roteiros vinculados antes | Depois | Resultado |
+|---|---|---|---|---|
+| 1 | Riyadh → Riad + 3 aliases | 2 | 2 (mesmos IDs) | ✓ refs preservadas |
+| 2 | Arábia Saudita → Bahrein (swap país completo) | 2 | 2 (mesmos IDs) | ✓ refs preservadas |
+
+**Confirmação estrutural**: vinculação é por **ID Firestore**, não label. Edit nunca quebra. Único caso que quebra: `deleteDestination` (FK cleanup pendente — próximo).
+
+### Parte 2 — Botão `📋 Roteiro` em portalDestinations
+
+`js/pages/portalDestinations.js`:
+
+- **`_loadRoteiroLinks()`** — 1 fetch grande de `roteiros_bank` (1000 docs cap) → constrói `roteirosByDestId: Map<destId, [{id, title, status}]>` em memória. Rodado uma vez ao entrar na página + após cada save. Bem mais eficiente que N queries reversas.
+- **Coluna Dica/Roteiro** no card de cada destino:
+  - `💡 Dica` ganha ✓ verde quando tem dica cadastrada (`hasTip`)
+  - `📋 Roteiro` com **badge contador azul** quando há vinculação (`N`); cinza/disabled quando 0
+- **Modal `_openLinkedRoteirosModal`**: clique abre lista dos roteiros:
+  - Sort: approved → review → draft → archived
+  - Cada item é link pra `#banco-roteiro-editor?id=X` (abre direto no editor)
+  - Badge de status colorido (mesmo padrão visual do Banco)
+  - Tooltip rodapé: "Vinculação por ID. Renomear/editar este destino preserva refs cross-module" (educacional)
+
+**Cross-module reverso completo**:
+
+| Sentido | Como navegar |
+|---|---|
+| Destino → Dica | `💡 Dica` no card → editor de tip |
+| Destino → Roteiros | `📋 Roteiro (N)` no card → modal lista → link editor |
+| Roteiro → Destinos | `geo.destinationIds[]` resolve via `findDestinationByLabel` |
+| Bolsão (roteiro sem âncora) → atribuir → vincular | `⚠ Sem âncora geo` pill no Banco → modal `🌍 Corrigir geo` |
+
+**Próximas releases sugeridas** (não inclusas):
+- `v4.62.3`: FK cleanup em `deleteDestination` (zera refs em `roteiros_bank.geo.destinationIds`, `portal_images.destinationId`, `portal_tips.destinationId` se destino for apagado)
+- `v4.62.4`: same UX em `portal_images` e `portal_tips` (modal "roteiros que usam essa imagem/dica")
+
+---
+
 ## [4.62.1+20260527-bank-triage-no-geo-bolsao-fix-modal] — 2026-05-27
 
 Release **FEATURE/UX** — bolsão de triagem geo no Banco. Materializa filosofia do Renê: *"envision é a fonte da verdade dos roteiros, mas o nosso sistema é responsável por tratar dados que nao estao bacanas... os casos em que nao tem ancora, precisamos de um bolsao que a gente corrija"*.
