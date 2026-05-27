@@ -155,7 +155,9 @@ export async function renderPortalDestinations(container) {
         <option value="">Todos os continentes</option>
         ${CONTINENTS.map(c => `<option value="${esc(c)}" ${filterCont===c?'selected':''}>${esc(c)}</option>`).join('')}
       </select>
-      <select class="filter-select" id="dest-filter-country" style="min-width:160px;" ${filterCont?'':'disabled'}>
+      <!-- v4.62.5: país standalone — não depende mais de continente selecionado.
+           Populado com TODOS os países do dataset (ou filtrado se cont ativo). -->
+      <select class="filter-select" id="dest-filter-country" style="min-width:180px;">
         <option value="">Todos os países</option>
       </select>
       <select class="filter-select" id="dest-filter-tip" style="min-width:130px;" title="Filtrar por status da dica">
@@ -185,14 +187,13 @@ export async function renderPortalDestinations(container) {
             <th style="padding:10px 16px;text-align:left;font-size:0.6875rem;font-weight:700;
               text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);
               border-bottom:1px solid var(--border-subtle);">Cidade/Região</th>
-            <th style="padding:10px 16px;text-align:left;font-size:0.6875rem;font-weight:700;
-              text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);
-              border-bottom:1px solid var(--border-subtle);">Dica</th>
+            <!-- v4.62.5: coluna "Dica" removida — info agora consolidada no
+                 botão 💡 Dica da coluna de ações (badge numeral, igual 📋 Roteiro). -->
             <th style="padding:10px 16px;border-bottom:1px solid var(--border-subtle);width:100px;"></th>
           </tr>
         </thead>
         <tbody id="dest-tbody">
-          <tr><td colspan="5" style="padding:40px;text-align:center;color:var(--text-muted);">
+          <tr><td colspan="4" style="padding:40px;text-align:center;color:var(--text-muted);">
             Carregando…
           </td></tr>
         </tbody>
@@ -220,6 +221,16 @@ export async function renderPortalDestinations(container) {
   });
   document.getElementById('dest-filter-country')?.addEventListener('change', e => {
     filterCoun = e.target.value;
+    // v4.62.5: se país standalone selecionado E continente atual não bate, zera
+    // continente (evita filtro AND retornar 0 quando user quis só filtrar país).
+    if (filterCoun && filterCont) {
+      const validInCont = allDests.some(d => d.country === filterCoun && d.continent === filterCont);
+      if (!validInCont) {
+        filterCont = '';
+        const contSel = document.getElementById('dest-filter-cont');
+        if (contSel) contSel.value = '';
+      }
+    }
     renderTable();
   });
   // v4.61.2 — busca + filtro dica + limpar
@@ -290,14 +301,18 @@ async function _loadRoteiroLinks() {
 function updateCountryFilter() {
   const sel = document.getElementById('dest-filter-country');
   if (!sel) return;
-  const countries = [...new Set(
-    allDests.filter(d => d.continent === filterCont)
-      .map(d => d.country).filter(Boolean)
-  )].sort();
+  // v4.62.5: país é STANDALONE — lista todos os países sempre, opcionalmente
+  // restringido pelo continente se selecionado. Sem continente → todos visíveis.
+  const base = filterCont
+    ? allDests.filter(d => d.continent === filterCont)
+    : allDests;
+  const countries = [...new Set(base.map(d => d.country).filter(Boolean))].sort();
   sel.innerHTML = `<option value="">Todos os países</option>` +
     countries.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
-  sel.value    = filterCoun; // restores if still valid, otherwise empty
-  sel.disabled = !filterCont;
+  // Restaura seleção se ainda válida; caso contrário, zera
+  sel.value = countries.includes(filterCoun) ? filterCoun : '';
+  if (sel.value !== filterCoun) filterCoun = sel.value;
+  sel.disabled = false;   // nunca desabilita — sempre clicável
 }
 
 function renderTable() {
@@ -365,7 +380,7 @@ function renderTable() {
   }
 
   if (!rows.length) {
-    tbody.innerHTML = `<tr><td colspan="5" style="padding:48px;text-align:center;color:var(--text-muted);">
+    tbody.innerHTML = `<tr><td colspan="4" style="padding:48px;text-align:center;color:var(--text-muted);">
       Nenhum destino encontrado.
     </td></tr>`;
     return;
@@ -402,14 +417,6 @@ function renderTable() {
           ${srcBadge.icon} ${esc(srcBadge.label)}
         </span>` : ''}
       </td>
-      <td style="padding:10px 16px;">
-        ${d.hasTip
-          ? `<span style="font-size:0.75rem;padding:2px 8px;background:#22C55E15;color:#22C55E;
-              border:1px solid #22C55E30;border-radius:var(--radius-full);">✓ Cadastrada</span>`
-          : `<span style="font-size:0.75rem;padding:2px 8px;background:var(--bg-surface);
-              color:var(--text-muted);border:1px solid var(--border-subtle);
-              border-radius:var(--radius-full);">Sem dica</span>`}
-      </td>
       <td style="padding:10px 16px;text-align:right;">
         <div style="display:flex;gap:6px;justify-content:flex-end;align-items:center;">
           ${isPending ? `<button class="btn btn-primary btn-sm" data-approve="${d.id}"
@@ -420,11 +427,19 @@ function renderTable() {
             style="font-size:0.75rem;color:var(--brand-blue,#3B82F6);" title="Editar destino (nome, país, aliases…)">
             ✎ Editar
           </button>
-          <a href="#portal-tip-editor?destId=${d.id}" class="btn btn-ghost btn-sm"
-            style="font-size:0.75rem;color:var(--brand-gold);text-decoration:none;"
-            title="${d.hasTip ? 'Editar a dica deste destino' : 'Cadastrar dica pra este destino'}">
-            💡 Dica${d.hasTip ? ' ✓' : ''}
-          </a>
+          <!-- v4.62.5: botão Dica agora segue o padrão do Roteiro — badge numeral
+               quando tem (1 sempre, schema 1:1), opaco/disabled-look quando não. -->
+          ${d.hasTip
+            ? `<a href="#portal-tip-editor?destId=${d.id}" class="btn btn-ghost btn-sm"
+                style="font-size:0.75rem;color:var(--brand-gold);text-decoration:none;"
+                title="Editar a dica deste destino">
+                💡 Dica <span style="background:var(--brand-gold);color:#0A1628;padding:0 6px;border-radius:999px;font-size:0.65rem;font-weight:700;margin-left:2px;">1</span>
+              </a>`
+            : `<a href="#portal-tip-editor?destId=${d.id}" class="btn btn-ghost btn-sm"
+                style="font-size:0.75rem;color:var(--text-muted);opacity:0.7;text-decoration:none;"
+                title="Cadastrar dica pra este destino">
+                💡 Dica
+              </a>`}
           ${(() => {
             const refs = roteirosByDestId.get(d.id) || [];
             if (!refs.length) return `<span class="btn btn-ghost btn-sm" style="font-size:0.75rem;color:var(--text-muted);opacity:0.5;cursor:default;" title="Sem roteiros vinculados">📋 Roteiro</span>`;

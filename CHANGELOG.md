@@ -6,6 +6,70 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.62.5+20260527-destinations-country-standalone-remove-dica-col] — 2026-05-27
+
+Release **UX/CLAREZA** — listagem de Destinos com 2 fixes pedidos pelo Renê.
+
+### 1. Filtro de país standalone (1 clique em vez de 2)
+
+Antes: dropdown de país ficava `disabled` enquanto continente não fosse
+selecionado. Master que queria filtrar "Maldivas" precisava 2 cliques (Ásia
+→ Maldivas). UX pesada.
+
+Agora (`js/pages/portalDestinations.js`):
+
+- `updateCountryFilter` popula com **todos** os países do dataset por padrão.
+  Se continente está selecionado, restringe; sem continente, lista completa.
+- `select#dest-filter-country` perde o atributo `disabled` — sempre clicável.
+- Handler do select de país é defensivo: se user escolhe "Maldivas" e tem
+  "Europa" selecionado no continente (conflito que retornaria 0), **zera
+  continente** automaticamente em vez de mostrar lista vazia.
+
+Resultado: filtro país funciona como índice independente, igual busca.
+Continente continua útil pra navegar regionalmente quando o user quer.
+
+### 2. Coluna "Dica" removida — info consolidada no botão de ação
+
+Antes: tabela tinha 4 colunas (Continente · País · Cidade · **Dica** · Ações).
+A coluna "Dica" mostrava chip "✓ Cadastrada" ou "Sem dica", DUPLICANDO a
+informação que o botão `💡 Dica ✓` já mostrava ao lado nas ações.
+
+Renê: *"tirar coluna Dica, deixar essa info ao lado da coluna que já tem Dica
+(mas que hoje abre o modal pra criar) - exibir se tem dica ali, em numeral,
+igual vc fez na coluna roteiro"*.
+
+Fix (`js/pages/portalDestinations.js`):
+
+- Remove `<th>Dica</th>` do thead, mantém só 4 colunas funcionais
+- Remove `<td>` correspondente do template de linha
+- Atualiza colspan de empty/loading state (5 → 4)
+- **Botão 💡 Dica agora segue o mesmo padrão visual do botão 📋 Roteiro**:
+  - Com dica: dourado `#D4A843`, label "💡 Dica" + badge numeral "1"
+    em pill dourado com texto escuro (igual ao "📋 Roteiro 5" azul)
+  - Sem dica: opaco/cinza `opacity:0.7`, label só "💡 Dica" (clicável → leva
+    pro editor pra criar — mesmo destino do link, sem mudança de comportamento)
+
+Schema atual: portal_tips tem relação 1:1 com destination (`destinationId`
+único), então o numeral é sempre 1 quando existe. Mas o padrão visual já
+está pronto pra escala (caso futuramente uma destination possa ter N tips
+contextuais).
+
+### Resultado
+
+- Tabela mais limpa (4 colunas em vez de 5)
+- Densidade de info igual nos 2 botões de cross-link (💡 Dica + 📋 Roteiro)
+- Filtro país acessível em 1 clique a partir de qualquer estado
+- Zero perda de funcionalidade (rota e handler do link Dica preservados)
+
+### Arquivos tocados
+
+- `js/pages/portalDestinations.js`: thead, tbody, updateCountryFilter, handlers
+- `js/version.js`: 4.62.4 → 4.62.5
+- `index.html`: cache-bust
+- `CHANGELOG.md`: este bloco
+
+---
+
 ## [4.62.4+20260527-deletedestination-fk-cleanup-roteiros-bank] — 2026-05-27
 
 Release **CRÍTICA** — gap de integridade referencial pós v4.62.0 (M:N anchoring).

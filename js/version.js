@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 62,
-  patch: 4,
-  build: '20260527-deletedestination-fk-cleanup-roteiros-bank',
+  patch: 5,
+  build: '20260527-destinations-country-standalone-remove-dica-col',
 };
 
 /** "1.2.0" */
