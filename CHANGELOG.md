@@ -6,6 +6,61 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.60.1+20260526-destinations-merge-duplicates-cityAliases] — 2026-05-26
+
+Release **DATA CLEANUP** — merge de duplicatas em `portal_destinations`.
+
+**Pergunta direta do Renê** após v4.60.0: *"tem nomes que vc colocou lá que são os mesmos, mas em formatos diferentes (ex.: cape town e cidade do cabo / nova york e nova iorque / tokyo e tóquio). como vamos fazer?"*.
+
+**Estratégia**:
+- pt-BR canônico vence (consistência com schema de países que já é pt).
+- Outras grafias viram `cityAliases[]` no doc canônico.
+- Preserva ID do doc com mais histórico (manual approved geralmente — tem FKs).
+- Apenas atualiza `city`; FK cleanup defensivo redireciona refs cross-module quando trash tinha FK; deleta trash.
+
+**Aliases hardcoded** em `functions/merge-destinations-duplicates.cjs` (MERGE_PLAN): cobertura inicial dos pares mais óbvios. Pode crescer:
+- Tokyo ↔ Tóquio
+- Cape Town ↔ Cidade do Cabo
+- Rome ↔ Roma
+- Florence ↔ Florença / Firenze
+- Venice ↔ Veneza / Venezia
+- Munich ↔ Munique / München
+- Cusco ↔ Cuzco / Qosqo
+- Beijing ↔ Pequim / Peking
+- Marrakech ↔ Marrakesh ↔ Marraquexe
+- etc. (50+ pares no MERGE_PLAN)
+
+**Detecção literal dupla**: além de aliases, agrupa por `(country, city)` exato (case+acento insensitive) — pegou "Lençóis Maranhenses" criado 2× manualmente.
+
+**Aplicação real** (rodou contra prod):
+
+| País | Manual (KEEPER) | Trash (deletado) | Novo nome canônico | Aliases |
+|---|---|---|---|---|
+| África do Sul | Cape Town | Cidade do Cabo (banco-auto) | **Cidade do Cabo** | `['Cape Town']` |
+| Japão | Kyoto | Quioto (banco-auto) | **Quioto** | `['Kyoto']` |
+| Marrocos | Marrakesh | Marrakech (banco-auto) | **Marrakech** | `['Marrakesh', 'Marraquexe']` |
+| Marrocos | Fès | Fez (banco-auto) | **Fez** | `['Fès', 'Fes']` |
+| Brasil | Lençóis Maranhenses #1 | Lençóis Maranhenses #2 | mantido | `[]` |
+
+**Resultado**: portal_destinations: 289 → **284** docs (5 deletados). 0 FK redirects (trash banco-auto ainda não tinha refs cross-module).
+
+**Cross-module pronto**: `geoResolver.findDestinationByLabel({ city: 'Cape Town', country: 'África do Sul' })` agora resolve pro doc canônico de **Cidade do Cabo** (bate em cityAliases). Qualquer reader que use o helper centralizado fica unambiguous.
+
+**Junk listado** (NÃO auto-tratado — Renê decide):
+
+- 3 docs com `city` vazio: Etiópia, Índia, Quênia (legados pré-v4.59 com "?" como placeholder).
+- 4 docs com `city === country` vagos: Peru, Chile, Marrocos, Sri Lanka (roteiros que não especificaram cidade).
+- 4 docs com `city === country` **legítimos** (cidade-estado/ilha): Singapura, Mônaco, Hong Kong, Bahamas.
+
+Pra ver no Firestore: filtrar `portal_destinations` por aqueles 11 IDs no script log.
+
+**Próxima sprint** (se quiser):
+- Auto-tratamento dos vagos: deletar ou renomear pra "Geral" / "Não especificado".
+- Aprovação em massa por país (ex: "aprovar todos pending da Tanzânia").
+- Expandir MERGE_PLAN conforme curador encontrar mais pares (ex: ao notar "Madri" vs "Madrid", adiciona alias e re-roda script).
+
+---
+
 ## [4.60.0+20260526-cross-module-ssot-destinations-pending-review] — 2026-05-26
 
 Release **MINOR/FEATURE** — fecha o loop cross-module da sprint SSOT geo. Pergunta direta do Renê: *"como ficaram os outros módulos com a reforma? portal de dicas, banco de imagens, gerador de roteiros. e mais: vc nao deveria atualizar destinos com todos os lugares que hoje ja existem em banco?"*.
