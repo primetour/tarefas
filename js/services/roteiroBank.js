@@ -32,7 +32,7 @@
 
 import {
   collection, doc, getDoc, getDocs, setDoc, deleteDoc,
-  query, where, orderBy, serverTimestamp, limit,
+  query, where, orderBy, serverTimestamp, limit, writeBatch,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { db }    from '../firebase.js';
 import { store } from '../store.js';
@@ -441,7 +441,78 @@ export async function deleteRoteiroBank(id) {
   if (!canWrite()) throw new Error('Permissão negada.');
   // Soft-delete recomendado via archived. Hard-delete só pra master/admin.
   if (!store.isMaster?.()) throw new Error('Apenas master pode deletar permanentemente. Use "Arquivar".');
+
+  // v4.59.1: captura label antes do delete pra preservar em flag downstream (CLAUDE.md §13.a).
+  let docLabel = null;
+  try {
+    const s = await getDoc(doc(db, COL_BANK, id));
+    if (s.exists()) docLabel = s.data()?.title || null;
+  } catch {}
+
   await deleteDoc(doc(db, COL_BANK, id));
+
+  // v4.59.1 (CLAUDE.md §13.a) — FK cleanup cross-collection.
+  // Sem isso: notificações órfãs, ai_usage_logs apontando pra doc inexistente,
+  // potencial spam em CF roteiroBankValidityCron (busca expirados → notif).
+
+  // (1) notifications deterministic IDs (bank_expired_${id}_*)
+  try {
+    const notifSnap = await getDocs(query(
+      collection(db, 'notifications'),
+      where('entityType', '==', 'roteiro_bank'),
+      where('entityId',   '==', id),
+      limit(500),
+    ));
+    if (!notifSnap.empty) {
+      const batch = writeBatch(db);
+      notifSnap.forEach(d => batch.delete(d.ref));
+      await batch.commit();
+    }
+  } catch (e) {
+    console.warn('[deleteRoteiroBank] cleanup notifications falhou:', e?.message);
+  }
+
+  // (2) ai_usage_logs (preserva pra audit, só marca refDeleted)
+  try {
+    const aiSnap = await getDocs(query(
+      collection(db, 'ai_usage_logs'),
+      where('bankRefId', '==', id),
+      limit(500),
+    ));
+    if (!aiSnap.empty) {
+      const batch = writeBatch(db);
+      aiSnap.forEach(d => batch.update(d.ref, {
+        bankRefId: null,
+        bankRefDeleted: true,
+        bankRefDeletedAt: serverTimestamp(),
+        bankRefDeletedLabel: docLabel,
+      }));
+      await batch.commit();
+    }
+  } catch (e) {
+    console.warn('[deleteRoteiroBank] cleanup ai_usage_logs falhou:', e?.message);
+  }
+
+  // (3) tasks que referenciam (caso exista — schema atual não tem mas defensivo)
+  try {
+    const taskSnap = await getDocs(query(
+      collection(db, 'tasks'),
+      where('roteiroBankId', '==', id),
+      limit(500),
+    ));
+    if (!taskSnap.empty) {
+      const batch = writeBatch(db);
+      taskSnap.forEach(d => batch.update(d.ref, {
+        roteiroBankId: null,
+        roteiroBankDeleted: true,
+        roteiroBankDeletedAt: serverTimestamp(),
+        roteiroBankDeletedLabel: docLabel,
+      }));
+      await batch.commit();
+    }
+  } catch (e) {
+    console.warn('[deleteRoteiroBank] cleanup tasks falhou:', e?.message);
+  }
 }
 
 export async function archiveRoteiroBank(id) {
@@ -465,6 +536,10 @@ export async function duplicateRoteiroBank(id) {
   copy.slug = '';
   copy.approvedAt = null;
   copy.approvedBy = '';
+  // v4.59.1 (auditoria §7.8): zerar refs Envision na cópia. Senão duplicado
+  // referencia MESMA itinerary Envision e sync futuro sobrescreve um deles.
+  copy.envision = { ...emptyRoteiroBank().envision };
+  copy.source   = { ...(copy.source || {}), type: 'manual' };
   return await saveRoteiroBank(null, copy);
 }
 

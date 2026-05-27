@@ -6,6 +6,72 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.59.1+20260526-banco-audit-fixes-envision-help] — 2026-05-26
+
+Release **PATCH/FIX** — primeira rodada de fixes da auditoria Banco de Roteiros (CRÍTICO #1 #2 #5 + médios) + doc Envision sync.
+
+**Fixes da auditoria** (`docs/AUDIT-BANCO-V459.md` — síntese embaixo):
+
+- **CRÍTICO #1 — Filtro continente código morto** removido (`js/pages/roteiroBank.js`):
+  - `state.filter.continent`, handler `#rb-filter-continent`, branches em `countryOptions/applyFilters` que referenciavam `geo.continents` (sempre `[]` em adapter Envision) → deletados.
+  - Import vestigial `CONTINENTS` de `services/portal.js` removido.
+
+- **CRÍTICO #2 — FK cleanup ausente em deleteRoteiroBank** (`js/services/roteiroBank.js`):
+  - Aplica pattern CLAUDE.md §13.a. Quando hard-delete roda (só master), agora limpa em batch:
+    - `notifications where entityType=='roteiro_bank' && entityId==id` (delete)
+    - `ai_usage_logs where bankRefId==id` (marca `bankRefDeleted:true` preservando audit)
+    - `tasks where roteiroBankId==id` (marca `roteiroBankDeleted:true` defensivo)
+  - Cada FK cleanup é try/catch isolado (falha não bloqueia delete principal).
+
+- **CRÍTICO #5 — Hero auto-resolve sequencial** (`js/pages/roteiroBank.js`):
+  - Refatorado de loop `for...of await` (5+ min pra 50 docs) pra `Promise.allSettled` em batches de 5.
+  - Re-render debounced (800ms) — evita render storm quando vários docs resolvem em paralelo.
+  - Guard `state.heroResolveDone: Set` — após primeira tentativa (success ou fail), não re-tenta no mesmo session/page.
+  - Respeita `signal.aborted` do AbortController → não faz writes em página antiga (CLAUDE.md §11.j).
+
+- **Médio #1 — Sort dropdown adicionado**:
+  - Select com opções `Mais recentes` (default), `Alfabética`, `Validade próxima`, `Duração (longos)`.
+  - `applyFilters()` ordena após filtrar; `'recent'` preserva ordem do service.
+
+- **Médio #2 — Filtro coleção adicionado**:
+  - Select extra `Coleção` no FilterBar — popula a partir dos `collectionLabel` dos roteiros.
+
+- **Audit §7.8 — duplicateRoteiroBank**:
+  - Cópia agora zera `envision: { id:null, ... }` + força `source.type='manual'`. Evita 2 docs PRIMETOUR referenciando MESMA itinerary Envision (sync futuro sobrescreveria um).
+
+**UI nova — "Como atualizar via Envision"**:
+
+- Botão `secondary` no header (canEdit) abre modal explicativo com:
+  - 4 passos resumidos do procedimento (login Envision → bulk fetch DevTools → `import-envision-bundle.cjs --apply` → `backfill-geo-codes.cjs --apply`).
+  - Link "Abrir guia no GitHub" → `docs/ENVISION-SYNC-GUIDE.md`.
+  - Nota sobre frequência sugerida (mensal/sob demanda) e que curadoria editorial é preservada.
+
+**Doc nova — `docs/ENVISION-SYNC-GUIDE.md`** (~300 linhas):
+
+- Por que precisamos (Envision não tem API REST)
+- Quando rodar + Quem pode rodar
+- Procedimento passo a passo (com curls + comandos exatos)
+- Troubleshooting (401 expirou, geo vazia, CSP, permission-denied, parser quebrou)
+- Arquitetura técnica (diagrama)
+- Roadmap (auto-sync incremental, diff visual, webhook)
+- Referência rápida de comandos copy-paste
+
+**Validação E2E (Chrome MCP)**:
+
+- v4.59.0 (foundation) já validado: zero erros console, 236 cards, todos os fields novos OK.
+- v4.59.1 será validado pós-deploy: filtros novos (collection + sort), modal Envision help, hero paralelo.
+
+**Não inclui (próximos releases v4.59.x)**:
+
+- Race condition expectedUpdatedAt no editor (CRÍTICO #3 — próximo)
+- Paginação real cursor-based (CRÍTICO #4 — próximo)
+- `confirm()` nativo → modal custom (médio — próximo)
+- Editor mostra `envisionRaw` + `services[]` (médio — próximo)
+- Hex hardcoded + gradient → CSS vars (polish)
+- Auto-create de pending destinations a partir Envision
+
+---
+
 ## [4.59.0+20260526-geography-ssot-foundation] — 2026-05-26
 
 Release **MINOR/SCHEMA** — Single Source of Truth (SSOT) geográfico, fundação pra cross-module consistency entre Banco de Roteiros, Portal de Dicas, Banco de Imagens, Portal de Destinos e (futuro) Gerador de Roteiros assistido por IA.

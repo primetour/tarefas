@@ -15,7 +15,6 @@ import { toast } from '../components/toast.js';
 import { renderPageHeader, renderFilterBar } from '../components/uiKit.js';
 import { fetchRoteiroBankList, archiveRoteiroBank, duplicateRoteiroBank, isExpired, ensureBankHero } from '../services/roteiroBank.js';
 import { generateRoteiroBankPDF } from '../services/roteiroBankGenerator.js';
-import { CONTINENTS } from '../services/portal.js';
 import { actionIcon } from '../components/uiKit.js';
 
 const esc = s => s ? String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') : '';
@@ -23,8 +22,11 @@ const esc = s => s ? String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replac
 let state = {
   list: [],
   loading: false,
-  filter: { search: '', status: '', continent: '', country: '' },
-  abortCtrl: null,    // v4.50.10+ AbortController dos listeners delegados
+  // v4.59.1: removido `continent` do filter (era código morto pós v4.58.2 — Envision não tem continente).
+  // Adicionado `collection` (filtro novo) e `sort` (alphabet|recent|expiration|duration).
+  filter: { search: '', status: '', country: '', collection: '', sort: 'recent' },
+  abortCtrl: null,          // v4.50.10+ AbortController dos listeners delegados
+  heroResolveDone: new Set(), // v4.59.1: evita re-fetch após primeira falha (paralelo)
 };
 
 function canEdit() {
@@ -151,22 +153,51 @@ function cardHTML(d) {
   `;
 }
 
-/** Países disponíveis: todos os países dos roteiros (filtrados por continente se setado). */
+/** Países disponíveis: todos os países dos roteiros. */
 function countryOptions() {
   const set = new Set();
   for (const d of state.list || []) {
-    if (state.filter.continent && !d.geo.continents.includes(state.filter.continent)) continue;
-    (d.geo.countries || []).forEach(c => c && set.add(c));
+    (d.geo?.countries || []).forEach(c => c && set.add(c));
   }
   const sorted = [...set].sort((a,b) => a.localeCompare(b, 'pt-BR'));
   return [{ value: '', label: 'Todos países' }, ...sorted.map(c => ({ value: c, label: c }))];
 }
 
+/** v4.59.1: coleções disponíveis (extraídas dos roteiros existentes). */
+function collectionOptions() {
+  const set = new Set();
+  for (const d of state.list || []) {
+    if (d.collectionLabel) set.add(d.collectionLabel);
+  }
+  const sorted = [...set].sort((a,b) => a.localeCompare(b, 'pt-BR'));
+  return [{ value: '', label: 'Todas coleções' }, ...sorted.map(c => ({ value: c, label: c }))];
+}
+
+/** v4.59.1: comparador pra sort. Fallbacks defensivos pra datas faltantes. */
+function sortFn(mode) {
+  return (a, b) => {
+    if (mode === 'alphabet') {
+      return (a.title || '').localeCompare(b.title || '', 'pt-BR');
+    }
+    if (mode === 'expiration') {
+      // Roteiros expirando antes vêm primeiro; sem validade vai pro fim.
+      const ea = a.validity?.endDate || '9999-12-31';
+      const eb = b.validity?.endDate || '9999-12-31';
+      return String(ea).localeCompare(String(eb));
+    }
+    if (mode === 'duration') {
+      return (b.durationDays || 0) - (a.durationDays || 0);
+    }
+    // default 'recent' — preserva ordem do service (status priority + updatedAt desc)
+    return 0;
+  };
+}
+
 function applyFilters() {
-  return state.list.filter(d => {
+  const filtered = state.list.filter(d => {
     if (state.filter.status && d.status !== state.filter.status) return false;
-    if (state.filter.continent && !d.geo.continents.includes(state.filter.continent)) return false;
     if (state.filter.country && !d.geo.countries.includes(state.filter.country)) return false;
+    if (state.filter.collection && d.collectionLabel !== state.filter.collection) return false;
     if (state.filter.search) {
       const s = state.filter.search.toLowerCase();
       const hay = [
@@ -179,6 +210,11 @@ function applyFilters() {
     }
     return true;
   });
+  // v4.59.1: ordena após filtrar (sort=='recent' preserva ordem do service)
+  if (state.filter.sort && state.filter.sort !== 'recent') {
+    filtered.sort(sortFn(state.filter.sort));
+  }
+  return filtered;
 }
 
 function gridHTML() {
@@ -213,6 +249,7 @@ export async function renderRoteiroBank(container) {
         subtitle: 'Curadoria PRIMETOUR de roteiros prontos — usados como referência manual e base da IA.',
         ...(canEdit() ? {
           primary: { action: 'new', label: '+ Novo roteiro' },
+          secondary: [{ action: 'envision-help', label: 'Como atualizar via Envision', title: 'Procedimento de sync com Envision' }],
         } : {}),
       })}
       ${renderFilterBar({
@@ -227,8 +264,15 @@ export async function renderRoteiroBank(container) {
         activeStatus: state.filter.status,
         selects: [
           // v4.58.2: filtro continente removido (Renê: "não precisamos do campo continente").
-          // Filtro país agora não cascata mais — usa todos os países de todos os roteiros.
-          { id: 'rb-filter-country', label: 'País', value: state.filter.country, options: countryOptions() },
+          // v4.59.1: filtro continente código morto também removido (audit). Adicionados coleção + sort.
+          { id: 'rb-filter-country',    label: 'País',     value: state.filter.country,    options: countryOptions() },
+          { id: 'rb-filter-collection', label: 'Coleção',  value: state.filter.collection, options: collectionOptions() },
+          { id: 'rb-filter-sort',       label: 'Ordenar',  value: state.filter.sort,       options: [
+            { value: 'recent',     label: 'Mais recentes' },
+            { value: 'alphabet',   label: 'Alfabética' },
+            { value: 'expiration', label: 'Validade próxima' },
+            { value: 'duration',   label: 'Duração (longos)' },
+          ]},
         ],
       })}
       <div id="rb-list-wrap">${gridHTML()}</div>
@@ -257,20 +301,39 @@ export async function renderRoteiroBank(container) {
     countrySelectEl.innerHTML = countryOptions().map(o => `<option value="${o.value}" ${o.value===currentVal?'selected':''}>${o.label}</option>`).join('');
   }
 
-  // v4.50.1+ Hero auto-resolve em background — pra docs sem hero,
-  // busca banco_imagens → Unsplash e persiste no doc. Atualiza UI quando achar.
-  const missingHero = (state.list || []).filter(d => !d?.images?.hero);
+  // v4.59.1: Hero auto-resolve em PARALELO (batch 5 simultâneos).
+  // Antes: loop sequencial bloqueava ~5min com 50+ docs sem hero.
+  // Agora: ~5-10s pra 50 docs. Re-render via debounce (não a cada doc).
+  // Inclui guard `heroResolveDone` pra evitar re-fetch quando user re-render
+  // a página com docs cuja primeira tentativa falhou (sem hero achado).
+  const missingHero = (state.list || []).filter(d => !d?.images?.hero && !state.heroResolveDone.has(d.id));
   if (missingHero.length) {
     (async () => {
-      for (const d of missingHero) {
-        try {
-          const url = await ensureBankHero(d.id, d);
-          if (url) {
-            d.images = { ...(d.images||{}), hero: url };
-            const wrap2 = container.querySelector('#rb-list-wrap');
-            if (wrap2) wrap2.innerHTML = gridHTML();   // re-render simples
-          }
-        } catch {}
+      const BATCH = 5;
+      let pendingRerender = false;
+      const scheduleRender = () => {
+        if (pendingRerender) return;
+        pendingRerender = true;
+        setTimeout(() => {
+          pendingRerender = false;
+          if (signal.aborted) return;
+          const wrap2 = container.querySelector('#rb-list-wrap');
+          if (wrap2) wrap2.innerHTML = gridHTML();
+        }, 800);  // batch updates pra evitar render storm
+      };
+      for (let i = 0; i < missingHero.length; i += BATCH) {
+        if (signal.aborted) return;
+        const batch = missingHero.slice(i, i + BATCH);
+        await Promise.allSettled(batch.map(async (d) => {
+          try {
+            const url = await ensureBankHero(d.id, d);
+            state.heroResolveDone.add(d.id);
+            if (url) {
+              d.images = { ...(d.images||{}), hero: url };
+              scheduleRender();
+            }
+          } catch { state.heroResolveDone.add(d.id); }
+        }));
       }
     })();
   }
@@ -287,6 +350,46 @@ export async function renderRoteiroBank(container) {
 
       if (action === 'new') {
         location.hash = '#banco-roteiro-editor';
+        return;
+      }
+      // v4.59.1: modal explicativo "Como atualizar via Envision". Links pro
+      // doc completo (docs/ENVISION-SYNC-GUIDE.md) + resumo dos 4 passos.
+      if (action === 'envision-help') {
+        try {
+          const { modal } = await import('../components/modal.js');
+          modal.open({
+            title: 'Atualização Banco via Envision',
+            size: 'md',
+            closeOnEsc: true,
+            content: `
+              <div style="line-height:1.5;padding:4px 2px;">
+                <p style="margin:0 0 12px;"><strong>Fonte da verdade dos roteiros é a Envision (TravelAgent).</strong>
+                O PRIMETOUR consome via SOAP (sem API REST disponível pra roteiros) e enriquece com camada editorial.</p>
+                <h4 style="margin:16px 0 6px;font-size:0.95rem;">Procedimento resumido</h4>
+                <ol style="margin:0 0 12px 18px;padding:0;">
+                  <li>Logar em <a href="https://v2.travelagent.com.br/" target="_blank" rel="noopener" style="color:var(--brand-gold,#D4A843);">v2.travelagent.com.br</a> no Chrome (cookie ativo)</li>
+                  <li>DevTools → Console → rodar bulk fetch script (ver doc)</li>
+                  <li>No terminal: <code style="background:var(--bg-surface);padding:1px 5px;border-radius:3px;font-size:0.85em;">node functions/import-envision-bundle.cjs --bundle X.json --apply</code></li>
+                  <li><code style="background:var(--bg-surface);padding:1px 5px;border-radius:3px;font-size:0.85em;">node functions/backfill-geo-codes.cjs --apply</code></li>
+                </ol>
+                <p style="margin:8px 0 0;font-size:0.85rem;color:var(--text-muted);">
+                  Guia completo: <code>docs/ENVISION-SYNC-GUIDE.md</code> no repo. Inclui troubleshooting, arquitetura, roadmap.
+                </p>
+                <p style="margin:12px 0 0;font-size:0.85rem;color:var(--text-muted);">
+                  <strong>Frequência sugerida:</strong> mensal ou sob demanda (lote novo / antes de campanha).
+                  Cada re-sync sobrescreve campos vindos do Envision; curadoria editorial PRIMETOUR é preservada.
+                </p>
+              </div>
+            `,
+            footer: [
+              { label: 'Abrir guia no GitHub', class: 'btn-secondary', onClick: () => window.open('https://github.com/primetour/tarefas/blob/main/docs/ENVISION-SYNC-GUIDE.md', '_blank') },
+              { label: 'Entendi', class: 'btn-primary' },
+            ],
+          });
+        } catch (err) {
+          // Fallback se modal.js falhar.
+          window.open('https://github.com/primetour/tarefas/blob/main/docs/ENVISION-SYNC-GUIDE.md', '_blank');
+        }
         return;
       }
       if (action === 'export-pdf') {
@@ -349,21 +452,21 @@ export async function renderRoteiroBank(container) {
     }
   }, { signal });
   container.addEventListener('change', (e) => {
-    if (e.target.matches('#rb-filter-continent')) {
-      state.filter.continent = e.target.value;
-      // Reset país (cascata: muda continente → países disponíveis mudam)
-      state.filter.country = '';
-      const countrySelect = container.querySelector('#rb-filter-country');
-      if (countrySelect) {
-        countrySelect.innerHTML = countryOptions().map(o => `<option value="${o.value}">${o.label}</option>`).join('');
-        countrySelect.value = '';
-      }
+    // v4.59.1: handler #rb-filter-continent removido (era código morto pós v4.58.2 — audit).
+    if (e.target.matches('#rb-filter-country')) {
+      state.filter.country = e.target.value;
       const wrap = container.querySelector('#rb-list-wrap');
       if (wrap) wrap.innerHTML = gridHTML();
       return;
     }
-    if (e.target.matches('#rb-filter-country')) {
-      state.filter.country = e.target.value;
+    if (e.target.matches('#rb-filter-collection')) {
+      state.filter.collection = e.target.value;
+      const wrap = container.querySelector('#rb-list-wrap');
+      if (wrap) wrap.innerHTML = gridHTML();
+      return;
+    }
+    if (e.target.matches('#rb-filter-sort')) {
+      state.filter.sort = e.target.value || 'recent';
       const wrap = container.querySelector('#rb-list-wrap');
       if (wrap) wrap.innerHTML = gridHTML();
       return;

@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 59,
-  patch: 0,
-  build: '20260526-geography-ssot-foundation',
+  patch: 1,
+  build: '20260526-banco-audit-fixes-envision-help',
 };
 
 /** "1.2.0" */
