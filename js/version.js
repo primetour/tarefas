@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 61,
-  patch: 4,
-  build: '20260527-hotfix-geoResolver-firebase-sdk-version-mismatch',
+  minor: 62,
+  patch: 0,
+  build: '20260527-bank-destinations-MN-link-normalize-cities',
 };
 
 /** "1.2.0" */

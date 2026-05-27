@@ -6,6 +6,72 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.62.0+20260527-bank-destinations-MN-link-normalize-cities] — 2026-05-27
+
+Release **MINOR/DATA** — fecha vinculação cross-module roteiros_bank ↔ portal_destinations + normaliza cidades do Envision em atômicas.
+
+**Pergunta Renê**: *"me fala clareza se o banco de roteiros esta com a vinculacao via destinos. percebi que os roteiros que vc puxou e depois determinou destinos geraram varias localizacoes. onde eles vao ficar ancorados? em todos citados?"*.
+
+**Diagnóstico real** (medido antes da release): **0/236** roteiros tinham `geo.destinationIds[]` populado. ZERO. 691 cidades mencionadas, **0 ancoradas**. Backfill v4.59.2 só adicionou `countryCodes`, mas vinculação roteiro→destino nunca rodou.
+
+**Decisões Renê (3 perguntas)**:
+- Ancoragem: **M:N — todas as cidades viram destIds** (cross-search rico)
+- Normalização: **split trechos + strip parênteses** (cidades atômicas)
+- Backfill: **agora + adapter normaliza futuros** (não esperar re-sync)
+
+**Implementação**:
+
+### `js/services/envisionAdapter.js`
+
+- Nova fn exportada `normalizeCityName(raw)` → array de cidades atômicas. Regras:
+  1. Strip `"(...)"` (propriedade, hotel, "e arredores")
+  2. Strip sufixo país duplicado (ex: `", Zanzibar - Tanzânia"` → `", Zanzibar"`)
+  3. Split por `" - "` ou `" – "` (trecho)
+  4. Split por `", "` quando ≤ 2 partes (cidade composta)
+  5. Dedup case-insens + sem acentos
+- `deriveGeo()` invoca `normalizeCityName` em cada Product/DayByDay → cada Location vira N cidades atômicas no `cityList[]`. Campo `originalCity` preservado pra audit/rastreabilidade quando split mudou o nome.
+
+**Exemplos reais corrigidos**:
+- `"Coyhaique - Cerro Castillo"` → `["Coyhaique", "Cerro Castillo"]`
+- `"Cochrane (Explora Parque Nacional Patagonia)"` → `["Cochrane"]`
+- `"Cerro Castillo - Cochrane (Explora)"` → `["Cerro Castillo", "Cochrane"]`
+- `"Pongwe, Zanzibar - Tanzânia"` → `["Pongwe", "Zanzibar"]`
+- `"Sapporo (e arredores)"` → `["Sapporo"]`
+
+### `functions/backfill-bank-destinationIds.cjs`
+
+Script Admin SDK idempotente (dry-run + `--apply`). Pra cada roteiro:
+1. Normaliza cada `city` atual via `normalizeCityName`
+2. Dedup (cidade+país)
+3. Pra cada cidade atômica: `findDestinationByLabel` (bate aliases!) → se acha, reusa id; senão cria pending `banco-auto`
+4. Update doc: `geo.cities[]` (atômicas + `originalCity` preservada) + `geo.destinationIds[]`
+5. Cache em memória dos destinations criados pra dedup intra-script
+
+**Rodado contra prod**:
+- **236/236 roteiros atualizados**
+- 511 destinations reusados (cidades bateram com existing)
+- 17 destinations novos pending criados
+- 12 cidades atômicas extras (split de trechos)
+- 184/236 (78%) roteiros agora ancorados; 52 sem ancoragem (= roteiros sem `country` Envision)
+- 247/290 (85%) destinations agora referenciados por algum roteiro
+
+**Cross-module impact (agora funcional)**:
+
+| Caso | Antes v4.62 | Depois v4.62 |
+|---|---|---|
+| Filtro "roteiros que passam por Cidade do Cabo" | impossível (sem refs) | query `geo.destinationIds array-contains` |
+| IA recebe contexto geo de um roteiro | só strings city/country | pode resolver destinationId → fetch tip/imagens vinculadas |
+| Curador deleta destination | sem cleanup, deixa órfão | precisa FK cleanup (próxima release) |
+| Renomear cidade canônica | só muda label | refs por id permanecem corretos automaticamente |
+
+**Próximas releases sugeridas (não inclusas)**:
+
+- v4.62.1: FK cleanup em `deleteDestination` (zera refs cross-module — `roteiros_bank.geo.destinationIds`, `portal_images.destinationId`, `portal_tips.destinationId`)
+- v4.62.2: UI no card do banco mostra badge "ancorado em N destinos" + lista links
+- v4.63: paginação cursor-based real usando `where('geo.destinationIds', 'array-contains', destId)` pra busca por destino
+
+---
+
 ## [4.61.4+20260527-hotfix-geoResolver-firebase-sdk-version-mismatch] — 2026-05-27
 
 Release **HOTFIX** — bug crítico pego em E2E (Renê: "teste!").

@@ -293,6 +293,65 @@ function bestLocationName(loc) {
 }
 
 /**
+ * v4.62.0 — normaliza nome de cidade vindo do Envision em cidade(s) atômica(s).
+ *
+ * Envision frequentemente retorna trechos descritivos no `Location.Name`:
+ *   - "Coyhaique - Cerro Castillo"           → ["Coyhaique", "Cerro Castillo"]
+ *   - "Cochrane (Explora Parque Nacional)"   → ["Cochrane"]
+ *   - "Cerro Castillo - Cochrane (Explora)"  → ["Cerro Castillo", "Cochrane"]
+ *   - "Mnemba Island, Zanzibar - Tanzânia"   → ["Mnemba Island", "Zanzibar"]
+ *   - "Sapporo (e arredores)"                → ["Sapporo"]
+ *   - "Pongwe, Zanzibar - Tanzânia"          → ["Pongwe", "Zanzibar"]
+ *
+ * Estratégia:
+ *   1. Strip parênteses (propriedade, hotel, arredores): `"X (Y)"` → `"X"`.
+ *   2. Strip sufixo país duplicado: `"X, Y - País"` → `"X, Y"`.
+ *   3. Split por " - " (trecho/transferência).
+ *   4. Split por ", " quando contiver vírgula (cidade + ilha/região).
+ *   5. Trim cada parte, descartar vazios e duplicatas.
+ *
+ * @returns {string[]} 1 ou N cidades atômicas
+ */
+export function normalizeCityName(raw) {
+  if (!raw || typeof raw !== 'string') return [];
+  let s = raw.trim();
+  if (!s) return [];
+
+  // 1. Strip parênteses (incluindo conteúdo)
+  s = s.replace(/\s*\([^)]*\)/g, '').trim();
+  if (!s) return [];
+
+  // 2. Strip sufixo país duplicado "- Tanzânia", "- Brasil" etc no final
+  // (caso "X, Y - Tanzânia" vire só "X, Y")
+  s = s.replace(/\s*[-–]\s*(Tanzânia|Brasil|Argentina|Chile|Peru|Bolívia|África do Sul|Egito|Quênia|Marrocos|Tailândia|Vietnã|Camboja|Laos|China|Japão|Índia|Indonésia|Austrália|Nova Zelândia|Polinésia Francesa|Maldivas)$/i, '').trim();
+
+  // 3. Split trecho/transferência por " - " ou " – "
+  const trechoParts = s.split(/\s+[-–]\s+/).map(p => p.trim()).filter(Boolean);
+
+  // 4. Pra cada parte do trecho, split adicional por vírgula
+  const atomic = [];
+  for (const part of trechoParts) {
+    // Split por vírgula só se for cidade composta (heurística: max 2 partes)
+    const commaParts = part.split(',').map(p => p.trim()).filter(Boolean);
+    if (commaParts.length <= 2) {
+      atomic.push(...commaParts);
+    } else {
+      // 3+ partes = provavelmente endereço, pega só a primeira
+      atomic.push(commaParts[0]);
+    }
+  }
+
+  // 5. Dedup case-insens (preserva ordem + grafia original do primeiro)
+  const seen = new Set();
+  const out = [];
+  for (const c of atomic) {
+    const key = c.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    if (key && !seen.has(key)) { seen.add(key); out.push(c); }
+  }
+  return out;
+}
+
+/**
  * Converte 1 Hotel Envision (Product com ProductType=2) pro shape
  * categories[].hotels[].* enriquecido (v4.58.0+).
  */
@@ -418,34 +477,56 @@ function deriveGeo(itinerary) {
   // v4.58.8: normalizeCountry aplicado em todos os country values
   // (acentos, typos, exceções como "África" sozinho).
 
+  // v4.62.0 — normaliza cidade em ATÔMICAS antes de adicionar. Envision trechos
+  // tipo "Coyhaique - Cerro Castillo" viram 2 entries; "(Explora Parque)" some.
+  // Preserva originalCity pra audit/rastreabilidade.
+
   // Extrair de Products
   for (const p of (itinerary.Products || [])) {
     const loc = typeof p.Location === 'object' ? p.Location
               : p.Hotel?.Location || null;
     if (!loc) continue;
-    const cityName = bestLocationName(loc);
-    if (!cityName) continue;
+    const rawCityName = bestLocationName(loc);
+    if (!rawCityName) continue;
     const country = normalizeCountry(loc.Country || '');
-    const key = `${cityName}|${country}`;
-    if (cities.has(key)) continue;
-    cities.add(key);
-    if (country) countries.add(country);
-    cityList.push({
-      city: cityName,
-      country,
-      continent: '',
-      nights: p.NumberOfNights || 0,
-      locationId: loc.Id || p.LocationId || null,
-      iata: loc.IATA || '',
-    });
+    const atomicCities = normalizeCityName(rawCityName);
+    if (!atomicCities.length) continue;
+    for (const cityName of atomicCities) {
+      const key = `${cityName}|${country}`;
+      if (cities.has(key)) continue;
+      cities.add(key);
+      if (country) countries.add(country);
+      cityList.push({
+        city: cityName,
+        country,
+        continent: '',
+        // v4.62.0: nights atribuído apenas à PRIMEIRA cidade atômica do trecho
+        // (Envision não diferencia noites por cidade dentro de trecho).
+        nights: (atomicCities[0] === cityName) ? (p.NumberOfNights || 0) : 0,
+        locationId: loc.Id || p.LocationId || null,
+        iata: loc.IATA || '',
+        originalCity: rawCityName !== cityName ? rawCityName : null,   // audit
+      });
+    }
   }
 
   // Fallback: extrair de DayByDay se Products vazio
   if (!cityList.length) {
     for (const d of (itinerary.DayByDay || [])) {
-      if (d.Name && !cities.has(d.Name)) {
-        cities.add(d.Name);
-        cityList.push({ city: d.Name, country: '', continent: '', nights: 0, locationId: null, iata: '' });
+      if (!d.Name) continue;
+      const atomicCities = normalizeCityName(d.Name);
+      for (const cityName of atomicCities) {
+        if (cities.has(cityName)) continue;
+        cities.add(cityName);
+        cityList.push({
+          city: cityName,
+          country: '',
+          continent: '',
+          nights: 0,
+          locationId: null,
+          iata: '',
+          originalCity: d.Name !== cityName ? d.Name : null,
+        });
       }
     }
   }
