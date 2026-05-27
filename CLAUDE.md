@@ -1325,3 +1325,190 @@ Releases passam syntax check + deploy + curl validation, mas só E2E real via Ch
 7. Verificar fingerprint público: curl direto pra confirmar token zerado, blob 404, etc.
 
 **Antes de dizer "100% funcional"**: cobrir pelo menos 3 dos 7 steps acima. Sintoma de release não-testada: bug descoberto pelo user no mesmo dia.
+
+---
+
+## 14. Aprendizados sprint Geographic SSOT v4.59.x + Banco Envision (26/05/2026)
+
+### a) SSOT geográfico híbrido — hardcoded + Firestore
+
+**Decisão Renê 2026-05-26** (após import Envision deixar 5+ representações da mesma cidade): "não pode ter dados repetidos. não pode ser facil sobreescrever".
+
+Arquitetura adotada:
+
+| Camada | Lugar | Mutabilidade |
+|---|---|---|
+| Continentes (7) | `js/data/continents.js` hardcoded | Imutável |
+| Países (~196 ISO 3166-1) | `js/data/countries.js` hardcoded | Imutável + adições raras |
+| Cidades | `portal_destinations` Firestore | Master controla |
+
+Por que NÃO é tudo Firestore:
+- Continentes/países mudam < 1×/década. Firestore = overhead sem ganho.
+- Hardcoded = type-safe (helpers `countryCodeFromLabel(label) → 'AR'|null`), sem rede, cacheado.
+- Cross-module consistency garantida em compile-time.
+
+Por que cidades FICAM em Firestore:
+- Cidades novas chegam **toda hora** via import Envision.
+- Curador precisa CRUD (adicionar/editar/aprovar).
+- Cidade tem metadata rica (heroImage, areaId, descrição) que muda.
+
+**Pattern reusável**: pra qualquer enum semântico que tem cardinalidade <300 + mudança <1×/ano = hardcoded module. Cardinalidade alta + mudança frequente = Firestore.
+
+### b) ISO codes como FK estável + labels canônicos pt-BR
+
+**Por que ISO 3166-1 alpha-2 (`AR`, `BR`, `JP`):**
+- Universal (Anthropic, OpenAI, Unsplash, Wikipedia, etc.)
+- Estável (não muda com decisão política — `Türkiye` virou alias)
+- Curto (FK pequeno em Firestore)
+- Unambíguo ("Brasil" pt vs "Brazil" en vs "Brasilien" de → todos `BR`)
+
+**Por que MANTER label pt-BR canônico:**
+- UI exibe o label.
+- Audit/logs ficam legíveis ("Argentina" > "AR").
+- Backwards compat com queries antigas (`where('country', '==', 'Brasil')`) continua rodando enquanto migra readers.
+
+**Pattern**: novo schema sempre tem PAR `{code: 'XX', pt: 'Nome', en: 'Name'}`. Reader prefere code; fallback pra label.
+
+### c) Aliases-aware lookup (matching defensivo)
+
+`countryCodeFromLabel('Tóquio')` → null (cidade, não país). Mas `countryCodeFromLabel('Japan')` → 'JP', `countryCodeFromLabel('Japão')` → 'JP', `countryCodeFromLabel('japao')` → 'JP', `countryCodeFromLabel('JP')` → 'JP'.
+
+Construído com map lazy:
+```js
+const NAME_TO_CODE = (() => {
+  const m = {};
+  for (const c of COUNTRIES) {
+    const add = label => {
+      const key = label.toLowerCase().trim();
+      m[key] = c.code;
+      const noAccent = key.normalize('NFD').replace(/[̀-ͯ]/g, '');
+      if (noAccent !== key) m[noAccent] = c.code;
+    };
+    add(c.pt); add(c.en);
+    (c.aliases || []).forEach(add);
+  }
+  return m;
+})();
+```
+
+**Lição**: sempre que SSOT é referenciado por label arbitrário (input user, terceiro), inclui aliases visíveis no schema do SSOT. Não força transformação no caller.
+
+### d) Pseudo-continentes legados precisam mapa explícito
+
+Sistema PRIMETOUR tinha CONTINENTS hardcoded com 11 entries (não geográficos puros): "Brasil", "Caribe", "América Central", "Oriente Médio". Quando introduz SSOT com 7 continentes UN M.49, precisa mapa:
+
+```js
+const LEGACY_CONTINENT_TO_CODE = {
+  'brasil':            'SA',
+  'caribe':            'NA',
+  'américa central':   'NA',
+  'oriente médio':     null,  // AMBÍGUO — usa country.continent
+};
+```
+
+Cases ambíguos (Oriente Médio = Egito AF + Israel AS) → resolve via continente do país, não do legacy.
+
+**Princípio mais geral**: ao introduzir SSOT, mapa de legacy é OBRIGATÓRIO. Skipping = dados órfãos que filtros perdem silenciosamente.
+
+### e) Backfill cross-modules idempotente com dry-run + apply
+
+Pattern reusável (v4.59.0 `functions/backfill-geo-codes.cjs`):
+
+```js
+const APPLY = process.argv.includes('--apply');
+for (const docSnap of snap.docs) {
+  if (docSnap.data().countryCode) { skipped++; continue; }  // idempotente
+  const code = countryCodeFromLabel(docSnap.data().country);
+  if (!code) { unresolved.push(docSnap.id); continue; }
+  if (APPLY) batch.update(docSnap.ref, { countryCode: code });
+  updated++;
+}
+console.log(APPLY ? '✓ APPLY done' : '✓ DRY-RUN. Run with --apply.');
+```
+
+**Lição**: dry-run + apply flag = SEMPRE em scripts de mass-mutation. Validar log "0 unresolved" ANTES de --apply. Idempotente = pode rodar 10× sem corromper.
+
+### f) Schema extension não-destrutivo (campos NOVOS coexistem com legados)
+
+Quando estende schema cross-module sem quebrar nenhum reader:
+
+1. Adiciona campo NOVO (`countryCode`) — campos antigos (`country`) ficam intactos.
+2. Reader prioriza novo se presente (`data.countryCode || countryCodeFromLabel(data.country)`).
+3. Writer (saveDestination) preenche AUTOMATICAMENTE o novo a partir do legado.
+4. Backfill bulk preenche docs existentes.
+5. **Eventualmente** (deprecation cycle de 3-6m): readers migrados → remove legado num release MAJOR.
+
+**Nunca**: deletar campo legado no MESMO release que introduz substituto. Sempre coexistem.
+
+### g) Doc Envision sync no PRÓPRIO módulo + .md no repo
+
+**Decisão Renê**: "como vamos atualizar esse banco via envision? (melhor documentar isso de alguma forma, no modulo, pra nao esquecermos)".
+
+Padrão adotado:
+- Botão `secondary` no header do módulo (canEdit): "Como atualizar via Envision".
+- Click abre modal com:
+  - Resumo dos 4 passos do procedimento
+  - Comandos copy-paste
+  - Link "Abrir guia no GitHub" → `docs/ENVISION-SYNC-GUIDE.md`
+- `.md` no repo é o doc completo (troubleshooting, arquitetura, roadmap).
+
+**Princípio mais geral**: workflow operacional que envolve N comandos manuais + decisões críticas (ex: re-sync banco, restore de backup, rotação de chave) DEVE ter:
+1. Botão de hint no próprio módulo (descoberta).
+2. Doc `.md` no repo (referência completa).
+3. Comandos copy-paste prontos (não "veja na doc").
+4. Frequência sugerida explícita.
+
+**Anti-padrão**: doc só no Notion/Confluence ou tribal knowledge. Quem entra no time depois NÃO descobre o procedimento.
+
+### h) Auditoria por subagente paralela enquanto faz fix manual
+
+**Pattern usado v4.59.0**: spawnei agente em background pra auditar módulo Banco completo (gaps + melhorias) ENQUANTO eu fazia foundation files SSOT em foreground.
+
+Agente entregou em ~5min:
+- Inventário rápido
+- 5 críticos + 8 médios + 8 polish + 10 risk técnico
+- Cada item com arquivo:linha + severidade + fix sugerido
+
+Permitiu próxima release (v4.59.1) entrar com fixes prontos sem perder tempo descobrindo. Quando ele terminou eu já tinha v4.59.0 deployado + plan dos próximos.
+
+**Quando aplicar**:
+- Início de sprint num módulo que vai receber refactor (audit em paralelo a planning).
+- Code review de PR longa (audit em paralelo a comments óbvios).
+- Pivot arquitetural (audit do current state em paralelo a desenho do future state).
+
+**Cuidados**:
+- Briefar agente com contexto completo (sem memória da conversa).
+- Pedir output ESTRUTURADO (matriz, severidade explícita, paths absolutos).
+- Limitar tamanho (1500-3000 palavras) — sub-agent transcrito vai pro context.
+- Resultado vai pro chat — NÃO duplicar trabalho que ele já fez.
+
+### i) Fluxo Envision SOAP-only (sem API REST pra roteiros)
+
+**Descoberta v4.58**: Envision (TravelAgent) tem Trip API REST com 121 endpoints (api.travelagent.com.br + Swagger), mas NÃO cobre roteiros. Roteiros só via SOAP `.svc` com Forms Auth (cookie `.ASPXAUTH` HttpOnly).
+
+Implicações:
+- Servidor externo NÃO consegue chamar (cookie HttpOnly).
+- Único caminho: browser autenticado + bulk fetch via DevTools script.
+- Re-sync é **assistido**, não automático.
+- Sem webhook/push possível.
+
+**Pattern de integração legacy SOAP-only**:
+1. Bulk fetch via DevTools no browser autenticado.
+2. Salvar bundle como JSON em `docs/envision-samples/`.
+3. Adapter pure-function converte pra schema PRIMETOUR.
+4. Import script Admin SDK bypassa rules.
+5. Cron CF (futuro) detectaria `Envision.UpdatedAt` mas precisaria credencial server-side dedicada (não temos).
+
+**Anti-padrão evitado**: tentar replicar Forms Auth no Node.js (frágil, sessão expira, segredos no servidor).
+
+### j) Comando de paralelização: TodoList + Async Agents + foreground work
+
+Quando Renê manda múltiplas demandas + sai ("vai... mas testa tudo"), priorizar:
+1. **Identifica** o que bloqueia o quê.
+2. **Spawn em background** auditorias/research/refactors longos (Agent run_in_background).
+3. **Foreground** trabalho com dependências sequenciais.
+4. **Bumps incrementais** (v4.59.0, v4.59.1, ...) em vez de mega-release.
+5. **Cada release com risco bem-delimitado** (foundation isolada → fixes → readers → UI).
+6. **Validar via curl** quando MCP cache stubborn — não bloquear sprint inteira esperando MCP.
+
+Resultado em ~1 sessão: 2 releases (v4.59.0 + v4.59.1), 1 auditoria completa, 1 doc operacional, 2 dev_hours entries, sem quebra cross-module.

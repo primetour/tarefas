@@ -428,6 +428,78 @@ que outros agentes) com tokens + cacheRead + webSearchCount. Visualização
 automática nas abas Custos/Logs do `aiHub.js` — filtro por `module` ('roteiros'
 ou 'banco-roteiros').
 
+**Pivot Envision** (v4.58.0+): a partir desta versão, a fonte canônica dos
+roteiros do banco é o sistema **Envision (TravelAgent)** da equipe operacional.
+PRIMETOUR consome via SOAP (`.svc` com Forms Auth — Trip API REST não cobre
+roteiros). Adapter pure-function `js/services/envisionAdapter.js` converte
+Itinerary → shape PRIMETOUR. 236 docs importados em v4.58.7 via script
+`functions/import-envision-bundle.cjs` rodado contra bundle capturado por
+DevTools no navegador autenticado. Procedimento documentado em
+`docs/ENVISION-SYNC-GUIDE.md` (incl. troubleshooting, arquitetura, comandos
+copy-paste). UI hint "Como atualizar via Envision" no header banco (v4.59.1).
+
+### Geographic SSOT — modelo cross-module (v4.59.0+)
+
+**Problema atacado**: antes desta sprint, sistema tinha 5+ representações
+paralelas da mesma cidade (filtro "Tóquio" no Banco perdia imagem cadastrada
+como "Tokyo"; dica "Cidade do Cabo" não cruzava com roteiro "Cape Town").
+Match exato Envision → portal_destinations era 5%.
+
+**Arquitetura híbrida** (CLAUDE.md §14.a):
+
+| Camada | Lugar | Mutabilidade | Quem escreve |
+|---|---|---|---|
+| Continentes (7) | `js/data/continents.js` hardcoded | Imutável | Dev (PR no Git) |
+| Países (~196 ISO 3166-1) | `js/data/countries.js` hardcoded | Imutável + adições raras | Dev (PR no Git) |
+| Cidades | `portal_destinations` Firestore | Master controla CRUD | UI / Admin SDK |
+
+**Helpers centralizados** (`js/services/geoResolver.js`):
+- `resolveCountry(label) → { code, pt, en, continent } | null`
+- `continentCodeFromLabel(label) → 'AF'|'SA'|...|null` (inclui mapa legacy "Brasil"→SA, "Caribe"→NA)
+- `resolveCountryCodes([labels]) → [codes]` (resolve lista filtrando unmatched)
+- `findDestinationByLabel({country, city})` — busca portal_destinations
+- `resolveOrCreatePendingDestination(...)` — cria pending se não acha (futuro)
+
+**Schema cross-module** (v4.59.0+, não-destrutivo):
+
+```js
+// portal_destinations
+{
+  continent: 'Ásia',         // legado
+  country:   'Japão',        // legado
+  city:      'Tóquio',       // legado
+  countryCode:   'JP',       // NOVO: FK ISO 3166-1 (preferido)
+  continentCode: 'AS',       // NOVO: FK UN M.49
+  cityAliases:   ['Tokyo'],  // NOVO: matches alternativos
+  source:        'manual',   // NOVO: 'manual' | 'envision-auto' | 'imported'
+  reviewStatus:  'approved', // NOVO: 'approved' | 'pending'
+  envisionLocationId: null,  // NOVO: FK Envision se conhecido
+}
+
+// roteiros_bank.geo
+{
+  countries: ['Japão'],      // legado
+  countryCodes: ['JP'],      // NOVO: preferido nos filtros
+  continentCodes: ['AS'],    // NOVO
+  cities: [{ city: 'Tóquio', country: 'Japão', countryCode: 'JP', nights: 3 }],
+}
+
+// portal_images & portal_tips
+{ country: 'Japão', countryCode: 'JP', continentCode: 'AS', ... }
+```
+
+**Princípio**: campos antigos coexistem com novos durante deprecation cycle
+(3-6 meses). Reader prioriza `countryCode` quando presente; fallback pra label.
+Writer (saveDestination) preenche códigos AUTO via `resolveCountry()` quando
+não informados. Eventualmente legados saem em MAJOR.
+
+**Validação** (`functions/audit-geography-ssot.cjs`): 100% match contra prod
+em todas as 4 collections (53 países roteiros_bank + 29 destinations + 13
+images + 7 tips).
+
+**Backfill** (`functions/backfill-geo-codes.cjs`, idempotente, `--apply` flag):
+rodado em v4.59.0, atualizou 61 destinations + 236 bank + 190 images + 9 tips.
+
 ## Segurança em camadas
 
 > **Última auditoria completa:** 2026-05-15 (v4.40.21–23). Pré-auditoria
