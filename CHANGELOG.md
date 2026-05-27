@@ -6,6 +6,62 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.60.2+20260526-destinations-dup-prevent-merge-inline] — 2026-05-26
+
+Release **PATCH/SAFETY** — responde pergunta Renê: *"se eu aprovar um pendente que é igual ao aprovado, o sistema vai permitir duplicada?"*.
+
+**Antes**: SIM permitia. `saveDestination` só fazia `setDoc(merge:true)` por ID, sem verificar se outro doc com mesma cidade já existia.
+
+**Cenários onde quebraria**:
+1. Aprovar pending "Lima" quando já existe "Lima" approved
+2. Editar manualmente um doc pra colidir com aprovado existente
+3. Curador renomear pending antes de aprovar (escapava do merge do script)
+4. Próximo import Envision trazer cidade que dup aprovado mas com grafia diferente (escapa do MERGE_PLAN script)
+
+**Agora** (`js/services/portal.js`):
+
+### `saveDestination(id, data, opts)` ganha **pre-save check**:
+
+- Quando `reviewStatus` será `'approved'` (excluí pending — populate script tem outro caminho).
+- Busca em `portal_destinations` todos os docs **approved** do mesmo país.
+- Match positivo se QUALQUER um:
+  - `existing.city === data.city` (normalizado)
+  - `existing.cityAliases` contém `data.city`
+  - `data.cityAliases` contém `existing.city`
+  - Interseção entre aliases dos dois
+- Match positivo → throw `Error.code = 'DUPLICATE'` com payload rico:
+  - `mergeTargetId` — id do existente (canônico)
+  - `mergeTargetCity`, `mergeTargetCountry`, `mergeTargetAliases`
+- `opts.skipDuplicateCheck:true` escapa (uso interno do helper de merge).
+
+### `mergeDestinations(keeperId, duplicateId)` novo helper exportado:
+
+1. Lê ambos docs.
+2. **FK redirect cross-module**:
+   - `portal_images.destinationId === duplicateId` → vira `keeperId`
+   - `portal_tips.destinationId === duplicateId` → idem
+   - `roteiros_bank.geo.destinationIds[].includes(duplicateId)` → substitui pra `keeperId` no array
+3. Adiciona `dup.city` + `dup.cityAliases` no `keeper.cityAliases[]` via `arrayUnion` (dedup).
+4. Deleta o doc duplicate.
+5. Retorna `{ keeperId, redirected, aliasesAdded }`.
+
+### UI `portalDestinations.js` — fluxo de merge inline:
+
+- `handleApprove(id, dest)`: catch `DUPLICATE` → dispara `_handleDuplicateMergeFlow`.
+- `_handleDuplicateMergeFlow(duplicateId, dupDest, dupErr)`: modal `size:md` explicando:
+  - O que está sendo aprovado (cidade nova)
+  - Quem é o canônico aprovado (com aliases existentes)
+  - O que acontece no merge (alias + FK redirect + delete)
+  - Alternativa "Cancelar" mantém pending pra edição manual
+- Botão "Mesclar com canônico" chama `mergeDestinations` e reporta `N refs cross-module atualizadas`.
+- Save manual via `showDestModal` também detecta DUPLICATE: se for edição de doc existente → merge inline; se for criação nova → toast com erro pedindo renomear.
+
+**Resultado**: **impossível criar duplicata silenciosa via UI** depois desta release.
+
+**Compat 100%**: `saveDestination` API mantém retrocompat (`opts` opcional). Default behavior = check ativo. Sem chamada existente quebra.
+
+---
+
 ## [4.60.1+20260526-destinations-merge-duplicates-cityAliases] — 2026-05-26
 
 Release **DATA CLEANUP** — merge de duplicatas em `portal_destinations`.

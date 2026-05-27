@@ -362,7 +362,7 @@ export async function fetchDestinationsHierarchical() {
   return result;
 }
 
-export async function saveDestination(id, data) {
+export async function saveDestination(id, data, opts = {}) {
   // 4.49.2+ Aceita portal_destinations_manage (granular) OU portal_manage (legado/master)
   if (!store.canManageDestinations()) throw new Error('Permissão negada.');
   const ref = id
@@ -397,6 +397,65 @@ export async function saveDestination(id, data) {
   if (isNew) {
     source       = source       || 'manual';
     reviewStatus = reviewStatus || 'approved';
+  }
+
+  // v4.60.2 — DUPLICATE PREVENTION (responde pergunta Renê: "se eu aprovar um
+  // pendente que é igual ao aprovado, o sistema vai permitir duplicada?").
+  // Antes: SIM permitia. Agora: pre-check busca docs APROVADOS no mesmo país
+  // com mesma city normalizada OU match em cityAliases (em qualquer direção).
+  // Se encontrar OUTRO id, throw err.code='DUPLICATE' com mergeTargetId. Caller
+  // decide: oferece "Mesclar com existente" inline ou cancela.
+  // opts.skipDuplicateCheck:true escapa (uso interno de mergeDestinations).
+  // Só checa quando o save vai resultar em status APPROVED (evita disparar pra
+  // pending criado pelo populate script, que é exatamente o cenário onde dups
+  // são esperadas e tratadas no merge script separado).
+  const willBeApproved = (reviewStatus || 'approved') === 'approved';
+  if (data.city && data.country && willBeApproved && !opts.skipDuplicateCheck) {
+    try {
+      const normKey = s => String(s || '').toLowerCase().trim()
+        .normalize('NFD').replace(/[̀-ͯ]/g, '');
+      const targetCity    = normKey(data.city);
+      const targetCountry = normKey(data.country);
+      const newAliasesNorm = Array.isArray(data.cityAliases)
+        ? data.cityAliases.map(normKey) : [];
+
+      const allSnap = await getDocs(query(
+        collection(db, 'portal_destinations'),
+        limit(1000),
+      ));
+      for (const docSnap of allSnap.docs) {
+        if (id && docSnap.id === id) continue;
+        const d = docSnap.data();
+        if (normKey(d.country) !== targetCountry) continue;
+        if ((d.reviewStatus || 'approved') !== 'approved') continue;
+
+        const existingCityNorm    = normKey(d.city);
+        const existingAliasesNorm = Array.isArray(d.cityAliases)
+          ? d.cityAliases.map(normKey) : [];
+
+        const matches =
+             existingCityNorm === targetCity
+          || existingAliasesNorm.includes(targetCity)
+          || newAliasesNorm.includes(existingCityNorm)
+          || newAliasesNorm.some(a => existingAliasesNorm.includes(a));
+
+        if (matches) {
+          const err = new Error(
+            `Já existe "${d.city}" em ${d.country} (aprovado). ` +
+            `Mesclar com o existente em vez de criar duplicata.`
+          );
+          err.code = 'DUPLICATE';
+          err.mergeTargetId      = docSnap.id;
+          err.mergeTargetCity    = d.city;
+          err.mergeTargetCountry = d.country;
+          err.mergeTargetAliases = Array.isArray(d.cityAliases) ? d.cityAliases : [];
+          throw err;
+        }
+      }
+    } catch (e) {
+      if (e?.code === 'DUPLICATE') throw e;
+      console.warn('[saveDestination] duplicate check falhou (não-bloqueante):', e?.message);
+    }
   }
 
   await setDoc(ref, {
@@ -445,6 +504,112 @@ export async function saveDestination(id, data) {
   }
 
   return ref.id;
+}
+
+/**
+ * v4.60.2 — mescla destination duplicado dentro do canônico, preservando
+ * referências cross-module.
+ *
+ * Use quando saveDestination throw DUPLICATE: passe `keeperId` (do erro
+ * `mergeTargetId`) e `duplicateId` (o que o user tentou aprovar/criar).
+ *
+ *   1. FK redirect: portal_images/portal_tips/roteiros_bank que apontavam
+ *      pro duplicateId passam a apontar pro keeperId.
+ *   2. Adiciona city do duplicate em keeper.cityAliases[] (se diferir).
+ *   3. Deleta o duplicate.
+ *   4. Retorna o keeperId (caller atualiza estado/UI).
+ *
+ * Idempotente — se duplicate não tem mais FKs, batch cleanup vira no-op.
+ */
+export async function mergeDestinations(keeperId, duplicateId) {
+  if (!store.canManageDestinations()) throw new Error('Permissão negada.');
+  if (!keeperId || !duplicateId) throw new Error('keeperId e duplicateId obrigatórios');
+  if (keeperId === duplicateId)  throw new Error('keeperId == duplicateId');
+
+  const { writeBatch, arrayUnion } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+
+  // 1. Lê os dois docs
+  const [keeperSnap, dupSnap] = await Promise.all([
+    getDoc(doc(db, 'portal_destinations', keeperId)),
+    getDoc(doc(db, 'portal_destinations', duplicateId)),
+  ]);
+  if (!keeperSnap.exists()) throw new Error('Keeper não encontrado: ' + keeperId);
+  if (!dupSnap.exists())    throw new Error('Duplicate não encontrado: ' + duplicateId);
+  const keeper = keeperSnap.data();
+  const dup    = dupSnap.data();
+
+  // 2. FK redirect — portal_images / portal_tips / roteiros_bank
+  let redirected = 0;
+  try {
+    const imgSnap = await getDocs(query(
+      collection(db, 'portal_images'),
+      where('destinationId', '==', duplicateId),
+      limit(500),
+    ));
+    if (!imgSnap.empty) {
+      const batch = writeBatch(db);
+      imgSnap.forEach(d => batch.update(d.ref, { destinationId: keeperId }));
+      await batch.commit();
+      redirected += imgSnap.size;
+    }
+  } catch (e) { console.warn('[mergeDestinations] cleanup images falhou:', e?.message); }
+
+  try {
+    const tipSnap = await getDocs(query(
+      collection(db, 'portal_tips'),
+      where('destinationId', '==', duplicateId),
+      limit(500),
+    ));
+    if (!tipSnap.empty) {
+      const batch = writeBatch(db);
+      tipSnap.forEach(d => batch.update(d.ref, { destinationId: keeperId }));
+      await batch.commit();
+      redirected += tipSnap.size;
+    }
+  } catch (e) { console.warn('[mergeDestinations] cleanup tips falhou:', e?.message); }
+
+  try {
+    const bankSnap = await getDocs(query(
+      collection(db, 'roteiros_bank'),
+      where('geo.destinationIds', 'array-contains', duplicateId),
+      limit(500),
+    ));
+    if (!bankSnap.empty) {
+      const batch = writeBatch(db);
+      bankSnap.forEach(d => {
+        const data = d.data();
+        const ids = (data.geo?.destinationIds || []).map(x => x === duplicateId ? keeperId : x);
+        batch.update(d.ref, { 'geo.destinationIds': [...new Set(ids)] });
+      });
+      await batch.commit();
+      redirected += bankSnap.size;
+    }
+  } catch (e) { console.warn('[mergeDestinations] cleanup bank falhou:', e?.message); }
+
+  // 3. Adiciona dup.city e dup.cityAliases ao keeper.cityAliases (se diferir do canônico)
+  const normKey = s => String(s || '').toLowerCase().trim().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  const keeperCityNorm = normKey(keeper.city);
+  const toAdd = [];
+  if (dup.city && normKey(dup.city) !== keeperCityNorm) toAdd.push(dup.city.trim());
+  (dup.cityAliases || []).forEach(a => {
+    if (a && normKey(a) !== keeperCityNorm) toAdd.push(a.trim());
+  });
+  const dedupedToAdd = [...new Set(toAdd)].filter(a =>
+    !(keeper.cityAliases || []).some(existing => normKey(existing) === normKey(a))
+  );
+  if (dedupedToAdd.length) {
+    await updateDoc(doc(db, 'portal_destinations', keeperId), {
+      cityAliases: arrayUnion(...dedupedToAdd),
+      mergedAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      updatedBy: uid() || '',
+    });
+  }
+
+  // 4. Deleta o duplicate
+  await deleteDoc(doc(db, 'portal_destinations', duplicateId));
+
+  return { keeperId, redirected, aliasesAdded: dedupedToAdd };
 }
 
 export async function deleteDestination(id) {

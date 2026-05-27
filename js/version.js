@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 60,
-  patch: 1,
-  build: '20260526-destinations-merge-duplicates-cityAliases',
+  patch: 2,
+  build: '20260526-destinations-dup-prevent-merge-inline',
 };
 
 /** "1.2.0" */

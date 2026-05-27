@@ -5,7 +5,7 @@
 import { store } from '../store.js';
 import { toast } from '../components/toast.js';
 import {
-  fetchDestinations, saveDestination, deleteDestination,
+  fetchDestinations, saveDestination, deleteDestination, mergeDestinations,
   CONTINENTS,
 } from '../services/portal.js';
 import { openDestinationsImport } from '../components/destinationsImport.js';
@@ -242,7 +242,9 @@ function renderTable() {
       allDests.find(d => d.id === btn.dataset.approve))));
 }
 
-/** v4.60.0: aprova destino pending → reviewStatus='approved'. */
+/** v4.60.0: aprova destino pending → reviewStatus='approved'.
+ *  v4.60.2: detecta DUPLICATE (já existe approved com mesma cidade ou alias)
+ *  e oferece mesclar inline via modal — sem permitir duplicata silenciosa. */
 async function handleApprove(id, dest) {
   if (!dest) return;
   try {
@@ -253,13 +255,73 @@ async function handleApprove(id, dest) {
       countryCode: dest.countryCode,
       continentCode: dest.continentCode,
       notes: dest.notes || '',
-      reviewStatus: 'approved',   // FLIP
-      source: dest.source,         // preserva 'banco-auto' pra rastreabilidade histórica
+      reviewStatus: 'approved',
+      source: dest.source,
     });
     toast.success(`Aprovado: ${[dest.city, dest.country].filter(Boolean).join(', ')}.`);
     allDests = await fetchDestinations();
     renderTable();
-  } catch (e) { toast.error('Erro ao aprovar: ' + e.message); }
+  } catch (e) {
+    if (e?.code === 'DUPLICATE') {
+      await _handleDuplicateMergeFlow(id, dest, e);
+      return;
+    }
+    toast.error('Erro ao aprovar: ' + e.message);
+  }
+}
+
+/**
+ * v4.60.2: fluxo de merge quando aprovação detecta duplicata.
+ * Mostra modal "Mesclar com existente?" + 2 ações.
+ */
+async function _handleDuplicateMergeFlow(duplicateId, dupDest, dupErr) {
+  const { modal } = await import('../components/modal.js');
+  const tryingCity = [dupDest.city, dupDest.country].filter(Boolean).join(', ');
+  const existing = `${dupErr.mergeTargetCity}${dupErr.mergeTargetAliases?.length
+    ? ` (aliases: ${dupErr.mergeTargetAliases.join(', ')})`
+    : ''}`;
+  let resolved = false;
+  await new Promise(resolve => {
+    const handle = modal.open({
+      title: '⚠ Já existe destino aprovado equivalente',
+      size: 'md', closeOnEsc: true,
+      content: `
+        <div style="line-height:1.5;">
+          <p style="margin:0 0 10px;">Você está tentando aprovar <strong>"${esc(tryingCity)}"</strong>,
+          mas já existe um destino aprovado equivalente no mesmo país:</p>
+          <p style="margin:0 0 12px;background:var(--bg-surface);padding:8px 12px;border-radius:6px;
+            border:1px solid var(--border-subtle);font-weight:600;">
+            ✓ ${esc(existing)} <span style="color:var(--text-muted);font-weight:400;">— canônico</span>
+          </p>
+          <p style="margin:0 0 8px;"><strong>Mesclar</strong> (recomendado):</p>
+          <ul style="margin:0 0 12px 18px;font-size:0.88rem;color:var(--text-secondary);">
+            <li>"${esc(dupDest.city)}" vira <strong>alias</strong> do canônico</li>
+            <li>FKs cross-module (imagens / dicas / banco de roteiros) redirecionam pro canônico</li>
+            <li>Este pending é deletado</li>
+          </ul>
+          <p style="margin:0;font-size:0.78rem;color:var(--text-muted);">
+            <strong>Cancelar</strong> mantém o pending pendente — você pode editá-lo manualmente depois (ex: renomear pra cidade distinta).
+          </p>
+        </div>
+      `,
+      footer: [
+        { label: 'Cancelar', class: 'btn-secondary' },
+        {
+          label: 'Mesclar com canônico', class: 'btn-primary',
+          onClick: async () => {
+            resolved = true;
+            try {
+              const res = await mergeDestinations(dupErr.mergeTargetId, duplicateId);
+              toast.success(`Mesclado em "${dupErr.mergeTargetCity}". ${res.redirected ? res.redirected + ' refs cross-module atualizadas.' : ''}`);
+              allDests = await fetchDestinations();
+              renderTable();
+            } catch (e) { toast.error('Erro ao mesclar: ' + e.message); }
+          },
+        },
+      ],
+      onClose: () => { resolve(); },
+    });
+  });
 }
 
 function showDestModal(dest) {
@@ -321,18 +383,32 @@ function showDestModal(dest) {
     if (!country)   { toast.error('País obrigatório.'); return; }
     const btn = document.getElementById('dest-modal-save');
     if (btn) { btn.disabled = true; btn.textContent = 'Salvando…'; }
+    const payload = {
+      continent,
+      country,
+      city:  document.getElementById('dest-city')?.value?.trim() || '',
+      notes: document.getElementById('dest-notes')?.value?.trim() || '',
+    };
     try {
-      await saveDestination(dest?.id || null, {
-        continent,
-        country,
-        city:  document.getElementById('dest-city')?.value?.trim() || '',
-        notes: document.getElementById('dest-notes')?.value?.trim() || '',
-      });
+      await saveDestination(dest?.id || null, payload);
       toast.success(`Destino ${dest ? 'atualizado' : 'criado'}.`);
       close();
       allDests = await fetchDestinations();
       renderTable();
     } catch(e) {
+      // v4.60.2: DUPLICATE → oferece merge inline (mesma UX do approve)
+      if (e?.code === 'DUPLICATE') {
+        if (dest?.id) {
+          // Existe doc atual sendo editado — pode tentar mesclá-lo no canônico
+          close();
+          await _handleDuplicateMergeFlow(dest.id, { ...dest, ...payload }, e);
+        } else {
+          // Save de doc NOVO: nada pra mesclar, só explica. Mantém modal aberto pro user corrigir.
+          toast.error(`Já existe "${e.mergeTargetCity}" em ${e.mergeTargetCountry}. Renomeie ou cancele.`);
+          if (btn) { btn.disabled = false; btn.textContent = 'Criar Destino'; }
+        }
+        return;
+      }
       toast.error('Erro: ' + e.message);
       if (btn) { btn.disabled = false; btn.textContent = dest ? 'Salvar' : 'Criar Destino'; }
     }
