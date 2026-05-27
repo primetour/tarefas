@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 62,
-  patch: 23,
-  build: '20260527-editor-audit-fix-source-persist-state-reset',
+  patch: 24,
+  build: '20260527-editor-servicos-preco-inline-voos-hoteis-opcionais',
 };
 
 /** "1.2.0" */

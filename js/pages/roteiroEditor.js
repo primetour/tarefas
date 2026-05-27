@@ -1347,42 +1347,95 @@ function renderDayCard(d, i) {
 }
 
 /* ── 3: Hot\u00e9is ──────────────────────────────────────────── */
+// v4.62.24: A\u00e9reo+Hot\u00e9is ganha PRE\u00c7O + MOEDA inline (Ren\u00ea: "pre\u00e7o do a\u00e9reo
+// junto do a\u00e9reo, pre\u00e7o do hotel junto do hotel"). Subtotais real-time +
+// total consolidado no fim. Opcionais j\u00e1 tinha priceAdult/priceChild.
+const _CURRENCIES = ['BRL', 'USD', 'EUR', 'GBP', 'CHF', 'CAD', 'ARS', 'CLP'];
+function _currencySelect(name, current) {
+  return `<select ${name}>${_CURRENCIES.map(c => `<option value="${c}" ${current === c ? 'selected' : ''}>${c}</option>`).join('')}</select>`;
+}
+function _sumServicePrices() {
+  const byCurrency = {};
+  const add = (val, cur) => {
+    const v = parseFloat(val);
+    if (!isFinite(v) || v <= 0) return;
+    const c = cur || 'BRL';
+    byCurrency[c] = (byCurrency[c] || 0) + v;
+  };
+  (currentRoteiro.flights || []).forEach(f => add(f.price, f.currency));
+  (currentRoteiro.hotels  || []).forEach(h => add(h.price, h.currency));
+  (currentRoteiro.optionals || []).forEach(o => {
+    add(o.priceAdult, o.currency);
+    add(o.priceChild, o.currency);
+  });
+  return byCurrency;
+}
+function _renderServiceTotals() {
+  const totals = _sumServicePrices();
+  const entries = Object.entries(totals);
+  if (!entries.length) return '';
+  return `
+    <div id="re-svc-totals" style="margin-top:18px;padding:14px 16px;border-radius:8px;
+      background:rgba(212,168,67,0.06);border:1px solid rgba(212,168,67,0.3);
+      display:flex;gap:18px;flex-wrap:wrap;align-items:center;">
+      <span style="font-size:0.72rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;">
+        Total dos servi\u00e7os
+      </span>
+      ${entries.map(([cur, sum]) => `
+        <span style="font-size:0.95rem;font-weight:700;color:var(--text-primary);">
+          ${_fmtBRL(sum, cur)}
+        </span>
+      `).join('<span style="color:var(--text-muted);">\u00b7</span>')}
+    </div>`;
+}
+
 function renderHoteisSection() {
   const flights = currentRoteiro.flights || [];
   const hotels = currentRoteiro.hotels || [];
   return `
     <h2 class="re-section-title">A\u00e9reo e Hot\u00e9is</h2>
+    <p style="font-size:0.8125rem;color:var(--text-muted);margin:-4px 0 14px;line-height:1.5;">
+      Cada item tem <strong>pre\u00e7o inline</strong> ao lado. Total consolidado por moeda no fim.
+      Use a sub-tab <strong>Opcionais</strong> pra extras.
+    </p>
 
     <h3 class="re-subsection-title" style="font-size:1rem;font-weight:600;color:var(--text-primary);margin-bottom:8px;">Voos</h3>
     <table class="re-dyn-table">
       <thead>
         <tr>
           <th>Cia A\u00e9rea</th><th>Voo</th><th>Origem</th><th>Destino</th>
-          <th>Sa\u00edda (data)</th><th>Sa\u00edda (hora)</th>
-          <th>Chegada (data)</th><th>Chegada (hora)</th><th></th>
+          <th>Sa\u00edda</th><th>Hora</th><th>Chegada</th><th>Hora</th>
+          <th>Pre\u00e7o</th><th>Moeda</th><th></th>
         </tr>
       </thead>
       <tbody id="re-flights-body">
         ${flights.length
           ? flights.map((f, i) => renderFlightRow(f, i)).join('')
-          : `<tr><td colspan="9" style="text-align:center;padding:14px;color:var(--text-muted);font-size:0.8125rem;">Nenhum voo cadastrado. Clique "+ Adicionar Voo" para incluir.</td></tr>`}
+          : `<tr><td colspan="11" style="text-align:center;padding:14px;color:var(--text-muted);font-size:0.8125rem;">Nenhum voo cadastrado. Clique "+ Adicionar Voo" para incluir.</td></tr>`}
       </tbody>
     </table>
-    <button class="re-add-btn" data-action="add-flight" style="margin-bottom:24px;">+ Adicionar Voo</button>
+    <button class="btn btn-secondary btn-sm" data-action="add-flight"
+      style="margin-top:8px;margin-bottom:24px;font-size:0.8125rem;">+ Adicionar Voo</button>
 
     <h3 class="re-subsection-title" style="font-size:1rem;font-weight:600;color:var(--text-primary);margin-top:32px;padding-top:20px;border-top:1px solid var(--border-subtle);margin-bottom:8px;">Hot\u00e9is</h3>
     <table class="re-dyn-table">
       <thead>
         <tr>
           <th>Cidade</th><th>Nome do Hotel</th><th>Categoria Quarto</th><th>Regime</th>
-          <th>Check-in</th><th>Check-out</th><th>Noites</th><th></th>
+          <th>Check-in</th><th>Check-out</th><th>Noites</th>
+          <th>Pre\u00e7o</th><th>Moeda</th><th></th>
         </tr>
       </thead>
       <tbody id="re-hotels-body">
-        ${hotels.map((h, i) => renderHotelRow(h, i)).join('')}
+        ${hotels.length
+          ? hotels.map((h, i) => renderHotelRow(h, i)).join('')
+          : `<tr><td colspan="10" style="text-align:center;padding:14px;color:var(--text-muted);font-size:0.8125rem;">Nenhum hotel cadastrado.</td></tr>`}
       </tbody>
     </table>
-    <button class="re-add-btn" data-action="add-hotel">+ Adicionar Hotel</button>
+    <button class="btn btn-secondary btn-sm" data-action="add-hotel"
+      style="margin-top:8px;font-size:0.8125rem;">+ Adicionar Hotel</button>
+
+    ${_renderServiceTotals()}
   `;
 }
 
@@ -1397,6 +1450,8 @@ function renderFlightRow(f, i) {
       <td><input data-flight="departureTime" type="time" value="${f.departureTime || ''}" style="width:95px;" /></td>
       <td><input data-flight="arrivalDate" type="date" value="${f.arrivalDate || ''}" /></td>
       <td><input data-flight="arrivalTime" type="time" value="${f.arrivalTime || ''}" style="width:95px;" /></td>
+      <td><input data-flight="price" type="number" step="0.01" min="0" value="${f.price ?? ''}" placeholder="0.00" style="width:90px;" /></td>
+      <td>${_currencySelect('data-flight="currency"', f.currency || 'BRL')}</td>
       <td><button class="re-remove-btn" data-action="remove-flight" data-idx="${i}">\u2715</button></td>
     </tr>
   `;
@@ -1413,6 +1468,8 @@ function renderHotelRow(h, i) {
       <td><input data-hotel="checkIn" type="date" value="${h.checkIn || ''}" /></td>
       <td><input data-hotel="checkOut" type="date" value="${h.checkOut || ''}" /></td>
       <td><input data-hotel="nights" type="number" value="${nights}" readonly style="opacity:0.7;width:55px;" /></td>
+      <td><input data-hotel="price" type="number" step="0.01" min="0" value="${h.price ?? ''}" placeholder="0.00" style="width:90px;" /></td>
+      <td>${_currencySelect('data-hotel="currency"', h.currency || 'BRL')}</td>
       <td><button class="re-remove-btn" data-action="remove-hotel" data-idx="${i}">\u2715</button></td>
     </tr>
   `;
@@ -1586,23 +1643,36 @@ function renderOpcionaisSection() {
   const opts = currentRoteiro.optionals || [];
   return `
     <div class="re-section-title">Opcionais</div>
+    <p style="font-size:0.8125rem;color:var(--text-muted);margin:-4px 0 14px;line-height:1.5;">
+      Extras opcionais (passeios, transfers, experi\u00eancias adicionais) \u2014 cada um com seu pre\u00e7o inline.
+    </p>
     <table class="re-dyn-table">
       <thead>
-        <tr><th>Servi\u00e7o</th><th>Pre\u00e7o Adulto</th><th>Pre\u00e7o Crian\u00e7a</th><th>Observa\u00e7\u00f5es</th><th></th></tr>
+        <tr>
+          <th>Servi\u00e7o</th>
+          <th>Pre\u00e7o Adulto</th>
+          <th>Pre\u00e7o Crian\u00e7a</th>
+          <th>Moeda</th>
+          <th>Observa\u00e7\u00f5es</th><th></th>
+        </tr>
       </thead>
       <tbody id="re-optionals-body">
-        ${opts.map((o, i) => `
+        ${opts.length ? opts.map((o, i) => `
           <tr data-opt-idx="${i}">
             <td><input data-opt="service" value="${esc(o.service || '')}" placeholder="Nome do servi\u00e7o" /></td>
-            <td><input data-opt="priceAdult" type="number" step="0.01" value="${o.priceAdult || ''}" placeholder="0.00" /></td>
-            <td><input data-opt="priceChild" type="number" step="0.01" value="${o.priceChild || ''}" placeholder="0.00" /></td>
+            <td><input data-opt="priceAdult" type="number" step="0.01" min="0" value="${o.priceAdult || ''}" placeholder="0.00" style="width:90px;" /></td>
+            <td><input data-opt="priceChild" type="number" step="0.01" min="0" value="${o.priceChild || ''}" placeholder="0.00" style="width:90px;" /></td>
+            <td>${_currencySelect('data-opt="currency"', o.currency || 'BRL')}</td>
             <td><input data-opt="notes" value="${esc(o.notes || '')}" placeholder="Notas" /></td>
             <td><button class="re-remove-btn" data-action="remove-opt" data-idx="${i}">\u2715</button></td>
           </tr>
-        `).join('')}
+        `).join('') : `<tr><td colspan="6" style="text-align:center;padding:14px;color:var(--text-muted);font-size:0.8125rem;">Nenhum opcional cadastrado.</td></tr>`}
       </tbody>
     </table>
-    <button class="re-add-btn" data-action="add-opt">+ Adicionar Opcional</button>
+    <button class="btn btn-secondary btn-sm" data-action="add-opt"
+      style="margin-top:8px;font-size:0.8125rem;">+ Adicionar Opcional</button>
+
+    ${_renderServiceTotals()}
   `;
 }
 
@@ -2944,6 +3014,7 @@ function collectFormData() {
   if (flightRows.length || mainContainer.querySelector('#re-flights-body')) {
     const flights = [];
     flightRows.forEach(row => {
+      const priceRaw = row.querySelector('[data-flight="price"]')?.value;
       flights.push({
         airline:         row.querySelector('[data-flight="airline"]')?.value?.trim() || '',
         flightNumber:    row.querySelector('[data-flight="flightNumber"]')?.value?.trim() || '',
@@ -2953,6 +3024,9 @@ function collectFormData() {
         departureTime:   row.querySelector('[data-flight="departureTime"]')?.value || '',
         arrivalDate:     row.querySelector('[data-flight="arrivalDate"]')?.value || '',
         arrivalTime:     row.querySelector('[data-flight="arrivalTime"]')?.value || '',
+        // v4.62.24: preço inline
+        price:           priceRaw ? parseFloat(priceRaw) : null,
+        currency:        row.querySelector('[data-flight="currency"]')?.value || 'BRL',
       });
     });
     data.flights = flights;
@@ -2966,12 +3040,16 @@ function collectFormData() {
       const checkIn = row.querySelector('[data-hotel="checkIn"]')?.value || '';
       const checkOut = row.querySelector('[data-hotel="checkOut"]')?.value || '';
       const nights = (checkIn && checkOut) ? diffDays(checkIn, checkOut) : 0;
+      const priceRaw = row.querySelector('[data-hotel="price"]')?.value;
       hotels.push({
         city:      row.querySelector('[data-hotel="city"]')?.value?.trim() || '',
         hotelName: row.querySelector('[data-hotel="hotelName"]')?.value?.trim() || '',
         roomType:  row.querySelector('[data-hotel="roomType"]')?.value?.trim() || '',
         regime:    row.querySelector('[data-hotel="regime"]')?.value?.trim() || '',
         checkIn, checkOut, nights,
+        // v4.62.24: preço inline
+        price:     priceRaw ? parseFloat(priceRaw) : null,
+        currency:  row.querySelector('[data-hotel="currency"]')?.value || 'BRL',
       });
     });
     data.hotels = hotels;
@@ -3026,6 +3104,8 @@ function collectFormData() {
       service:    row.querySelector('[data-opt="service"]')?.value?.trim() || '',
       priceAdult: parseFloat(row.querySelector('[data-opt="priceAdult"]')?.value) || null,
       priceChild: parseFloat(row.querySelector('[data-opt="priceChild"]')?.value) || null,
+      // v4.62.24: moeda opcional (default BRL)
+      currency:   row.querySelector('[data-opt="currency"]')?.value || 'BRL',
       notes:      row.querySelector('[data-opt="notes"]')?.value?.trim() || '',
     });
   });
