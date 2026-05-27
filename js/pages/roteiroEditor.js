@@ -1823,10 +1823,9 @@ async function _openDayConsultBankModal() {
 }
 
 /**
- * v4.62.18 Fase C: segundo step do Consultar Banco — picker de dias do
- * roteiro escolhido. Por simplicidade inicial, importa TODOS os dias (cities)
- * do roteiro do banco como dias source='bank'. User pode editar/remover
- * individualmente depois.
+ * v4.62.18 Fase C → v4.62.21: segundo step do Consultar Banco — picker
+ * granular com CHECKBOXES por dia. Default todos marcados; user pode
+ * desmarcar quais não quer. Só importa os selecionados.
  */
 async function _pickDaysFromBankRoteiro(bankId, closeFirstModal) {
   try {
@@ -1835,29 +1834,119 @@ async function _pickDaysFromBankRoteiro(bankId, closeFirstModal) {
     if (!doc) { showToast('Roteiro não encontrado.', 'error'); return; }
     const cities = doc.geo?.cities || [];
     if (!cities.length) { showToast('Roteiro do banco não tem dias estruturados.', 'info'); return; }
-    if (!currentRoteiro.days) currentRoteiro.days = [];
-    const startIdx = currentRoteiro.days.length;
-    cities.forEach((c, i) => {
-      currentRoteiro.days.push({
-        dayNumber: startIdx + i + 1,
-        date: '',
-        city: c.city || '',
-        title: c.city ? `Em ${c.city}` : `Dia ${startIdx + i + 1}`,
-        narrative: c.description || '',
-        overnightCity: c.city || '',
-        activities: [],
-        imageIds: [],
-        source: 'bank',   // marca origem
-        bankRefId: bankId,
-        bankRefTitle: doc.title || '',
-      });
-    });
-    rerenderCurrentSection();
-    markDirty();
+
+    // Fecha o primeiro modal (lista de roteiros) e abre o seletor de dias
     closeFirstModal?.();
-    showToast(`+${cities.length} dia${cities.length > 1 ? 's' : ''} do banco "${doc.title || ''}".`, 'success');
+    const overlay = document.createElement('div');
+    overlay.className = 're-img-modal-overlay';
+    overlay.innerHTML = `
+      <div class="re-img-modal" style="max-width:680px;max-height:80vh;display:flex;flex-direction:column;">
+        <div class="re-img-modal-header">
+          <div class="re-img-modal-title">📚 Escolher dias · <span style="color:var(--text-muted);font-weight:400;font-size:0.875rem;">${esc(doc.title || '')}</span></div>
+          <button class="re-img-modal-close" type="button">&times;</button>
+        </div>
+        <div class="re-img-modal-body" style="overflow:auto;">
+          <p style="font-size:0.8125rem;color:var(--text-muted);margin:0 0 12px;">
+            Marque os dias que quer importar. Dias selecionados ganham origem
+            <strong>📚 Banco</strong> e podem ser editados depois.
+          </p>
+          <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;">
+            <button class="btn btn-ghost btn-sm" type="button" data-bulk="all"
+              style="font-size:0.75rem;">✓ Selecionar todos</button>
+            <button class="btn btn-ghost btn-sm" type="button" data-bulk="none"
+              style="font-size:0.75rem;">✕ Limpar seleção</button>
+            <span id="re-pick-count" style="margin-left:auto;font-size:0.75rem;color:var(--text-muted);"></span>
+          </div>
+          <div id="re-pick-list" style="display:flex;flex-direction:column;gap:6px;">
+            ${cities.map((c, i) => `
+              <label data-day-row="${i}"
+                style="display:flex;align-items:flex-start;gap:10px;padding:10px 12px;
+                border:1px solid var(--border-subtle,#e5e7eb);border-radius:8px;
+                background:var(--bg-surface);cursor:pointer;transition:background .1s;">
+                <input type="checkbox" data-pick-day="${i}" checked
+                  style="margin-top:3px;accent-color:var(--brand-gold,#D4A843);cursor:pointer;flex-shrink:0;">
+                <div style="flex:1;min-width:0;">
+                  <div style="font-weight:600;font-size:0.875rem;color:var(--text-primary);">
+                    Dia ${i + 1}${c.city ? ' — ' + esc(c.city) : ''}
+                  </div>
+                  ${c.description ? `<div style="font-size:0.75rem;color:var(--text-muted);margin-top:4px;line-height:1.4;max-height:60px;overflow:hidden;">${esc(c.description.slice(0, 200))}${c.description.length > 200 ? '…' : ''}</div>` : ''}
+                </div>
+              </label>
+            `).join('')}
+          </div>
+        </div>
+        <div style="padding:14px 20px;border-top:1px solid var(--border-subtle,#e5e7eb);display:flex;justify-content:flex-end;gap:8px;">
+          <button class="btn btn-ghost btn-sm" type="button" data-cancel
+            style="font-size:0.8125rem;">Cancelar</button>
+          <button class="btn btn-primary btn-sm" type="button" data-import
+            style="font-size:0.8125rem;">Importar dias selecionados →</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    const close = () => overlay.remove();
+    overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+    overlay.querySelector('.re-img-modal-close').addEventListener('click', close);
+    overlay.querySelector('[data-cancel]').addEventListener('click', close);
+
+    // Contador dinâmico
+    const updateCount = () => {
+      const checked = overlay.querySelectorAll('[data-pick-day]:checked').length;
+      const total = cities.length;
+      const countEl = overlay.querySelector('#re-pick-count');
+      countEl.textContent = `${checked}/${total} dia${total !== 1 ? 's' : ''} selecionado${checked !== 1 ? 's' : ''}`;
+      overlay.querySelector('[data-import]').disabled = checked === 0;
+      // Highlight rows checked
+      overlay.querySelectorAll('[data-day-row]').forEach(row => {
+        const cb = row.querySelector('[data-pick-day]');
+        row.style.background = cb.checked ? 'rgba(212,168,67,0.08)' : 'var(--bg-surface)';
+      });
+    };
+    updateCount();
+    overlay.querySelectorAll('[data-pick-day]').forEach(cb =>
+      cb.addEventListener('change', updateCount));
+
+    // Bulk select/none
+    overlay.querySelector('[data-bulk="all"]').addEventListener('click', () => {
+      overlay.querySelectorAll('[data-pick-day]').forEach(cb => cb.checked = true);
+      updateCount();
+    });
+    overlay.querySelector('[data-bulk="none"]').addEventListener('click', () => {
+      overlay.querySelectorAll('[data-pick-day]').forEach(cb => cb.checked = false);
+      updateCount();
+    });
+
+    // Importar
+    overlay.querySelector('[data-import]').addEventListener('click', () => {
+      const selectedIdxs = [...overlay.querySelectorAll('[data-pick-day]:checked')]
+        .map(cb => parseInt(cb.dataset.pickDay, 10));
+      if (!selectedIdxs.length) return;
+      if (!currentRoteiro.days) currentRoteiro.days = [];
+      const startIdx = currentRoteiro.days.length;
+      selectedIdxs.forEach((cityIdx, i) => {
+        const c = cities[cityIdx];
+        currentRoteiro.days.push({
+          dayNumber: startIdx + i + 1,
+          date: '',
+          city: c.city || '',
+          title: c.city ? `Em ${c.city}` : `Dia ${startIdx + i + 1}`,
+          narrative: c.description || '',
+          overnightCity: c.city || '',
+          activities: [],
+          imageIds: [],
+          source: 'bank',
+          bankRefId: bankId,
+          bankRefTitle: doc.title || '',
+          bankRefDayIdx: cityIdx,   // referência ao dia original do banco
+        });
+      });
+      rerenderCurrentSection();
+      markDirty();
+      close();
+      const n = selectedIdxs.length;
+      showToast(`+${n} dia${n > 1 ? 's' : ''} do banco "${doc.title || ''}".`, 'success');
+    });
   } catch (e) {
-    showToast('Falha ao importar dias: ' + (e?.message || e), 'error');
+    showToast('Falha ao carregar dias: ' + (e?.message || e), 'error');
   }
 }
 

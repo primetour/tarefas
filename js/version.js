@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 62,
-  patch: 20,
-  build: '20260527-editor-fase-e-wizard-entry-cotacao-nova',
+  patch: 21,
+  build: '20260527-editor-consultar-banco-checkboxes-por-dia',
 };
 
 /** "1.2.0" */
