@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 59,
-  patch: 8,
-  build: '20260526-banco-editor-images-picker-gallery',
+  minor: 60,
+  patch: 0,
+  build: '20260526-cross-module-ssot-destinations-pending-review',
 };
 
 /** "1.2.0" */

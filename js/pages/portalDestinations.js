@@ -16,6 +16,7 @@ const esc = s => String(s||'').replace(/[&<>"']/g, c =>
 let allDests   = [];
 let filterCont = '';
 let filterCoun = '';
+let filterReview = 'approved';   // v4.60.0: default só aprovados; toggle pra ver pending
 
 export async function renderPortalDestinations(container) {
   // 4.49.2+ Usa canManageDestinations() (perm granular nova) em vez de
@@ -40,6 +41,24 @@ export async function renderPortalDestinations(container) {
           title="Importar vários destinos via planilha Excel">📤 Importar Excel</button>
         <button class="btn btn-primary btn-sm" id="dest-new-btn">+ Novo Destino</button>
       </div>
+    </div>
+
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center;">
+      <span style="font-size:0.72rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-right:4px;">Revisão:</span>
+      ${[
+        { v: 'approved', l: 'Aprovados' },
+        { v: 'pending',  l: 'Pendentes' },
+        { v: 'all',      l: 'Todos' },
+      ].map(p => `
+        <button class="dest-review-pill" data-review-value="${p.v}"
+          style="padding:5px 12px;border-radius:999px;font-size:0.78rem;font-weight:600;cursor:pointer;
+          border:1px solid ${filterReview === p.v ? 'var(--brand-blue,#3B82F6)' : 'var(--border-subtle)'};
+          background:${filterReview === p.v ? 'var(--brand-blue,#3B82F6)' : 'transparent'};
+          color:${filterReview === p.v ? '#fff' : 'var(--text-muted)'};font-family:inherit;">
+          ${esc(p.l)}
+        </button>
+      `).join('')}
+      <span id="dest-pending-count" style="margin-left:8px;font-size:0.72rem;color:var(--text-muted);"></span>
     </div>
 
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px;">
@@ -104,8 +123,22 @@ export async function renderPortalDestinations(container) {
     filterCoun = e.target.value;
     renderTable();
   });
+  // v4.60.0: filtro reviewStatus pills
+  document.querySelectorAll('.dest-review-pill').forEach(pill => {
+    pill.addEventListener('click', () => {
+      filterReview = pill.dataset.reviewValue;
+      // Re-render só os pills (visual active) + tabela
+      document.querySelectorAll('.dest-review-pill').forEach(p => {
+        const isActive = p.dataset.reviewValue === filterReview;
+        p.style.background = isActive ? 'var(--brand-blue,#3B82F6)' : 'transparent';
+        p.style.color = isActive ? '#fff' : 'var(--text-muted)';
+        p.style.borderColor = isActive ? 'var(--brand-blue,#3B82F6)' : 'var(--border-subtle)';
+      });
+      renderTable();
+    });
+  });
 
-  allDests = await fetchDestinations();
+  allDests = await fetchDestinations();   // default 'all' agora — UI filtra in-memory
   updateCountryFilter();
   renderTable();
 }
@@ -126,9 +159,22 @@ function updateCountryFilter() {
 function renderTable() {
   const tbody = document.getElementById('dest-tbody');
   const count = document.getElementById('dest-count');
+  const pendCount = document.getElementById('dest-pending-count');
   if (!tbody) return;
 
+  // v4.60.0: pending count global (independente dos filtros) pra UI alertar curador
+  const totalPending = allDests.filter(d => (d.reviewStatus || 'approved') === 'pending').length;
+  if (pendCount) {
+    pendCount.textContent = totalPending
+      ? `${totalPending} pendente${totalPending !== 1 ? 's' : ''} no banco — revisar e aprovar.`
+      : '';
+  }
+
   let rows = allDests;
+  // v4.60.0: filtra por reviewStatus
+  if (filterReview && filterReview !== 'all') {
+    rows = rows.filter(d => (d.reviewStatus || 'approved') === filterReview);
+  }
   if (filterCont) rows = rows.filter(d => d.continent === filterCont);
   if (filterCoun) rows = rows.filter(d => d.country   === filterCoun);
 
@@ -141,13 +187,24 @@ function renderTable() {
     return;
   }
 
-  tbody.innerHTML = rows.map(d => `
-    <tr style="border-bottom:1px solid var(--border-subtle);transition:background .1s;"
-      onmouseover="this.style.background='var(--bg-surface)'"
-      onmouseout="this.style.background=''">
+  tbody.innerHTML = rows.map(d => {
+    const isPending = (d.reviewStatus || 'approved') === 'pending';
+    const isAutoBank = d.source === 'banco-auto';
+    return `
+    <tr style="border-bottom:1px solid var(--border-subtle);transition:background .1s;background:${isPending?'rgba(245,158,11,0.05)':''};"
+      onmouseover="this.style.background='${isPending?'rgba(245,158,11,0.10)':'var(--bg-surface)'}'"
+      onmouseout="this.style.background='${isPending?'rgba(245,158,11,0.05)':''}'">
       <td style="padding:10px 16px;color:var(--text-muted);font-size:0.8125rem;">${esc(d.continent || '—')}</td>
       <td style="padding:10px 16px;font-weight:500;">${esc(d.country || '—')}</td>
-      <td style="padding:10px 16px;color:var(--text-secondary);">${esc(d.city || '—')}</td>
+      <td style="padding:10px 16px;color:var(--text-secondary);">
+        ${esc(d.city || '—')}
+        ${isPending ? `<span style="display:inline-block;margin-left:6px;font-size:0.65rem;padding:1px 6px;
+          background:var(--badge-warn-bg,rgba(245,158,11,0.16));color:var(--color-warn-text,#92400e);
+          border-radius:999px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;"
+          title="${isAutoBank ? `Auto-criada do banco de roteiros (${d.refCount || 0} ref${(d.refCount||0)!==1?'s':''}). Revisar antes de aprovar.` : 'Aguardando revisão master.'}">
+          ⏳ Pendente${isAutoBank ? ' (banco)' : ''}
+        </span>` : ''}
+      </td>
       <td style="padding:10px 16px;">
         ${d.hasTip
           ? `<span style="font-size:0.75rem;padding:2px 8px;background:#22C55E15;color:#22C55E;
@@ -158,23 +215,51 @@ function renderTable() {
       </td>
       <td style="padding:10px 16px;text-align:right;">
         <div style="display:flex;gap:6px;justify-content:flex-end;">
+          ${isPending ? `<button class="btn btn-primary btn-sm" data-approve="${d.id}"
+            style="font-size:0.72rem;padding:3px 10px;" title="Aprovar destino — vira parte canônica do SSOT">
+            ✓ Aprovar
+          </button>` : ''}
           <a href="#portal-tip-editor?destId=${d.id}" class="btn btn-ghost btn-sm"
             style="font-size:0.75rem;color:var(--brand-gold);text-decoration:none;">
             ✎ Dica
           </a>
           <button class="btn btn-ghost btn-sm" data-edit="${d.id}" style="font-size:0.75rem;">Destino</button>
           <button class="btn btn-ghost btn-sm" data-delete="${d.id}"
-            style="font-size:0.75rem;color:#EF4444;">✕</button>
+            style="font-size:0.75rem;color:var(--color-danger,#EF4444);">✕</button>
         </div>
       </td>
     </tr>
-  `).join('');
+  `;}).join('');
 
   tbody.querySelectorAll('[data-edit]').forEach(btn =>
     btn.addEventListener('click', () => showDestModal(allDests.find(d => d.id === btn.dataset.edit))));
   tbody.querySelectorAll('[data-delete]').forEach(btn =>
     btn.addEventListener('click', () => handleDelete(btn.dataset.delete,
       allDests.find(d => d.id === btn.dataset.delete))));
+  // v4.60.0: handler aprovar (flip reviewStatus pra 'approved')
+  tbody.querySelectorAll('[data-approve]').forEach(btn =>
+    btn.addEventListener('click', () => handleApprove(btn.dataset.approve,
+      allDests.find(d => d.id === btn.dataset.approve))));
+}
+
+/** v4.60.0: aprova destino pending → reviewStatus='approved'. */
+async function handleApprove(id, dest) {
+  if (!dest) return;
+  try {
+    await saveDestination(id, {
+      continent: dest.continent,
+      country: dest.country,
+      city: dest.city,
+      countryCode: dest.countryCode,
+      continentCode: dest.continentCode,
+      notes: dest.notes || '',
+      reviewStatus: 'approved',   // FLIP
+      source: dest.source,         // preserva 'banco-auto' pra rastreabilidade histórica
+    });
+    toast.success(`Aprovado: ${[dest.city, dest.country].filter(Boolean).join(', ')}.`);
+    allDests = await fetchDestinations();
+    renderTable();
+  } catch (e) { toast.error('Erro ao aprovar: ' + e.message); }
 }
 
 function showDestModal(dest) {

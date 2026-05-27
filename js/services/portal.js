@@ -237,11 +237,44 @@ export async function deleteArea(id) {
 }
 
 /* ─── Destinations ────────────────────────────────────────── */
-export async function fetchDestinations({ continent, country } = {}) {
+/**
+ * v4.60.0+: filtros aceitam labels (`continent`/`country` legacy) E códigos
+ * ISO (`continentCode`/`countryCode` SSOT). Reader prefere code quando ambos
+ * estão presentes nos docs. `reviewStatus` filtra approved/pending/all
+ * (default: 'approved' — esconde pendentes da listagem geral).
+ *
+ * @param {Object} opts
+ * @param {string} [opts.continent]     - label legacy ("Ásia", "Caribe")
+ * @param {string} [opts.continentCode] - ISO ('AS', 'NA', ...)
+ * @param {string} [opts.country]       - label legacy ("Japão")
+ * @param {string} [opts.countryCode]   - ISO ('JP')
+ * @param {'approved'|'pending'|'all'} [opts.reviewStatus='all']
+ *   Default 'all' preserva comportamento pre-v4.60. Page que LISTA destinos
+ *   filtra explicitamente via toggle UI; picker de cidade (editor) consome
+ *   todos pra não bloquear escolha de cidade pending.
+ */
+export async function fetchDestinations({ continent, country, continentCode, countryCode, reviewStatus = 'all' } = {}) {
   const snap = await getDocs(query(collection(db, 'portal_destinations'), limit(1000)));
   let docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-  if (continent) docs = docs.filter(d => d.continent === continent);
-  if (country)   docs = docs.filter(d => d.country   === country);
+
+  // v4.60.0: filtro reviewStatus opt-in. Docs SEM reviewStatus (legados pré-v4.59.0)
+  // são tratados como 'approved'.
+  if (reviewStatus && reviewStatus !== 'all') {
+    docs = docs.filter(d => (d.reviewStatus || 'approved') === reviewStatus);
+  }
+
+  // v4.60.0: prefere code; fallback pra label se code não setado no doc
+  if (continentCode) {
+    docs = docs.filter(d => (d.continentCode || null) === continentCode);
+  } else if (continent) {
+    docs = docs.filter(d => d.continent === continent);
+  }
+  if (countryCode) {
+    docs = docs.filter(d => (d.countryCode || null) === countryCode);
+  } else if (country) {
+    docs = docs.filter(d => d.country === country);
+  }
+
   docs.sort((a, b) => {
     const ca = (a.continent||'').localeCompare(b.continent||'', 'pt-BR');
     if (ca !== 0) return ca;

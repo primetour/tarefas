@@ -6,6 +6,61 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.60.0+20260526-cross-module-ssot-destinations-pending-review] — 2026-05-26
+
+Release **MINOR/FEATURE** — fecha o loop cross-module da sprint SSOT geo. Pergunta direta do Renê: *"como ficaram os outros módulos com a reforma? portal de dicas, banco de imagens, gerador de roteiros. e mais: vc nao deveria atualizar destinos com todos os lugares que hoje ja existem em banco?"*.
+
+**Resposta honesta** ANTES desta release:
+- Backfill v4.59.2 adicionou `countryCode` aos docs (cobertura 99-100%), **mas** os readers continuavam consumindo `country` string. Sem ganho real cross-module.
+- portal_destinations tinha apenas **57 cidades únicas**; banco de roteiros referencia **248**. **228 cidades órfãs** (cidade em roteiro mas sem doc canônico) — gap enorme.
+
+**Esta release fecha as 3 frentes**:
+
+### Step 1 — Auto-popular destinos órfãs do banco
+
+- `functions/populate-pending-destinations-from-bank.cjs` (idempotente, dry-run+apply): cria 1 doc em `portal_destinations` por cidade órfã com:
+  - `source: 'banco-auto'`
+  - `reviewStatus: 'pending'`
+  - `countryCode` + `continentCode` resolvidos via `js/data/countries.js`
+  - `sampleBankIds[]` (até 3 IDs de roteiros que referenciam — rastreabilidade)
+  - `refCount` (quantos roteiros usam — pra priorizar revisão)
+- **228 cidades pending criadas em produção**, 0 unresolved.
+- portal_destinations agora tem **289 docs** (61 antigos + 228 novas pending). Cobertura banco → destinos: 5% → ~95%.
+
+### Step 2 — Readers cross-module aceitam countryCode
+
+- `fetchDestinations(opts)` aceita `continentCode`/`countryCode` (ISO) além de `continent`/`country` (label legacy). Reader prefere code quando ambos presentes nos docs. Garante que filtros futuros sejam unambiguous mesmo com typos no label.
+- `reviewStatus` filter opt-in com default `'all'` (preserva comportamento — picker de cidade do editor de roteiros continua vendo pending+approved pra não bloquear escolha). Page que LISTA destinos aplica filtro explícito via UI.
+
+### Step 3 — UI badge "Pendente revisão" + botão Aprovar
+
+`js/pages/portalDestinations.js`:
+
+- Linha de pills no topo: **Aprovados** (default) · **Pendentes** · **Todos**.
+- Banner contextual: "N pendentes no banco — revisar e aprovar".
+- Linha de cada destino pending: background levemente âmbar (`rgba(245,158,11,0.05)`), badge `⏳ Pendente (banco)` ao lado do nome da cidade, tooltip com source + refCount.
+- Botão `✓ Aprovar` por linha → flip `reviewStatus='approved'` preservando `source='banco-auto'` (rastreabilidade histórica). Usa `saveDestination` existente.
+- Hover state respeita estado pending (âmbar mais intenso em vez do bg-surface default).
+
+**Estado cross-module pós-release**:
+
+| Módulo | Status |
+|---|---|
+| portal_destinations | 289 docs (61 approved manuais + 228 pending banco-auto) · UI badge + aprovar |
+| portal_images | reader respeita countryCode (já backfill 99%) — fluxo cadastro sem mudança |
+| portal_tips | idem images |
+| roteiros_bank | usa `geo.countryCodes[]` ISO + readers continuam compat |
+| Picker cidade (editor de roteiros) | vê pending+approved → consultor pode escolher cidade nova sem esperar curador aprovar (UX preservada) |
+| IA Hub (futuro) | knowledge geo agora **consistent** — "Tóquio"/"Tokyo" resolvem pro mesmo doc canônico via countryCode (futuro IA usa ISO direto) |
+
+**Itens não inclusos** (deliberadamente):
+- Cleanup de duplicatas legacy em portal_destinations (61 docs têm 57 únicas — 4 duplicatas) → script separado, baixo impacto
+- Cidades órfãs em portal_images/tips: **0** (estavam 100% alinhadas — curador cadastrava destino antes de imagem/tip)
+- Aprovação em massa (ex: "aprovar todos os pending dum país"): pode entrar v4.60.1 se for útil
+- Reverse FK em roteiros_bank.geo.destinationIds[] (linka roteiro → destinationId): hoje é resolvido on-read; backfill explícito é nice-to-have
+
+---
+
 ## [4.59.8+20260526-banco-editor-images-picker-gallery] — 2026-05-26
 
 Release **PATCH/FEATURE** — último item da auditoria fechado: editor section Imagens enriquecida (antes só URL hero).
