@@ -21,6 +21,8 @@ let allDests   = [];
 let filterCont = '';
 let filterCoun = '';
 let filterReview = 'approved';   // v4.60.0: default só aprovados; toggle pra ver pending
+let filterSearch = '';           // v4.61.2: busca por palavra (cidade/país/aliases)
+let filterTip    = 'all';        // v4.61.2: 'all' | 'with' | 'without' (dica cadastrada?)
 let currentTab = 'list';         // v4.61.0 Feature B: 'list' | 'aliases'
 
 export async function renderPortalDestinations(container) {
@@ -139,14 +141,32 @@ export async function renderPortalDestinations(container) {
       <span id="dest-pending-count" style="margin-left:8px;font-size:0.72rem;color:var(--text-muted);"></span>
     </div>
 
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px;">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center;">
+      <!-- v4.61.2: busca por palavra (cidade/país/aliases) -->
+      <div style="position:relative;flex:1;min-width:220px;max-width:340px;">
+        <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:0.875rem;color:var(--text-muted);pointer-events:none;">🔍</span>
+        <input type="search" id="dest-search" class="filter-select"
+          placeholder="Buscar por cidade, país ou variação…"
+          value="${esc(filterSearch)}"
+          style="height:34px;font-size:0.8125rem;padding-left:32px;width:100%;">
+      </div>
       <select class="filter-select" id="dest-filter-cont" style="min-width:180px;">
         <option value="">Todos os continentes</option>
-        ${CONTINENTS.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('')}
+        ${CONTINENTS.map(c => `<option value="${esc(c)}" ${filterCont===c?'selected':''}>${esc(c)}</option>`).join('')}
       </select>
-      <select class="filter-select" id="dest-filter-country" style="min-width:160px;" disabled>
+      <select class="filter-select" id="dest-filter-country" style="min-width:160px;" ${filterCont?'':'disabled'}>
         <option value="">Todos os países</option>
       </select>
+      <select class="filter-select" id="dest-filter-tip" style="min-width:130px;" title="Filtrar por status da dica">
+        <option value="all"     ${filterTip==='all'?'selected':''}>Todas as dicas</option>
+        <option value="with"    ${filterTip==='with'?'selected':''}>✓ Com dica</option>
+        <option value="without" ${filterTip==='without'?'selected':''}>Sem dica</option>
+      </select>
+      <button class="btn btn-ghost btn-sm" id="dest-clear-filters"
+        title="Limpar todos os filtros"
+        style="font-size:0.78rem;color:var(--text-muted);${(filterSearch||filterCont||filterCoun||filterTip!=='all')?'':'visibility:hidden;'}">
+        ✕ Limpar
+      </button>
       <span id="dest-count" style="margin-left:auto;font-size:0.8125rem;color:var(--text-muted);
         align-self:center;"></span>
     </div>
@@ -200,6 +220,19 @@ export async function renderPortalDestinations(container) {
   document.getElementById('dest-filter-country')?.addEventListener('change', e => {
     filterCoun = e.target.value;
     renderTable();
+  });
+  // v4.61.2 — busca + filtro dica + limpar
+  document.getElementById('dest-search')?.addEventListener('input', e => {
+    filterSearch = e.target.value || '';
+    renderTable();
+  });
+  document.getElementById('dest-filter-tip')?.addEventListener('change', e => {
+    filterTip = e.target.value || 'all';
+    renderTable();
+  });
+  document.getElementById('dest-clear-filters')?.addEventListener('click', () => {
+    filterSearch = ''; filterCont = ''; filterCoun = ''; filterTip = 'all';
+    renderPortalDestinations(container);
   });
   // v4.60.0: filtro reviewStatus pills
   document.querySelectorAll('.dest-review-pill').forEach(pill => {
@@ -255,8 +288,23 @@ function renderTable() {
   }
   if (filterCont) rows = rows.filter(d => d.continent === filterCont);
   if (filterCoun) rows = rows.filter(d => d.country   === filterCoun);
+  // v4.61.2 — filtro dica + busca por palavra
+  if (filterTip === 'with')    rows = rows.filter(d => d.hasTip);
+  if (filterTip === 'without') rows = rows.filter(d => !d.hasTip);
+  if (filterSearch) {
+    const norm = s => String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    const q = norm(filterSearch);
+    rows = rows.filter(d =>
+      norm(d.city).includes(q) ||
+      norm(d.country).includes(q) ||
+      norm(d.continent).includes(q) ||
+      (Array.isArray(d.cityAliases) && d.cityAliases.some(a => norm(a).includes(q)))
+    );
+  }
 
-  if (count) count.textContent = `${rows.length} destino${rows.length !== 1 ? 's' : ''}`;
+  if (count) count.textContent = `${rows.length} destino${rows.length !== 1 ? 's' : ''}${
+    (filterSearch||filterCont||filterCoun||filterTip!=='all') ? ' (filtrado)' : ''
+  }`;
 
   if (!rows.length) {
     tbody.innerHTML = `<tr><td colspan="5" style="padding:48px;text-align:center;color:var(--text-muted);">

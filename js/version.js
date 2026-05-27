@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 61,
-  patch: 1,
-  build: '20260526-destinations-country-datalist-ssot-validation',
+  patch: 2,
+  build: '20260526-destinations-list-search-tip-filter-clear',
 };
 
 /** "1.2.0" */

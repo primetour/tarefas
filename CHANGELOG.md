@@ -6,6 +6,32 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.61.2+20260526-destinations-list-search-tip-filter-clear] — 2026-05-26
+
+Release **PATCH/UX** — busca por palavra + filtro de dica + botão limpar filtros na tab "Destinos".
+
+**Pergunta Renê**: *"a lista de destinos aprovados também precisa de filtros para consulta e pesquisa por palavra"*.
+
+**Antes**: tab "Destinos" tinha apenas pills (Aprovados/Pendentes/Todos) + select continente + select país (cascata). Sem busca livre.
+
+**Agora** (`js/pages/portalDestinations.js`):
+
+- **Input busca** com ícone 🔍: filtra por `cidade`, `país`, `continente` ou QUALQUER alias do `cityAliases[]` (normalizado lowercase+sem acento). Digitar "tóquio" acha doc canônico de "Quioto" (porque "Tóquio" está em aliases). Digitar "japan" acha "Japão". Digitar "africa" acha "África do Sul", "África", etc.
+- **Select "Filtrar por dica"**: `Todas` (default) | `✓ Com dica` | `Sem dica`. Útil pra ver gaps de curadoria (destinos sem dica cadastrada).
+- **Botão "✕ Limpar"** aparece quando há filtro ativo. Reseta search + cont + country + tip pra valores default.
+- **Contador** mostra `N destinos` e adiciona `(filtrado)` quando algum filtro está ativo.
+
+**Combinação total de filtros disponíveis**:
+- Pills reviewStatus (Aprovados/Pendentes/Todos)
+- Search por palavra
+- Continente
+- País (cascata do continente)
+- Status dica (Com/Sem)
+
+Tab "Variações de nome" já tinha search desde v4.61.0 — agora tab "Destinos" alinha.
+
+---
+
 ## [4.61.1+20260526-destinations-country-datalist-ssot-validation] — 2026-05-26
 
 Release **PATCH/SAFETY** — input país do modal de destino vira datalist SSOT + validação bloqueante + auto-fill continente.
