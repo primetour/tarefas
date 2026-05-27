@@ -6,6 +6,81 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.62.10+20260527-aliases-tab-same-filters-as-destinos] — 2026-05-27
+
+Release **UX/CONSISTÊNCIA** — aba "Variações de nome" ganha o mesmo conjunto
+de filtros da aba "Destinos".
+
+**Pedido Renê**: *"destinos/aba 'Variação de Nomes': trazer os mesmos filtros
+da aba 'Destinos'"*.
+
+### Antes
+
+Aba Variações tinha APENAS um campo de busca inline no header. Sem pills
+review, sem dropdown de continente/país, sem filtro dica. User precisava ir
+e voltar à aba Destinos pra restringir contexto.
+
+### Agora
+
+Replicado layout idêntico ao da aba Destinos em `js/pages/portalDestinations.js`:
+
+- **Pills Revisão** (Aprovados · Pendentes · Todos) — mesma classe visual
+  (`.aliases-review-pill`) com handler dedicado que respeita filterReview
+  module-scope.
+- **Busca por palavra** (`#aliases-search`) — cidade · país · continente · alias
+  com normalização NFD (busca sem acento).
+- **Continente** (`#aliases-filter-cont`) — popula select de país automaticamente.
+- **País standalone** (`#aliases-filter-country`) — não exige continente,
+  auto-zera continente se conflitar (mesmo padrão v4.62.5 da aba Destinos).
+- **Filtro Dica** (Todas · ✓ Com dica · Sem dica) — usa `tipsByDestId`
+  (lookup real, v4.62.7).
+- **Botão "✕ Limpar"** — esconde quando nenhum filtro ativo.
+- **Contador** ("N destinos (filtrado)") alinhado à direita.
+
+### State compartilhado entre tabs
+
+Os filtros (`filterCont`, `filterCoun`, `filterReview`, `filterSearch`,
+`filterTip`) são module-scope — trocar de tab preserva contexto. Ex: aplicar
+"Pendentes + Marrocos" em Destinos e clicar em Variações mantém ambos filtros.
+
+### Helpers novos em `js/pages/portalDestinations.js`
+
+- `_updateAliasesCountryFilter()` — popula `<select aliases-filter-country>`
+  baseado em `filterCont` (igual `updateCountryFilter` do tab Destinos).
+- `_wireAliasesFilters()` — wireup dos handlers dos filtros dessa aba
+  (search/cont/country/tip/limpar/pills). Re-renderiza só `_renderAliasesTab`
+  ao mudar filtro (não toca no tab list).
+
+### Mudanças em `_renderAliasesTab`
+
+Antes: lia `dest-aliases-search.value` direto. Agora: usa `filterSearch`
+module-scope (preserva entre re-renders) + aplica todos os filtros mesmo
+shape do `renderTable` da aba Destinos.
+
+Boot do aliases tab agora também chama `_loadTipLinks()` (necessário pro
+filtro "Com/Sem dica" funcionar).
+
+### Carregamento
+
+Boot da aba aliases (linha ~115):
+```js
+allDests = await fetchDestinations();
+await _loadTipLinks();             // pra filterTip funcionar
+_updateAliasesCountryFilter();
+_renderAliasesTab();
+_wireAliasesFilters();
+```
+
+### Arquivos tocados
+
+- `js/pages/portalDestinations.js`: header da aba aliases reescrito, 2 helpers
+  novos, _renderAliasesTab estendido com filtros
+- `js/version.js`: 4.62.9 → 4.62.10
+- `index.html`: cache-bust
+- `CHANGELOG.md`: este bloco
+
+---
+
 ## [4.62.9+20260527-tip-editor-load-via-sessionstorage] — 2026-05-27
 
 Release **BUGFIX UX** — clique em "💡 Dica" de destino com tip existente

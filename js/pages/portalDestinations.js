@@ -82,39 +82,88 @@ export async function renderPortalDestinations(container) {
   // Renderiza o conteúdo da tab ativa
   const tabContent = document.getElementById('dest-tab-content');
   if (currentTab === 'aliases') {
-    tabContent.innerHTML = `<div class="card" style="padding:0;overflow:hidden;">
-      <div style="padding:14px 16px;border-bottom:1px solid var(--border-subtle);display:flex;justify-content:space-between;align-items:center;">
-        <div>
-          <div style="font-size:0.95rem;font-weight:600;">Gerenciar variações de nome de cidades</div>
-          <div style="font-size:0.78rem;color:var(--text-muted);margin-top:2px;">
+    // v4.62.10: aba Aliases ganha mesmos filtros da aba Destinos (pills review,
+    // continente, país standalone, dica, busca, limpar). State (filterCont/
+    // filterCoun/filterReview/filterSearch/filterTip) é compartilhado module-scope
+    // pra navegação entre tabs preservar contexto.
+    tabContent.innerHTML = `
+      <!-- Pills Revisão (igual aba Destinos) -->
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center;">
+        <span style="font-size:0.72rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-right:4px;">Revisão:</span>
+        ${[
+          { v: 'approved', l: 'Aprovados' },
+          { v: 'pending',  l: 'Pendentes' },
+          { v: 'all',      l: 'Todos' },
+        ].map(p => `
+          <button class="aliases-review-pill" data-review-value="${p.v}"
+            style="padding:5px 12px;border-radius:999px;font-size:0.78rem;font-weight:600;cursor:pointer;
+            border:1px solid ${filterReview === p.v ? 'var(--brand-blue,#3B82F6)' : 'var(--border-subtle)'};
+            background:${filterReview === p.v ? 'var(--brand-blue,#3B82F6)' : 'transparent'};
+            color:${filterReview === p.v ? '#fff' : 'var(--text-muted)'};font-family:inherit;">
+            ${esc(p.l)}
+          </button>
+        `).join('')}
+      </div>
+
+      <!-- Filtros: busca + continente + país + dica + limpar -->
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center;">
+        <div style="position:relative;flex:1;min-width:220px;max-width:340px;">
+          <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);font-size:0.875rem;color:var(--text-muted);pointer-events:none;">🔍</span>
+          <input type="search" id="aliases-search" class="filter-select"
+            placeholder="Buscar cidade, país ou variação…"
+            value="${esc(filterSearch)}"
+            style="height:34px;font-size:0.8125rem;padding-left:32px;width:100%;">
+        </div>
+        <select class="filter-select" id="aliases-filter-cont" style="min-width:180px;">
+          <option value="">Todos os continentes</option>
+          ${CONTINENTS.map(c => `<option value="${esc(c)}" ${filterCont===c?'selected':''}>${esc(c)}</option>`).join('')}
+        </select>
+        <select class="filter-select" id="aliases-filter-country" style="min-width:180px;">
+          <option value="">Todos os países</option>
+        </select>
+        <select class="filter-select" id="aliases-filter-tip" style="min-width:130px;" title="Filtrar por status da dica">
+          <option value="all"     ${filterTip==='all'?'selected':''}>Todas as dicas</option>
+          <option value="with"    ${filterTip==='with'?'selected':''}>✓ Com dica</option>
+          <option value="without" ${filterTip==='without'?'selected':''}>Sem dica</option>
+        </select>
+        <button class="btn btn-ghost btn-sm" id="aliases-clear-filters"
+          title="Limpar todos os filtros"
+          style="font-size:0.78rem;color:var(--text-muted);${(filterSearch||filterCont||filterCoun||filterTip!=='all')?'':'visibility:hidden;'}">
+          ✕ Limpar
+        </button>
+        <span id="aliases-count" style="margin-left:auto;font-size:0.8125rem;color:var(--text-muted);align-self:center;"></span>
+      </div>
+
+      <div class="card" style="padding:0;overflow:hidden;">
+        <div style="padding:12px 16px;border-bottom:1px solid var(--border-subtle);">
+          <div style="font-size:0.78rem;color:var(--text-muted);">
             Adicione grafias alternativas (ex: "Cape Town" como alias de "Cidade do Cabo").
             Sistema reconhece como mesma cidade no cross-module.
             <span style="color:var(--brand-blue,#3B82F6);font-weight:500;">Salva automaticamente ao pressionar Enter.</span>
           </div>
         </div>
-        <input type="search" id="dest-aliases-search" placeholder="Buscar cidade ou alias…"
-          class="filter-select" style="min-width:240px;">
-      </div>
-      <div style="overflow:auto;max-height:calc(100vh - 280px);">
-        <table style="width:100%;border-collapse:collapse;font-size:0.875rem;">
-          <thead style="position:sticky;top:0;background:var(--bg-surface);z-index:1;">
-            <tr>
-              <th style="padding:10px 16px;text-align:left;font-size:0.6875rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);border-bottom:1px solid var(--border-subtle);">País</th>
-              <th style="padding:10px 16px;text-align:left;font-size:0.6875rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);border-bottom:1px solid var(--border-subtle);">Cidade (canônico)</th>
-              <th style="padding:10px 16px;text-align:left;font-size:0.6875rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);border-bottom:1px solid var(--border-subtle);">Variações (aliases)</th>
-              <th style="padding:10px 16px;width:110px;border-bottom:1px solid var(--border-subtle);"></th>
-            </tr>
-          </thead>
-          <tbody id="aliases-tbody">
-            <tr><td colspan="4" style="padding:40px;text-align:center;color:var(--text-muted);">Carregando…</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>`;
-    // Espera load de allDests
+        <div style="overflow:auto;max-height:calc(100vh - 320px);">
+          <table style="width:100%;border-collapse:collapse;font-size:0.875rem;">
+            <thead style="position:sticky;top:0;background:var(--bg-surface);z-index:1;">
+              <tr>
+                <th style="padding:10px 16px;text-align:left;font-size:0.6875rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);border-bottom:1px solid var(--border-subtle);">País</th>
+                <th style="padding:10px 16px;text-align:left;font-size:0.6875rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);border-bottom:1px solid var(--border-subtle);">Cidade (canônico)</th>
+                <th style="padding:10px 16px;text-align:left;font-size:0.6875rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);border-bottom:1px solid var(--border-subtle);">Variações (aliases)</th>
+                <th style="padding:10px 16px;width:110px;border-bottom:1px solid var(--border-subtle);"></th>
+              </tr>
+            </thead>
+            <tbody id="aliases-tbody">
+              <tr><td colspan="4" style="padding:40px;text-align:center;color:var(--text-muted);">Carregando…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>`;
+    // Espera load de allDests + tip links (pra filtro Dica funcionar)
     allDests = await fetchDestinations();
+    await _loadTipLinks();
+    _updateAliasesCountryFilter();
     _renderAliasesTab();
-    document.getElementById('dest-aliases-search')?.addEventListener('input', _renderAliasesTab);
+    _wireAliasesFilters();
     document.getElementById('dest-modal-wrapper') || (() => {
       const m = document.createElement('div');
       m.id = 'dest-modal'; m.style.display = 'none';
@@ -590,10 +639,81 @@ async function _openLinkedRoteirosModal(destId, dest) {
  * Cada linha: país | cidade canônica | chips de aliases (add inline) | salvar.
  * Permite edição rápida em massa sem abrir modal por destino.
  */
+/**
+ * v4.62.10: popula dropdown de país da aba aliases — espelha lógica de
+ * updateCountryFilter do tab Destinos (standalone, restringe por continente
+ * apenas quando ativo).
+ */
+function _updateAliasesCountryFilter() {
+  const sel = document.getElementById('aliases-filter-country');
+  if (!sel) return;
+  const base = filterCont
+    ? allDests.filter(d => d.continent === filterCont)
+    : allDests;
+  const countries = [...new Set(base.map(d => d.country).filter(Boolean))].sort();
+  sel.innerHTML = `<option value="">Todos os países</option>` +
+    countries.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+  sel.value = countries.includes(filterCoun) ? filterCoun : '';
+  if (sel.value !== filterCoun) filterCoun = sel.value;
+  sel.disabled = false;
+}
+
+/**
+ * v4.62.10: wireup dos filtros da aba aliases. Mesma semântica dos handlers
+ * da aba Destinos, mas re-renderiza só a tabela de aliases (não o tab list).
+ */
+function _wireAliasesFilters() {
+  document.getElementById('aliases-search')?.addEventListener('input', e => {
+    filterSearch = e.target.value || '';
+    _renderAliasesTab();
+  });
+  document.getElementById('aliases-filter-cont')?.addEventListener('change', e => {
+    filterCont = e.target.value;
+    filterCoun = '';
+    _updateAliasesCountryFilter();
+    _renderAliasesTab();
+  });
+  document.getElementById('aliases-filter-country')?.addEventListener('change', e => {
+    filterCoun = e.target.value;
+    if (filterCoun && filterCont) {
+      const validInCont = allDests.some(d => d.country === filterCoun && d.continent === filterCont);
+      if (!validInCont) {
+        filterCont = '';
+        const cs = document.getElementById('aliases-filter-cont');
+        if (cs) cs.value = '';
+      }
+    }
+    _renderAliasesTab();
+  });
+  document.getElementById('aliases-filter-tip')?.addEventListener('change', e => {
+    filterTip = e.target.value || 'all';
+    _renderAliasesTab();
+  });
+  document.getElementById('aliases-clear-filters')?.addEventListener('click', () => {
+    filterSearch = ''; filterCont = ''; filterCoun = ''; filterTip = 'all';
+    // Re-render tab inteiro pra zerar inputs visualmente
+    renderPortalDestinations(document.getElementById('content'));
+  });
+  // Pills review
+  document.querySelectorAll('.aliases-review-pill').forEach(pill => {
+    pill.addEventListener('click', () => {
+      filterReview = pill.dataset.reviewValue;
+      document.querySelectorAll('.aliases-review-pill').forEach(p => {
+        const isActive = p.dataset.reviewValue === filterReview;
+        p.style.background = isActive ? 'var(--brand-blue,#3B82F6)' : 'transparent';
+        p.style.color = isActive ? '#fff' : 'var(--text-muted)';
+        p.style.borderColor = isActive ? 'var(--brand-blue,#3B82F6)' : 'var(--border-subtle)';
+      });
+      _renderAliasesTab();
+    });
+  });
+}
+
 function _renderAliasesTab() {
   const tbody = document.getElementById('aliases-tbody');
   if (!tbody) return;
-  const search = (document.getElementById('dest-aliases-search')?.value || '').toLowerCase().trim();
+  // v4.62.10: usa filterSearch (module-scope) — input aliases-search atualiza
+  // essa state pra que troca de tab preserve busca.
   const norm = s => String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
 
   let rows = allDests.slice().sort((a, b) =>
@@ -603,13 +723,34 @@ function _renderAliasesTab() {
   // Esconde docs com city vazio (não dá pra ter alias sem nome canônico)
   rows = rows.filter(d => d.city);
 
-  if (search) {
-    const ns = norm(search);
+  // v4.62.10: aplica os mesmos filtros da aba Destinos
+  if (filterReview && filterReview !== 'all') {
+    rows = rows.filter(d => (d.reviewStatus || 'approved') === filterReview);
+  }
+  if (filterCont) rows = rows.filter(d => d.continent === filterCont);
+  if (filterCoun) rows = rows.filter(d => d.country   === filterCoun);
+  if (filterTip === 'with')    rows = rows.filter(d => tipsByDestId.has(d.id));
+  if (filterTip === 'without') rows = rows.filter(d => !tipsByDestId.has(d.id));
+  if (filterSearch) {
+    const ns = norm(filterSearch);
     rows = rows.filter(d =>
       norm(d.country).includes(ns) ||
       norm(d.city).includes(ns) ||
-      (d.cityAliases || []).some(a => norm(a).includes(ns)));
+      norm(d.continent).includes(ns) ||
+      (Array.isArray(d.cityAliases) && d.cityAliases.some(a => norm(a).includes(ns))));
   }
+
+  // Atualiza contador
+  const countEl = document.getElementById('aliases-count');
+  if (countEl) {
+    countEl.textContent = `${rows.length} destino${rows.length !== 1 ? 's' : ''}${
+      (filterSearch||filterCont||filterCoun||filterTip!=='all'||filterReview!=='approved') ? ' (filtrado)' : ''
+    }`;
+  }
+  // Atualiza visibilidade do botão limpar
+  const clearBtn = document.getElementById('aliases-clear-filters');
+  if (clearBtn) clearBtn.style.visibility =
+    (filterSearch||filterCont||filterCoun||filterTip!=='all') ? '' : 'hidden';
 
   if (!rows.length) {
     tbody.innerHTML = `<tr><td colspan="4" style="padding:48px;text-align:center;color:var(--text-muted);">

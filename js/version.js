@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 62,
-  patch: 9,
-  build: '20260527-tip-editor-load-via-sessionstorage',
+  patch: 10,
+  build: '20260527-aliases-tab-same-filters-as-destinos',
 };
 
 /** "1.2.0" */
