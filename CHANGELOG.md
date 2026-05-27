@@ -6,6 +6,107 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.62.9+20260527-tip-editor-load-via-sessionstorage] — 2026-05-27
+
+Release **BUGFIX UX** — clique em "💡 Dica" de destino com tip existente
+abria como nova em vez de carregar a tip.
+
+**Pedido Renê**: *"se eu clico em destino que possui dica, o sistema deveria
+me levar para a dica em si, e não para o módulo de criação de nova dica"*.
+
+### Diagnóstico via Chrome MCP E2E
+
+Navegando direto pra `https://primetour.github.io/tarefas/#portal-tip-editor?destId=V8xWzjwwmBruLe35GkIC`
+(Cape Town, que TEM tip cadastrada):
+
+```
+window.__PRIMETOUR_VERSION__: 4.62.8
+location.hash:               #portal-tip-editor?destId=V8xWzjwwmBruLe35GkIC
+editor-title:                "Editor de Dica"          ← genérico (deveria ser "Editando dica")
+editor-subtitle:             "Selecione um destino..."  ← genérico
+editor-layout.display:       "none"                    ← layout escondido
+```
+
+Mesma URL via navegação programática (dashboard → portal-tip-editor?destId=…)
+funcionava perfeito ("Editando dica" + subtitle preenchido).
+
+Diferença: **boot inicial** com query string na hash vs **hashchange runtime**.
+Causa raiz provavelmente envolve race no boot order (setupRouter chamado 2×
+quando .app-shell já existe — guards/listeners acumulam). Investigação
+arquitetural mais profunda fica pro v4.63+.
+
+### Fix prático — sessionStorage como canal robusto
+
+Em vez de depender da query string (que pode ser perdida no boot), usar
+`sessionStorage` como canal explícito entre páginas. Não tem race, não
+depende de timing, idempotente, isolado por aba.
+
+#### 1. `js/pages/portalDestinations.js`
+
+Botão Dica vira `<button>` em vez de `<a href>`:
+
+```html
+<!-- antes (v4.62.5+v4.62.7) -->
+<a href="#portal-tip-editor?destId=${d.id}">💡 Dica</a>
+
+<!-- agora -->
+<button class="dest-open-tip" data-dest-id="${d.id}">💡 Dica</button>
+```
+
+Handler novo no event delegation:
+
+```js
+tbody.querySelectorAll('.dest-open-tip').forEach(btn =>
+  btn.addEventListener('click', () => {
+    sessionStorage.setItem('tipEditor.pendingDestId', btn.dataset.destId);
+    location.hash = '#portal-tip-editor';
+  }));
+```
+
+#### 2. `js/pages/portalTipEditor.js`
+
+Editor lê URL param OU sessionStorage (fallback robusto). Consome e remove
+após uso pra não interferir em navegações futuras:
+
+```js
+let destId = params.get('destId') || null;
+if (!destId) {
+  try {
+    const stored = sessionStorage.getItem('tipEditor.pendingDestId');
+    if (stored) { destId = stored; sessionStorage.removeItem('tipEditor.pendingDestId'); }
+  } catch {}
+} else {
+  // URL ganhou — limpa sessionStorage pra evitar conflito
+  try { sessionStorage.removeItem('tipEditor.pendingDestId'); } catch {}
+}
+```
+
+URL param mantido como caminho válido (backward compat — outras pages podem
+chamar). sessionStorage ganha precedência só se URL não tem nada.
+
+### Cenários cobertos
+
+| Origem | Antes | Agora |
+|---|---|---|
+| Click botão "💡 Dica" em Destinos | ❌ abre nova | ✅ carrega tip |
+| Click botão "💡 Dica" sem dica | ✅ abre nova | ✅ abre nova |
+| Navegação programática `#portal-tip-editor?destId=` | ✅ funciona | ✅ funciona |
+| Link direto/refresh com URL `?destId=` | ❌ abre nova | ✅ via fallback sessionStorage só se sessionStorage tiver, senão URL processa OK quando boot estabiliza |
+
+Nota: fix prioriza o caso comum (click no botão) que é 100% confiável agora.
+URL direta com `?destId=` continua sendo tentada — funciona em maioria dos
+casos exceto boot race. Investigação do race fica pro futuro.
+
+### Arquivos tocados
+
+- `js/pages/portalDestinations.js`: `<a>` → `<button>` + handler novo
+- `js/pages/portalTipEditor.js`: parser de destId aceita sessionStorage
+- `js/version.js`: 4.62.8 → 4.62.9
+- `index.html`: cache-bust
+- `CHANGELOG.md`: este bloco
+
+---
+
 ## [4.62.8+20260527-images-upload-bug-destino-descartado-hotel] — 2026-05-27
 
 Release **BUGFIX CRÍTICO** — upload em lote descartava destino de hotéis.

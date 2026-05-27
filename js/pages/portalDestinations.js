@@ -457,23 +457,25 @@ function renderTable() {
             style="font-size:0.75rem;color:var(--brand-blue,#3B82F6);" title="Editar destino (nome, país, aliases…)">
             ✎ Editar
           </button>
-          <!-- v4.62.5+v4.62.7: botão Dica usa lookup real em tipsByDestId.
-               Badge numeral mostra contagem (schema atual 1:1, mas pronto pra
-               escalar pra N:1). Cor dourada quando existe, cinza quando não. -->
+          <!-- v4.62.5+v4.62.7+v4.62.9: botão Dica usa <button> + sessionStorage
+               em vez de <a href> (URL param era perdido no boot inicial — abria
+               como nova dica mesmo havendo tip existente). sessionStorage é
+               consumido pelo editor no boot e removido após uso. -->
           ${(() => {
             const tips = tipsByDestId.get(d.id) || [];
+            const baseAttrs = `class="btn btn-ghost btn-sm dest-open-tip" data-dest-id="${d.id}"`;
             if (tips.length) {
-              return `<a href="#portal-tip-editor?destId=${d.id}" class="btn btn-ghost btn-sm"
-                style="font-size:0.75rem;color:var(--brand-gold);text-decoration:none;"
+              return `<button ${baseAttrs}
+                style="font-size:0.75rem;color:var(--brand-gold);"
                 title="Editar a dica deste destino">
                 💡 Dica <span style="background:var(--brand-gold);color:#0A1628;padding:0 6px;border-radius:999px;font-size:0.65rem;font-weight:700;margin-left:2px;">${tips.length}</span>
-              </a>`;
+              </button>`;
             }
-            return `<a href="#portal-tip-editor?destId=${d.id}" class="btn btn-ghost btn-sm"
-              style="font-size:0.75rem;color:var(--text-muted);opacity:0.7;text-decoration:none;"
+            return `<button ${baseAttrs}
+              style="font-size:0.75rem;color:var(--text-muted);opacity:0.7;"
               title="Cadastrar dica pra este destino">
               💡 Dica
-            </a>`;
+            </button>`;
           })()}
           ${(() => {
             const refs = roteirosByDestId.get(d.id) || [];
@@ -505,6 +507,15 @@ function renderTable() {
     btn.addEventListener('click', () => _openLinkedRoteirosModal(
       btn.dataset.viewRoteiros,
       allDests.find(d => d.id === btn.dataset.viewRoteiros))));
+  // v4.62.9: handler botão Dica — usa sessionStorage pra passar destId
+  // (URL param era perdido no boot inicial). Editor consome no boot e remove.
+  tbody.querySelectorAll('.dest-open-tip').forEach(btn =>
+    btn.addEventListener('click', () => {
+      const destId = btn.dataset.destId;
+      if (!destId) return;
+      try { sessionStorage.setItem('tipEditor.pendingDestId', destId); } catch {}
+      location.hash = '#portal-tip-editor';
+    }));
 }
 
 /**

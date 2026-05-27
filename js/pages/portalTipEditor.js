@@ -48,7 +48,20 @@ export async function renderPortalTipEditor(container) {
 
   const hash   = window.location.hash;
   const params = new URLSearchParams(hash.includes('?') ? hash.split('?')[1] : '');
-  const destId = params.get('destId') || null;
+  // v4.62.9: destId via URL param OU sessionStorage (fallback robusto contra
+  // race do boot inicial — query string podia ser perdida quando page carrega
+  // direto na URL com `?destId=`, fazia abrir como "Nova dica" mesmo com tip
+  // existente). sessionStorage é setado pelo botão Dica em portalDestinations.
+  let destId = params.get('destId') || null;
+  if (!destId) {
+    try {
+      const stored = sessionStorage.getItem('tipEditor.pendingDestId');
+      if (stored) { destId = stored; sessionStorage.removeItem('tipEditor.pendingDestId'); }
+    } catch {/* sessionStorage indisponível em modo privado */}
+  } else {
+    // Tem na URL — consome sessionStorage se também tiver pra evitar interferência
+    try { sessionStorage.removeItem('tipEditor.pendingDestId'); } catch {}
+  }
 
   container.innerHTML = `
     <div class="page-header">

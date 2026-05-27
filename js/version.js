@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 62,
-  patch: 8,
-  build: '20260527-images-upload-bug-destino-descartado-hotel',
+  patch: 9,
+  build: '20260527-tip-editor-load-via-sessionstorage',
 };
 
 /** "1.2.0" */
