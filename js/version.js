@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 62,
-  patch: 14,
-  build: '20260527-portal-link-overflow-e-new-request-handler',
+  patch: 15,
+  build: '20260527-portal-new-request-handler-hotfix',
 };
 
 /** "1.2.0" */

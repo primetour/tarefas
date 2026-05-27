@@ -6,6 +6,88 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.62.15+20260527-portal-new-request-handler-hotfix] — 2026-05-27
+
+Release **HOTFIX** — botão "Fazer nova solicitação" do v4.62.14 não funcionou
+em produção.
+
+**Renê reportou**: *"botao segue nao funcionando"* + screenshot.
+
+### Diagnóstico via Chrome MCP
+
+```js
+{
+  version: "4.62.14...",            // app principal OK
+  pageVersion: "js/portal/portal.js?v=4.57.52+..."  // ← PORTAL.JS ANTIGO!
+}
+```
+
+Click no botão em prod NÃO disparava nenhum handler. Apesar do `version.js`
+do app estar em 4.62.14 (correto), o `portal.js` servido pra página
+`solicitar.html` estava na versão **4.57.52** — 14 patches atrás. Sem o
+`_wireNewRequestBtn` que entreguei em v4.62.14.
+
+### Causa raiz
+
+`solicitar.html` é **page standalone** (não passa pelo `index.html`/SPA do
+app principal). Tem cache-bust **separado e hardcoded** no `<script>` tag:
+
+```html
+<!-- solicitar.html linha 52 (antes) -->
+<script type="module" src="js/portal/portal.js?v=4.57.52+..."></script>
+```
+
+Quando entreguei v4.62.14, bumped `index.html` (app principal) mas esqueci
+`solicitar.html`. GitHub Pages serve `max-age=600` (10 min cache); browser
++ MCP usaram o `?v=4.57.52` cacheado → JS antigo → sem o fix.
+
+Bug latente do **processo de release**, não do código fixed.
+
+### Fix
+
+```html
+<!-- solicitar.html linha 52+ (agora) -->
+<!-- ⚠ IMPORTANTE: bumpar este `?v=` SEMPRE que mexer em
+     js/portal/portal.js OU js/portal/portalWizard.js. -->
+<script type="module" src="js/portal/portal.js?v=4.62.15+..."></script>
+```
+
+Comentário explícito acima do tag pra futuro — qualquer dev/IA que tocar
+em portal.js ou portalWizard.js precisa bumpar o `?v=` AQUI também.
+
+### Auditoria de outras pages standalone
+
+```
+agente.html, calendario-conteudo.html, csat-response.html,
+dev-hours-view.html, docs.html, gerar-apresentacao.html,
+lp.html, portal-view.html, roteiro-view.html  →  0 cache-busts hardcoded
+```
+
+Só `solicitar.html` tem esse padrão. Outras pages standalone consomem JS
+sem `?v=` (cache resolve naturalmente pelo nome do arquivo).
+
+### Lição (CLAUDE.md §11.w consolidação)
+
+Pages standalone (solicitar/auth/login/public-view/etc) podem ter cache-bust
+INDEPENDENTE do app principal. Toda release que toca módulo carregado por
+HTML standalone PRECISA bumpar cache-bust ali também. Esquecer = user real
+pega JS antigo enquanto curl/MCP/inspeção do código mostram "tá deployed".
+
+Checklist atualizado pré-release:
+1. `js/version.js` → bumpar patch + build
+2. `index.html` → cache-bust app principal
+3. `solicitar.html` → cache-bust PORTAL (se mexer em portal.js ou portalWizard.js)
+4. Outras pages standalone se houver JS-specific bump
+
+### Arquivos tocados
+
+- `solicitar.html`: cache-bust 4.57.52 → 4.62.15 + comentário de aviso
+- `js/version.js`: 4.62.14 → 4.62.15
+- `index.html`: cache-bust
+- `CHANGELOG.md`: este bloco
+
+---
+
 ## [4.62.14+20260527-portal-link-overflow-e-new-request-handler] — 2026-05-27
 
 Release **2 BUGFIXES** no Portal de Solicitações reportados via screenshot.

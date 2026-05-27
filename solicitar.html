@@ -48,7 +48,12 @@
     (function(){var t=localStorage.getItem('portal-theme');if(t!=='dark')document.documentElement.setAttribute('data-theme','light');})();
   </script>
 
-  <!-- Portal module -->
-  <script type="module" src="js/portal/portal.js?v=4.57.52+20260526-tasks-59-60-dedupe-hierarchical-quickadd"></script>
+  <!-- Portal module —
+       ⚠ IMPORTANTE: bumpar este `?v=` SEMPRE que mexer em
+       js/portal/portal.js OU js/portal/portalWizard.js.
+       solicitar.html é page standalone e tem cache-bust SEPARADO do
+       app principal (index.html). Esquecer bumpar aqui faz user pegar
+       versão antiga do portal mesmo com app atualizado. -->
+  <script type="module" src="js/portal/portal.js?v=4.62.15+20260527-portal-new-request-handler-hotfix"></script>
 </body>
 </html>
