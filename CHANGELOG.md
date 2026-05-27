@@ -6,6 +6,58 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.61.0+20260526-destinations-aliases-chips-central-tab-bugfix-ux] — 2026-05-26
+
+Release **MINOR/FEATURE** — gerenciamento colaborativo de variações de nome (aliases) + UX fix do confusion edit/dica.
+
+**Contexto** (perguntas Renê):
+
+1. *"nao consigo corrigir destinos que estao pendentes (ele leva pra um form vazio de dica)"* — investigado: bug era UX, não código.
+2. *"seria legal ter acesso a essa lista e o usuario poder cooperar com essas variações"* + *"ou quando cadastrar ja colocar as variações"* — quer editor inline (A) E página central (B).
+3. *"regioes e cidades na namibia que estao marcadas como africa do sul"* — adapter Envision atribuiu país errado em roteiros multi-país. Agora curador pode corrigir via UI.
+
+**Bugfix UX** (`js/pages/portalDestinations.js`):
+
+Antes os botões de ação da linha eram:
+- `<a href="#portal-tip-editor">✎ Dica</a>` (lápis = universalmente "editar")
+- `<button>Destino</button>` (sem ícone, parecia secundário)
+
+User clicava no lápis pensando ser "editar destino" e caía no form de **dica vazia**. Fix:
+- **Editar destino**: agora primeiro botão com `✎ Editar` (cor brand-blue) + tooltip "Editar destino (nome, país, aliases…)"
+- **Dica**: `💡 Dica` (lâmpada = ideia, não edição) + tooltip dinâmico ("Editar a dica" / "Cadastrar dica")
+
+**Feature A — Chips de aliases no modal "Editar Destino"**:
+
+- Campo novo "Variações de nome (aliases)" entre "Cidade" e "Notas".
+- Input + chips visuais:
+  - Digite "Tokyo" → Enter (ou vírgula) → vira chip dourado com botão `×`
+  - Chip `×` remove
+  - Wrap inteiro click-to-focus no input (UX tags padrão)
+  - Skip auto: bloqueia adicionar a própria cidade canônica ou duplicata (toast info)
+  - Pending alias (não pressionou Enter) é incluído ao Salvar
+- Save manda `cityAliases: [...]` pro `saveDestination` (que já suportava o campo).
+- Helper textual: "Sistema reconhece estas grafias como a mesma cidade no cross-module (banco, imagens, dicas)."
+
+**Feature B — Tab "Variações de nome" central**:
+
+- Tab switcher no topo de `#portal-destinations`: **Destinos** (atual) | **Variações de nome** (nova).
+- View nova: tabela `País | Cidade canônica | Variações (aliases) | Salvar`.
+- Edição em massa rápida:
+  - Cada linha tem mesmo widget de chips (digitar+Enter pra add, `×` pra remover).
+  - Botão **Salvar** por linha (habilita ao digitar; auto-save em remoção via `×`).
+  - Search bar filtra por país, cidade ou alias.
+  - Linhas pending tem background âmbar discreto + badge ⏳ Pending.
+  - Conflict detection ativa: se save bater em DUPLICATE, toast direciona pra aba "Destinos" pra mesclar.
+- Sticky header da tabela (rolagem mantém colunas visíveis).
+
+**Fix país errado (Namíbia/Botswana/Tanzânia como África do Sul)**:
+
+- Script `functions/audit-cross-module-ssot-usage.cjs` já existente — detecta cidades atribuídas a país errado via mapa hardcoded mínimo (KNOWN_COUNTRY) com 5 confirmadas: Skeleton Coast, Sossusvlei, Twyfelfontein, Hartmann Valley, Etosha National Park (todas Namíbia, marcadas como África do Sul). Outros casos (Delta do Okavango → Botswana, Stone Town → Tanzânia, Região do Chobe → Botswana) detectáveis ao expandir o mapa.
+- Curador agora pode **abrir destino errado → ✎ Editar → mudar continente/país → salvar**. `saveDestination` resolve `countryCode`/`continentCode` automaticamente via geoResolver.
+- Como o adapter Envision pegava o primeiro Product do itinerary multi-país, casos futuros podem ser evitados (TODO próxima sprint): detectar quando geo.countries[] tem >1 país e marcar cidades com país inferido por contexto adicional.
+
+---
+
 ## [4.60.2+20260526-destinations-dup-prevent-merge-inline] — 2026-05-26
 
 Release **PATCH/SAFETY** — responde pergunta Renê: *"se eu aprovar um pendente que é igual ao aprovado, o sistema vai permitir duplicada?"*.

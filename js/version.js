@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 60,
-  patch: 2,
-  build: '20260526-destinations-dup-prevent-merge-inline',
+  minor: 61,
+  patch: 0,
+  build: '20260526-destinations-aliases-chips-central-tab-bugfix-ux',
 };
 
 /** "1.2.0" */

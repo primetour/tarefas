@@ -17,6 +17,7 @@ let allDests   = [];
 let filterCont = '';
 let filterCoun = '';
 let filterReview = 'approved';   // v4.60.0: default só aprovados; toggle pra ver pending
+let currentTab = 'list';         // v4.61.0 Feature B: 'list' | 'aliases'
 
 export async function renderPortalDestinations(container) {
   // 4.49.2+ Usa canManageDestinations() (perm granular nova) em vez de
@@ -42,6 +43,79 @@ export async function renderPortalDestinations(container) {
         <button class="btn btn-primary btn-sm" id="dest-new-btn">+ Novo Destino</button>
       </div>
     </div>
+
+    <!-- v4.61.0 Feature B: tab switcher -->
+    <div style="display:flex;gap:0;border-bottom:1px solid var(--border-subtle);margin-bottom:16px;">
+      ${[
+        { id: 'list',    label: 'Destinos' },
+        { id: 'aliases', label: 'Variações de nome' },
+      ].map(t => `
+        <button class="dest-tab" data-tab="${t.id}"
+          style="padding:10px 20px;background:transparent;border:none;cursor:pointer;
+          font-size:0.875rem;font-weight:600;color:${currentTab === t.id ? 'var(--brand-blue,#3B82F6)' : 'var(--text-muted)'};
+          border-bottom:2px solid ${currentTab === t.id ? 'var(--brand-blue,#3B82F6)' : 'transparent'};
+          margin-bottom:-1px;font-family:inherit;">
+          ${esc(t.label)}
+        </button>
+      `).join('')}
+    </div>
+
+    <div id="dest-tab-content"></div>
+  `;
+
+  // v4.61.0: handler do tab switcher
+  container.querySelectorAll('.dest-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      currentTab = btn.dataset.tab;
+      renderPortalDestinations(container);   // re-render full page (idempotente)
+    });
+  });
+
+  // Renderiza o conteúdo da tab ativa
+  const tabContent = document.getElementById('dest-tab-content');
+  if (currentTab === 'aliases') {
+    tabContent.innerHTML = `<div class="card" style="padding:0;overflow:hidden;">
+      <div style="padding:14px 16px;border-bottom:1px solid var(--border-subtle);display:flex;justify-content:space-between;align-items:center;">
+        <div>
+          <div style="font-size:0.95rem;font-weight:600;">Gerenciar variações de nome de cidades</div>
+          <div style="font-size:0.78rem;color:var(--text-muted);margin-top:2px;">
+            Adicione grafias alternativas (ex: "Cape Town" como alias de "Cidade do Cabo").
+            Sistema reconhece como mesma cidade no cross-module.
+          </div>
+        </div>
+        <input type="search" id="dest-aliases-search" placeholder="Buscar cidade ou alias…"
+          class="filter-select" style="min-width:240px;">
+      </div>
+      <div style="overflow:auto;max-height:calc(100vh - 280px);">
+        <table style="width:100%;border-collapse:collapse;font-size:0.875rem;">
+          <thead style="position:sticky;top:0;background:var(--bg-surface);z-index:1;">
+            <tr>
+              <th style="padding:10px 16px;text-align:left;font-size:0.6875rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);border-bottom:1px solid var(--border-subtle);">País</th>
+              <th style="padding:10px 16px;text-align:left;font-size:0.6875rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);border-bottom:1px solid var(--border-subtle);">Cidade (canônico)</th>
+              <th style="padding:10px 16px;text-align:left;font-size:0.6875rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);border-bottom:1px solid var(--border-subtle);">Variações (aliases)</th>
+              <th style="padding:10px 16px;width:60px;border-bottom:1px solid var(--border-subtle);"></th>
+            </tr>
+          </thead>
+          <tbody id="aliases-tbody">
+            <tr><td colspan="4" style="padding:40px;text-align:center;color:var(--text-muted);">Carregando…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+    // Espera load de allDests
+    allDests = await fetchDestinations();
+    _renderAliasesTab();
+    document.getElementById('dest-aliases-search')?.addEventListener('input', _renderAliasesTab);
+    document.getElementById('dest-modal-wrapper') || (() => {
+      const m = document.createElement('div');
+      m.id = 'dest-modal'; m.style.display = 'none';
+      container.appendChild(m);
+    })();
+    return;
+  }
+
+  // Default tab 'list': fluxo original (filtros + tabela)
+  tabContent.innerHTML = `
 
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;align-items:center;">
       <span style="font-size:0.72rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-right:4px;">Revisão:</span>
@@ -214,18 +288,22 @@ function renderTable() {
               border-radius:var(--radius-full);">Sem dica</span>`}
       </td>
       <td style="padding:10px 16px;text-align:right;">
-        <div style="display:flex;gap:6px;justify-content:flex-end;">
+        <div style="display:flex;gap:6px;justify-content:flex-end;align-items:center;">
           ${isPending ? `<button class="btn btn-primary btn-sm" data-approve="${d.id}"
             style="font-size:0.72rem;padding:3px 10px;" title="Aprovar destino — vira parte canônica do SSOT">
             ✓ Aprovar
           </button>` : ''}
+          <button class="btn btn-ghost btn-sm" data-edit="${d.id}"
+            style="font-size:0.75rem;color:var(--brand-blue,#3B82F6);" title="Editar destino (nome, país, aliases…)">
+            ✎ Editar
+          </button>
           <a href="#portal-tip-editor?destId=${d.id}" class="btn btn-ghost btn-sm"
-            style="font-size:0.75rem;color:var(--brand-gold);text-decoration:none;">
-            ✎ Dica
+            style="font-size:0.75rem;color:var(--brand-gold);text-decoration:none;"
+            title="${d.hasTip ? 'Editar a dica deste destino' : 'Cadastrar dica pra este destino'}">
+            💡 Dica
           </a>
-          <button class="btn btn-ghost btn-sm" data-edit="${d.id}" style="font-size:0.75rem;">Destino</button>
           <button class="btn btn-ghost btn-sm" data-delete="${d.id}"
-            style="font-size:0.75rem;color:var(--color-danger,#EF4444);">✕</button>
+            style="font-size:0.75rem;color:var(--color-danger,#EF4444);" title="Excluir destino">✕</button>
         </div>
       </td>
     </tr>
@@ -245,6 +323,151 @@ function renderTable() {
 /** v4.60.0: aprova destino pending → reviewStatus='approved'.
  *  v4.60.2: detecta DUPLICATE (já existe approved com mesma cidade ou alias)
  *  e oferece mesclar inline via modal — sem permitir duplicata silenciosa. */
+/**
+ * v4.61.0 Feature B — renderiza tabela da aba "Variações de nome".
+ * Cada linha: país | cidade canônica | chips de aliases (add inline) | salvar.
+ * Permite edição rápida em massa sem abrir modal por destino.
+ */
+function _renderAliasesTab() {
+  const tbody = document.getElementById('aliases-tbody');
+  if (!tbody) return;
+  const search = (document.getElementById('dest-aliases-search')?.value || '').toLowerCase().trim();
+  const norm = s => String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+
+  let rows = allDests.slice().sort((a, b) =>
+    (a.country||'').localeCompare(b.country||'', 'pt-BR') ||
+    (a.city||'').localeCompare(b.city||'', 'pt-BR'));
+
+  // Esconde docs com city vazio (não dá pra ter alias sem nome canônico)
+  rows = rows.filter(d => d.city);
+
+  if (search) {
+    const ns = norm(search);
+    rows = rows.filter(d =>
+      norm(d.country).includes(ns) ||
+      norm(d.city).includes(ns) ||
+      (d.cityAliases || []).some(a => norm(a).includes(ns)));
+  }
+
+  if (!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="4" style="padding:48px;text-align:center;color:var(--text-muted);">
+      Nenhum destino encontrado.
+    </td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = rows.map(d => {
+    const aliases = Array.isArray(d.cityAliases) ? d.cityAliases : [];
+    const isPending = (d.reviewStatus || 'approved') === 'pending';
+    return `
+      <tr data-row-id="${d.id}" style="border-bottom:1px solid var(--border-subtle);
+        background:${isPending ? 'rgba(245,158,11,0.04)' : ''};">
+        <td style="padding:10px 16px;color:var(--text-muted);font-size:0.78rem;white-space:nowrap;">
+          ${esc(d.country)}
+          ${isPending ? `<span style="display:block;font-size:0.62rem;color:var(--color-warn-text,#92400e);font-weight:600;text-transform:uppercase;margin-top:2px;">⏳ Pending</span>` : ''}
+        </td>
+        <td style="padding:10px 16px;font-weight:600;white-space:nowrap;">${esc(d.city)}</td>
+        <td style="padding:10px 16px;">
+          <div data-aliases-cell="${d.id}" style="display:flex;flex-wrap:wrap;gap:4px;align-items:center;
+            border:1px solid var(--border-subtle);border-radius:6px;padding:5px 8px;min-height:32px;
+            background:var(--bg-input,#fff);">
+            <div data-aliases-list="${d.id}" style="display:flex;flex-wrap:wrap;gap:4px;">
+              ${aliases.map((a, i) => `
+                <span style="display:inline-flex;align-items:center;gap:3px;padding:1px 7px;
+                  border-radius:999px;background:var(--brand-gold,#D4A843);color:#0A1628;
+                  font-size:0.72rem;font-weight:600;">
+                  ${esc(a)}
+                  <button type="button" data-row-remove-alias="${d.id}" data-alias-idx="${i}"
+                    style="background:none;border:none;color:#0A1628;cursor:pointer;padding:0;
+                    font-size:0.78rem;line-height:1;font-weight:700;opacity:0.7;">×</button>
+                </span>
+              `).join('')}
+            </div>
+            <input type="text" data-row-alias-input="${d.id}"
+              placeholder="${aliases.length ? '+ adicionar' : 'Digite e Enter pra adicionar'}"
+              style="flex:1;min-width:100px;border:none;outline:none;padding:2px 4px;
+              font-size:0.78rem;background:transparent;color:var(--text-primary);">
+          </div>
+        </td>
+        <td style="padding:10px 16px;text-align:right;white-space:nowrap;">
+          <button class="btn btn-ghost btn-sm" data-row-save="${d.id}"
+            style="font-size:0.72rem;padding:3px 10px;color:var(--brand-blue,#3B82F6);" disabled
+            title="Salvar variações desta linha">Salvar</button>
+        </td>
+      </tr>
+    `;
+  }).join('');
+
+  // Handlers por linha
+  tbody.querySelectorAll('[data-row-alias-input]').forEach(input => {
+    const id = input.dataset.rowAliasInput;
+    const saveBtn = tbody.querySelector(`[data-row-save="${id}"]`);
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ',') {
+        e.preventDefault();
+        const val = input.value.trim().replace(/,$/, '');
+        if (!val) return;
+        const dest = allDests.find(d => d.id === id);
+        if (!dest) return;
+        if (norm(val) === norm(dest.city)) { toast.info('Esse já é o nome canônico.'); input.value=''; return; }
+        const aliases = Array.isArray(dest.cityAliases) ? dest.cityAliases : [];
+        if (aliases.some(a => norm(a) === norm(val))) { toast.info('Já adicionado.'); input.value=''; return; }
+        aliases.push(val);
+        dest.cityAliases = aliases;
+        _renderAliasesTab();   // re-render mantém o input em foco visual via search
+        // Habilita botão Salvar
+        const saveBtn2 = document.querySelector(`[data-row-save="${id}"]`);
+        if (saveBtn2) saveBtn2.disabled = false;
+      }
+    });
+    input.addEventListener('input', () => {
+      if (saveBtn) saveBtn.disabled = !input.value.trim();
+    });
+  });
+  tbody.querySelectorAll('[data-row-remove-alias]').forEach(btn =>
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.rowRemoveAlias;
+      const idx = +btn.dataset.aliasIdx;
+      const dest = allDests.find(d => d.id === id);
+      if (!dest || !Array.isArray(dest.cityAliases)) return;
+      dest.cityAliases.splice(idx, 1);
+      _renderAliasesTab();
+      // Auto-save remoção
+      _saveAliasesForId(id);
+    }));
+  tbody.querySelectorAll('[data-row-save]').forEach(btn => {
+    btn.disabled = true;   // só habilita após digitar
+    btn.addEventListener('click', () => _saveAliasesForId(btn.dataset.rowSave));
+  });
+}
+
+async function _saveAliasesForId(id) {
+  const dest = allDests.find(d => d.id === id);
+  if (!dest) return;
+  try {
+    await saveDestination(id, {
+      continent: dest.continent,
+      country:   dest.country,
+      city:      dest.city,
+      countryCode:   dest.countryCode,
+      continentCode: dest.continentCode,
+      notes:        dest.notes || '',
+      cityAliases:  Array.isArray(dest.cityAliases) ? dest.cityAliases : [],
+      reviewStatus: dest.reviewStatus || 'approved',
+      source:       dest.source || 'manual',
+    });
+    toast.success(`${dest.city}: variações atualizadas.`);
+    const btn = document.querySelector(`[data-row-save="${id}"]`);
+    if (btn) btn.disabled = true;
+  } catch (e) {
+    if (e?.code === 'DUPLICATE') {
+      toast.error(`"${dest.city}" colide com canônico existente "${e.mergeTargetCity}". Abra "Destinos" pra mesclar.`);
+    } else {
+      toast.error('Erro ao salvar: ' + e.message);
+    }
+  }
+}
+
 async function handleApprove(id, dest) {
   if (!dest) return;
   try {
@@ -357,6 +580,24 @@ function showDestModal(dest) {
           <input type="text" id="dest-city" class="filter-select" style="width:100%;"
             placeholder="Ex: Paris" value="${esc(dest?.city || '')}">
         </div>
+        <!-- v4.61.0 Feature A: chips de aliases inline -->
+        <div>
+          <label style="font-size:0.8125rem;font-weight:600;display:block;margin-bottom:6px;">
+            Variações de nome <span style="font-weight:400;color:var(--text-muted);">(aliases)</span>
+          </label>
+          <div id="dest-aliases-wrap" style="border:1px solid var(--border-default,var(--border-subtle));
+            border-radius:6px;padding:6px 8px;min-height:36px;display:flex;flex-wrap:wrap;gap:4px;
+            align-items:center;background:var(--bg-input,#fff);">
+            <div id="dest-aliases-chips" style="display:flex;flex-wrap:wrap;gap:4px;"></div>
+            <input type="text" id="dest-alias-input" placeholder="Digite e Enter pra adicionar (ex: Tokyo)"
+              style="flex:1;min-width:140px;border:none;outline:none;padding:3px 4px;
+              font-size:0.8125rem;background:transparent;color:var(--text-primary);">
+          </div>
+          <p style="font-size:0.7rem;color:var(--text-muted);margin:4px 0 0;line-height:1.4;">
+            Sistema reconhece estas grafias como a mesma cidade no cross-module
+            (banco, imagens, dicas). Ex: "Cape Town" como alias de "Cidade do Cabo".
+          </p>
+        </div>
         <div>
           <label style="font-size:0.8125rem;font-weight:600;display:block;margin-bottom:6px;">Notas internas</label>
           <textarea id="dest-notes" class="filter-select" style="width:100%;height:60px;resize:vertical;"
@@ -376,11 +617,65 @@ function showDestModal(dest) {
   document.getElementById('dest-modal-close')?.addEventListener('click', close);
   document.getElementById('dest-modal-cancel')?.addEventListener('click', close);
 
+  // v4.61.0 Feature A: state + render de chips de aliases
+  let aliases = Array.isArray(dest?.cityAliases) ? [...dest.cityAliases] : [];
+  function renderAliasChips() {
+    const wrap = document.getElementById('dest-aliases-chips');
+    if (!wrap) return;
+    wrap.innerHTML = aliases.map((a, i) => `
+      <span data-alias-idx="${i}" style="display:inline-flex;align-items:center;gap:4px;
+        padding:2px 8px;border-radius:999px;background:var(--brand-gold,#D4A843);
+        color:#0A1628;font-size:0.75rem;font-weight:600;">
+        ${esc(a)}
+        <button type="button" data-remove-alias="${i}" aria-label="Remover"
+          style="background:none;border:none;color:#0A1628;cursor:pointer;padding:0;
+          font-size:0.85rem;line-height:1;opacity:0.7;font-weight:700;">×</button>
+      </span>
+    `).join('');
+    wrap.querySelectorAll('[data-remove-alias]').forEach(btn =>
+      btn.addEventListener('click', () => {
+        aliases.splice(+btn.dataset.removeAlias, 1);
+        renderAliasChips();
+      }));
+  }
+  renderAliasChips();
+  const aliasInput = document.getElementById('dest-alias-input');
+  if (aliasInput) {
+    aliasInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ',') {
+        e.preventDefault();
+        const val = aliasInput.value.trim().replace(/,$/, '');
+        if (!val) return;
+        // Skip se já é a cidade canônica ou já está em aliases
+        const cityNow = document.getElementById('dest-city')?.value?.trim() || '';
+        const norm = s => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+        if (norm(val) === norm(cityNow)) { toast.info('Esse já é o nome canônico.'); aliasInput.value=''; return; }
+        if (aliases.some(a => norm(a) === norm(val))) { toast.info('Já adicionado.'); aliasInput.value=''; return; }
+        aliases.push(val);
+        renderAliasChips();
+        aliasInput.value = '';
+      }
+    });
+    // Foco visual: click no wrap delega pro input
+    document.getElementById('dest-aliases-wrap')?.addEventListener('click', (e) => {
+      if (!e.target.matches('[data-remove-alias]')) aliasInput.focus();
+    });
+  }
+
   document.getElementById('dest-modal-save')?.addEventListener('click', async () => {
     const continent = document.getElementById('dest-continent')?.value;
     const country   = document.getElementById('dest-country')?.value?.trim();
     if (!continent) { toast.error('Selecione o continente.'); return; }
     if (!country)   { toast.error('País obrigatório.'); return; }
+    // v4.61.0: pega valor pending do input de aliases (se user esqueceu de pressionar Enter)
+    const pendingAlias = (document.getElementById('dest-alias-input')?.value || '').trim();
+    if (pendingAlias) {
+      const cityNow = document.getElementById('dest-city')?.value?.trim() || '';
+      const norm = s => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+      if (norm(pendingAlias) !== norm(cityNow) && !aliases.some(a => norm(a) === norm(pendingAlias))) {
+        aliases.push(pendingAlias);
+      }
+    }
     const btn = document.getElementById('dest-modal-save');
     if (btn) { btn.disabled = true; btn.textContent = 'Salvando…'; }
     const payload = {
@@ -388,6 +683,7 @@ function showDestModal(dest) {
       country,
       city:  document.getElementById('dest-city')?.value?.trim() || '',
       notes: document.getElementById('dest-notes')?.value?.trim() || '',
+      cityAliases: aliases,   // v4.61.0
     };
     try {
       await saveDestination(dest?.id || null, payload);
