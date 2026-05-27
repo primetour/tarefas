@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 62,
-  patch: 22,
-  build: '20260527-editor-ia-incremental-proximo-dia',
+  patch: 23,
+  build: '20260527-editor-audit-fix-source-persist-state-reset',
 };
 
 /** "1.2.0" */

@@ -2165,11 +2165,20 @@ function _populateBankCountBadges() {
     const btn = badge.closest('button[data-img-q]');
     if (!btn) return;
     const q = norm(btn.dataset.imgQ || '');
-    if (!q) return;
-    const count = all.filter(img => {
-      const hay = norm([img.city, img.country, img.continent, img.name, img.placeName, ...(img.tags||[])].filter(Boolean).join(' '));
-      return q.split(/\s+/).filter(Boolean).some(w => hay.includes(w));
-    }).length;
+    let count;
+    if (!q) {
+      // v4.62.23: sem cidade (cotação ainda sem destino) mostra total do banco
+      // como dica neutra — incentiva user clicar pra ver opções disponíveis.
+      count = all.length;
+      badge.style.background = 'transparent';
+      badge.style.color = 'var(--text-muted)';
+      badge.style.border = '1px solid var(--border-subtle,#e5e7eb)';
+    } else {
+      count = all.filter(img => {
+        const hay = norm([img.city, img.country, img.continent, img.name, img.placeName, ...(img.tags||[])].filter(Boolean).join(' '));
+        return q.split(/\s+/).filter(Boolean).some(w => hay.includes(w));
+      }).length;
+    }
     if (count > 0) {
       badge.textContent = count;
       badge.style.display = '';
@@ -2913,6 +2922,10 @@ function collectFormData() {
         });
       });
       days.push({
+        // v4.62.23 fix: preserva meta-fields que não estão no form (source,
+        // bankRefId, bankRefTitle, bankRefDayIdx). Sem o spread, esses campos
+        // sumiam no save → badge UI mostrava mas Firestore ficava com null.
+        ...existing,
         dayNumber:     existing.dayNumber || idx + 1,
         date:          existing.date || (data.travel.startDate ? addDaysToDate(data.travel.startDate, idx) : ''),
         city:          card.querySelector('[data-day="city"]')?.value?.trim() || existing.city || '',
@@ -5734,6 +5747,10 @@ export function destroyRoteiroEditor() {
   currentRoteiro = null;
   isDirty = false;
   allDestinations = [];
+  // v4.62.23: reset state module-scope pra não contaminar próxima cotação.
+  // _bankImagesCache fica (pode reutilizar entre cotações) mas sub-tab Serviços
+  // volta pro default 'aereo'.
+  _servicosActiveSubtab = 'aereo';
   allAreas = [];
   activeSection = 0;
 }
