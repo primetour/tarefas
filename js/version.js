@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 62,
-  patch: 0,
-  build: '20260527-bank-destinations-MN-link-normalize-cities',
+  patch: 1,
+  build: '20260527-bank-triage-no-geo-bolsao-fix-modal',
 };
 
 /** "1.2.0" */

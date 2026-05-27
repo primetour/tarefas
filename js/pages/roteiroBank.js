@@ -62,6 +62,18 @@ function expiredBadge(doc) {
     title="Validade expirou em ${esc(doc.validity?.endDate || '')} — revisar">⚠ Expirado</span>`;
 }
 
+/** v4.62.1: badge "Sem âncora geo" — Envision não trouxe country/cidade
+ *  resolvível. Master precisa abrir Corrigir geo (botão na linha de ações). */
+function noGeoBadge(doc) {
+  const hasDestIds = Array.isArray(doc.geo?.destinationIds) && doc.geo.destinationIds.length > 0;
+  const hasCountries = Array.isArray(doc.geo?.countries) && doc.geo.countries.length > 0;
+  if (hasDestIds && hasCountries) return '';
+  const missing = !hasCountries ? 'país' : 'destinations';
+  return `<span style="display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;
+    font-size:0.72rem;font-weight:600;background:var(--badge-warn-bg,rgba(245,158,11,0.16));color:var(--color-warn-text,#92400e);margin-left:6px;"
+    title="Sem ${missing} resolvido (Envision não trouxe). Use 🌍 Corrigir geo pra atribuir manualmente.">⚠ Sem geo</span>`;
+}
+
 // v4.59.8 (CLAUDE.md §11.m): emoji → SVG inline (Heroicons style 16px, stroke 1.75).
 // Acessível + consistente em qualquer SO/fonte.
 const ICONS = {
@@ -135,6 +147,7 @@ function cardHTML(d) {
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
           ${statusBadge(d.status)}
           ${expiredBadge(d)}
+          ${noGeoBadge(d)}
           ${d.collectionLabel ? `<span style="color:var(--brand-gold,#D4A843);font-size:0.7rem;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;">${esc(d.collectionLabel)}</span>` : ''}
         </div>
         <h3 style="margin:0;font-size:1rem;font-weight:700;color:var(--text-primary);line-height:1.3;">
@@ -156,6 +169,11 @@ function cardHTML(d) {
             ${actionIcon('download')}
           </button>
           ${canEdit() ? `
+          ${(!(d.geo?.destinationIds?.length) || !(d.geo?.countries?.length)) ? `
+          <button class="btn-icon-action" data-action="fix-geo" data-id="${esc(d.id)}" title="🌍 Corrigir geo (atribuir país + cidades pra vincular cross-module)"
+            style="padding:6px;background:var(--badge-warn-bg,rgba(245,158,11,0.12));border:1px solid var(--color-warn-text,#92400e);border-radius:6px;cursor:pointer;color:var(--color-warn-text,#92400e);font-size:0.78rem;font-weight:600;">
+            🌍
+          </button>` : ''}
           <button class="btn-icon-action" data-action="duplicate" data-id="${esc(d.id)}" title="Duplicar"
             style="padding:6px;background:transparent;border:1px solid var(--border-subtle);border-radius:6px;cursor:pointer;color:var(--text-secondary);">
             ${actionIcon('duplicate')}
@@ -214,7 +232,14 @@ function sortFn(mode) {
 
 function applyFilters() {
   const filtered = state.list.filter(d => {
-    if (state.filter.status && d.status !== state.filter.status) return false;
+    // v4.62.1: pill especial "no-geo" — não é status real, é filtro de qualidade
+    if (state.filter.status === 'no-geo') {
+      const hasDestIds = Array.isArray(d.geo?.destinationIds) && d.geo.destinationIds.length > 0;
+      const hasCountries = Array.isArray(d.geo?.countries) && d.geo.countries.length > 0;
+      if (hasDestIds && hasCountries) return false;
+    } else if (state.filter.status && d.status !== state.filter.status) {
+      return false;
+    }
     if (state.filter.country && !d.geo.countries.includes(state.filter.country)) return false;
     if (state.filter.collection && d.collectionLabel !== state.filter.collection) return false;
     if (state.filter.search) {
@@ -302,6 +327,186 @@ function refreshGrid(container, { resetPage = false } = {}) {
   _setupScrollObserver(container);
 }
 
+/**
+ * v4.62.1 — Bolsão de triagem geo. Modal pra master atribuir país + cidades
+ * num roteiro que Envision deixou sem âncora.
+ *
+ * Fluxo:
+ *   1. Master vê pill "⚠ Sem âncora geo" → filtra roteiros sem geo.destinationIds
+ *   2. Clica botão 🌍 no card → abre este modal
+ *   3. Atribui país (datalist SSOT) + lista cidades (1 por linha)
+ *   4. Save: pra cada cidade, normalizeCityName + findDestinationByLabel
+ *      (bate alias) ou cria pending banco-auto + popula geo.destinationIds[]
+ *   5. Card perde badge "Sem geo" + ganha N destinations
+ */
+async function _openFixGeoModal(roteiro, container) {
+  const [{ modal }, { COUNTRIES }, { resolveCountry, findDestinationByLabel, createPendingDestination }, { saveRoteiroBank }] = await Promise.all([
+    import('../components/modal.js'),
+    import('../data/countries.js'),
+    import('../services/geoResolver.js'),
+    import('../services/roteiroBank.js'),
+  ]);
+
+  // Pre-fill: country atual (se houver) + cities atuais
+  const currentCountry = (roteiro.geo?.countries || [])[0] || '';
+  const currentCities = (roteiro.geo?.cities || []).map(c => c.city).filter(Boolean).join('\n');
+
+  const datalistHTML = COUNTRIES.slice()
+    .sort((a,b) => a.pt.localeCompare(b.pt, 'pt-BR'))
+    .map(c => `<option value="${esc(c.pt)}">${esc(c.en)}</option>`).join('');
+
+  let handle;
+  return new Promise(resolve => {
+    handle = modal.open({
+      title: '🌍 Corrigir geo do roteiro',
+      size: 'md',
+      closeOnEsc: true,
+      content: `
+        <div style="line-height:1.5;">
+          <p style="margin:0 0 10px;font-size:0.85rem;color:var(--text-muted);">
+            <strong>Roteiro:</strong> ${esc(roteiro.title || '(sem título)')}
+          </p>
+          <p style="margin:0 0 14px;font-size:0.78rem;color:var(--text-muted);">
+            Envision não trouxe geo resolvível. Atribua país + cidades pra
+            vincular este roteiro ao banco de destinos (cross-module).
+          </p>
+
+          <div style="margin-bottom:14px;">
+            <label style="display:block;font-size:0.8rem;font-weight:600;margin-bottom:4px;">
+              País * <span style="font-weight:400;color:var(--text-muted);">— digite ou escolha</span>
+            </label>
+            <input type="text" id="fg-country" class="form-input"
+              list="fg-countries-datalist" autocomplete="off"
+              placeholder="Ex: Argentina"
+              value="${esc(currentCountry)}"
+              style="width:100%;padding:8px 10px;border:1px solid var(--border-default,var(--border-subtle));border-radius:6px;">
+            <datalist id="fg-countries-datalist">${datalistHTML}</datalist>
+            <div id="fg-country-feedback" style="font-size:0.7rem;margin-top:4px;min-height:14px;"></div>
+          </div>
+
+          <div>
+            <label style="display:block;font-size:0.8rem;font-weight:600;margin-bottom:4px;">
+              Cidades — <span style="font-weight:400;color:var(--text-muted);">uma por linha</span>
+            </label>
+            <textarea id="fg-cities" rows="6" placeholder="Cusco&#10;Lima&#10;Aguas Calientes"
+              style="width:100%;padding:8px 10px;border:1px solid var(--border-default,var(--border-subtle));border-radius:6px;font-family:inherit;font-size:0.85rem;resize:vertical;">${esc(currentCities)}</textarea>
+            <p style="font-size:0.7rem;color:var(--text-muted);margin:4px 0 0;">
+              Cidades existentes (com alias) são reutilizadas. Novas viram pendentes
+              em Destinos pra revisão master.
+            </p>
+          </div>
+        </div>
+      `,
+      footer: [
+        { label: 'Cancelar', class: 'btn-secondary' },
+        { label: 'Salvar e vincular', class: 'btn-primary', closeOnClick: false, onClick: async () => {
+          const countryRaw = document.getElementById('fg-country')?.value?.trim() || '';
+          const citiesRaw  = document.getElementById('fg-cities')?.value?.trim() || '';
+          const resolved = resolveCountry(countryRaw);
+          if (!resolved) {
+            toast.error(`"${countryRaw}" não é um país reconhecido. Escolha da lista.`);
+            return;
+          }
+          const cityLines = citiesRaw.split('\n').map(s => s.trim()).filter(Boolean);
+          if (!cityLines.length) {
+            toast.error('Pelo menos 1 cidade obrigatória.');
+            return;
+          }
+          // Dedup case-insens
+          const norm = s => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+          const seen = new Set();
+          const atomicCities = [];
+          for (const c of cityLines) {
+            const k = norm(c);
+            if (!seen.has(k)) { seen.add(k); atomicCities.push(c); }
+          }
+
+          // Pra cada cidade: findDestinationByLabel ou criar pending
+          const destinationIds = [];
+          const newCitiesObj = [];
+          let reused = 0, created = 0;
+          for (let i = 0; i < atomicCities.length; i++) {
+            const city = atomicCities[i];
+            try {
+              const existing = await findDestinationByLabel({ country: resolved.pt, city });
+              let destId;
+              if (existing?.id) { destId = existing.id; reused++; }
+              else {
+                const newDest = await createPendingDestination(
+                  { country: resolved.pt, city },
+                  { actorId: 'fix-geo-modal' }
+                );
+                destId = newDest?.id;
+                if (destId) created++;
+              }
+              if (destId && !destinationIds.includes(destId)) destinationIds.push(destId);
+              newCitiesObj.push({
+                city, country: resolved.pt,
+                continent: '', nights: (roteiro.geo?.cities?.[i]?.nights) || 0,
+                countryCode: resolved.code, locationId: null, iata: '',
+              });
+            } catch (err) {
+              console.warn('[fix-geo] cidade falhou:', city, err?.message);
+            }
+          }
+
+          // Update doc completo
+          try {
+            const updated = {
+              ...roteiro,
+              geo: {
+                ...(roteiro.geo || {}),
+                countries:      [resolved.pt],
+                countryCodes:   [resolved.code],
+                continentCodes: [resolved.continent],
+                cities:         newCitiesObj,
+                destinationIds,
+                fixedGeoAt:     new Date().toISOString(),
+              },
+            };
+            await saveRoteiroBank(roteiro.id, updated);
+            toast.success(`Geo corrigido: ${destinationIds.length} destinos (${reused} reusados${created ? `, ${created} novos pending` : ''}).`);
+            // Atualiza state.list local
+            const local = state.list.find(d => d.id === roteiro.id);
+            if (local) {
+              local.geo = updated.geo;
+            }
+            refreshGrid(container);
+            handle?.close?.();
+            resolve();
+          } catch (err) {
+            console.error('[fix-geo] save falhou:', err);
+            toast.error('Falha ao salvar: ' + (err?.message || err));
+          }
+        }},
+      ],
+      onClose: () => resolve(),
+    });
+
+    // Wire validação live do país
+    setTimeout(() => {
+      const countryEl = document.getElementById('fg-country');
+      const fbEl = document.getElementById('fg-country-feedback');
+      if (!countryEl || !fbEl) return;
+      const validate = () => {
+        const raw = countryEl.value.trim();
+        if (!raw) { fbEl.textContent = ''; countryEl.style.borderColor = ''; return; }
+        const r = resolveCountry(raw);
+        if (r) {
+          fbEl.innerHTML = `<span style="color:var(--color-success,#10b981);">✓ ${esc(r.pt)} (${esc(r.code)})</span>`;
+          countryEl.style.borderColor = 'var(--color-success,#10b981)';
+        } else {
+          fbEl.innerHTML = `<span style="color:var(--color-danger,#dc2626);">⚠ não está na lista</span>`;
+          countryEl.style.borderColor = 'var(--color-danger,#dc2626)';
+        }
+      };
+      countryEl.addEventListener('input', validate);
+      countryEl.addEventListener('change', validate);
+      validate();
+    }, 60);
+  });
+}
+
 export async function renderRoteiroBank(container) {
   // v4.50.10+ Aborta listeners de invocações anteriores (mesma rota re-aberta).
   if (state.abortCtrl) state.abortCtrl.abort();
@@ -325,11 +530,16 @@ export async function renderRoteiroBank(container) {
       ${renderFilterBar({
         search: { id: 'rb-search', value: state.filter.search, placeholder: 'Buscar por título, cidade, país ou tag…' },
         statusPills: [
-          { value: '',         label: 'Todos' },
-          { value: 'approved', label: 'Publicados' },
-          { value: 'review',   label: 'Em revisão' },
-          { value: 'draft',    label: 'Rascunhos' },
-          { value: 'archived', label: 'Arquivados' },
+          { value: '',          label: 'Todos' },
+          { value: 'approved',  label: 'Publicados' },
+          { value: 'review',    label: 'Em revisão' },
+          { value: 'draft',     label: 'Rascunhos' },
+          { value: 'archived',  label: 'Arquivados' },
+          // v4.62.1: bolsão de triagem geo (52 roteiros sem âncora cross-module).
+          // Especial: não é status do doc, é um "filtro virtual" de qualidade
+          // de dados. applyFilters detecta valor 'no-geo' e filtra docs com
+          // geo.destinationIds vazio OU geo.countries vazio.
+          { value: 'no-geo',    label: '⚠ Sem âncora geo', count: (state.list||[]).filter(d => !(d.geo?.destinationIds?.length) || !(d.geo?.countries?.length)).length },
         ],
         activeStatus: state.filter.status,
         selects: [
@@ -513,6 +723,13 @@ export async function renderRoteiroBank(container) {
           if (d) d.status = 'archived';
           refreshGrid(container);   // v4.59.5
         } catch (err) { toast.error(err.message); }
+        return;
+      }
+      // v4.62.1: bolsão de triagem geo
+      if (action === 'fix-geo') {
+        const d = state.list.find(x => x.id === id);
+        if (!d) { toast.error('Roteiro não encontrado.'); return; }
+        await _openFixGeoModal(d, container);
         return;
       }
       return;

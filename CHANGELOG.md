@@ -6,6 +6,62 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.62.1+20260527-bank-triage-no-geo-bolsao-fix-modal] — 2026-05-27
+
+Release **FEATURE/UX** — bolsão de triagem geo no Banco. Materializa filosofia do Renê: *"envision é a fonte da verdade dos roteiros, mas o nosso sistema é responsável por tratar dados que nao estao bacanas... os casos em que nao tem ancora, precisamos de um bolsao que a gente corrija"*.
+
+**Filosofia agora explícita em código + UI**:
+- **Envision** = source of truth (raw)
+- **PRIMETOUR** = camada de tratamento (normaliza, vincula, organiza pra UX)
+- **Bolsão** = fila visível de roteiros que precisam atenção do curador master
+
+**Implementação** (`js/pages/roteiroBank.js`):
+
+### Pill especial `⚠ Sem âncora geo`
+
+Novo status pill ao lado de Publicados/Em revisão/etc:
+- Mostra contador dinâmico (ex: "⚠ Sem âncora geo (52)")
+- `applyFilters` trata como filtro virtual: `geo.destinationIds=[]` OU `geo.countries=[]`
+- Não é status real do doc — é filtro de qualidade de dados
+
+### Badge `⚠ Sem geo` nos cards
+
+Card de roteiro sem âncora ganha badge âmbar ao lado do status, com tooltip explicativo. Conta `país` vs `destinations` faltantes.
+
+### Botão `🌍 Corrigir geo` no card (canEdit)
+
+Só aparece em cards sem âncora. Background âmbar pra destacar. Tooltip: "Atribuir país + cidades pra vincular cross-module".
+
+### Modal `_openFixGeoModal`
+
+UX dedicado pra triagem rápida (mais simples que abrir o editor inteiro):
+
+- **País** (datalist SSOT 196 países + validação live: `✓ Brasil (BR)` verde / `⚠ não está na lista` vermelho)
+- **Cidades** (textarea — 1 por linha)
+- Save flow:
+  1. Resolve country via `resolveCountry` (rejeita typo)
+  2. Dedup case-insens cities (sem acentos)
+  3. Pra cada cidade: `findDestinationByLabel` (bate aliases!) → reusa, OU `createPendingDestination`
+  4. `saveRoteiroBank` com `geo.{countries, countryCodes, continentCodes, cities, destinationIds}` populados + `fixedGeoAt` timestamp
+- Toast final: `"Geo corrigido: N destinos (M reusados, K novos pending)"`
+- Re-render imediato do card sem badge
+
+**Regra de negócio agora ON THE TABLE**:
+
+1. Cada save de roteiro do banco (Envision) normaliza cidade via `normalizeCityName` (split trecho + strip parênteses)
+2. Cidades atômicas resolvidas → `findDestinationByLabel` (alias-aware)
+3. Match → reusa ID canônico; sem match → cria pending `banco-auto` em `portal_destinations`
+4. Master vê pending em `#portal-destinations → Pendentes` e aprova/edita
+5. Roteiros sem `country` Envision ficam em **bolsão** `⚠ Sem âncora geo`
+6. Master abre cada um via `🌍 Corrigir geo` → atribui país + cidades → backfill ad-hoc dispara o mesmo fluxo (3+4)
+7. Doc fica vinculado → some do bolsão automaticamente
+
+**Estado atual prod** (post-v4.62.0):
+- 52 roteiros sem âncora vão aparecer no bolsão hoje (= os 52 sem `country` Envision)
+- Master pode triar 1 a 1 ou em batch (deixa modal aberto, salva, abre próximo)
+
+---
+
 ## [4.62.0+20260527-bank-destinations-MN-link-normalize-cities] — 2026-05-27
 
 Release **MINOR/DATA** — fecha vinculação cross-module roteiros_bank ↔ portal_destinations + normaliza cidades do Envision em atômicas.
