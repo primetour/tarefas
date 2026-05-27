@@ -7,6 +7,7 @@ import {
   collection, doc, getDoc, getDocs, setDoc, addDoc,
   updateDoc, deleteDoc, query, where, orderBy,
   serverTimestamp, increment, limit, writeBatch,
+  arrayRemove, arrayUnion,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { db }    from '../firebase.js';
 import { store } from '../store.js';
@@ -674,6 +675,38 @@ export async function deleteDestination(id) {
     }
   } catch (e) {
     console.warn('[deleteDestination] cleanup portal_images.destinationId falhou:', e?.message);
+  }
+
+  // v4.62.4 CRÍTICO: cleanup roteiros_bank.geo.destinationIds[].
+  // Após v4.62.0 (backfill M:N, 528 refs em 184 roteiros), deletar destination
+  // sem cleanup deixa IDs órfãos no array dos roteiros — UI mostra contagem
+  // errada, filtros (array-contains) retornam roteiro com FK morta, modal
+  // "Roteiros vinculados (N)" cita doc inexistente.
+  // Pattern: array-contains query + arrayRemove + flag agregada pra UI
+  // mostrar warning ("este roteiro tinha N destinos, X foi removido").
+  // Bolsão de triagem geo (banco "sem âncora geo") absorve roteiros que ficam
+  // com array vazio após cleanup — fluxo natural sem intervenção manual.
+  try {
+    const bankSnap = await getDocs(query(
+      collection(db, 'roteiros_bank'),
+      where('geo.destinationIds', 'array-contains', id),
+      limit(500),
+    ));
+    if (!bankSnap.empty) {
+      const batch = writeBatch(db);
+      bankSnap.forEach(d => {
+        batch.update(d.ref, {
+          'geo.destinationIds':  arrayRemove(id),
+          'geo.deletedDestRefs': arrayUnion(
+            `${id}::${destLabel || 'sem-label'}::${new Date().toISOString().slice(0, 10)}`,
+          ),
+          'geo.hasDeletedRefs':  true,
+        });
+      });
+      await batch.commit();
+    }
+  } catch (e) {
+    console.warn('[deleteDestination] cleanup roteiros_bank.geo.destinationIds falhou:', e?.message);
   }
 }
 

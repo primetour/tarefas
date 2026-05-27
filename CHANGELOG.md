@@ -6,6 +6,100 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.62.4+20260527-deletedestination-fk-cleanup-roteiros-bank] — 2026-05-27
+
+Release **CRÍTICA** — gap de integridade referencial pós v4.62.0 (M:N anchoring).
+
+**Bug latente**: `deleteDestination` em `js/services/portal.js` (v4.57.39) cobria
+cleanup de `portal_tips.destinationId` + `portal_images.destinationId`, MAS não
+existia ainda quando `roteiros_bank.geo.destinationIds[]` foi introduzido em
+v4.62.0. Resultado: deletar 1 destination ancorada deixaria refs órfãs em até
+N roteiros (média ~2-3 refs por roteiro pós-backfill v4.62.0 = 528 refs / 184
+roteiros). Sintomas: modal "Roteiros vinculados (N)" cita doc inexistente,
+filtro `array-contains` retorna match com FK morta, contagem incorreta na
+listagem de destinations.
+
+### Fix em 2 frentes
+
+#### 1. FK cleanup automático on-delete (`js/services/portal.js`)
+
+Estende `deleteDestination(id)` com terceiro bloco try/catch (padrão idêntico
+ao de `portal_tips` e `portal_images` linhas 634-677):
+
+```js
+const bankSnap = await getDocs(query(
+  collection(db, 'roteiros_bank'),
+  where('geo.destinationIds', 'array-contains', id),
+  limit(500),
+));
+batch.update(d.ref, {
+  'geo.destinationIds':  arrayRemove(id),
+  'geo.deletedDestRefs': arrayUnion(`${id}::${destLabel}::${YYYY-MM-DD}`),
+  'geo.hasDeletedRefs':  true,
+});
+```
+
+- `arrayRemove` atômico (Firestore primitivo) — sem race condition se múltiplos
+  destinations forem deletados em paralelo
+- `geo.deletedDestRefs[]` preserva histórico (id + label + data) pra auditoria
+  futura — útil pra responder "por que esse roteiro perdeu o destino X?"
+- `geo.hasDeletedRefs: true` flag pra UI flagar warning ("este roteiro tinha
+  destinos removidos") — preparado pra feature opcional v4.62.5+
+- Roteiros que ficam com `destinationIds=[]` após cleanup caem automaticamente
+  no bolsão "⚠ Sem âncora geo" do Banco (v4.62.1) — fluxo natural, master
+  re-ancora via modal Corrigir geo
+
+Imports: adicionados `arrayRemove` + `arrayUnion` do firebase-firestore.js
+v10.12.2 (já era usado em `mergeDestinations` linhas 574-602 mas via dynamic
+import — agora consolidado no top-level pra reuso).
+
+#### 2. Backfill idempotente (`functions/cleanup-orphan-destinationIds.cjs`)
+
+Script Admin SDK que detecta órfãs existentes (caso tenha havido delete entre
+v4.62.0 e v4.62.4) e limpa em batch. Padrão dry-run + apply (CLAUDE.md §14.e):
+
+```bash
+node cleanup-orphan-destinationIds.cjs              # dry-run, lista órfãs
+node cleanup-orphan-destinationIds.cjs --apply      # escreve
+```
+
+Execução em produção 2026-05-27: **0 órfãs detectadas** (374 destinations
+válidos vs 528 refs em 236 roteiros — 100% consistente). Resultado esperado
+porque nenhum destination foi deletado entre v4.62.0 e v4.62.4.
+
+### Catálogo FK cleanup completo de deleteDestination (pós v4.62.4)
+
+| Collection FK | Campo | Estratégia | Flag UI |
+|---|---|---|---|
+| `portal_tips` | `destinationId` (single) | `null` + `destinationDeleted:true` | `destinationDeletedLabel` |
+| `portal_images` | `destinationId` (single) | `null` + `destinationDeleted:true` | (preserva imagem) |
+| `roteiros_bank` | `geo.destinationIds[]` (array) | `arrayRemove(id)` + `hasDeletedRefs:true` | `geo.deletedDestRefs[]` |
+
+Padrão consolidado segue CLAUDE.md §13.a (FK cleanup cross-collection com
+try/catch independente por coleção — falha numa não bloqueia as outras).
+
+### Arquivos tocados
+
+- `js/services/portal.js`: imports + 3º bloco cleanup em `deleteDestination`
+- `js/version.js`: 4.62.3 → 4.62.4
+- `index.html`: cache-bust
+- `functions/cleanup-orphan-destinationIds.cjs`: novo (backfill defensivo)
+- `CHANGELOG.md`: este bloco
+
+### Lição CLAUDE.md §13.a expandida
+
+Pattern "FK cleanup cross-collection" agora cobre **3 shapes de FK**:
+- `single string field` (zera + flag) — portal_tips, portal_images
+- `string em array` (arrayRemove + log) — roteiros_bank.geo.destinationIds
+- `objeto em array aninhado` (read-modify-write filter) — goals.metaLinks
+
+Sempre que adicionar collection nova que linka a `portal_destinations` (ou
+outra collection com `delete` UI), ESTENDER `deleteDestination` com mais um
+bloco try/catch idêntico. Audit obrigatório do catálogo acima a cada release
+que toca schema cross-module.
+
+---
+
 ## [4.62.3+20260527-destinations-pending-source-badge-sort-recent] — 2026-05-27
 
 Release **UX/CLAREZA** — destinos pendentes ficavam confusos pra distinguir origem.

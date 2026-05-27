@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 62,
-  patch: 3,
-  build: '20260527-destinations-pending-source-badge-sort-recent',
+  patch: 4,
+  build: '20260527-deletedestination-fk-cleanup-roteiros-bank',
 };
 
 /** "1.2.0" */
