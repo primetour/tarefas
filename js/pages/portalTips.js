@@ -428,7 +428,7 @@ async function initPortalForm() {
     const continent = document.getElementById('portal-continent')?.value;
     const country   = document.getElementById('portal-country')?.value;
     const city      = document.getElementById('portal-city')?.value;
-    const dests     = await fetchDestinations({ continent, country });
+    const dests     = await fetchDestinations({ continent, country, reviewStatus: 'approved' });
     const dest      = city ? dests.find(d => d.city === city) : dests.find(d => !d.city) || dests[0];
     if (dest) await updateSegments(dest.id);
     updatePreview();
@@ -465,7 +465,7 @@ async function onContinentChange() {
   citySel.disabled     = true;
 
   if (!continent) return;
-  const dests = await fetchDestinations({ continent });
+  const dests = await fetchDestinations({ continent, reviewStatus: 'approved' });
   const countries = [...new Set(dests.map(d => d.country).filter(Boolean))].sort();
   countrySel.innerHTML = `<option value="">Selecione o país</option>` +
     countries.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
@@ -482,7 +482,7 @@ async function onCountryChange() {
   citySel.disabled  = !country;
   if (!country) { await updateSegments(null); return; }
 
-  const dests  = await fetchDestinations({ continent, country });
+  const dests  = await fetchDestinations({ continent, country, reviewStatus: 'approved' });
   const cities = dests.map(d => d.city).filter(Boolean).sort();
   if (cities.length) {
     citySel.innerHTML = `<option value="">Qualquer país (sem cidade específica)</option>` +
@@ -534,7 +534,7 @@ function addExtraDestination() {
       const cont = sel.value;
       const countrySel = div.querySelector('.extra-country');
       countrySel.innerHTML = '<option value="">Carregando…</option>';
-      const dests = await fetchDestinations({ continent: cont });
+      const dests = await fetchDestinations({ continent: cont, reviewStatus: 'approved' });
       const countries = [...new Set(dests.map(d => d.country).filter(Boolean))].sort();
       countrySel.innerHTML = `<option value="">País</option>` +
         countries.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
@@ -609,7 +609,7 @@ async function updatePreview() {
   </div>`;
 
   // Find destination
-  const dests = await fetchDestinations({ continent, country });
+  const dests = await fetchDestinations({ continent, country, reviewStatus: 'approved' });
   const dest  = city ? dests.find(d => d.city === city) : dests[0];
   if (!dest) {
     card.innerHTML = `<div style="color:var(--text-muted);font-size:0.875rem;text-align:center;padding:20px;">
@@ -685,7 +685,7 @@ async function handleGenerate() {
   if (!segments.length){ toast.error('Selecione ao menos um segmento.'); return; }
 
   // Resolve destination + tip
-  const dests = await fetchDestinations({ continent, country });
+  const dests = await fetchDestinations({ continent, country, reviewStatus: 'approved' });
   const dest  = city ? dests.find(d => d.city === city) : dests.find(d => !d.city) || dests[0];
   if (!dest) { toast.error('Destino não encontrado.'); return; }
 
@@ -699,7 +699,7 @@ async function handleGenerate() {
     const eCoun = block.querySelector('.extra-country')?.value;
     const eCity = block.querySelector('.extra-city')?.value;
     if (!eCoun) continue;
-    const ed = await fetchDestinations({ continent: eCont, country: eCoun });
+    const ed = await fetchDestinations({ continent: eCont, country: eCoun, reviewStatus: 'approved' });
     const edest = eCity ? ed.find(d => d.city === eCity) : ed.find(d => !d.city) || ed[0];
     if (!edest) continue;
     const etip = await fetchTip(edest.id);

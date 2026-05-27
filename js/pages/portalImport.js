@@ -829,6 +829,15 @@ function openInlineCadastrarModal(key, byDest, content) {
       </div>`;
       await renderReviewBody(byDest, content);
     } catch (e) {
+      // v4.61.3: trata DUPLICATE silenciosamente — já existe canônico,
+      // tip pode usar o existing.
+      if (e?.code === 'DUPLICATE' || e?.message?.startsWith('Já existe')) {
+        toast.info(`"${city}" já existe no banco (canônico "${e.mergeTargetCity || city}"). Usando o existente.`);
+        modal.remove();
+        content.innerHTML = `<div style="padding:20px;text-align:center;color:var(--text-muted);">🔄 Re-verificando…</div>`;
+        await renderReviewBody(byDest, content);
+        return;
+      }
       console.error('[inline cadastrar]', e);
       toast.error('Falha ao salvar: ' + (e?.message || ''));
       saveBtn.disabled = false; saveBtn.textContent = 'Salvar destino';

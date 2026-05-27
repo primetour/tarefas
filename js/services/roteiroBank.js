@@ -747,28 +747,73 @@ export async function ensureBankHero(id, bankDoc) {
  *
  * Usado pelo editor / import pra manter `geo.destinationIds` sincronizado.
  */
+/**
+ * v4.61.3 (refactor) — usa SSOT geoResolver + bate em cityAliases ANTES de criar
+ * novo doc. Crítico: antes criava via setDoc direto bypassando duplicate check
+ * e sem `countryCode`/`continentCode` ISO, gerando duplicatas silenciosas
+ * (ex: editor cria "Cape Town" mesmo já existindo doc "Cidade do Cabo" com
+ * "Cape Town" em cityAliases).
+ *
+ * Estratégia:
+ *   1. findDestinationByLabel({country, city}) — bate em city normalizada OU
+ *      em cityAliases. Se achou (incluindo via alias), retorna existing.
+ *   2. Não achou → cria pending com schema v4.59+ (countryCode/continentCode
+ *      via resolveCountry, source='banco-auto', reviewStatus='pending').
+ *   3. Sem canManageDestinations → não cria (retorna null pra caller).
+ */
 export async function ensureDestination({ city, country, continent }) {
   if (!city || !country || !continent) return { destinationId: null, created: false };
-  const cityKey = slugify(city);
-  const snap = await getDocs(query(
-    collection(db, 'portal_destinations'),
-    where('country', '==', country),
-    limit(50),
-  ));
-  const match = snap.docs.find(d => {
-    const data = d.data();
-    return slugify(data.city || '') === cityKey;
-  });
-  if (match) return { destinationId: match.id, created: false };
 
-  // Não achou — tenta criar (precisa canManageDestinations)
+  // 1. Tenta achar existente via geoResolver (bate aliases também)
+  try {
+    const { findDestinationByLabel } = await import('./geoResolver.js');
+    const existing = await findDestinationByLabel({ city, country });
+    if (existing?.id) return { destinationId: existing.id, created: false };
+  } catch (e) {
+    console.warn('[ensureDestination] geoResolver lookup falhou — fallback dup-check legacy:', e?.message);
+    // Fallback legacy: match por slugify(city) + where(country)
+    const cityKey = slugify(city);
+    const snap = await getDocs(query(
+      collection(db, 'portal_destinations'),
+      where('country', '==', country),
+      limit(50),
+    ));
+    const match = snap.docs.find(d => slugify(d.data().city || '') === cityKey);
+    if (match) return { destinationId: match.id, created: false };
+  }
+
+  // 2. Não achou — tenta criar (precisa canManageDestinations)
   if (!store.canManageDestinations?.()) return { destinationId: null, created: false };
+
+  // Resolve countryCode/continentCode via SSOT
+  let countryCode = null, continentCode = null, countryPt = country, continentLabel = continent;
+  try {
+    const { resolveCountry } = await import('./geoResolver.js');
+    const c = resolveCountry(country);
+    if (c) {
+      countryCode = c.code;
+      continentCode = c.continent;
+      countryPt = c.pt;   // normaliza pro canônico pt-BR
+      // Continent label legacy a partir do continentCode (mantém schema atual)
+      const CONTINENT_LEGACY = { AF:'África', AS:'Ásia', EU:'Europa', NA:'América do Norte', SA:'América do Sul', OC:'Oceania', AN:'Antártica' };
+      if (CONTINENT_LEGACY[continentCode]) continentLabel = CONTINENT_LEGACY[continentCode];
+    }
+  } catch {}
+
   const ref = doc(collection(db, 'portal_destinations'));
-  const slug = [continent, country, city].map(slugify).filter(Boolean).join('/');
+  const slug = [continentLabel, countryPt, city].map(slugify).filter(Boolean).join('/');
   await setDoc(ref, {
-    continent, country, city, slug,
-    autoCreated: true,
-    autoCreatedSource: 'roteiro_bank',
+    continent: continentLabel,
+    country:   countryPt,
+    city:      String(city).trim(),
+    slug,
+    countryCode,
+    continentCode,
+    cityAliases: [],
+    source:      'banco-auto',          // v4.61.3: era autoCreatedSource:'roteiro_bank'
+    reviewStatus: 'pending',            // v4.61.3: consistente com populate script
+    autoCreated:       true,            // mantém compat com queries legadas
+    autoCreatedSource: 'roteiro_bank',  // idem
     createdAt: serverTimestamp(),
     createdBy: uid() || '',
     updatedAt: serverTimestamp(),

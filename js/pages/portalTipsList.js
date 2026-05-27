@@ -127,7 +127,8 @@ const TH = `padding:10px 16px;text-align:left;font-size:0.6875rem;font-weight:70
   border-bottom:1px solid var(--border-subtle);white-space:nowrap;`;
 
 async function loadData() {
-  [allTips, allDests] = await Promise.all([fetchTips(), fetchDestinations()]);
+  // v4.61.3: lista de dicas só com destinos approved (sem poluir com banco-auto pending)
+  [allTips, allDests] = await Promise.all([fetchTips(), fetchDestinations({ reviewStatus: 'approved' })]);
   renderKpis();
   renderTable();
 }

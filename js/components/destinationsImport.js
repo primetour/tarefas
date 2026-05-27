@@ -318,13 +318,14 @@ async function _doImport() {
   if (importBtn) { importBtn.disabled = true; importBtn.textContent = 'Importando…'; }
 
   const toImport = _state.parsedRows.filter(r => r._selected);
-  let ok = 0, fail = 0, mergedInBatch = 0;
+  let ok = 0, fail = 0, mergedInBatch = 0, skippedDup = 0;
   const errors = [];
 
   // 4.49.9+ Rede de segurança: mesmo se user forçar 2 linhas iguais como
   // selected (override do desmarcado automático), o existingSlugs é atualizado
   // a cada saveDestination — então a 2ª linha pega o id da 1ª e faz update
   // (merge) em vez de criar doc novo. Garante "1 destino = 1 doc" sempre.
+  // v4.61.3: trata DUPLICATE (v4.60.2) como skip-with-link em vez de falha.
   for (const r of toImport) {
     try {
       const existing = _state.existingSlugs.get(r.slug);
@@ -335,21 +336,27 @@ async function _doImport() {
         city:      r.city,
         notes:     r.notes,
       });
-      // Atualiza o map IN-MEMORY com o id retornado (ou existente)
-      // pra próxima linha igual cair em update em vez de criar duplicata
       _state.existingSlugs.set(r.slug, { id: newId || existing?.id, ...r });
       if (isUpdate) mergedInBatch++;
       ok++;
     } catch (e) {
+      // v4.61.3: DUPLICATE = lugar JÁ existe canônico em outro slug (ex: planilha
+      // tinha "Cape Town" e canônico era "Cidade do Cabo" com alias). Não é erro.
+      if (e?.code === 'DUPLICATE' && e.mergeTargetId) {
+        skippedDup++;
+        _state.existingSlugs.set(r.slug, { id: e.mergeTargetId, ...r });
+        continue;
+      }
       fail++;
       errors.push(`Linha ${r.rowNum}: ${e.message}`);
     }
   }
 
   if (fail === 0) {
-    toast.success(`✓ ${ok} destino(s) importado(s) com sucesso!`);
+    const dupNote = skippedDup ? ` · ${skippedDup} já existia (canônico)` : '';
+    toast.success(`✓ ${ok} importado(s)${dupNote}`);
   } else {
-    toast.warning(`Importação parcial: ${ok} ok, ${fail} falharam.`);
+    toast.warning(`Importação parcial: ${ok} ok, ${fail} falharam${skippedDup ? `, ${skippedDup} já existiam` : ''}.`);
     console.warn('[DestImport] errors:', errors);
   }
 

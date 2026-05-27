@@ -185,7 +185,8 @@ async function loadAll() {
 
   try {
     const [areas, dests, tips, gens, images, links] = await Promise.all([
-      fetchAreas(), fetchDestinations(), fetchTips(),
+      // v4.61.3: passa reviewStatus:'approved' pra count não inflar com 228 pending (banco-auto)
+      fetchAreas(), fetchDestinations({ reviewStatus: 'approved' }), fetchTips(),
       fetchCol('portal_generations', 2000),
       fetchCol('portal_images', 5000),
       fetchCol('portal_web_links', 200),

@@ -6,6 +6,77 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.61.3+20260526-destinations-cross-module-impact-fixes] — 2026-05-26
+
+Release **PATCH/SAFETY** — corrige impacto cross-module das releases v4.60-61 em **9 módulos consumers**.
+
+**Pergunta Renê**: *"de novo: como ficaram os outros modulos com essa alteracao em destinos? foram afetados?"*. Resposta honesta: **sim**, em 3 frentes — corrigidas todas.
+
+**3 fixes em 1 release**:
+
+### 1. CRÍTICO — `ensureDestination` bypass duplicate check + sem countryCode
+
+`js/services/roteiroBank.js` linha 750. Era chamado pelo editor do banco a cada save de roteiro (`_syncDestinationsBackground` itera cidades do roteiro → cria pending). Antes:
+- `setDoc` direto sem passar por `saveDestination` → **bypassa duplicate check** da v4.60.2.
+- Match só por `slugify(city) === slugify(city)` no mesmo país. **NÃO checa cityAliases**.
+- Cria com schema antigo (`autoCreatedSource:'roteiro_bank'` mas sem `countryCode`/`continentCode`/`reviewStatus`).
+
+Resultado: cada save de roteiro do banco com cidade nova podia **criar duplicata silenciosa** (ex: roteiro com "Cape Town" criava doc novo mesmo já existindo "Cidade do Cabo" com "Cape Town" em aliases).
+
+**Fix**:
+- Usa `findDestinationByLabel({country, city})` do geoResolver — bate em cidades canônicas E em cityAliases.
+- Match positivo → retorna existing id (zero duplicata).
+- Match negativo → cria com schema v4.59+ completo: `countryCode`/`continentCode` ISO (via resolveCountry), `source:'banco-auto'`, `reviewStatus:'pending'`, slug normalizado.
+- Mantém `autoCreated`/`autoCreatedSource` legados pra compat com queries antigas.
+- Fallback defensivo: se geoResolver falhar (improvável), cai pro slugify legacy.
+
+### 2. Pickers cross-module poluídos com pending
+
+`fetchDestinations()` default `reviewStatus:'all'` (preserva picker do editor de roteiros que precisa ver pending). Outros 6 consumers ficavam poluídos com 223 pending banco-auto. Adicionado `{ reviewStatus: 'approved' }` em:
+
+- `js/pages/portalDashboard.js:188` — count global do dashboard (antes inflado pra 284)
+- `js/pages/portalImages.js:248,902` — picker upload de imagem
+- `js/pages/portalTipsList.js:130` — lista de dicas
+- `js/pages/portalTipEditor.js` (3 spots cascade picker — sed bulk)
+- `js/pages/portalTips.js` (7 spots filtros/grupos — sed bulk)
+
+**Mantidos sem filtro** (intencional):
+- `portalDestinations.js` — UI filtra via pills explícitas (Aprovados/Pendentes/Todos)
+- `roteiroEditor.js` — consultor pode precisar de cidade pending (não bloqueia)
+- `destinationsImport.js` — dedup precisa ver tudo
+- `aiActions.js` — agent decide se usa pending
+- `portalImport.js` — wizard de review precisa ver tudo
+- `portalTipEditor.js loadDestinationById` — busca por ID (curador pode editar tip de cidade pending)
+
+### 3. Bulk imports tratam DUPLICATE
+
+`saveDestination` (v4.60.2) throw `DUPLICATE` quando bate em canônico existente. Consumers de bulk não tratavam → linha inteira falhava com toast genérico.
+
+- **`js/components/destinationsImport.js`** (excel bulk): catch DUPLICATE → guarda `existingSlugs[r.slug] = {id: e.mergeTargetId}` (próxima linha igual reusa) + incrementa `skippedDup`. Toast final mostra "✓ N importado(s) · M já existia (canônico)".
+- **`js/pages/portalImport.js`** (inline create no review): catch DUPLICATE → toast info "já existe canônico" + refaz review (tip usa o existing).
+
+**Não inclui**:
+- `aiActions.js` saveDestination — agent context pode lidar com DUPLICATE error naturalmente (raises in tool_use response). Próxima sprint melhorar.
+- `roteiroEditor.js:4315` quick-add — single doc, toast error já claro.
+
+**Matriz final** (estado v4.61.3):
+
+| Consumer | fetchDestinations | saveDestination | ensureDestination |
+|---|---|---|---|
+| portalDestinations (gestão) | all (pills filtra) | trata DUPLICATE → merge modal | — |
+| portalDashboard | **approved** | — | — |
+| portalImages picker | **approved** | — | — |
+| portalTipsList | **approved** | — | — |
+| portalTipEditor cascade | **approved** | — | — |
+| portalTips | **approved** | — | — |
+| portalImport bulk | all (review) | **DUPLICATE → skip+log** | — |
+| destinationsImport excel | all (dedup) | **DUPLICATE → skip+log** | — |
+| roteiroEditor picker | all (consultor) | — | — |
+| roteiroBankEditor save | — | — | **refactored: findByLabel + schema v4.59+** |
+| aiActions | all | TODO (próxima) | — |
+
+---
+
 ## [4.61.2+20260526-destinations-list-search-tip-filter-clear] — 2026-05-26
 
 Release **PATCH/UX** — busca por palavra + filtro de dica + botão limpar filtros na tab "Destinos".

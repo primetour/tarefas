@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 61,
-  patch: 2,
-  build: '20260526-destinations-list-search-tip-filter-clear',
+  patch: 3,
+  build: '20260526-destinations-cross-module-impact-fixes',
 };
 
 /** "1.2.0" */

@@ -190,7 +190,7 @@ async function onContinentChange() {
   citySel.disabled  = true;
   if (loadBtn) loadBtn.disabled = true;
   if (!cont) return;
-  const dests    = await fetchDestinations({ continent: cont });
+  const dests    = await fetchDestinations({ continent: cont, reviewStatus: 'approved' });
   const countries = [...new Set(dests.map(d => d.country).filter(Boolean))].sort();
   cSel.innerHTML = `<option value="">Selecione o país</option>` +
     countries.map(c=>`<option value="${esc(c)}">${esc(c)}</option>`).join('');
@@ -206,7 +206,7 @@ async function onCountryChange() {
   citySel.disabled  = true;
   if (loadBtn) loadBtn.disabled = !country;
   if (!country) return;
-  const dests  = await fetchDestinations({ continent: cont, country });
+  const dests  = await fetchDestinations({ continent: cont, country, reviewStatus: 'approved' });
   const cities = dests.map(d => d.city).filter(Boolean).sort();
   if (cities.length) {
     citySel.innerHTML = `<option value="">Nível país (sem cidade)</option>` +
@@ -223,7 +223,7 @@ async function loadDestination() {
   const status  = document.getElementById('editor-dest-status');
   if (!country) { toast.error('Selecione o país.'); return; }
   if (status) status.textContent = 'Carregando…';
-  const dests = await fetchDestinations({ continent: cont, country });
+  const dests = await fetchDestinations({ continent: cont, country, reviewStatus: 'approved' });
   const dest  = city ? dests.find(d => d.city === city) : dests.find(d => !d.city) || dests[0];
   if (!dest) { toast.error('Destino não cadastrado. Crie primeiro em Destinos.'); return; }
   await loadDestinationById(dest.id, dest);
