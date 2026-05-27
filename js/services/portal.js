@@ -341,8 +341,39 @@ export async function saveDestination(id, data) {
       .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''))
     .join('/');
   const isNew = !id;
+
+  // v4.59.0 — auto-resolve countryCode/continentCode SSOT (geographic SSOT sprint).
+  // Não destrutivo: se data já trouxe countryCode/continentCode, respeita; senão
+  // resolve a partir dos labels legados. Reader prioriza countryCode quando presente.
+  let { countryCode, continentCode, source, reviewStatus, cityAliases, envisionLocationId } = data || {};
+  if (!countryCode || !continentCode) {
+    try {
+      const { resolveCountry, resolveContinent } = await import('./geoResolver.js');
+      const country = resolveCountry(data.country);
+      if (country) {
+        countryCode    = countryCode || country.code;
+        continentCode  = continentCode || country.continent;
+      } else if (data.continent) {
+        continentCode  = continentCode || resolveContinent(data.continent);
+      }
+    } catch (e) {
+      console.warn('[saveDestination] geoResolver indisponível:', e?.message);
+    }
+  }
+  // Defaults v4.59.0: destinos criados via UI são canônicos+aprovados.
+  if (isNew) {
+    source       = source       || 'manual';
+    reviewStatus = reviewStatus || 'approved';
+  }
+
   await setDoc(ref, {
     ...data, slug,
+    ...(countryCode    !== undefined ? { countryCode }    : {}),
+    ...(continentCode  !== undefined ? { continentCode }  : {}),
+    ...(source         !== undefined ? { source }         : {}),
+    ...(reviewStatus   !== undefined ? { reviewStatus }   : {}),
+    ...(Array.isArray(cityAliases)   ? { cityAliases }    : {}),
+    ...(envisionLocationId !== undefined ? { envisionLocationId } : {}),
     updatedAt: serverTimestamp(),
     updatedBy: uid(),
     ...(isNew ? { createdAt: serverTimestamp(), createdBy: uid() } : {}),

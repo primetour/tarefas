@@ -81,9 +81,11 @@ export function emptyRoteiroBank() {
 
     /* ─── Cobertura geográfica (alinhada a portal_destinations) ─── */
     geo: {
-      continents: [],                 // ['Ásia']
-      countries:  [],                 // ['China', 'Tibete']
-      cities: [],                     // [{ city, country, continent, nights }, ...]
+      continents: [],                 // legado v4.50 — labels pt-BR ('Ásia')
+      countries:  [],                 // legado v4.50 — labels pt-BR ('China', 'Tibete')
+      countryCodes:   [],             // v4.59.3+ ISO 3166-1 alpha-2 (preferido — usar nos filtros)
+      continentCodes: [],             // v4.59.3+ UN M.49 (AF/EU/AS/NA/SA/OC/AN)
+      cities: [],                     // [{ city, country, countryCode, continent, nights }, ...]
       destinationIds: [],             // refs em portal_destinations (auto-vinculadas quando city+country bate)
     },
 
@@ -306,7 +308,7 @@ export function migrateRoteiroBank(raw) {
   for (const k of ['categories', 'days', 'excludes', 'cancellation', 'travelNotes', 'tags', 'services']) {
     if (!Array.isArray(merged[k])) merged[k] = [];
   }
-  for (const k of ['continents', 'countries', 'cities', 'destinationIds']) {
+  for (const k of ['continents', 'countries', 'countryCodes', 'continentCodes', 'cities', 'destinationIds']) {
     if (!Array.isArray(merged.geo[k])) merged.geo[k] = [];
   }
   if (!Array.isArray(merged.documentation.visas)) merged.documentation.visas = [];

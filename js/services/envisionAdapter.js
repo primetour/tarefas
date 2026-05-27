@@ -3,6 +3,8 @@
  * do roteiros_bank (PRIMETOUR).
  *
  * v4.58.0+ Sprint #93 Fase 1a.
+ * v4.59.3+ Geographic SSOT — geo.countryCodes/continentCodes ISO inseridos
+ *          via countryCodeFromLabel() (js/data/countries.js).
  *
  * Pure function. Sem dependência de auth/API/Firebase — recebe JSON,
  * retorna shape pronto pra gravar via saveRoteiroBank().
@@ -18,6 +20,8 @@
  *
  * Doc completo do mapeamento campo-a-campo: docs/ENVISION-SCHEMA-AUDIT.md §3
  */
+
+import { countryCodeFromLabel, countryContinent } from '../data/countries.js';
 
 /**
  * Mapa de entidades HTML comuns (acentos pt-BR + HTML básico).
@@ -452,11 +456,29 @@ function deriveGeo(itinerary) {
     for (const c of cityList) if (c.country) countries.add(c.country);
   }
 
+  // v4.59.3 — Geographic SSOT: resolve countryCodes (ISO 3166-1) + continentCodes
+  // a partir dos labels Envision. js/data/countries.js cobre 100% dos 53 países
+  // observados em produção (validado via functions/audit-geography-ssot.cjs).
+  const countryCodes = [];
+  for (const label of countries) {
+    const code = countryCodeFromLabel(label);
+    if (code && !countryCodes.includes(code)) countryCodes.push(code);
+  }
+  const continentCodes = [...new Set(countryCodes.map(countryContinent).filter(Boolean))];
+
+  // Enriquece cityList com countryCode (pra resolveOrCreatePendingDestination
+  // downstream usar). Não toca cityList.continent (legado, sempre '').
+  for (const c of cityList) {
+    if (c.country) c.countryCode = countryCodeFromLabel(c.country) || null;
+  }
+
   return {
-    continents: [],
-    countries:  [...countries],
-    cities:     cityList,
-    destinationIds: [],
+    continents:     [],            // legado — sempre vazio em Envision
+    countries:      [...countries], // legado — labels pt-BR
+    countryCodes,                   // v4.59.3+ ISO 3166-1 (preferido)
+    continentCodes,                 // v4.59.3+ UN M.49 (AF/EU/AS/NA/SA/OC/AN)
+    cities:         cityList,
+    destinationIds: [],             // preenchido por backfill ou _syncDestinationsBackground
   };
 }
 

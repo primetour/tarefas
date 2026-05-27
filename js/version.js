@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 58,
-  patch: 9,
-  build: '20260526-fix-africa-country-normalization',
+  minor: 59,
+  patch: 0,
+  build: '20260526-geography-ssot-foundation',
 };
 
 /** "1.2.0" */

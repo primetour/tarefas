@@ -6,6 +6,84 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.59.0+20260526-geography-ssot-foundation] — 2026-05-26
+
+Release **MINOR/SCHEMA** — Single Source of Truth (SSOT) geográfico, fundação pra cross-module consistency entre Banco de Roteiros, Portal de Dicas, Banco de Imagens, Portal de Destinos e (futuro) Gerador de Roteiros assistido por IA.
+
+**Contexto** (Renê após import Envision):
+
+> *"continentes, países e cidades precisa estar linkado ao módulo de destinos, porque banco de roteiros vai cruzar com banco de imagens, portal de dicas e gerador de roteiros... no futuro vamos gerar roteiros que vão utilizar o banco como base de conhecimento pra IA. Não podemos cogitar ter dados repetidos. Não pode ser fácil sobrescrever."*
+
+**Diagnóstico**:
+
+Antes deste release o sistema tinha **5+ representações paralelas** da mesma cidade (filtro "Tóquio" no Banco perdia imagem "Tokyo"; dica "Cidade do Cabo" não cruzava com roteiro "Cape Town"). Match exato Envision → portal_destinations era 5% (19 de 384 pairs city-country).
+
+**Arquitetura híbrida adotada**:
+
+| Camada | Lugar | Mutabilidade |
+|---|---|---|
+| Continentes (7) | `js/data/continents.js` hardcoded | Imutável |
+| Países (~196 ISO 3166-1) | `js/data/countries.js` hardcoded | Imutável + adições raras |
+| Cidades | `portal_destinations` Firestore | Curador master controla |
+
+**Foundation files novos**:
+
+- `js/data/continents.js`: 7 continentes com `{ code: 'AF'..'SA', pt, en }` + helpers `continentCodeFromLabel`, `continentLabel`.
+- `js/data/countries.js`: 196 entries ISO 3166-1 alpha-2 + 4 constituintes UK (GB-ENG, GB-SCT, GB-WLS, GB-NIR — Envision usa nos campos) + aliases (versões com/sem acento, en/pt, typos comuns). Helpers `countryCodeFromLabel`, `countryLabel`, `countryLabelEn`, `countryContinent`, `countriesByContinent`.
+- `js/services/geoResolver.js`: helpers centralizados pra resolver labels arbitrários → códigos SSOT + integração Firestore. `resolveCountry`, `resolveContinent`, `resolveGeoPair`, `resolveCountryCodes`, `findDestinationByLabel`, `createPendingDestination`, `resolveOrCreatePendingDestination`, `batchResolveDestinations`. Mapa `LEGACY_CONTINENT_TO_CODE` traduz pseudo-continentes do sistema atual ("Brasil"→SA, "Caribe"→NA, "Oriente Médio"→null).
+
+**Schema extension (não-destrutivo)**:
+
+- `portal_destinations`: campos novos `countryCode` (ISO), `continentCode` (UN M.49), `cityAliases[]`, `source` (`'manual'|'envision-auto'|'imported'`), `reviewStatus` (`'approved'|'pending'`), `envisionLocationId`. Legados `country`, `continent`, `city` mantidos pra retrocompat total. `saveDestination` auto-resolve códigos via geoResolver quando não informados.
+- `roteiros_bank`: `geo.countryCodes[]`, `geo.continentCodes[]` (preferido nos filtros). `geo.countries/continents` mantidos legado. `geo.cities[].countryCode` enriquecido.
+- `portal_images`, `portal_tips`: `countryCode`, `continentCode` adicionados.
+
+**Backfill cross-modules** (`functions/backfill-geo-codes.cjs`, idempotente, `--apply` flag):
+
+- `portal_destinations`: 61/61 atualizados (100%, zero unresolved)
+- `roteiros_bank`:       236/236 atualizados (100%)
+- `portal_images`:       190/192 atualizados (2 sem `country` setado, skipped)
+- `portal_tips`:         9/9 atualizados (100%)
+
+**Adapter Envision (`js/services/envisionAdapter.js`)**:
+
+- `deriveGeo()` agora popula `geo.countryCodes` + `geo.continentCodes` ISO automaticamente.
+- `cityList[].countryCode` enriquecido pra futuras vinculações com `portal_destinations`.
+
+**Validação SSOT contra produção** (`functions/audit-geography-ssot.cjs`):
+
+- 100% match em todas as 4 collections (53 países roteiros_bank + 29 destinations + 13 images + 7 tips).
+- Normalizações automáticas detectadas: "Zimbabue"→"Zimbábue" (ZW), "Península Malaia"→"Malásia" (MY), "Coréia do Sul"→"Coreia do Sul" (KR), "Inglaterra"/"Escócia"→mantidos como GB-ENG/GB-SCT.
+
+**Arquivos novos**:
+
+- `js/data/continents.js`
+- `js/data/countries.js`
+- `js/services/geoResolver.js`
+- `functions/audit-geography-ssot.cjs`
+- `functions/backfill-geo-codes.cjs`
+
+**Auditoria Banco de Roteiros** (anexa, ver `docs/AUDIT-BANCO-V459.md` — próximo release):
+
+- **5 CRÍTICOS**: filtro continente código morto, FK cleanup ausente no delete, race condition auto-save, `limit(500)` sem paginação real, hero resolve sequencial bloqueando.
+- **8 MÉDIOS**: sort dropdown, filtro coleção, editor não mostra `envisionRaw`/`services[]`, `confirm()` nativo, gradient/hex hardcoded, CONTINENTS import vestigial, indicador "Salvando" sem timer dinâmico.
+- **8 polish + 10 risk técnico**.
+- Fixes serão entregues em v4.59.6+.
+
+**Não inclui (próximos releases v4.59.x)**:
+
+- UI badge "Pendente de revisão" em `portal_destinations` (v4.59.2)
+- Auto-create de destinations pending a partir do Envision (v4.59.3)
+- Readers (filtros UI) priorizam `countryCode` (v4.59.4)
+- Documentação user-facing "Como atualizar Banco via Envision" (v4.59.5)
+- Fixes da auditoria do Banco (v4.59.6+)
+
+**Risco zero pra outros módulos**:
+
+Release v4.59.0 apenas ADICIONA campos. Nenhum reader foi modificado (continuam lendo labels legados). Foundation files isolados — só são importados em `envisionAdapter.js` e (opcionalmente em fallback) em `portal.js → saveDestination`. Backfill rodado contra prod com 0 unresolved.
+
+---
+
 ## [4.58.0+20260526-roteiros-bank-envision-schema] — 2026-05-26
 
 Release **MINOR/SCHEMA** — preparação Banco de Roteiros pra integração API Envision (Travel Agent).

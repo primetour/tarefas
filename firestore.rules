@@ -616,6 +616,12 @@ service cloud.firestore {
 
     match /portal_destinations/{docId} {
       allow read:  if isAuth();
+      // v4.59.0+ SSOT geo: write é admin-only no client.
+      // Pending destinations (reviewStatus='pending', source='envision-auto')
+      // são criadas via Admin SDK (functions/import-envision-bundle.cjs +
+      // functions/backfill-pending-destinations.cjs). Admin SDK bypassa rules,
+      // então não precisa rule liberando create pro auth não-admin.
+      // Master vê/aprova via UI (portalDestinations.js — filtro reviewStatus).
       allow write: if isAuth() && isAdmin();
     }
 
