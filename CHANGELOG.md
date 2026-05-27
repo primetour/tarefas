@@ -6,6 +6,22 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.61.4+20260527-hotfix-geoResolver-firebase-sdk-version-mismatch] — 2026-05-27
+
+Release **HOTFIX** — bug crítico pego em E2E (Renê: "teste!").
+
+**Bug**: `geoResolver.js` importava Firebase Firestore SDK versão `10.13.2` mas o resto do sistema (`firebase.js`, `portal.js`, `roteiroBank.js`, etc) usa `10.12.2`. Resultado: `collection(db, ...)` falhava com `FirebaseError: Expected first argument to collection() to be a CollectionReference, a DocumentReference or FirebaseFirestore` **silenciosamente capturado** pelo `try/catch` do `ensureDestination` → fallback pra slugify-simples-sem-aliases → **criava duplicata**.
+
+**Detecção via teste E2E v4.61.3**: chamei `ensureDestination({city:'Cape Town', country:'África do Sul'})` no console autenticado. Esperava: reutilizar id do canônico "Cidade do Cabo" (que tem alias "Cape Town"). Real: criou doc novo "Cape Town" + source='banco-auto'.
+
+**Fix**: 1 linha — trocar `10.13.2` → `10.12.2` em `js/services/geoResolver.js` linha 200. Limpeza da duplicata criada no teste feita via Admin SDK.
+
+**Lição** (vai pra CLAUDE.md): SEMPRE checar versão do Firebase SDK em imports dinâmicos novos. Mismatch silencioso é traiçoeiro porque cai em try/catch e o fallback parece funcionar (slugify retorna no, ensureDestination cria — mas com lógica antiga sem aliases). E2E real era necessário.
+
+**Auditoria preventiva**: rodado `grep` em todos os arquivos `js/` — 47 ocorrências de `firebase-firestore.js` e 2 de `firebase-auth.js` — **TODAS** agora em `10.12.2`. Apenas geoResolver estava divergente (provavelmente porque escrevi de memória sem checar).
+
+---
+
 ## [4.61.3+20260526-destinations-cross-module-impact-fixes] — 2026-05-26
 
 Release **PATCH/SAFETY** — corrige impacto cross-module das releases v4.60-61 em **9 módulos consumers**.

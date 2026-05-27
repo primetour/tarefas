@@ -178,9 +178,14 @@ export function continentCodesFromCountryCodes(countryCodes) {
 // ════════════════════════════════════════════════════════════════
 
 import { db } from '../firebase.js';
+// CRÍTICO: versão DEVE casar com firebase.js + portal.js (10.12.2). Mismatch
+// silenciosamente falha em collection(db, ...) porque db é instancia 10.12.2
+// e collection() do 10.13.2 não reconhece. Bug pegou em E2E v4.61.3 — ensureDestination
+// chamava findDestinationByLabel que throw silent e caía pro fallback slugify,
+// criando duplicata.
 import {
   collection, query, where, limit, getDocs, addDoc, serverTimestamp,
-} from 'https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js';
+} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 
 /**
  * Busca portal_destinations por (country, city) com normalização.

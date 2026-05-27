@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 61,
-  patch: 3,
-  build: '20260526-destinations-cross-module-impact-fixes',
+  patch: 4,
+  build: '20260527-hotfix-geoResolver-firebase-sdk-version-mismatch',
 };
 
 /** "1.2.0" */
