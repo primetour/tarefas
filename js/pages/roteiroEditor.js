@@ -1442,7 +1442,14 @@ function renderHoteisSection() {
       Use a sub-tab <strong>Opcionais</strong> pra extras.
     </p>
 
-    <h3 class="re-subsection-title" style="font-size:1rem;font-weight:600;color:var(--text-primary);margin-bottom:8px;">Voos</h3>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px;">
+      <h3 class="re-subsection-title" style="font-size:1rem;font-weight:600;color:var(--text-primary);margin:0;">Voos</h3>
+      <!-- v4.62.26: codifica tarifa GDS (Amadeus/Sabre/Galileo) \u2192 preenche flights[] -->
+      <button class="btn btn-secondary btn-sm" data-action="pnr-decode"
+        style="font-size:0.8125rem;display:inline-flex;align-items:center;gap:6px;">
+        \u2708 Codificar tarifa GDS
+      </button>
+    </div>
     <table class="re-dyn-table">
       <thead>
         <tr>
@@ -1454,7 +1461,7 @@ function renderHoteisSection() {
       <tbody id="re-flights-body">
         ${flights.length
           ? flights.map((f, i) => renderFlightRow(f, i)).join('')
-          : `<tr><td colspan="11" style="text-align:center;padding:14px;color:var(--text-muted);font-size:0.8125rem;">Nenhum voo cadastrado. Clique "+ Adicionar Voo" para incluir.</td></tr>`}
+          : `<tr><td colspan="11" style="text-align:center;padding:14px;color:var(--text-muted);font-size:0.8125rem;">Nenhum voo cadastrado. Cole uma tarifa GDS ou adicione manual.</td></tr>`}
       </tbody>
     </table>
     <button class="btn btn-secondary btn-sm" data-action="add-flight"
@@ -2254,6 +2261,156 @@ Atividades: 3 a 6 cronologicamente ordenadas. Use tipo apropriado.`;
       showToast('Falha na geração: ' + (e?.message || e), 'error');
     }
   });
+}
+
+/**
+ * v4.62.26: modal "Codificar tarifa GDS". Cola PNR Amadeus/Sabre/Galileo,
+ * vê preview formatada (cia + cidade + horário), insere como flights[]
+ * preservando os já existentes. Preço fica null pra user preencher depois.
+ */
+async function _openPnrDecodeModal() {
+  const overlay = document.createElement('div');
+  overlay.className = 're-img-modal-overlay';
+  overlay.innerHTML = `
+    <div class="re-img-modal" style="max-width:780px;max-height:85vh;display:flex;flex-direction:column;">
+      <div class="re-img-modal-header">
+        <div class="re-img-modal-title">✈ Codificar tarifa GDS</div>
+        <button class="re-img-modal-close" type="button">&times;</button>
+      </div>
+      <div class="re-img-modal-body" style="overflow:auto;">
+        <p style="font-size:0.8125rem;color:var(--text-muted);margin:0 0 12px;line-height:1.5;">
+          Cole a tarifa do GDS (Amadeus, Sabre ou Travelport Galileo) — uma linha por trecho.
+          O sistema decodifica IATA → cidade/cia, horários e datas. Detecta voos overnight automaticamente.
+        </p>
+        <textarea id="re-pnr-input" rows="6"
+          placeholder="Ex (Amadeus):&#10;1 EK 262O 10APR 6 GRUDXB*SS1  0135  2300  /DCEK /E&#10;2 EK 318O 11APR 7 DXBNRT*SS1  0240  1735  /DCEK /E"
+          style="width:100%;font-family:'SF Mono','Monaco','Cascadia Mono',monospace;font-size:0.78rem;
+          padding:10px 12px;border:1px solid var(--border-subtle,#e5e7eb);border-radius:6px;
+          resize:vertical;line-height:1.5;background:var(--bg-input,#fff);color:var(--text-primary);"></textarea>
+        <div id="re-pnr-status" style="font-size:0.75rem;color:var(--text-muted);margin-top:6px;min-height:18px;"></div>
+        <div id="re-pnr-preview" style="margin-top:14px;"></div>
+      </div>
+      <div style="padding:14px 20px;border-top:1px solid var(--border-subtle,#e5e7eb);display:flex;justify-content:space-between;align-items:center;gap:8px;">
+        <span style="font-size:0.72rem;color:var(--text-muted);">
+          Trechos identificados vão pra Voos. Preço fica em branco pra preencher.
+        </span>
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-ghost btn-sm" type="button" data-cancel
+            style="font-size:0.8125rem;">Cancelar</button>
+          <button class="btn btn-primary btn-sm" type="button" data-insert disabled
+            style="font-size:0.8125rem;">Inserir como voos →</button>
+        </div>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+  overlay.querySelector('.re-img-modal-close').addEventListener('click', close);
+  overlay.querySelector('[data-cancel]').addEventListener('click', close);
+
+  const input = overlay.querySelector('#re-pnr-input');
+  const status = overlay.querySelector('#re-pnr-status');
+  const preview = overlay.querySelector('#re-pnr-preview');
+  const insertBtn = overlay.querySelector('[data-insert]');
+  let parsed = [];
+
+  // Preload IATA em background pra parsing ficar instant
+  status.textContent = 'Carregando dicionário IATA…';
+  let parser;
+  try {
+    parser = await import('../services/pnrParser.js');
+    await parser.preloadIata();
+    status.textContent = 'Pronto. Cole o PNR acima.';
+  } catch (e) {
+    status.textContent = 'Falha ao carregar parser: ' + (e?.message || e);
+    return;
+  }
+
+  // Debounce parse on input
+  let dbTimer = null;
+  input.addEventListener('input', () => {
+    clearTimeout(dbTimer);
+    dbTimer = setTimeout(async () => {
+      const text = input.value.trim();
+      if (!text) {
+        preview.innerHTML = '';
+        status.textContent = 'Cole o PNR acima.';
+        insertBtn.disabled = true;
+        return;
+      }
+      try {
+        parsed = await parser.parsePNR(text);
+      } catch (e) {
+        parsed = [];
+        status.textContent = 'Erro: ' + (e?.message || e);
+        return;
+      }
+      if (!parsed.length) {
+        preview.innerHTML = `<div style="padding:14px;color:var(--color-danger,#EF4444);background:rgba(239,68,68,0.06);border:1px solid rgba(239,68,68,0.2);border-radius:6px;font-size:0.8125rem;">
+          ⚠ Nenhum trecho válido identificado. Verifique o formato (deve ter cia + voo + data DDMMM + 2 IATAs + horários HHMM).
+        </div>`;
+        status.textContent = '';
+        insertBtn.disabled = true;
+        return;
+      }
+      status.textContent = `${parsed.length} trecho${parsed.length > 1 ? 's' : ''} identificado${parsed.length > 1 ? 's' : ''}.`;
+      insertBtn.disabled = false;
+      preview.innerHTML = `
+        <table style="width:100%;border-collapse:collapse;font-size:0.78rem;">
+          <thead style="background:var(--bg-surface);">
+            <tr>
+              <th style="text-align:left;padding:8px 10px;border-bottom:1px solid var(--border-subtle,#e5e7eb);color:var(--text-muted);font-weight:700;text-transform:uppercase;font-size:0.65rem;letter-spacing:.06em;">Voo</th>
+              <th style="text-align:left;padding:8px 10px;border-bottom:1px solid var(--border-subtle,#e5e7eb);color:var(--text-muted);font-weight:700;text-transform:uppercase;font-size:0.65rem;letter-spacing:.06em;">Origem</th>
+              <th style="text-align:left;padding:8px 10px;border-bottom:1px solid var(--border-subtle,#e5e7eb);color:var(--text-muted);font-weight:700;text-transform:uppercase;font-size:0.65rem;letter-spacing:.06em;">Destino</th>
+              <th style="text-align:left;padding:8px 10px;border-bottom:1px solid var(--border-subtle,#e5e7eb);color:var(--text-muted);font-weight:700;text-transform:uppercase;font-size:0.65rem;letter-spacing:.06em;">Saída</th>
+              <th style="text-align:left;padding:8px 10px;border-bottom:1px solid var(--border-subtle,#e5e7eb);color:var(--text-muted);font-weight:700;text-transform:uppercase;font-size:0.65rem;letter-spacing:.06em;">Chegada</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${parsed.map(f => `
+              <tr style="border-bottom:1px solid var(--border-subtle,#e5e7eb);">
+                <td style="padding:8px 10px;font-weight:600;color:var(--text-primary);">${esc(f.airline)} ${esc(f.flightNumber)}</td>
+                <td style="padding:8px 10px;color:var(--text-secondary);">${esc(f.originCity)}</td>
+                <td style="padding:8px 10px;color:var(--text-secondary);">${esc(f.destinationCity)}</td>
+                <td style="padding:8px 10px;color:var(--text-muted);font-family:monospace;font-size:0.72rem;">${esc(f.departureDate)} ${esc(f.departureTime)}</td>
+                <td style="padding:8px 10px;color:var(--text-muted);font-family:monospace;font-size:0.72rem;">${esc(f.arrivalDate)} ${esc(f.arrivalTime)}${f.arrivalDate !== f.departureDate ? ' <span style="background:var(--brand-gold,#D4A843);color:#0A1628;padding:1px 5px;border-radius:999px;font-size:0.6rem;font-weight:700;margin-left:3px;">+1</span>' : ''}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>`;
+    }, 250);
+  });
+
+  insertBtn.addEventListener('click', () => {
+    if (!parsed.length) return;
+    if (!currentRoteiro.flights) currentRoteiro.flights = [];
+    parsed.forEach(p => {
+      currentRoteiro.flights.push({
+        airline:         p.airline,
+        flightNumber:    p.flightNumber,
+        originCity:      p.originIata,  // mantém IATA no campo simples
+        destinationCity: p.destinationIata,
+        departureDate:   p.departureDate,
+        departureTime:   p.departureTime,
+        arrivalDate:     p.arrivalDate,
+        arrivalTime:     p.arrivalTime,
+        price:           null,
+        currency:        'BRL',
+        // Metadata extra
+        airlineFull:     p.airline,
+        originFull:      p.originCity,
+        destinationFull: p.destinationCity,
+        gdsImported:     true,
+      });
+    });
+    rerenderCurrentSection();
+    markDirty();
+    close();
+    const n = parsed.length;
+    showToast(`+${n} voo${n > 1 ? 's' : ''} do GDS. Preço fica pra preencher.`, 'success');
+  });
+
+  input.focus();
 }
 
 let _bankImagesCache = null;
@@ -3929,6 +4086,12 @@ async function handleEditorClick(e) {
     case 'dia-ai-modal':
       currentRoteiro = collectFormData();
       _openDayAiScopeModal();
+      break;
+
+    /* v4.62.26: handler do botão "Codificar tarifa GDS" (PNR Amadeus/Sabre/Galileo) */
+    case 'pnr-decode':
+      currentRoteiro = collectFormData();
+      _openPnrDecodeModal();
       break;
 
     /* v4.62.20 Fase E: handlers do wizard de entrada (cotação nova em branco). */

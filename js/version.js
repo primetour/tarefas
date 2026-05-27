@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 62,
-  patch: 25,
-  build: '20260527-editor-servicos-totals-realtime-recalc',
+  patch: 26,
+  build: '20260527-editor-pnr-parser-gds-amadeus-sabre-galileo',
 };
 
 /** "1.2.0" */
