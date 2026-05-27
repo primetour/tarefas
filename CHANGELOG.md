@@ -6,6 +6,50 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.62.28+20260527-editor-air-fare-parser-gds-pricing] — 2026-05-27
+
+Release **EDITOR — PARSER TARIFA AÉREA GDS** — segunda metade do pedido do
+Renê pós-v4.62.26 (PNR voos) e v4.62.27 (PNR hoteis):
+
+> *"esse é o codigo que o gds manda [TARIFA BASE / TAXAS / TOTAL display]"*
+
+**Adicionado em `js/services/pnrParser.js`**:
+- `parseAirFareGds(text)` — parser tolerante de pricing display GDS
+  (Amadeus FQD, Sabre WP, Galileo FQ). Extrai: `currency` (3 chars), `baseFare`,
+  `taxesTotal` (calculado via total - base), `totalFare`, `paxType`
+  (ADT/CHD/INF/CNN/YTH/SRC), `breakdown[]` com código (XT/YQ/YR/BR/ZR/F6/SW/OI…)
+  + valor.
+- Const `PAX_TYPES` reutilizável.
+- Algoritmo dedupe + skip de moeda/paxTypes/palavras conhecidas (TOTAL/TAXAS/
+  TARIFA/BASE/FOP/MAIS) pra não capturar lixo.
+
+**UI em `js/pages/roteiroEditor.js`**:
+- 2 botões no header dos voos: `✈ Codificar tarifa GDS` + `💵 Codificar preços`.
+- Modal de fare decode (`_openFareDecodeModal()`):
+  - Textarea monospace, parse debounced 250ms.
+  - Preview em dourado luxury: TARIFA / TAXAS / TOTAL + classe pax +
+    chips do breakdown (8 codes típicos).
+  - 3 modos de aplicação (radio):
+    1. **Distribuir entre voos** (default) — rateia total proporcionalmente,
+       último voo absorve cent drift.
+    2. **Voo único** — dropdown pra escolher qual voo recebe o total.
+    3. **Apenas metadata** — salva `pricing.airTotalFare` + `airTotalCurrency`
+       sem mexer em flights[].
+  - Em qualquer modo: `pricing.airFareDetails` salvo com breakdown completo
+    (audit + futuro PDF detalhado).
+
+**Validação local**:
+- Sample real do Renê (NYC fare USD 3874 base + USD 2499.20 taxas) →
+  parse perfeito: `{currency:'USD', baseFare:3874, taxesTotal:2499.2,
+  totalFare:6373.2, paxType:'ADT', breakdown: 8 codes incluindo XT/YQ/YR}`.
+
+**Por que importa**: completa o cycle GDS — voos (v4.62.26) + hoteis
+(v4.62.27) + pricing aéreo (v4.62.28). Consultor cola 3 blocos do GDS na
+sequência e gera cotação completa sem digitação manual. Esperado: 5-10min
+poupados por cotação que vem de GDS.
+
+---
+
 ## [4.62.16+20260527-editor-fase-a-rename-visual-esconde-avancado] — 2026-05-27
 
 Release **EDITOR FASE A** — primeira fase do redesign do editor (resposta ao

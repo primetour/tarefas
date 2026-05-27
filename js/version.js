@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 62,
-  patch: 27,
-  build: '20260527-editor-hotel-parser-gds-amadeus-sabre-galileo',
+  patch: 28,
+  build: '20260527-editor-air-fare-parser-gds-pricing',
 };
 
 /** "1.2.0" */

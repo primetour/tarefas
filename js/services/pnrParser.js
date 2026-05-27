@@ -441,3 +441,133 @@ export function parseHotelPNRSync(text) {
     .map(line => _parseOneHotelLine(line, _airportsCache || {}))
     .filter(Boolean);
 }
+
+/* ──────────────────────────────────────────────────────────────────────
+ * PARSER DE TARIFA AÉREA — Amadeus/Sabre/Galileo pricing display
+ * v4.62.28+
+ *
+ * Formato típico (FQ/FXP/FXR/etc):
+ *
+ *   TARIFA BASE              TAXAS/IMPOSTOS/ENCARGOS
+ *   1-   USD3874.00          USD2499.20  XT  USD6373.20  ADT
+ *   XT   2420.00  YQ  10.00  YR  12.90  BR  2.80  ZR
+ *        27.20  F6  18.60  SW  1.40  OI  6.30  TK
+ *        3874.00             2499.20
+ *   MAIS TARIFAS DISPONÍVEIS
+ *   TOTAL:USD6373.20
+ *
+ * Decompõe em: moeda, tarifa base, total taxas, total geral, tipo passageiro
+ * (ADT/CHD/INF), breakdown de cada código de taxa (YQ, YR, BR, ZR, etc).
+ *
+ * Códigos comuns:
+ *   YQ — surcharge combustível
+ *   YR — surcharge segurança/yield
+ *   BR — taxa Brasil embarque/desembarque
+ *   ZR — taxa aeroporto
+ *   F6 — taxa cobrança/serviço
+ *   SW — Switzerland tax
+ *   OI — Italy tax
+ *   TK — Turkey tax
+ *   XT — agregador "outros impostos"
+ *
+ * Output:
+ *   {
+ *     currency: 'USD',
+ *     baseFare:    3874.00,
+ *     taxesTotal:  2499.20,
+ *     totalFare:   6373.20,
+ *     paxType:     'ADT' | 'CHD' | 'INF' | null,
+ *     breakdown:   [{ code: 'YQ', value: 10.00 }, ...]
+ *   }
+ * ────────────────────────────────────────────────────────────────────── */
+
+const PAX_TYPES = ['ADT', 'CHD', 'INF', 'CNN', 'YTH', 'SRC'];
+
+/**
+ * Parse de uma tarifa aérea completa (multi-linha) do display GDS.
+ * Retorna objeto ou null se nada foi reconhecido.
+ *
+ * Heurística:
+ *   - Pega moeda da 1ª ocorrência de 3 letras maiúsculas grudadas em número
+ *     (USD3874, EUR1200, etc)
+ *   - Tarifa base = 1º número que vem grudado na moeda
+ *   - Total = `TOTAL:XXX9999` no fim OU último número precedido por XT
+ *   - Taxes = total - base (mais robusto que tentar extrair direto)
+ *   - Pax type = ADT/CHD/INF detectado em qualquer lugar do texto
+ *   - Breakdown = todos os pares [A-Z0-9]{2,3} + número (excluindo moeda)
+ */
+export function parseAirFareGds(text) {
+  if (!text || typeof text !== 'string') return null;
+  const upper = text.toUpperCase().replace(/\r/g, '');
+
+  // Moeda + base: USD3874.00 (sem espaço)
+  const moneyMatch = /\b([A-Z]{3})(\d+(?:\.\d{1,2})?)/.exec(upper);
+  if (!moneyMatch) return null;
+  const currency = moneyMatch[1];
+  const baseFare = parseFloat(moneyMatch[2]);
+
+  // Total: prefere TOTAL:XXX9999 explícito; senão último USDXXX antes de ADT/CHD/INF
+  let totalFare = null;
+  const totalLine = /TOTAL\s*:?\s*[A-Z]{3}?\s*(\d+(?:\.\d{1,2})?)/.exec(upper);
+  if (totalLine) {
+    totalFare = parseFloat(totalLine[1]);
+  } else {
+    // Pega o MAIOR valor com a moeda — costuma ser o total
+    const allMoneyMatches = [...upper.matchAll(new RegExp(`\\b${currency}(\\d+(?:\\.\\d{1,2})?)`, 'g'))];
+    if (allMoneyMatches.length) {
+      const values = allMoneyMatches.map(m => parseFloat(m[1]));
+      totalFare = Math.max(...values);
+    }
+  }
+
+  // Taxes total = total - base se ambos conhecidos; senão tenta extrair
+  let taxesTotal = (totalFare != null && baseFare != null)
+    ? Math.round((totalFare - baseFare) * 100) / 100
+    : null;
+  // Validação: se o segundo USD<n> grudado bate com o cálculo, OK
+  const allMonies = [...upper.matchAll(new RegExp(`\\b${currency}(\\d+(?:\\.\\d{1,2})?)`, 'g'))].map(m => parseFloat(m[1]));
+  if (allMonies.length >= 2 && taxesTotal == null) {
+    taxesTotal = allMonies[1];
+  }
+
+  // Pax type
+  let paxType = null;
+  for (const t of PAX_TYPES) {
+    if (new RegExp(`\\b${t}\\b`).test(upper)) { paxType = t; break; }
+  }
+
+  // Breakdown: pares CODE + NUMBER (excluindo moeda detectada)
+  // Padrão: 2 ou 3 letras (não a moeda) seguido de espaço(s) e número decimal
+  const breakdown = [];
+  const seen = new Set();
+  const breakdownRegex = /\b([A-Z][A-Z0-9])\b\s+(\d+(?:\.\d{1,2})?)/g;
+  let bm;
+  while ((bm = breakdownRegex.exec(upper)) !== null) {
+    const code = bm[1];
+    const value = parseFloat(bm[2]);
+    // Skip moeda, pax types, palavras conhecidas que não são código tax
+    if (code === currency) continue;
+    if (PAX_TYPES.includes(code)) continue;
+    if (['MAIS', 'TOTAL', 'TAXAS', 'TARIFA', 'BASE', 'FOP'].includes(code)) continue;
+    // Skip se for o valor da base/total/taxes já capturado
+    if (value === baseFare || value === totalFare || value === taxesTotal) {
+      // Mas SE for XT (agregador), ainda quero ver
+      if (code !== 'XT') continue;
+    }
+    // Dedupe (mesmo code aparece 2x = ignora 2ª ocorrência)
+    if (seen.has(code)) continue;
+    seen.add(code);
+    breakdown.push({ code, value });
+  }
+
+  if (baseFare == null && totalFare == null) return null;
+
+  return {
+    currency,
+    baseFare,
+    taxesTotal,
+    totalFare,
+    paxType,
+    breakdown,
+  };
+}

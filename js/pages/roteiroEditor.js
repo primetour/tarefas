@@ -1444,11 +1444,18 @@ function renderHoteisSection() {
 
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:8px;">
       <h3 class="re-subsection-title" style="font-size:1rem;font-weight:600;color:var(--text-primary);margin:0;">Voos</h3>
-      <!-- v4.62.26: codifica tarifa GDS (Amadeus/Sabre/Galileo) \u2192 preenche flights[] -->
-      <button class="btn btn-secondary btn-sm" data-action="pnr-decode"
-        style="font-size:0.8125rem;display:inline-flex;align-items:center;gap:6px;">
-        \u2708 Codificar tarifa GDS
-      </button>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <!-- v4.62.26: codifica segmentos PNR (Amadeus/Sabre/Galileo) -->
+        <button class="btn btn-secondary btn-sm" data-action="pnr-decode"
+          style="font-size:0.8125rem;display:inline-flex;align-items:center;gap:6px;">
+          \u2708 Codificar tarifa GDS
+        </button>
+        <!-- v4.62.28: codifica PRE\u00c7OS/tarifa (base+taxas+total) -->
+        <button class="btn btn-secondary btn-sm" data-action="fare-decode"
+          style="font-size:0.8125rem;display:inline-flex;align-items:center;gap:6px;">
+          \ud83d\udcb5 Codificar pre\u00e7os
+        </button>
+      </div>
     </div>
     <table class="re-dyn-table">
       <thead>
@@ -2563,6 +2570,203 @@ async function _openHotelDecodeModal() {
     close();
     const n = parsed.length;
     showToast(`+${n} hotel${n > 1 ? 'éis' : ''} do GDS. Preço fica pra preencher.`, 'success');
+  });
+
+  input.focus();
+}
+
+/**
+ * v4.62.28: modal "Codificar preços" — decodifica display de tarifa do GDS
+ * (TARIFA BASE + TAXAS + TOTAL + breakdown XT). Permite aplicar:
+ *  (a) distribuir total proporcional entre todos os voos existentes
+ *  (b) aplicar total a UM voo específico (escolhe dropdown)
+ *  (c) salvar como total da cotação sem vincular (metadata pricing.airFareTotal)
+ *
+ * Preserva breakdown completo em pricing.airFareDetails pra preview/export.
+ */
+async function _openFareDecodeModal() {
+  const flights = currentRoteiro.flights || [];
+  const overlay = document.createElement('div');
+  overlay.className = 're-img-modal-overlay';
+  overlay.innerHTML = `
+    <div class="re-img-modal" style="max-width:760px;max-height:88vh;display:flex;flex-direction:column;">
+      <div class="re-img-modal-header">
+        <div class="re-img-modal-title">💵 Codificar preços (tarifa aérea)</div>
+        <button class="re-img-modal-close" type="button">&times;</button>
+      </div>
+      <div class="re-img-modal-body" style="overflow:auto;">
+        <p style="font-size:0.8125rem;color:var(--text-muted);margin:0 0 12px;line-height:1.5;">
+          Cole o display de pricing do GDS — decodifica <strong>tarifa base + taxas + total</strong> + breakdown de cada código de imposto (YQ, YR, BR, etc).
+        </p>
+        <textarea id="re-fare-input" rows="8"
+          placeholder="Ex:&#10;TARIFA BASE          TAXAS/IMPOSTOS/ENCARGOS&#10;1-   USD3874.00       USD2499.20  XT  USD6373.20  ADT&#10;XT   2420.00  YQ  10.00  YR  12.90  BR  2.80  ZR&#10;     27.20  F6  18.60  SW  1.40  OI  6.30  TK&#10;TOTAL:USD6373.20"
+          style="width:100%;font-family:'SF Mono','Monaco','Cascadia Mono',monospace;font-size:0.78rem;
+          padding:10px 12px;border:1px solid var(--border-subtle,#e5e7eb);border-radius:6px;
+          resize:vertical;line-height:1.5;background:var(--bg-input,#fff);color:var(--text-primary);"></textarea>
+        <div id="re-fare-status" style="font-size:0.75rem;color:var(--text-muted);margin-top:6px;min-height:18px;"></div>
+        <div id="re-fare-preview" style="margin-top:14px;"></div>
+        <div id="re-fare-apply" style="margin-top:18px;display:none;">
+          <div style="font-size:0.78rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">Como aplicar?</div>
+          <div style="display:flex;flex-direction:column;gap:6px;">
+            <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border-subtle,#e5e7eb);border-radius:6px;cursor:pointer;font-size:0.8125rem;">
+              <input type="radio" name="re-fare-mode" value="distribute" checked style="accent-color:var(--brand-gold,#D4A843);">
+              <div>
+                <div style="font-weight:600;color:var(--text-primary);">Distribuir entre os voos (${flights.length} ${flights.length === 1 ? 'voo' : 'voos'})</div>
+                <div style="font-size:0.72rem;color:var(--text-muted);">Total dividido proporcional entre voos existentes.</div>
+              </div>
+            </label>
+            <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border-subtle,#e5e7eb);border-radius:6px;cursor:pointer;font-size:0.8125rem;${flights.length === 0 ? 'opacity:0.5;cursor:not-allowed;' : ''}">
+              <input type="radio" name="re-fare-mode" value="single" ${flights.length === 0 ? 'disabled' : ''} style="accent-color:var(--brand-gold,#D4A843);">
+              <div style="flex:1;">
+                <div style="font-weight:600;color:var(--text-primary);">Aplicar a UM voo específico</div>
+                <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;">Outros voos não são alterados.</div>
+                <select id="re-fare-flight-pick" class="re-select" style="font-size:0.78rem;width:100%;max-width:400px;" ${flights.length === 0 ? 'disabled' : ''}>
+                  ${flights.map((f, i) => `<option value="${i}">${esc(f.airline || '?')} ${esc(f.flightNumber || '')} · ${esc(f.originCity || '?')} → ${esc(f.destinationCity || '?')}</option>`).join('')}
+                </select>
+              </div>
+            </label>
+            <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border-subtle,#e5e7eb);border-radius:6px;cursor:pointer;font-size:0.8125rem;">
+              <input type="radio" name="re-fare-mode" value="metadata" style="accent-color:var(--brand-gold,#D4A843);">
+              <div>
+                <div style="font-weight:600;color:var(--text-primary);">Salvar como total da cotação</div>
+                <div style="font-size:0.72rem;color:var(--text-muted);">Sem vincular a voo específico — usa em Valores/Preview. Breakdown preservado.</div>
+              </div>
+            </label>
+          </div>
+        </div>
+      </div>
+      <div style="padding:14px 20px;border-top:1px solid var(--border-subtle,#e5e7eb);display:flex;justify-content:flex-end;gap:8px;">
+        <button class="btn btn-ghost btn-sm" type="button" data-cancel style="font-size:0.8125rem;">Cancelar</button>
+        <button class="btn btn-primary btn-sm" type="button" data-apply disabled style="font-size:0.8125rem;">Aplicar →</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+  overlay.querySelector('.re-img-modal-close').addEventListener('click', close);
+  overlay.querySelector('[data-cancel]').addEventListener('click', close);
+
+  const input = overlay.querySelector('#re-fare-input');
+  const status = overlay.querySelector('#re-fare-status');
+  const preview = overlay.querySelector('#re-fare-preview');
+  const applyBlock = overlay.querySelector('#re-fare-apply');
+  const applyBtn = overlay.querySelector('[data-apply]');
+  let parsed = null;
+
+  const parser = await import('../services/pnrParser.js');
+  status.textContent = 'Cole a tarifa acima.';
+
+  const fmt = (v, cur) => {
+    if (v == null || !isFinite(v)) return '—';
+    try { return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: cur || 'BRL' }).format(v); }
+    catch { return `${cur || ''} ${Number(v).toFixed(2)}`; }
+  };
+
+  let dbTimer = null;
+  input.addEventListener('input', () => {
+    clearTimeout(dbTimer);
+    dbTimer = setTimeout(() => {
+      const text = input.value.trim();
+      if (!text) {
+        preview.innerHTML = '';
+        applyBlock.style.display = 'none';
+        applyBtn.disabled = true;
+        status.textContent = 'Cole a tarifa acima.';
+        return;
+      }
+      parsed = parser.parseAirFareGds(text);
+      if (!parsed) {
+        preview.innerHTML = `<div style="padding:14px;color:var(--color-danger,#EF4444);background:rgba(239,68,68,0.06);border:1px solid rgba(239,68,68,0.2);border-radius:6px;font-size:0.8125rem;">
+          ⚠ Não consegui identificar tarifa. Precisa ter moeda + valor (ex: USD3874.00) e ideialmente "TOTAL:".
+        </div>`;
+        status.textContent = '';
+        applyBlock.style.display = 'none';
+        applyBtn.disabled = true;
+        return;
+      }
+      status.textContent = `Decodificado em ${parsed.currency}${parsed.paxType ? ' · ' + parsed.paxType : ''}.`;
+      applyBlock.style.display = 'block';
+      applyBtn.disabled = false;
+      preview.innerHTML = `
+        <div style="border:1px solid var(--border-subtle,#e5e7eb);border-radius:8px;overflow:hidden;">
+          <div style="background:rgba(212,168,67,0.06);padding:14px 16px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+            <div>
+              <div style="font-size:0.65rem;color:var(--text-muted);font-weight:700;text-transform:uppercase;letter-spacing:.06em;">Tarifa base</div>
+              <div style="font-size:1.1rem;font-weight:700;color:var(--text-primary);margin-top:2px;">${fmt(parsed.baseFare, parsed.currency)}</div>
+            </div>
+            <div>
+              <div style="font-size:0.65rem;color:var(--text-muted);font-weight:700;text-transform:uppercase;letter-spacing:.06em;">Taxas/Impostos</div>
+              <div style="font-size:1.1rem;font-weight:700;color:var(--text-primary);margin-top:2px;">${fmt(parsed.taxesTotal, parsed.currency)}</div>
+            </div>
+            <div>
+              <div style="font-size:0.65rem;color:var(--text-muted);font-weight:700;text-transform:uppercase;letter-spacing:.06em;">Total</div>
+              <div style="font-size:1.1rem;font-weight:700;color:var(--brand-gold,#D4A843);margin-top:2px;">${fmt(parsed.totalFare, parsed.currency)}</div>
+            </div>
+          </div>
+          ${parsed.breakdown.length ? `
+          <div style="padding:12px 16px;border-top:1px solid var(--border-subtle,#e5e7eb);">
+            <div style="font-size:0.65rem;color:var(--text-muted);font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">
+              Breakdown taxas (${parsed.breakdown.length} ${parsed.breakdown.length === 1 ? 'código' : 'códigos'})
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px;">
+              ${parsed.breakdown.map(b => `
+                <span style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:var(--bg-surface);border:1px solid var(--border-subtle,#e5e7eb);border-radius:999px;font-size:0.72rem;font-family:monospace;">
+                  <strong style="color:var(--text-primary);">${b.code}</strong>
+                  <span style="color:var(--text-muted);">${fmt(b.value, parsed.currency)}</span>
+                </span>
+              `).join('')}
+            </div>
+          </div>` : ''}
+        </div>`;
+    }, 250);
+  });
+
+  applyBtn.addEventListener('click', () => {
+    if (!parsed) return;
+    const mode = overlay.querySelector('input[name="re-fare-mode"]:checked')?.value;
+    const total = parsed.totalFare || (parsed.baseFare || 0) + (parsed.taxesTotal || 0);
+    const cur = parsed.currency || 'BRL';
+
+    // Sempre preserva metadata completa (breakdown + paxType)
+    if (!currentRoteiro.pricing) currentRoteiro.pricing = {};
+    currentRoteiro.pricing.airFareDetails = {
+      currency:     cur,
+      baseFare:     parsed.baseFare,
+      taxesTotal:   parsed.taxesTotal,
+      totalFare:    total,
+      paxType:      parsed.paxType,
+      breakdown:    parsed.breakdown,
+      importedAt:   new Date().toISOString(),
+      mode,
+    };
+
+    if (mode === 'distribute' && (currentRoteiro.flights || []).length) {
+      const n = currentRoteiro.flights.length;
+      const perFlight = Math.round((total / n) * 100) / 100;
+      currentRoteiro.flights.forEach((f, i) => {
+        // Último voo absorve resto pra evitar drift de centavos
+        f.price = (i === n - 1)
+          ? Math.round((total - perFlight * (n - 1)) * 100) / 100
+          : perFlight;
+        f.currency = cur;
+      });
+      showToast(`${fmt(total, cur)} distribuído entre ${n} voo${n > 1 ? 's' : ''}.`, 'success');
+    } else if (mode === 'single') {
+      const idx = parseInt(overlay.querySelector('#re-fare-flight-pick').value, 10);
+      if (currentRoteiro.flights[idx]) {
+        currentRoteiro.flights[idx].price = total;
+        currentRoteiro.flights[idx].currency = cur;
+      }
+      showToast(`${fmt(total, cur)} aplicado ao voo selecionado.`, 'success');
+    } else {
+      // metadata only — não toca flights
+      currentRoteiro.pricing.airTotalFare = total;
+      currentRoteiro.pricing.airTotalCurrency = cur;
+      showToast(`Total ${fmt(total, cur)} salvo como total da cotação.`, 'success');
+    }
+    markDirty();
+    rerenderCurrentSection();
+    close();
   });
 
   input.focus();
@@ -4253,6 +4457,12 @@ async function handleEditorClick(e) {
     case 'hotel-decode':
       currentRoteiro = collectFormData();
       _openHotelDecodeModal();
+      break;
+
+    /* v4.62.28: handler do botão "Codificar preços" (tarifa aérea: base+taxas+total) */
+    case 'fare-decode':
+      currentRoteiro = collectFormData();
+      _openFareDecodeModal();
       break;
 
     /* v4.62.20 Fase E: handlers do wizard de entrada (cotação nova em branco). */
