@@ -14,6 +14,9 @@ const state = {
   view: 'welcome',                       // 'welcome' | 'editor'
   destinoId: null,
   destino: null,                         // doc completo (com _raw)
+  filterContinent: '',                   // filtro welcome
+  filterCountry: '',                     // filtro welcome
+  searchQuery: '',
   formatos: new Set(['carrossel', 'story']),
   templateId: 'classico-teal',
   slides: [],                            // cópia editável dos slides do destino
@@ -37,10 +40,59 @@ function setView(name) {
 }
 
 // ───── Welcome — destinos ─────
+function renderFilters() {
+  const fc = $('#welcome-filters');
+  if (!fc) return;
+  const destinos = getDestinos();
+  // Continentes únicos
+  const continents = [...new Set(destinos.map(d => d.continent).filter(Boolean))].sort();
+  // Países do continente selecionado (ou todos se nenhum)
+  const countriesPool = state.filterContinent
+    ? destinos.filter(d => d.continent === state.filterContinent)
+    : destinos;
+  const countries = [...new Set(countriesPool.map(d => d.country).filter(Boolean))].sort();
+
+  fc.innerHTML = `
+    <div class="welcome-filter-row">
+      <select id="filter-continent" class="welcome-select">
+        <option value="">Todos continentes</option>
+        ${continents.map(c => `<option value="${c}" ${state.filterContinent === c ? 'selected' : ''}>${c}</option>`).join('')}
+      </select>
+      <select id="filter-country" class="welcome-select">
+        <option value="">Todos países</option>
+        ${countries.map(c => `<option value="${c}" ${state.filterCountry === c ? 'selected' : ''}>${c}</option>`).join('')}
+      </select>
+      ${(state.filterContinent || state.filterCountry || state.searchQuery)
+        ? `<button id="filter-clear" class="welcome-clear">Limpar</button>` : ''}
+    </div>
+  `;
+  $('#filter-continent').addEventListener('change', e => {
+    state.filterContinent = e.target.value;
+    state.filterCountry = '';   // reset país ao mudar continente
+    renderFilters();
+    renderDestinos(state.searchQuery);
+  });
+  $('#filter-country').addEventListener('change', e => {
+    state.filterCountry = e.target.value;
+    renderDestinos(state.searchQuery);
+  });
+  $('#filter-clear')?.addEventListener('click', () => {
+    state.filterContinent = '';
+    state.filterCountry = '';
+    state.searchQuery = '';
+    $('#search-input').value = '';
+    renderFilters();
+    renderDestinos('');
+  });
+}
+
 function renderDestinos(filter = '') {
+  state.searchQuery = filter;
   const grid = $('#destinos-grid');
   const norm = filter.trim().toLowerCase();
   grid.innerHTML = getDestinos()
+    .filter(d => !state.filterContinent || d.continent === state.filterContinent)
+    .filter(d => !state.filterCountry   || d.country   === state.filterCountry)
     .filter(d => !norm || d.nome.toLowerCase().includes(norm))
     .map(d => {
       const bg = d.capaUrl
@@ -861,6 +913,7 @@ async function initWizard() {
     _destinos = [];
   }
   hideLoader();
+  renderFilters();
   renderDestinos();
 
   if (!_destinos.length) {
@@ -927,6 +980,7 @@ const OVERLAY_HTML = `
         <span style="font-size:18px">🔍</span>
         <input id="search-input" placeholder="Busque por destino..." />
       </div>
+      <div class="welcome-filters" id="welcome-filters"></div>
       <div class="destinos-grid" id="destinos-grid"></div>
     </div>
   </section>

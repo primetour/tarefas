@@ -23,6 +23,28 @@ function getImagesForDestino(destino) {
   return _imagesByCountry.get(normKey(raw.country)) || [];
 }
 
+// Hash simples e estável do nome — usado pra distribuir capas DIFERENTES
+// entre destinos do mesmo país (que caem no mesmo array de fallback).
+function hashStr(s) {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+  return Math.abs(h);
+}
+
+// Escolhe foto-capa pra um destino. Se tem foto da cidade exata, pega a 1ª.
+// Se cai no fallback de país (com várias fotos), usa hash do nome do destino
+// pra pegar UMA diferente — distribui visualmente.
+function pickCapaUrl(d, imgs) {
+  if (!imgs.length) return '';
+  // Se as imagens são da CIDADE exata, sempre a 1ª (consistência)
+  const isCityMatch = (_imagesByCity.get(normKey(d.city)) || []).length > 0;
+  if (isCityMatch) return imgs[0]?.url || '';
+  // Fallback de país — distribui via hash
+  const seed = (d.city || d.id || d.country || '');
+  const idx = hashStr(seed) % imgs.length;
+  return imgs[idx]?.url || '';
+}
+
 /* ── Destinos + indexação global de imagens ───────────────── */
 
 export async function fetchDestinos() {
@@ -58,9 +80,11 @@ export async function fetchDestinos() {
       id: d.id,
       nome: d.city || d.country || '—',
       subtitulo: [d.country, d.continent].filter(Boolean).join(' · ') || ' ',
-      capaUrl: imgs[0]?.url || '',
+      capaUrl: pickCapaUrl(d, imgs),
       disponivel: true,
       paletaFaixa: '#2BA9A7',
+      continent: d.continent || '',
+      country: d.country || '',
       _raw: d,
     };
   });
