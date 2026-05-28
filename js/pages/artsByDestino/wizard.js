@@ -1,22 +1,26 @@
 import { MOCK_FORMATOS, MOCK_TEMPLATES, MOCK_LAYOUTS } from './mock-data.js';
-import { fetchDestinos, buildSlidesForDestino, getBancoCuradoForDestino } from '../../services/artsByDestino.js';
+import {
+  fetchDestinos, buildSlidesForDestino,
+  getBancoCuradoForDestino, getBancoCuradoCounts, PICKER_CATEGORIAS,
+} from '../../services/artsByDestino.js';
 
 // Cache local — populado em initWizard via fetchDestinos()
 let _destinos = [];
 const getDestinos = () => _destinos;
-// Banco curado é síncrono agora (lê do cache populado em fetchDestinos)
-const getBancoCurado = () => getBancoCuradoForDestino(state.destino);
+const getBancoCurado = () => getBancoCuradoForDestino(state.destino, state.bancoCategoria || 'todas');
 
 // ───── State ─────
 const state = {
   view: 'welcome',                       // 'welcome' | 'editor'
   destinoId: null,
+  destino: null,                         // doc completo (com _raw)
   formatos: new Set(['carrossel', 'story']),
   templateId: 'classico-teal',
   slides: [],                            // cópia editável dos slides do destino
   activeSlideIdx: 0,
   previewFormato: 'carrossel',
   fotoTab: 'curadas',
+  bancoCategoria: 'todas',               // 'todas' | 'location' | 'hotel' | ...
   openSheet: null,                       // 'formato' | 'estilo' | 'texto' | 'foto' | 'baixar' | null
   generated: null,
 };
@@ -606,17 +610,54 @@ function renderFotoTabPanel() {
   const slide = state.slides[state.activeSlideIdx];
   const panel = $('#foto-tab-panel');
   if (state.fotoTab === 'curadas') {
-    const fotos = getBancoCurado();   // síncrono — lê do cache
-    if (!fotos.length) {
-      panel.innerHTML = '<p style="color:var(--ink-soft);font-size:14px;text-align:center;padding:24px 0">Sem fotos curadas no Banco de Imagens pra este destino ainda. Cadastre em <em>Serviços → Banco de Imagens</em>.</p>';
+    const counts = getBancoCuradoCounts(state.destino);
+    const totalAll = counts.todas || 0;
+
+    if (totalAll === 0) {
+      panel.innerHTML = `
+        <p style="color:var(--ink-soft);font-size:14px;text-align:center;padding:24px 0">
+          Sem fotos curadas pra este destino ainda.
+          <br><span style="font-size:12px">Cadastre em <em>Serviços → Banco de Imagens</em>.</span>
+        </p>`;
       return;
     }
-    panel.innerHTML = `<div class="curadas-grid">${
-      fotos.map(f => `
-        <div class="curada-thumb ${slide.fotoUrl === f.url ? 'selected' : ''}" data-url="${f.url}" style="background-image:url('${f.url}')"></div>
-      `).join('')
-    }</div>`;
-    $$('#foto-tab-panel .curada-thumb').forEach(el => {
+
+    // Sub-abas de categoria (Destinos / Hotéis / Restaurantes / Trens / Cruzeiros)
+    const catTabsHtml = `
+      <div class="banco-cat-tabs">
+        ${PICKER_CATEGORIAS
+          .filter(c => c.key === 'todas' || counts[c.key] > 0)
+          .map(c => `
+            <button class="banco-cat-tab ${state.bancoCategoria === c.key ? 'active' : ''}" data-cat="${c.key}">
+              <span>${c.icon}</span>
+              <span>${c.label}</span>
+              <span class="banco-cat-count">${counts[c.key] || 0}</span>
+            </button>
+          `).join('')}
+      </div>
+    `;
+
+    const fotos = getBancoCurado();
+    const gridHtml = fotos.length
+      ? `<div class="curadas-grid">${
+          fotos.map(f => `
+            <div class="curada-thumb ${slide.fotoUrl === f.url ? 'selected' : ''}" data-url="${f.url}" style="background-image:url('${f.url}')" title="${escapeHtml(f.nome)}"></div>
+          `).join('')
+        }</div>`
+      : `<p style="color:var(--ink-soft);font-size:13px;text-align:center;padding:16px 0">Sem fotos nesta categoria pra este destino.</p>`;
+
+    panel.innerHTML = catTabsHtml + gridHtml;
+
+    // Wire das sub-abas
+    panel.querySelectorAll('.banco-cat-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        state.bancoCategoria = btn.dataset.cat;
+        renderFotoTabPanel();
+      });
+    });
+
+    // Wire dos thumbs (já renderizados em catTabsHtml + gridHtml acima)
+    panel.querySelectorAll('.curada-thumb').forEach(el => {
       el.addEventListener('click', () => {
         slide.fotoUrl = el.dataset.url;
         renderCanvas(); renderStrip(); renderFotoTabPanel();

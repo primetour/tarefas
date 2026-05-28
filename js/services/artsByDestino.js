@@ -174,12 +174,39 @@ export async function buildSlidesForDestino(destino) {
 
 /* ── Banco curado pro picker de fotos (sheet Foto) ────────── */
 
-export function getBancoCuradoForDestino(destino) {
-  return getImagesForDestino(destino).map(img => ({
+// Categorias disponíveis no picker (espelham ASSET_CATEGORIES do portal.js,
+// excluindo logo). Cada uma vira uma aba no banco curado.
+export const PICKER_CATEGORIAS = [
+  { key: 'todas',      label: 'Todas',       icon: '🖼' },
+  { key: 'location',   label: 'Destinos',    icon: '📍' },
+  { key: 'hotel',      label: 'Hotéis',      icon: '🏨' },
+  { key: 'restaurant', label: 'Restaurantes',icon: '🍽' },
+  { key: 'train',      label: 'Trens',       icon: '🚄' },
+  { key: 'cruise',     label: 'Cruzeiros',   icon: '🚢' },
+];
+
+export function getBancoCuradoForDestino(destino, categoria = 'todas') {
+  let imgs = getImagesForDestino(destino);
+  if (categoria && categoria !== 'todas') {
+    imgs = imgs.filter(img => img.assetCategory === categoria);
+  }
+  return imgs.map(img => ({
     id: img.id,
     url: img.url,
     nome: img.name || img.assetCategory || 'Foto',
+    assetCategory: img.assetCategory,
   }));
+}
+
+// Quantas fotos cada categoria tem pra esse destino (pra mostrar badge nas abas)
+export function getBancoCuradoCounts(destino) {
+  const imgs = getImagesForDestino(destino);
+  const counts = { todas: imgs.length };
+  for (const cat of PICKER_CATEGORIAS) {
+    if (cat.key === 'todas') continue;
+    counts[cat.key] = imgs.filter(img => img.assetCategory === cat.key).length;
+  }
+  return counts;
 }
 
 // API legada (não usada mais — wizard usa getBancoCuradoForDestino direto)

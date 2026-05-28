@@ -915,6 +915,54 @@
 }
 .foto-tab.active { color: var(--teal-dark); border-bottom-color: var(--teal); }
 .foto-tab:disabled { opacity: 0.4; cursor: not-allowed; }
+/* Sub-abas de categoria (Destinos / Hotéis / Restaurantes / Trens / Cruzeiros) */
+.banco-cat-tabs {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  margin-bottom: 12px;
+  padding-bottom: 4px;
+  scrollbar-width: none;
+}
+.banco-cat-tabs::-webkit-scrollbar { display: none; }
+.banco-cat-tab {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  color: var(--ink-soft);
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 16px;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background var(--t-fast), color var(--t-fast), border-color var(--t-fast);
+}
+.banco-cat-tab:hover { border-color: var(--teal); }
+.banco-cat-tab.active {
+  background: var(--teal);
+  border-color: var(--teal);
+  color: #fff;
+}
+.banco-cat-count {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 8px;
+  background: rgba(0,0,0,0.08);
+  color: var(--ink-soft);
+  min-width: 18px;
+  text-align: center;
+}
+.banco-cat-tab.active .banco-cat-count {
+  background: rgba(255,255,255,0.25);
+  color: #fff;
+}
+
 .curadas-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
