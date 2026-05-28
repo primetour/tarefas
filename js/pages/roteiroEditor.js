@@ -1032,6 +1032,25 @@ function renderClienteSection() {
   return `
     <h2 class="re-section-title">Cliente e Briefing</h2>
     <p class="re-briefing-intro">Quem é o cliente, viajantes, preferências e restrições. O agente de IA usa este bloco como briefing.</p>
+
+    <!-- v4.62.30+ Vínculo com Oportunidade Salesforce.
+         Hoje: campo livre pra registrar o ID/nome da oportunidade.
+         Futuro (passo 2): preencher → fetch via SF REST API auto-popula
+         os campos abaixo (nome, email, telefone, viajantes, datas, etc). -->
+    <div class="re-form-group" style="max-width:520px;">
+      <label class="re-label">
+        Oportunidade (Salesforce)
+        <span style="color:var(--text-muted);font-weight:400;font-size:0.72rem;margin-left:6px;">opcional</span>
+      </label>
+      <input class="re-input" data-field="client.salesforceOpportunityId"
+        value="${esc(c.salesforceOpportunityId || '')}"
+        placeholder="Ex: 0061R00001ABcDeQAJ ou nome/código da oportunidade" />
+      <div style="font-size:0.7rem;color:var(--text-muted);margin-top:4px;line-height:1.4;">
+        Cole o ID ou link da oportunidade no Salesforce. Em breve: ao preencher, sistema vai puxar
+        cliente + briefing automaticamente via API.
+      </div>
+    </div>
+
     <div class="re-row">
       <div class="re-form-group">
         <label class="re-label">Nome do Cliente</label>

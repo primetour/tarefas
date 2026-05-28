@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 62,
-  patch: 29,
-  build: '20260527-editor-air-gds-unified-modal',
+  patch: 30,
+  build: '20260527-editor-cliente-salesforce-opportunity-id',
 };
 
 /** "1.2.0" */

@@ -6,6 +6,40 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.62.30+20260527-editor-cliente-salesforce-opportunity-id] — 2026-05-27
+
+Release **EDITOR — CAMPO OPORTUNIDADE SALESFORCE** (passo 1 de 2):
+
+> *"cliente e briefing: acrescentar campo Oportunidade (Salesforce). passo 2
+> disso, no momento certo, será preencher esse campo e, via API, preencher
+> os outros campos do cliente e briefing, mas estou te falando apenas para
+> te dar visibilidade. é algo que ainda vou maturar"* — Renê
+
+**Adicionado**:
+- Schema `emptyRoteiro().client.salesforceOpportunityId: ''` (string vazia).
+  Doc antigo sem campo: optional chaining + fallback `''` no render — sem
+  migration on-read necessária (setNested cria automaticamente no save).
+- Input texto na seção "Cliente e Briefing", logo abaixo da intro e antes
+  de Nome/Email/Telefone. Largura 520px (não estoura layout).
+- Label `Oportunidade (Salesforce)` + tag `opcional` cinza.
+- Hint inline: "Cole o ID ou link da oportunidade no Salesforce. Em breve:
+  ao preencher, sistema vai puxar cliente + briefing automaticamente via API".
+- Persiste via `data-field="client.salesforceOpportunityId"` (collectFormData
+  já recolhe automaticamente via setNested).
+
+**Não está aqui** (passo 2 futuro, ainda em maturação pelo Renê):
+- Integração com Salesforce REST API
+- Auto-fetch dos campos do cliente/briefing ao colar o ID
+- OAuth/credenciais Salesforce no Secret Manager
+- Cloud Function pra proxy SF API (CORS + segurança)
+
+**Razão da abordagem minimalista**: Renê pediu visibilidade só. Schema
+estendido + UI hint deixa o terreno preparado pro passo 2 sem inventar
+arquitetura. Quando o passo 2 vier, basta wire o input com listener
++ fetch API + populate state.
+
+---
+
 ## [4.62.29+20260527-editor-air-gds-unified-modal] — 2026-05-27
 
 Release **EDITOR — UNIFICAR CODIFICAR DO GDS** — pedido do Renê pós-v4.62.28:

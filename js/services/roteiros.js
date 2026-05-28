@@ -100,6 +100,12 @@ export function emptyRoteiro() {
       restrictions: [],
       economicProfile: 'premium',
       notes: '',
+      // v4.62.30+ — Vínculo com Oportunidade do Salesforce.
+      // Por enquanto é só identificador texto preenchido pelo consultor.
+      // Passo 2 (futuro): preencher esse ID dispara fetch via SF REST API e
+      // popula automaticamente client.{name,email,phone,type,preferences,
+      // restrictions,economicProfile,notes} + travelers[] + travel.*.
+      salesforceOpportunityId: '',
       // ── DEPRECATED 4.41.0+ — mantidos pra compat com docs antigos ──
       // Foram substituídos por `travelers[]`. migrateRoteiro converte
       // adults/children/childrenAges → travelers automaticamente no read.
