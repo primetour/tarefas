@@ -475,25 +475,10 @@ function fitTextBlock(block) {
   }
 }
 
-// Edit-in-place: clica num texto do slide → digita direto. Sincroniza com state
-// e atualiza strip / sheet de texto sem rerender do canvas (não tirar foco).
+// Edit-in-place agora é ATIVADO via botão ✏️ da toolbar ou double-click no texto.
+// (Single click só seleciona — drag fica livre.) Listeners ficam no wireCanvasSelection.
 function wireEditInPlace() {
-  $$('#canvas-preview .slot-text').forEach(el => {
-    el.setAttribute('contenteditable', 'true');
-    el.spellcheck = false;
-    el.addEventListener('input', onSlotEdit);
-    el.addEventListener('keydown', e => {
-      // Enter no titulo/hand = blur em vez de quebrar linha
-      if (e.key === 'Enter' && !el.classList.contains('text-desc')) {
-        e.preventDefault();
-        el.blur();
-      }
-    });
-    el.addEventListener('blur', () => {
-      // remove HTML colado (estilo do clipboard) — mantém texto puro
-      if (el.innerHTML !== el.textContent) el.textContent = el.textContent;
-    });
-  });
+  // Listeners de input/keydown/blur são adicionados em enterEditMode (sob demanda)
 }
 
 let _reprefitTimer = null;
@@ -501,15 +486,75 @@ let _reprefitTimer = null;
 
 function wireCanvasSelection() {
   $$('#canvas-preview .slot-text').forEach(el => {
-    // Click no texto seleciona — mas se já está em modo edit (focado), não interfere
+    // Single click → seleciona (drag fica disponível via moveable)
     el.addEventListener('mousedown', (e) => {
-      // Se está editando esse mesmo elemento, deixa o cursor passar
-      if (el === document.activeElement && el === document.querySelector('.slot-text.is-selected')) return;
+      // Se já está em modo edit, deixa o cursor agir naturalmente
+      if (el.getAttribute('contenteditable') === 'true') return;
       const field = el.dataset.field;
       if (!field) return;
       selectElement(field);
     });
+    // Double click → entra em modo edit (cursor, digita)
+    el.addEventListener('dblclick', (e) => {
+      e.preventDefault();
+      const field = el.dataset.field;
+      if (!field) return;
+      if (state.selectedField !== field) selectElement(field);
+      enterEditMode();
+    });
   });
+}
+
+function enterEditMode() {
+  const field = state.selectedField;
+  if (!field) return;
+  const el = $(`#canvas-preview .slot-text[data-field="${field}"]`);
+  if (!el) return;
+  detachMoveable();          // libera o texto pra cursor de edição
+  el.setAttribute('contenteditable', 'true');
+  el.spellcheck = false;
+  el.focus();
+  // Seleciona todo o conteúdo (UX igual Canva — começa digitando substitui)
+  try {
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(range);
+  } catch {}
+  el.addEventListener('input', onSlotEdit);
+  el.addEventListener('keydown', _editKeyHandler);
+  el.addEventListener('blur', exitEditMode, { once: true });
+  $('#float-toolbar')?.classList.add('editing');
+}
+
+function exitEditMode() {
+  const field = state.selectedField;
+  if (!field) return;
+  const el = $(`#canvas-preview .slot-text[data-field="${field}"]`);
+  if (!el) return;
+  el.removeAttribute('contenteditable');
+  el.removeEventListener('input', onSlotEdit);
+  el.removeEventListener('keydown', _editKeyHandler);
+  // Limpa HTML colado do clipboard (mantém texto puro)
+  if (el.innerHTML !== el.textContent) el.textContent = el.textContent;
+  $('#float-toolbar')?.classList.remove('editing');
+  // Reativa drag/resize se o texto ainda está selecionado
+  if (state.selectedField === field) attachMoveable(field);
+}
+
+function _editKeyHandler(e) {
+  // Esc sai do modo edit (não fecha seleção)
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    e.target.blur();
+    return;
+  }
+  // Enter no hand/titulo termina edição (descrição quebra linha normal)
+  if (e.key === 'Enter' && !e.target.classList.contains('text-desc')) {
+    e.preventDefault();
+    e.target.blur();
+  }
 }
 
 let _moveable = null;   // instância do Moveable.js
@@ -1344,6 +1389,10 @@ async function initWizard() {
     setOverride(state.selectedField, { color: e.target.value });
     $('#ft-color-swatch').style.background = e.target.value;
   });
+  $('#ft-edit')?.addEventListener('click', () => {
+    if (!state.selectedField) return;
+    enterEditMode();
+  });
   $('#ft-reset')?.addEventListener('click', () => {
     if (!state.selectedField) return;
     clearOverride(state.selectedField);
@@ -1469,6 +1518,7 @@ const OVERLAY_HTML = `
       <input type="color" id="ft-color" value="#ffffff" />
       <span class="ft-color-swatch" id="ft-color-swatch"></span>
     </label>
+    <button class="ft-btn ft-edit" id="ft-edit" title="Editar texto (ou duplo-clique no texto)">✏️</button>
     <button class="ft-btn ft-reset" id="ft-reset" title="Resetar este texto">↺</button>
     <button class="ft-btn ft-reset-all" id="ft-reset-all" title="Resetar TODOS os textos deste slide">⟲</button>
     <button class="ft-btn ft-close" id="ft-close" title="Fechar">✕</button>

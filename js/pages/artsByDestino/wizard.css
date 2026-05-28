@@ -74,6 +74,12 @@
   outline: 2px solid var(--teal);
   outline-offset: 3px;
   border-radius: 2px;
+  cursor: move;
+}
+.slot-text[contenteditable="true"] {
+  cursor: text;
+  outline-color: #fbbf24;   /* amarelo no modo edit */
+  background: rgba(251,191,36,0.06);
 }
 
 .float-toolbar {
