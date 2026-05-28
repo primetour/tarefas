@@ -1135,17 +1135,207 @@
   font-size: calc(36px * var(--slide-scale));
 }
 
-/* ═══ DESKTOP ≥1024px — layout 3 colunas (inspirado em /btg/dashboard/nova-oferta) ═══
-   Esquerda (240px):  strip vertical de slides + layout picker
-   Centro (1fr):       canvas (preview central)
-   Direita (220px):    toolbar vertical com ações grandes
-   Mobile mantém intacto (flex column + bottom-sheet + toolbar bottom).
+/* ═══ Etapa 5: PAINEL DE AJUSTE UNIFICADO ═══
+   Mesmo HTML/state em mobile e desktop. Só o CSS muda via media query.
+   Mobile (default): bottom-sheet escondido até abrir.
+   Desktop (≥1024px): sidebar lateral SEMPRE visível.
+*/
+.ajuste-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.4);
+  z-index: 80;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity var(--t), visibility var(--t);
+}
+.ajuste-backdrop.show { opacity: 1; visibility: visible; }
+
+.ajuste-panel {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  background: var(--card);
+  border-top-left-radius: 20px;
+  border-top-right-radius: 20px;
+  box-shadow: var(--shadow-sheet);
+  z-index: 90;
+  max-height: 78vh;
+  display: flex;
+  flex-direction: column;
+  transform: translateY(100%);
+  transition: transform 280ms cubic-bezier(0.32, 0.72, 0, 1);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.ajuste-panel.open { transform: translateY(0); }
+.ajuste-handle {
+  width: 40px;
+  height: 4px;
+  background: var(--line);
+  border-radius: 2px;
+  margin: 10px auto 4px;
+  flex-shrink: 0;
+}
+.ajuste-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 12px 8px;
+  flex-shrink: 0;
+  gap: 8px;
+}
+.ajuste-tabs {
+  display: flex;
+  gap: 4px;
+  flex: 1;
+  background: var(--bg);
+  padding: 4px;
+  border-radius: 10px;
+}
+.ajuste-tab {
+  flex: 1;
+  background: transparent;
+  border: 0;
+  padding: 8px 10px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  cursor: pointer;
+  border-radius: 6px;
+  transition: background var(--t-fast), color var(--t-fast);
+}
+.ajuste-tab.active {
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: var(--shadow);
+}
+.ajuste-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px 16px 24px;
+  -webkit-overflow-scrolling: touch;
+}
+.ajuste-section-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-soft);
+  margin: 4px 0 10px;
+}
+.ajuste-section-sub {
+  font-weight: 500;
+  color: var(--ink-faint);
+  text-transform: none;
+  letter-spacing: 0;
+}
+.ajuste-sep {
+  border: 0;
+  height: 1px;
+  background: var(--line);
+  margin: 20px 0 16px;
+}
+.ajuste-empty {
+  font-size: 14px;
+  color: var(--ink-soft);
+  text-align: center;
+  padding: 24px 16px;
+}
+.ajuste-empty .ajuste-hint {
+  font-size: 12px;
+  color: var(--ink-faint);
+  margin-top: 6px;
+  font-style: italic;
+}
+.layout-picker-panel {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+.layout-picker-panel button {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  color: var(--ink-soft);
+  padding: 10px 8px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.layout-picker-panel button.active {
+  background: var(--teal);
+  border-color: var(--teal);
+  color: #fff;
+}
+.variacao-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.variacao-item {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  padding: 12px 14px;
+  border-radius: 10px;
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color var(--t-fast);
+  width: 100%;
+}
+.variacao-item:hover { border-color: var(--teal); }
+.variacao-titulo { font-size: 14px; font-weight: 700; color: var(--ink); }
+.variacao-desc   { font-size: 12px; color: var(--ink-soft); margin: 4px 0; line-height: 1.4; }
+.variacao-meta   { font-size: 10px; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.06em; }
+
+/* Toolbar v2 (Etapa 5): 2 botões grandes (Personalizar + Baixar) */
+.editor-toolbar-v2 {
+  display: flex;
+  gap: 8px;
+  padding: 10px 12px env(safe-area-inset-bottom);
+  background: var(--card);
+  border-top: 1px solid var(--line);
+}
+.editor-toolbar-v2 .tool-btn {
+  flex: 1;
+  flex-direction: row;
+  gap: 8px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 700;
+  max-width: none;
+  justify-content: center;
+}
+.editor-toolbar-v2 .tool-ico { font-size: 18px; }
+.editor-toolbar-v2 .tool-lbl { font-size: 14px; }
+.editor-toolbar-v2 .tool-cta-secundario {
+  background: var(--bg);
+  color: var(--ink);
+  border: 1px solid var(--line);
+}
+.editor-toolbar-v2 .tool-cta-secundario:hover,
+.editor-toolbar-v2 .tool-cta-secundario:active { background: #f0f0f0; }
+
+/* Esconder sheets antigos (Etapa 5: substituídos pelo painel unificado) */
+#sheet-formato,
+#sheet-estilo,
+#sheet-texto,
+#sheet-foto {
+  display: none !important;
+}
+
+/* ═══ DESKTOP ≥1024px — painel sidebar + strip lateral (sem toolbar vertical antiga) ═══
+   Etapa 5: layout unificado. Mesmo componente do mobile, só CSS diferente.
 */
 @media (min-width: 1024px) {
+  /* editor-body: strip + canvas + painel-ajuste (3 cols) */
   .editor-body {
     display: grid;
-    grid-template-columns: 260px 1fr 240px;
-    grid-template-rows: 1fr;
+    grid-template-columns: 260px 1fr 340px;
+    grid-template-rows: 1fr auto;
   }
   .editor-canvas {
     grid-column: 1 / span 2;   /* canvas + strip (esq) ocupam 2 colunas */
@@ -1187,42 +1377,41 @@
     padding: 12px 16px;
     background: rgba(0,0,0,0.25);
   }
-  /* Toolbar vertical à direita (em vez de bottom) */
-  .editor-toolbar {
+  /* Etapa 5: painel ajuste ocupa a 3ª coluna inteira (sempre visível) */
+  .ajuste-panel {
     grid-column: 3;
-    grid-row: 1;
+    grid-row: 1 / span 2;
     height: auto;
-    flex-direction: column;
-    align-items: stretch;
-    justify-content: flex-start;
-    border-top: none;
+  }
+  /* Toolbar v2: ocupa a linha 2 das 2 primeiras colunas, só com Baixar */
+  .editor-toolbar.editor-toolbar-v2 {
+    grid-column: 1 / span 2;
+    grid-row: 2;
     border-left: 1px solid var(--line);
-    padding: 20px 12px;
-    gap: 8px;
   }
-  .tool-btn {
-    flex: 0 0 auto;
-    flex-direction: row;
-    gap: 12px;
-    padding: 14px 16px;
-    text-align: left;
-    justify-content: flex-start;
-    max-width: none;
-    border-radius: 10px;
-  }
-  .tool-btn .tool-ico { font-size: 22px; line-height: 1; }
-  .tool-btn .tool-lbl { font-size: 14px; letter-spacing: 0; }
-  .tool-cta {
-    margin-left: 0;
-    margin-top: auto;   /* "Baixar" empurrado pro fim */
-  }
-  /* Slide responde à altura disponível agora (canvas-stage não compete com strip horizontal) */
-  .slide-render { height: min(72vh, 700px); width: auto; --slide-scale: 1.3; }
-  .slide-render.story { height: min(80vh, 800px); width: auto; --slide-scale: 1.0; }
+  /* Slide responde à altura disponível */
+  .slide-render { height: min(70vh, 680px); width: auto; --slide-scale: 1.3; }
+  .slide-render.story { height: min(78vh, 780px); width: auto; --slide-scale: 1.0; }
 
-  /* Setas nav menores no desktop (já tem o canvas com bom padding) */
+  /* Setas nav menores no desktop */
   .nav-prev { left: 16px; }
   .nav-next { right: 16px; }
+
+  /* Painel vira SIDEBAR sempre visível (não bottom-sheet) */
+  .ajuste-backdrop { display: none !important; }
+  .ajuste-panel {
+    position: relative;
+    left: auto; right: auto; bottom: auto;
+    transform: none !important;
+    max-height: none;
+    border-radius: 0;
+    border-left: 1px solid var(--line);
+    box-shadow: none;
+  }
+  .ajuste-handle { display: none; }
+  /* No desktop, "Personalizar" não faz sentido (painel já visível) — esconde */
+  .editor-toolbar-v2 #btn-personalizar { display: none; }
+  .editor-toolbar-v2 #btn-baixar-direto { max-width: 360px; margin: 0 auto; }
 }
 
 /* ─── Desktop intermediário (900px-1023px) ───

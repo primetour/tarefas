@@ -34,6 +34,11 @@ const state = {
   formatos: new Set(['carrossel', 'story']),
   templateId: 'classico-teal',
 
+  // ─── Etapa 5: painel de ajuste unificado (mobile=sheet / desktop=sidebar) ───
+  ajustePanelOpen: false,                // mobile: aberto/fechado; desktop ignora (sempre visível)
+  ajusteTab: 'visual',                   // 'variacao' | 'visual' | 'editar'
+  ajusteFotoSubtab: 'curadas',           // sub-aba quando IC tá em Foto (dentro de Editar)
+
   // ─── CONTEÚDO (Etapa 1 do refactor — independente de formato) ───
   // ordemTopicos: ['capa', 'informacoes_gerais', 'atracoes', ...]
   // conteudoPorTopico: { 'capa': {nome,titulo,descricao,label}, ... }
@@ -288,6 +293,252 @@ function updateTopicosCounter() {
   if (counter) counter.textContent = `${sel} de ${total} marcados`;
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// Etapa 5: Painel de ajuste UNIFICADO (mobile=bottom-sheet / desktop=sidebar)
+// Um componente, mesmo state, 3 tabs (Variação / Visual / Editar).
+// Substitui os bottom-sheets velhos (formato/estilo/texto/foto) que ficam
+// no DOM mas escondidos via CSS pra não quebrar nada que ainda referencie.
+// ═══════════════════════════════════════════════════════════════════
+
+function openAjustePanel(tab = null) {
+  state.ajustePanelOpen = true;
+  if (tab) state.ajusteTab = tab;
+  $('#ajuste-panel')?.classList.add('open');
+  $('#ajuste-panel')?.setAttribute('aria-hidden', 'false');
+  $('#ajuste-backdrop')?.classList.add('show');
+  renderAjustePanel();
+}
+
+function closeAjustePanel() {
+  state.ajustePanelOpen = false;
+  $('#ajuste-panel')?.classList.remove('open');
+  $('#ajuste-panel')?.setAttribute('aria-hidden', 'true');
+  $('#ajuste-backdrop')?.classList.remove('show');
+}
+
+function renderAjustePanel() {
+  // Atualiza tabs visualmente
+  $$('.ajuste-tab').forEach(b => b.classList.toggle('active', b.dataset.ajustetab === state.ajusteTab));
+  const body = $('#ajuste-body');
+  if (!body) return;
+  if (state.ajusteTab === 'variacao') return renderTabVariacao(body);
+  if (state.ajusteTab === 'visual')   return renderTabVisual(body);
+  if (state.ajusteTab === 'editar')   return renderTabEditar(body);
+}
+
+// ─── Tab VARIAÇÃO ───
+function renderTabVariacao(body) {
+  const slide = state.slides[state.activeSlideIdx];
+  const topicoKey = slide?.id;
+  if (!topicoKey || topicoKey === 'capa' || topicoKey.startsWith('empty-')) {
+    body.innerHTML = `<p class="ajuste-empty">A capa e slides sem conteúdo cadastrado não têm variações.</p>`;
+    return;
+  }
+  // Listar variações do banco pra este (destino, tópico)
+  // Import dinâmico pra evitar acoplamento direto se artsContentBank ainda tá vazio
+  import('../../services/artsContentBank.js').then(({ listVariations }) => {
+    const variations = state.destino ? listVariations(state.destino._destinoReal?.id || state.destino.id, topicoKey) : [];
+    if (!variations.length) {
+      body.innerHTML = `
+        <div class="ajuste-empty">
+          <p>Sem variações curadas pra <strong>${escapeHtml(slide.nome || topicoKey)}</strong> ainda.</p>
+          <p class="ajuste-hint">Quando a Prime cadastrar variações no banco, elas aparecem aqui pra você trocar com 1 toque.</p>
+        </div>`;
+      return;
+    }
+    body.innerHTML = `
+      <p class="ajuste-section-label">Trocar conteúdo deste slide:</p>
+      <div class="variacao-list">
+        ${variations.map(v => `
+          <button class="variacao-item" data-vid="${v.id}">
+            <div class="variacao-titulo">${escapeHtml(v.conteudo.titulo || '')}</div>
+            <div class="variacao-desc">${escapeHtml((v.conteudo.descricao || '').slice(0, 120))}${(v.conteudo.descricao || '').length > 120 ? '…' : ''}</div>
+            <div class="variacao-meta">Faixa: ${escapeHtml(v.faixaTemplate || '—')}</div>
+          </button>
+        `).join('')}
+      </div>`;
+    body.querySelectorAll('.variacao-item').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const v = variations.find(x => x.id === btn.dataset.vid);
+        if (!v) return;
+        // Aplica variação ao tópico ativo
+        state.conteudoPorTopico[topicoKey] = {
+          ...state.conteudoPorTopico[topicoKey],
+          nome: v.conteudo.hand || state.conteudoPorTopico[topicoKey].label,
+          titulo: v.conteudo.titulo,
+          descricao: v.conteudo.descricao,
+          _fonte: 'banco-curado',
+          _variationId: v.id,
+        };
+        recomputeSlides();
+        renderCanvas();
+        renderStrip();
+      });
+    });
+  });
+}
+
+// ─── Tab VISUAL (kits/cores + layout) ───
+function renderTabVisual(body) {
+  const slide = state.slides[state.activeSlideIdx];
+  const layoutHtml = (!slide || slide.layoutId === 'capa') ? '' : `
+    <p class="ajuste-section-label">Layout deste slide</p>
+    <div class="layout-picker layout-picker-panel">
+      ${MOCK_LAYOUTS.map(l => `
+        <button data-layout="${l.id}" class="${slide.layoutId === l.id ? 'active' : ''}">${l.label}</button>
+      `).join('')}
+    </div>
+  `;
+  body.innerHTML = `
+    <p class="ajuste-section-label">Cor (template)</p>
+    <div class="sheet-list">
+      ${MOCK_TEMPLATES.map(t => `
+        <div class="sheet-item ${state.templateId === t.id ? 'selected' : ''} ${!t.disponivel ? 'disabled' : ''}" data-tid="${t.id}">
+          <div class="sheet-item-swatch" style="background:${t.cor}"></div>
+          <div class="sheet-item-content">
+            <h4>${escapeHtml(t.label)}</h4>
+            <p>${escapeHtml(t.descricao)}</p>
+          </div>
+          ${t.disponivel ? '<div class="sheet-item-check"></div>' : '<span class="sheet-item-tag">Em breve</span>'}
+        </div>
+      `).join('')}
+    </div>
+    ${layoutHtml}
+  `;
+  body.querySelectorAll('.sheet-item').forEach(el => {
+    el.addEventListener('click', () => {
+      const t = MOCK_TEMPLATES.find(x => x.id === el.dataset.tid);
+      if (!t?.disponivel) return;
+      state.templateId = t.id;
+      renderTabVisual(body);
+      renderCanvas();
+    });
+  });
+  body.querySelectorAll('.layout-picker-panel button[data-layout]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (!slide) return;
+      slide.layoutId = btn.dataset.layout;
+      // Reflete no conteudoPorTopico
+      const c = state.conteudoPorTopico[slide.id];
+      if (c) c.layoutOverride = btn.dataset.layout;
+      prefitAllSlides().then(() => {
+        recomputeSlides();
+        renderCanvas();
+        renderStrip();
+        renderLayoutPicker();
+        renderTabVisual(body);
+      });
+    });
+  });
+}
+
+// ─── Tab EDITAR (texto + foto) ───
+function renderTabEditar(body) {
+  const slide = state.slides[state.activeSlideIdx];
+  if (!slide) { body.innerHTML = ''; return; }
+  const isCapa = slide.id === 'capa';
+  const handVal   = isCapa ? (slide.titulo || '') : (slide.nome || '');
+  const tituloVal = isCapa ? (slide.nome || '')   : (slide.titulo || '');
+  const descVal   = slide.descricao || '';
+
+  body.innerHTML = `
+    <p class="ajuste-section-label">Texto do slide <span class="ajuste-section-sub">(${state.activeSlideIdx + 1}/${state.slides.length})</span></p>
+    <div class="sheet-field">
+      <label>${isCapa ? 'Frase manuscrita' : 'Nome (manuscrito)'}</label>
+      <input id="aj-hand" value="${escapeHtml(handVal)}" />
+    </div>
+    <div class="sheet-field">
+      <label>${isCapa ? 'Destaque (caixa-alta)' : 'Título (caixa-alta)'}</label>
+      <input id="aj-titulo" value="${escapeHtml(tituloVal)}" />
+    </div>
+    ${isCapa ? '' : `
+      <div class="sheet-field">
+        <label>Descrição</label>
+        <textarea id="aj-desc">${escapeHtml(descVal)}</textarea>
+      </div>
+    `}
+    <hr class="ajuste-sep" />
+    <p class="ajuste-section-label">Foto deste slide</p>
+    <div id="aj-foto-tabs"></div>
+    <div id="aj-foto-panel"></div>
+  `;
+  const updateAndRender = () => { renderCanvas(); renderStrip(); };
+  $('#aj-hand')?.addEventListener('input', e => {
+    const c = state.conteudoPorTopico[slide.id];
+    if (!c) return;
+    if (isCapa) c.titulo = e.target.value; else c.nome = e.target.value;
+    recomputeSlides(); updateAndRender();
+  });
+  $('#aj-titulo')?.addEventListener('input', e => {
+    const c = state.conteudoPorTopico[slide.id];
+    if (!c) return;
+    if (isCapa) c.nome = e.target.value; else c.titulo = e.target.value;
+    recomputeSlides(); updateAndRender();
+  });
+  if ($('#aj-desc')) $('#aj-desc').addEventListener('input', e => {
+    const c = state.conteudoPorTopico[slide.id];
+    if (!c) return;
+    c.descricao = e.target.value;
+    recomputeSlides(); updateAndRender();
+  });
+  // Sub-abas de Foto (banco curado / upload) — reusa lógica do sheet-foto antigo
+  renderAjusteFotoSection();
+}
+
+function renderAjusteFotoSection() {
+  const subtabs = $('#aj-foto-tabs');
+  const panel = $('#aj-foto-panel');
+  if (!subtabs || !panel) return;
+  subtabs.innerHTML = `
+    <div class="foto-tabs">
+      <button class="foto-tab ${state.ajusteFotoSubtab === 'curadas' ? 'active' : ''}" data-tab="curadas">Banco curado</button>
+      <button class="foto-tab ${state.ajusteFotoSubtab === 'upload' ? 'active' : ''}" data-tab="upload">Upload meu</button>
+    </div>
+  `;
+  subtabs.querySelectorAll('.foto-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      state.ajusteFotoSubtab = btn.dataset.tab;
+      renderAjusteFotoSection();
+    });
+  });
+  const slide = state.slides[state.activeSlideIdx];
+  if (state.ajusteFotoSubtab === 'curadas') {
+    const fotos = getBancoCuradoForDestino(state.destino, 'todas');
+    if (!fotos.length) {
+      panel.innerHTML = '<p class="ajuste-empty">Sem fotos no Banco de Imagens pra este destino.</p>';
+      return;
+    }
+    panel.innerHTML = `<div class="curadas-grid">${
+      fotos.map(f => `<div class="curada-thumb ${slide?.fotoUrl === f.url ? 'selected' : ''}" data-url="${f.url}" style="background-image:url('${f.url}')"></div>`).join('')
+    }</div>`;
+    panel.querySelectorAll('.curada-thumb').forEach(el => {
+      el.addEventListener('click', () => {
+        if (!slide) return;
+        slide.fotoUrl = el.dataset.url;
+        // Persiste foto manual no conteúdo do tópico
+        const c = state.conteudoPorTopico[slide.id];
+        if (c) c.fotoOverride = el.dataset.url;
+        renderCanvas(); renderStrip();
+        renderAjusteFotoSection();
+      });
+    });
+  } else {
+    panel.innerHTML = `
+      <label class="upload-area">
+        📷 Toque para escolher uma foto do seu celular
+        <input type="file" accept="image/*" id="aj-upload" />
+      </label>
+      <div class="upload-hint">Sua imagem fica só com você — não vai pro banco.</div>
+    `;
+    $('#aj-upload').addEventListener('change', e => {
+      const file = e.target.files?.[0];
+      if (!file || !slide) return;
+      slide.fotoUrl = URL.createObjectURL(file);
+      renderCanvas(); renderStrip();
+    });
+  }
+}
+
 // ─── Tela 3: TÓPICOS — lista do que o destino tem disponível ───
 function renderTopicos() {
   const title = $('#topicos-title');
@@ -444,9 +695,13 @@ function goToSlide(idx) {
   renderStrip();
   renderLayoutPicker();
   updateNavArrows();
-  // sheets de texto/foto atualizam pro novo slide
+  // sheets legados (escondidos no novo desenho, mas mantém compat)
   if (state.openSheet === 'texto') renderSheetTexto();
   if (state.openSheet === 'foto')  renderSheetFoto();
+  // Painel unificado (Etapa 5) — re-renderiza pra refletir slide novo
+  if (state.ajustePanelOpen || $('#ajuste-panel')?.classList.contains('open')) {
+    renderAjustePanel();
+  }
 }
 
 // Pré-mede os 8 slides em 1080px (invisivelmente), calcula o fator de redução
@@ -1545,13 +1800,29 @@ async function initWizard() {
     renderEditor();
   });
 
-  $$('.tool-btn').forEach(b => {
+  // Toolbar legada (data-tool=...) — mantida pra compat, mas o HTML novo
+  // só tem 2 botões (Personalizar/Baixar) sem data-tool. Esse loop não pega nada agora.
+  $$('.tool-btn[data-tool]').forEach(b => {
     b.addEventListener('click', () => {
       const tool = b.dataset.tool;
       if (state.openSheet === tool) closeSheet();
       else openSheet(tool);
     });
   });
+
+  // ─── Etapa 5: novos botões da toolbar simplificada ───
+  $('#btn-personalizar')?.addEventListener('click', () => openAjustePanel());
+  $('#btn-baixar-direto')?.addEventListener('click', () => openSheet('baixar'));
+
+  // Painel de ajuste: tabs + close + backdrop
+  $$('.ajuste-tab').forEach(b => {
+    b.addEventListener('click', () => {
+      state.ajusteTab = b.dataset.ajustetab;
+      renderAjustePanel();
+    });
+  });
+  $('#ajuste-close')?.addEventListener('click', closeAjustePanel);
+  $('#ajuste-backdrop')?.addEventListener('click', closeAjustePanel);
 
   $$('.canvas-format-toggle button').forEach(b => {
     b.addEventListener('click', () => {
@@ -1763,14 +2034,33 @@ const OVERLAY_HTML = `
         <div class="layout-picker" id="layout-picker"></div>
         <div class="slide-strip-wrap"><div class="slide-strip" id="slide-strip"></div></div>
       </main>
-      <nav class="editor-toolbar">
-        <button data-tool="formato" class="tool-btn"><span class="tool-ico">◫</span><span class="tool-lbl">Formato</span></button>
-        <button data-tool="estilo"  class="tool-btn"><span class="tool-ico">🎨</span><span class="tool-lbl">Estilo</span></button>
-        <button data-tool="texto"   class="tool-btn"><span class="tool-ico">✏️</span><span class="tool-lbl">Texto</span></button>
-        <button data-tool="foto"    class="tool-btn"><span class="tool-ico">📷</span><span class="tool-lbl">Foto</span></button>
-        <button data-tool="baixar"  class="tool-btn tool-cta"><span class="tool-ico">⬇</span><span class="tool-lbl">Baixar</span></button>
+      <!-- Etapa 5: toolbar simplificada — Personalizar abre painel; Baixar é direto -->
+      <nav class="editor-toolbar editor-toolbar-v2">
+        <button class="tool-btn tool-cta-secundario" id="btn-personalizar">
+          <span class="tool-ico">⚙</span>
+          <span class="tool-lbl">Personalizar</span>
+        </button>
+        <button class="tool-btn tool-cta" id="btn-baixar-direto">
+          <span class="tool-ico">⬇</span>
+          <span class="tool-lbl">Baixar</span>
+        </button>
       </nav>
     </div>
+
+    <!-- Painel de ajuste UNIFICADO (mobile=sheet / desktop=sidebar) -->
+    <div class="ajuste-backdrop" id="ajuste-backdrop"></div>
+    <aside class="ajuste-panel" id="ajuste-panel" aria-hidden="true">
+      <div class="ajuste-handle"></div>
+      <header class="ajuste-header">
+        <div class="ajuste-tabs">
+          <button class="ajuste-tab" data-ajustetab="variacao">Variação</button>
+          <button class="ajuste-tab active" data-ajustetab="visual">Visual</button>
+          <button class="ajuste-tab" data-ajustetab="editar">Editar</button>
+        </div>
+        <button class="btn-icon ajuste-close" id="ajuste-close" aria-label="Fechar">✕</button>
+      </header>
+      <div class="ajuste-body" id="ajuste-body"></div>
+    </aside>
   </section>
 
   <div class="sheet-backdrop" id="sheet-backdrop"></div>
