@@ -23,26 +23,21 @@ function getImagesForDestino(destino) {
   return _imagesByCountry.get(normKey(raw.country)) || [];
 }
 
-// Hash simples e estável do nome — usado pra distribuir capas DIFERENTES
-// entre destinos do mesmo país (que caem no mesmo array de fallback).
-function hashStr(s) {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) h = ((h << 5) - h + s.charCodeAt(i)) | 0;
-  return Math.abs(h);
-}
+// Round-robin por país: cada destino sem foto-cidade pega a PRÓXIMA foto
+// do pool do país, ciclando. Garante distribuição estrita e diferente
+// para cidades vizinhas mesmo com pool pequeno.
+const _paisCursors = new Map();   // country lowercase → next index
 
-// Escolhe foto-capa pra um destino. Se tem foto da cidade exata, pega a 1ª.
-// Se cai no fallback de país (com várias fotos), usa hash do nome do destino
-// pra pegar UMA diferente — distribui visualmente.
 function pickCapaUrl(d, imgs) {
   if (!imgs.length) return '';
   // Se as imagens são da CIDADE exata, sempre a 1ª (consistência)
   const isCityMatch = (_imagesByCity.get(normKey(d.city)) || []).length > 0;
   if (isCityMatch) return imgs[0]?.url || '';
-  // Fallback de país — distribui via hash
-  const seed = (d.city || d.id || d.country || '');
-  const idx = hashStr(seed) % imgs.length;
-  return imgs[idx]?.url || '';
+  // Fallback de país — round-robin estrito
+  const k = normKey(d.country);
+  const cur = _paisCursors.get(k) || 0;
+  _paisCursors.set(k, cur + 1);
+  return imgs[cur % imgs.length]?.url || '';
 }
 
 /* ── Destinos + indexação global de imagens ───────────────── */
@@ -57,6 +52,7 @@ export async function fetchDestinos() {
 
   _imagesByCity = new Map();
   _imagesByCountry = new Map();
+  _paisCursors.clear();
   for (const img of allImgs) {
     if (img.assetCategory === 'logo') continue;
     if (!img.url) continue;
