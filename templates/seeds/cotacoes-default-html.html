@@ -390,16 +390,14 @@
   <div class="cover-destinos">{{viagem.destinos}}</div>
   <div class="cover-subtitle">ROTEIRO DE VIAGEM</div>
   <div class="cover-separator"></div>
-  {{#if viagem.noites}}
-    <div class="cover-badge">{{viagem.noites}} NOITE{{#unless (eq viagem.noites 1)}}S{{/unless}}</div>
+  {{#if viagem.noitesLabel}}
+    <div class="cover-badge">{{viagem.noitesLabel}}</div>
   {{/if}}
   <div class="cover-dates">{{viagem.dataInicio}} a {{viagem.dataFim}}</div>
   <div class="cover-client">
     {{#if cliente.nome}}
       <div class="cover-client-name">Preparado para {{cliente.nome}}</div>
-      <div class="cover-client-pax">
-        {{cliente.adults}} adulto{{#unless (eq cliente.adults 1)}}s{{/unless}}{{#if cliente.children}} + {{cliente.children}} criança{{#unless (eq cliente.children 1)}}s{{/unless}}{{/if}}
-      </div>
+      {{#if cliente.paxLabel}}<div class="cover-client-pax">{{cliente.paxLabel}}</div>{{/if}}
     {{/if}}
     {{#if titulo}}<div class="cover-title">{{titulo}}</div>{{/if}}
   </div>

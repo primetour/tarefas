@@ -110,25 +110,35 @@ export function roteiroToTemplateData(roteiro, area, opts = {}) {
     hasIncExc: (Array.isArray(roteiro.includes) && roteiro.includes.length > 0)
             || (Array.isArray(roteiro.excludes) && roteiro.excludes.length > 0),
 
-    cliente: {
-      nome:     roteiro.client?.name     || '',
-      adults:   roteiro.client?.adults   || 0,
-      children: roteiro.client?.children || 0,
-      email:    roteiro.client?.email    || '',
-      telefone: roteiro.client?.phone    || '',
-    },
+    cliente: (() => {
+      const a = roteiro.client?.adults || 0;
+      const c = roteiro.client?.children || 0;
+      return {
+        nome:     roteiro.client?.name     || '',
+        adults:   a, children: c,
+        email:    roteiro.client?.email    || '',
+        telefone: roteiro.client?.phone    || '',
+        // v4.63.19+ Precomputed labels (Handlebars não tem eq helper builtin)
+        adultsLabel:   a > 0 ? `${a} adulto${a > 1 ? 's' : ''}` : '',
+        childrenLabel: c > 0 ? `${c} criança${c > 1 ? 's' : ''}` : '',
+        paxLabel:      [a > 0 ? `${a} adulto${a > 1 ? 's' : ''}` : '', c > 0 ? `${c} criança${c > 1 ? 's' : ''}` : ''].filter(Boolean).join(' + '),
+      };
+    })(),
 
-    viagem: {
-      dataInicio: _fmtDateBr(roteiro.travel?.startDate),
-      dataFim:    _fmtDateBr(roteiro.travel?.endDate),
-      noites:     roteiro.travel?.nights || 0,
-      destinos:   destinations.join(' · '),
-      // Array detalhado pra templates que quiserem loop:
-      destinosLista: (roteiro.travel?.destinations || []).map(d => ({
-        cidade: d.city || '',
-        pais:   d.country || '',
-      })),
-    },
+    viagem: (() => {
+      const n = roteiro.travel?.nights || 0;
+      return {
+        dataInicio: _fmtDateBr(roteiro.travel?.startDate),
+        dataFim:    _fmtDateBr(roteiro.travel?.endDate),
+        noites:     n,
+        noitesLabel: n > 0 ? `${n} NOITE${n > 1 ? 'S' : ''}` : '',
+        destinos:   destinations.join(' · '),
+        destinosLista: (roteiro.travel?.destinations || []).map(d => ({
+          cidade: d.city || '',
+          pais:   d.country || '',
+        })),
+      };
+    })(),
 
     dias: (roteiro.days || []).map(d => ({
       numero:    d.dayNumber || '',
