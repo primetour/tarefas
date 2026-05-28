@@ -1929,3 +1929,79 @@ Caso v4.62.51: Sprint Templates Áreas Audit 1 entregou 8 zumbis. Apliquei fixes
 - ✅ Headers `vary: Origin` / `access-control-*` no response — checar via curl `-I -H "Origin: ..."`.
 
 **Anti-padrão correlato**: assumir que "URL pública = qualquer um lê" sem confirmar CORS. Buckets públicos servem GETs anônimos, mas browsers cross-origin precisam dos headers. Tested in curl ≠ tested in browser.
+
+### j) ⚠ ARMADILHA: Firestore rule de UPDATE em doc público precisa lock list COMPLETA (v4.63.25)
+
+**Sintoma estrutural** (descoberto Agent audit Web Link sprint): doc `portal_web_links` tem `allow read: if true` (compartilhamento web link público) + `allow update` permitindo anônimo desde que `token + content` ficassem iguais. A regra REJEITAVA mudança de token/content mas PERMITIA mudança de QUALQUER outro campo (webTemplate, tipData, imagesByDest, webExports, etc.).
+
+**Risco concreto**: visitante anônimo (sem auth) abria o doc Firestore via SDK pré-auth, fazia `updateDoc({ webTemplate: { templateId: 'tpl-outra-area' } })`. CF `getTemplateHtml` aceita o `templateId` setado → renderiza template de outra área com dados desta. Info leak cross-área.
+
+**Fix** (v4.63.25): lock list COMPLETA — campo a campo:
+
+```javascript
+allow update: if isAuth()
+  || (request.resource.data.token       == resource.data.token
+      && request.resource.data.content     == resource.data.content
+      && request.resource.data.webTemplate == resource.data.webTemplate
+      && request.resource.data.tipData     == resource.data.tipData
+      && /* ... TODOS os campos não-monótonos */
+  );
+```
+
+Anônimo só pode incrementar campos monótonos (ex: `views`).
+
+**Princípio mais geral**: TODA regra que tem `allow read: if true` + `allow update` parcial pra anônimo precisa de **lock list EXPLÍCITA cobrindo todos os campos não-monótonos**. Não basta lockar 2-3 campos "óbvios". Defaults dangerous:
+
+- ✅ Whitelist (campos que anônimo PODE mudar)
+- ❌ Blacklist (campos que anônimo NÃO pode mudar — esquecimentos viram bug)
+
+**Padrão de auditoria** (rodar antes de declarar feature pública):
+```bash
+grep -A 5 "allow read:.*if true" firestore.rules | grep "allow update"
+```
+Cada match precisa de revisão manual da lock list. Compare com `addDoc()` payload pra ver TODOS os campos do schema.
+
+**Auditoria preventiva futura**: criar helper `lockedFields(allowed=[...])` em rules functions que retorna boolean — explicita quais campos podem mudar, e qualquer campo NOVO no schema vai precisar revisão da função.
+
+### k) ⚠ Cloud Function `onRequest` sem método whitelist aceita POST/PUT/DELETE com 200 (v4.63.25)
+
+Firebase Functions v2 com `cors: true` configura headers CORS mas NÃO restringe método HTTP. Handler que esperava só GET retorna 200 pra POST/PUT/DELETE também (a menos que internamente cheque `req.method`).
+
+Não é vulnerabilidade direta se handler é idempotente (apenas READ), mas:
+1. Viola REST contract (cliente legítimo confuso)
+2. Cache CDN pode comportar diferente entre métodos
+3. Logs poluídos com POST sem body
+
+**Padrão**:
+```javascript
+res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
+if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+if (req.method !== 'GET' && req.method !== 'HEAD') {
+  res.set('Allow', 'GET, OPTIONS');
+  res.status(405).type('text/plain').send('Method Not Allowed');
+  return;
+}
+```
+
+Sempre HEAD permitido junto com GET (semântica HTTP — HEAD é GET sem body).
+
+### l) ⚠ Cloud Function `onRequest` que faz fetch externo precisa Content-Length cap (v4.63.25)
+
+Toda CF que faz `fetch(url)` + `.text()` ou `.arrayBuffer()` está vulnerável a DoS amplification se a URL é configurável por usuário com privilégio. Caso real: `getTemplateHtml` fetcha R2 onde admin uploaded HTML. Admin malicioso sobe template 50MB → CF baixa 50MB + retorna 50MB pro cliente. Memória CF 256MiB → OOM. Custo egress R2 multiplicado.
+
+**Padrão**:
+```javascript
+const MAX_BYTES = 8 * 1024 * 1024;  // 8MB
+
+const r = await fetch(url);
+const declaredLen = parseInt(r.headers.get('content-length') || '0', 10);
+if (declaredLen > MAX_BYTES) {
+  res.status(413).send('Too large'); return;  // early reject sem download
+}
+const body = await r.text();
+if (body.length > MAX_BYTES) {  // double-check (server pode mentir content-length)
+  res.status(413).send('Too large after download'); return;
+}
+```
+
+Para arquivos binários (PDF/imagens), trocar `.text()` por `.arrayBuffer()` + check `byteLength`.

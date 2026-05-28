@@ -1357,7 +1357,7 @@ export const getTemplateHtml = onRequest({
         bytes: html.length,
       },
       severity: 'info',
-      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      timestamp: FieldValue.serverTimestamp(),
     }).catch(e => console.warn('[getTemplateHtml] audit log falhou:', e?.message));
 
     res.type('text/html; charset=utf-8').send(html);
