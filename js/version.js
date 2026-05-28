@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 40,
-  build: '20260528-portal-rich-text-markdown',
+  patch: 41,
+  build: '20260528-portal-ancoras-internas',
 };
 
 /** "1.2.0" */

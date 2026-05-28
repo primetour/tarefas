@@ -980,6 +980,22 @@ function renderPlaces(sd,data,imgs,isAgenda){
 function scrollToSeg(key,btn){document.querySelectorAll('.cat-btn').forEach(b=>b.classList.remove('active'));btn?.classList.add('active');document.getElementById(`seg-${key}`)?.scrollIntoView({behavior:'smooth',block:'start'});}
 window.scrollToSeg=scrollToSeg;
 
+// v4.63.41+ Âncoras internas (links [texto](#seg-X)) usam smooth scroll
+// em vez do jump default do browser. Captura no document por delegação.
+document.addEventListener('click', (e) => {
+  const link = e.target.closest('a[data-internal-link="1"]');
+  if (!link) return;
+  const href = link.getAttribute('href') || '';
+  if (!href.startsWith('#seg-')) return;
+  e.preventDefault();
+  const targetId = href.slice(1);
+  document.getElementById(targetId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  // atualiza highlight do cat-scroller se existe
+  const segKey = targetId.replace(/^seg-/, '');
+  document.querySelectorAll('.cat-btn').forEach(b => b.classList.remove('active'));
+  document.querySelector(`.cat-btn[onclick*="'${segKey}'"]`)?.classList.add('active');
+});
+
 
 function showErr(title,msg){document.getElementById('loading').style.display='none';document.getElementById('app').innerHTML=`<div class="error-state" style="margin-top:64px;"><div style="font-size:2.5rem;">✈</div><h2>${esc(title)}</h2><p>${esc(msg)}</p></div>`;}
 </script>

@@ -881,7 +881,76 @@ function renderPlaceListEntry(item, i, cats, isAgenda) {
   return placeItemBlock(item, i, cats, isAgenda);
 }
 
-// v4.63.40+ Toolbar mini de markdown: B / I / U / Link.
+// v4.63.41+ Modal de seleção de segmento pra link interno (âncora).
+// Lista segmentos da dica atual que TÊM conteúdo — clique insere
+// [textoSelecionadoOuLabel](#seg-XXX) no field-alvo.
+function openInternalAnchorModal(field) {
+  // Filtra apenas segmentos com conteúdo (não vale linkar pra segmento vazio)
+  const eligible = _allSegments.filter(s => {
+    const data = segmentData[s.key];
+    if (!data) return false;
+    if (s.mode === 'special_info') {
+      const inf = data.info || {};
+      return !!(inf.descricao || inf.dica || inf.populacao);
+    }
+    return Array.isArray(data.items) && data.items.some(it => it?.titulo || it?.title || it?.type === 'subtitle');
+  });
+  if (!eligible.length) {
+    toast.info('Sem outros segmentos com conteúdo pra linkar.');
+    return;
+  }
+
+  const overlay = document.createElement('div');
+  overlay.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:9999;
+    display:flex;align-items:center;justify-content:center;padding:20px;`;
+  overlay.innerHTML = `
+    <div class="card" style="max-width:440px;width:100%;padding:0;display:flex;flex-direction:column;max-height:80vh;">
+      <div style="padding:16px 22px 10px;border-bottom:1px solid var(--border-subtle);">
+        <h3 style="margin:0 0 4px;font-size:0.95rem;">⚓ Link interno</h3>
+        <div style="font-size:0.75rem;color:var(--text-muted);line-height:1.4;">
+          Escolha o segmento. O leitor da dica será levado a ele ao clicar.
+        </div>
+      </div>
+      <div id="anchor-list" style="padding:8px;flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:4px;">
+        ${eligible.map(s => `
+          <button class="anchor-btn btn btn-secondary" data-key="${esc(s.key)}" data-label="${esc(s.label)}"
+            style="text-align:left;padding:10px 14px;">${esc(s.label)}</button>
+        `).join('')}
+      </div>
+      <div style="padding:10px 22px;border-top:1px solid var(--border-subtle);display:flex;justify-content:flex-end;">
+        <button id="anchor-cancel" class="btn btn-ghost btn-sm">Cancelar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  const close = () => { overlay.remove(); document.removeEventListener('keydown', onKey); };
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey);
+  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+  overlay.querySelector('#anchor-cancel')?.addEventListener('click', close);
+
+  overlay.querySelectorAll('.anchor-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const segKey = btn.dataset.key;
+      const segLabel = btn.dataset.label;
+      // Insere [textoSelecionadoOuLabel](#seg-key) no field
+      const start = field.selectionStart, end = field.selectionEnd;
+      const sel = field.value.slice(start, end);
+      const label = sel || `Ver ${segLabel}`;
+      const before = field.value.slice(0, start);
+      const after = field.value.slice(end);
+      field.value = `${before}[${label}](#${segKey})${after}`;
+      field.focus();
+      const newStart = start + 1;
+      field.setSelectionRange(newStart, newStart + label.length);
+      field.dispatchEvent(new Event('input', { bubbles: true }));
+      close();
+      toast.success(`Link pra ${segLabel} inserido.`);
+    });
+  });
+}
+
+// v4.63.40+ Toolbar mini de markdown: B / I / U / Link / âncora interna.
 // Renderiza inline acima do textarea/input alvo. Data attribute aponta target.
 function richToolbar(targetSel, opts = {}) {
   const compact = !!opts.compact;
@@ -904,6 +973,10 @@ function richToolbar(targetSel, opts = {}) {
       style="border:1px solid var(--border-subtle);background:var(--bg-card);
       padding:2px 8px;cursor:pointer;border-radius:3px;
       color:var(--text-secondary);font-family:inherit;">🔗</button>
+    <button type="button" class="rt-btn" data-rt="anchor" title="Link interno (ir pra outro segmento)"
+      style="border:1px solid var(--border-subtle);background:var(--bg-card);
+      padding:2px 8px;cursor:pointer;border-radius:3px;
+      color:var(--brand-gold,#D4A843);font-family:inherit;">⚓</button>
   </div>`;
 }
 
@@ -1223,9 +1296,6 @@ function bindPlaceList(key, isAgenda = false) {
         const start = field.selectionStart, end = field.selectionEnd;
         const sel = field.value.slice(start, end);
         const placeholder = sel || 'texto';
-        wrapSelection(field, { open: `[${placeholder ? '' : ''}`, close: `](${cleanUrl})` });
-        // Hack: a wrapSelection com objeto não inclui placeholder no meio.
-        // Re-fazer manual:
         const before = field.value.slice(0, start);
         const after = field.value.slice(end);
         field.value = `${before}[${placeholder}](${cleanUrl})${after}`;
@@ -1234,6 +1304,10 @@ function bindPlaceList(key, isAgenda = false) {
         field.setSelectionRange(newStart, newStart + placeholder.length);
         field.dispatchEvent(new Event('input', { bubbles: true }));
       }
+    }
+    // v4.63.41+ Link interno (âncora) pra outro segmento da própria dica
+    else if (action === 'anchor') {
+      openInternalAnchorModal(field);
     }
   });
 
