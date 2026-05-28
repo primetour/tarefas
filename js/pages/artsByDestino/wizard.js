@@ -492,7 +492,9 @@ function wireCanvasSelection() {
       if (el.getAttribute('contenteditable') === 'true') return;
       const field = el.dataset.field;
       if (!field) return;
-      selectElement(field);
+      // Previne text-selection do browser pra moveable conseguir interceptar drag
+      e.preventDefault();
+      if (state.selectedField !== field) selectElement(field);
     });
     // Double click → entra em modo edit (cursor, digita)
     el.addEventListener('dblclick', (e) => {

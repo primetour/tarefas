@@ -75,11 +75,19 @@
   outline-offset: 3px;
   border-radius: 2px;
   cursor: move;
+  /* CRÍTICO: bloqueia text-selection do browser pra moveable interceptar drag */
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
 }
 .slot-text[contenteditable="true"] {
   cursor: text;
   outline-color: #fbbf24;   /* amarelo no modo edit */
   background: rgba(251,191,36,0.06);
+  /* Em modo edit, libera text-selection pra digitar/selecionar */
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .float-toolbar {
