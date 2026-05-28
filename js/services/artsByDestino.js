@@ -177,7 +177,6 @@ function segmentToHighlightText(segDef, segData) {
 function tipToHighlights(tip) {
   if (!tip?.segments) return [];
   const out = [];
-  // Itera _segmentsAll (builtin + custom) na ordem definida em portal.js
   for (const segDef of _segmentsAll) {
     const segData = tip.segments[segDef.key];
     if (!segHasContent(segData)) continue;
@@ -187,10 +186,32 @@ function tipToHighlights(tip) {
     out.push({
       nome: segDef.label,
       titulo: segDef.label.toUpperCase(),
-      descricao: clean.length > 180 ? clean.slice(0, 177) + '...' : clean,
+      descricao: smartTruncate(clean, 250),
     });
   }
   return out;
+}
+
+// Trunca texto preferindo fim de frase (. ! ?) ou vírgula próximos do limite.
+// Evita corte no meio de palavra — busca pontuação numa janela de 40 chars antes do max.
+function smartTruncate(text, max) {
+  if (text.length <= max) return text;
+  const slice = text.slice(0, max);
+  // Tenta achar ponto/exclamação/interrogação na zona "final aceitável" (75% do max em diante)
+  const minOk = Math.floor(max * 0.75);
+  const sentenceMatch = slice.slice(minOk).match(/[.!?](?=\s|$)/);
+  if (sentenceMatch) {
+    const idx = minOk + sentenceMatch.index + 1;
+    return text.slice(0, idx);
+  }
+  // Senão, último ponto-e-vírgula ou vírgula
+  const lastComma = Math.max(slice.lastIndexOf(','), slice.lastIndexOf(';'));
+  if (lastComma > minOk) return text.slice(0, lastComma) + '.';
+  // Senão, último espaço (evita cortar palavra)
+  const lastSpace = slice.lastIndexOf(' ');
+  if (lastSpace > minOk) return text.slice(0, lastSpace) + '…';
+  // Fallback: corte raso mesmo
+  return slice + '…';
 }
 
 export async function buildSlidesForDestino(destino) {
