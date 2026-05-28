@@ -1596,3 +1596,99 @@ const { collection, getDocs } = await import(`${FB_SDK_BASE}/firebase-firestore.
 ```
 
 Versão central, mismatch impossível.
+
+---
+
+## 15. Aprendizados sprint Editor cotações + GDS + notif safety-net (27/05/2026)
+
+13 releases (v4.62.26 → v4.62.38) cobrindo parser GDS aéreo/hotel/pricing, refator Serviços, fix duplicação confirm, compartilhar tarefa via link, **auditoria completa de notificações com 2 CFs reativas safety-net**, editor segmentos custom Portal de Dicas.
+
+### a) Diagnose-FIRST em auditoria de bug "feature não funciona"
+
+**Caso real v4.62.37**: Renê reportou *"usuários estão sendo marcados como responsáveis ou observadores e não há notificação e banner"*. Tentação imediata: começar a refatorar `js/services/notifications.js`. **NÃO FAÇA**.
+
+Padrão correto antes de qualquer linha de código:
+
+1. **Investigar kill-switches globais primeiro** — em PRIMETOUR, `settings/global.notifyTaskAssigned` é flag boolean que mata TODAS as notifs de assignee se `false`. Custou 1 min rodar `db.collection('settings').doc('global').get()` via script Admin SDK pra eliminar essa hipótese. Se fosse essa, **fix em 5 segundos sem deploy** (só toggle UI).
+2. **Só DEPOIS do diagnose**: delegar auditoria estrutural a Agent paralelo com prompt MUITO detalhado (cenários, gaps esperados, formato de output).
+3. Scripts diagnósticos viram **patrimônio do repo**: `functions/check-global-notif-settings.cjs` mostra estado de TODAS as flags em <5s. Reusar em qualquer reclamação futura de "notif não chega".
+
+**Princípio**: bug de feature que "deveria funcionar" tem 70% de probabilidade de ser configuração/state (toggle desligado, cache stale, role mal atribuída) e 30% de ser bug de código. Investigar config PRIMEIRO economiza horas.
+
+### b) CF reativa onCreate/onUpdate como safety-net pro padrão §12.n option 3
+
+**Princípio CLAUDE.md §12.n já existente**: quando existem 2+ caminhos pra mesma operação CRUD (service + page direta + admin script + bulk + portal externo), TODA lógica colateral (notif/audit/cache) precisa estar centralizada OU replicada com comentário cross-ref OU **implementada via Cloud Function reativa** (mais robusta).
+
+**Implementação concreta v4.62.37**: 2 CFs novas — `onTaskCreated` + `onTaskUpdated` em `tasks/{taskId}` — que disparam notifs pra `assignees[]` e `observers[]` adicionados. **Idempotência via query**: antes de criar notif, verifica se já existe `(recipientId, entityType, entityId, type, createdAt > 5min atrás)` — se sim, skip. Permite caller UI continuar chamando `notify()` direto (mais rápido) sem dobrar notifs quando CF executar depois.
+
+**Vantagens da CF reativa vs notify por caller**:
+- ✅ Cobre **qualquer caller novo** que esqueça notify (portal, integrações, admin scripts, novos services)
+- ✅ Admin SDK bypassa Firestore Rules — notif sai mesmo se rule rejeitaria o client
+- ✅ Independe de prefs/kill-switch client-side (que demoram 5min de cache pra propagar)
+- ✅ `actorId` derivado de `task.createdBy` ou `task.updatedBy` (cada doc deve gravar esse campo)
+
+**Quando NÃO usar CF reativa**:
+- Operação requer feedback síncrono (notif "chegou rápido pro ver na UI imediatamente")
+- Lógica depende de contexto que só o client tem (URL atual, scroll position, etc.)
+- Volume alto (>10k writes/min) onde latência da CF (1-3s) seria gargalo
+
+**Custo**: ~$0.40/milhão de invocações na Cloud Functions Gen 2. Pra um sistema com 5-10 task writes/dia, **insignificante**.
+
+### c) Parser tolerante de input livre precisa de blacklist + campo distintivo obrigatório
+
+**Caso real v4.62.34**: `parsePNR` aceitava 2 letras + dígitos + 2 IATAs como voo válido. Linha `1- USD3874.00 USD2499.20 XT USD6373.20 ADT` virava "voo US 3874 USD→USD" porque cada uma dessas substrings passava o regex permissivo.
+
+**Fix em 3 camadas defensivas** (ordem importa — early reject mais barato):
+
+1. **Reject EARLY por pattern de não-voo**: linha com `USD\d+` (moeda colada em valor) ou `^[\d.\-\s]+[A-Z]{3}\d+` (pricing display) **nunca é PNR** — return null antes de qualquer parse.
+2. **Blacklist de códigos não-IATA**: set com ~50 entries (moedas ISO 4217, paxTypes IATA, códigos de taxa comuns YQ/YR/BR/ZR/XT, commands GDS NCB/WPN/TOTAL). Tanto a "cia aérea" quanto as IATAs origem/destino são validadas contra ela.
+3. **Campo distintivo OBRIGATÓRIO**: PNR real SEMPRE tem data `DDMMM`. Sem data = não é voo. Linha "1- USD3874" não tem data → rejeitada.
+4. **Validação contra dicionário real**: se dict de aeroportos carregado (>100 entries), AMBAS as IATAs precisam existir nele. "USD" não está → rejeitado. (Tolerante se dict offline.)
+
+**Princípio mais geral pra qualquer parser tolerante**: lista de "o que aceita" é frágil; lista de "o que rejeita explicitamente" + "campo que SEMPRE existe" é robusta. Quando o parser produz falso positivo, o fix raramente é tornar o regex mais restritivo (frágil em casos legítimos) — é adicionar guard de rejeição.
+
+### d) 1 botão tolerante > N botões especializados em UX de import
+
+**Caso real v4.62.28 → v4.62.29**: 2 botões separados (`✈ Codificar tarifa GDS` pra PNR voos + `💵 Codificar preços` pra pricing display). Renê: *"junte o codificar a tarifa e o preço em um único botão, pro usuário mandar o texto todo de uma vez e ter as informações... se ele mandar só a tarifa ou só o preço vc aceita também e entrega o que tiver disponível"*.
+
+Resultado: **1 botão `✈ Codificar do GDS`** + modal único + textarea único. Roda os 2 parsers em paralelo on input. Preview dual — cada bloco renderiza só se o parser detectou algo:
+- Só PNR → insere voos (preço em branco)
+- Só pricing → mostra radios de aplicação
+- Os dois → insere voos + radios incluem os recém-criados
+- Nada → erro contextual
+
+**Princípio UX**: quando user precisa decidir "qual ferramenta uso pra esse input?" antes de fazer, fricção alta. Quando UI auto-detecta o conteúdo, fricção zero. Vale pra: import de CSV (auto-detect delimiter/encoding), upload de imagem (auto-detect HEIC→JPEG), parse de texto livre (data ISO vs BR vs natural language), etc.
+
+**Anti-padrão correlato**: ter 5 botões pequenos no header (Import CSV / Import XLS / Import JSON / Cole texto / Upload) é PIOR que 1 botão "Importar" que abre modal com auto-detect + opcional "outro formato" se falhar. v4.62.29 segue esse princípio.
+
+### e) §11.k recidivismo em SPA — listener delegation SEMPRE vaza se sem AbortController
+
+**Caso real v4.62.33**: Renê: *"quando tento deletar uma cotação, o banner de reconfirmação fica aparecendo 5-6×"*. Causa: `js/pages/roteiros.js → renderRoteiros(container)` registrava 5 `container.addEventListener(...)` sem AbortController. SPA reusa o mesmo container entre navegações — cada visita ao módulo acumulava +5 listeners. 6 visitas = 6 `confirm()` em cascata por delete.
+
+**Já documentado em §11.k**: "AbortController é zero-overhead e idempotente". Mas RECIDIVISMO em SPA = bug latente em QUALQUER page que use delegação no container e seja reusada entre navegações.
+
+**Padrão obrigatório pra qualquer page nova**:
+
+```js
+let _pageAbortCtrl = null; // module-scope, fora do export
+
+export async function renderPageX(container) {
+  if (_pageAbortCtrl) _pageAbortCtrl.abort();
+  _pageAbortCtrl = new AbortController();
+  const _sig = _pageAbortCtrl.signal;
+  // ... resto da render ...
+  container.addEventListener('click', handlerA, { signal: _sig });
+  container.addEventListener('input', handlerB, { signal: _sig });
+  container.addEventListener('change', handlerC, { signal: _sig });
+}
+```
+
+**Sintoma escalado** que pode passar despercebido sem o user reclamar:
+- Filtros: pill click → N re-renders (parece "lento" mas é N execuções)
+- Busca: input → N renderTable em cascata
+- Sort de coluna, paginação, mudança de status: cada um dispara múltiplas vezes
+- Memory leak silencioso (handlers velhos seguem em memória, segurando refs)
+
+**Auditoria pendente** (próxima sessão, low priority): `grep -rn "container.addEventListener" js/pages/ | grep -v AbortController` — revela todos os candidatos. Provavelmente 5-10 pages com esse bug latente. Aplicar fix de 3 linhas em cada uma é trivial. Bug só "aparece" se user navega ida-e-volta mais de 1 vez (testes manuais rápidos não pegam — testes E2E que simulam navegação real pegariam).
+
+**Auto-correção arquitetural futura**: helper `setupPageContainer(container)` em `js/components/uiKit.js` que retorna `{ signal, destroy }` e padroniza o pattern. Pra impedir esquecimento, regra de PR: "qualquer addEventListener em container precisa de `{ signal }`" — pode virar lint rule.
