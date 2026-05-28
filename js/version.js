@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 62,
-  patch: 35,
-  build: '20260527-tarefa-compartilhar-link-deep-link',
+  patch: 36,
+  build: '20260527-tarefa-copiar-link-no-rodape',
 };
 
 /** "1.2.0" */

@@ -284,6 +284,28 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
           }
         },
       }] : []),
+      // v4.62.36: "Copiar link" no rodapé (era no header, Rene preferiu aqui).
+      // Só aparece em modo edição. Permissão respeitada via deep-link existente
+      // (#tasks?taskId=X passa por fetchTasks/Firestore Rules).
+      ...(isEdit && task.id ? [{
+        label: '🔗 Copiar link', class: 'btn-secondary btn-sm', closeOnClick: false,
+        onClick: async () => {
+          const url = `${location.origin}${location.pathname}#tasks?taskId=${task.id}`;
+          try {
+            await navigator.clipboard.writeText(url);
+            toast.success('Link copiado. Só quem tem permissão na tarefa vai conseguir abrir.');
+          } catch (err) {
+            try {
+              const ta = document.createElement('textarea');
+              ta.value = url; ta.style.position = 'fixed'; ta.style.opacity = '0';
+              document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
+              toast.success('Link copiado. Só quem tem permissão na tarefa vai conseguir abrir.');
+            } catch {
+              toast.error('Não foi possível copiar. Copie manual: ' + url);
+            }
+          }
+        },
+      }] : []),
       { label:'Cancelar', class:'btn-secondary', closeOnClick:false,
         onClick: () => {
           // v4.57.24: confirm() nativo → modal customizado (§11.k)
@@ -349,73 +371,6 @@ export async function openTaskModal({ taskData=null, projectId=null, status='not
   // Se já havia esse modal aberto (dedupe), não re-binda eventos —
   // o existente continua válido. Apenas devolve o handle.
   if (m.isExisting) return m;
-
-  // v4.62.35: botão "🔗 Copiar link" no header do modal de tarefa.
-  // Só aparece em modo edição (precisa de task.id). URL é deep-link
-  // `#tasks?taskId=ID` — o sistema já tem handler em pages/tasks.js que abre
-  // o modal automaticamente. Permissão é checada via fetchTasks/Firestore
-  // Rules: se quem abrir não tem permissão, toast já dispara
-  // "Tarefa não encontrada ou sem permissão de acesso". Hierarquia 100%
-  // respeitada — link não bypassa rule alguma.
-  if (isEdit && task.id) {
-    try {
-      const headerEl = m.getElement?.()?.querySelector('.modal-header');
-      if (headerEl) {
-        const shareBtn = document.createElement('button');
-        shareBtn.className = 'modal-share-btn';
-        shareBtn.type = 'button';
-        shareBtn.setAttribute('aria-label', 'Copiar link da tarefa');
-        shareBtn.title = 'Copiar link da tarefa';
-        shareBtn.innerHTML = '🔗';
-        // Estilo inline (sem mexer em css/components.css). Espelha .modal-close
-        // mas em cinza neutro, hover dourado. Posicionado ANTES do X.
-        Object.assign(shareBtn.style, {
-          background: 'transparent',
-          border: '1px solid var(--border-subtle, #e5e7eb)',
-          borderRadius: '6px',
-          width: '32px',
-          height: '32px',
-          fontSize: '16px',
-          lineHeight: '1',
-          cursor: 'pointer',
-          marginRight: '6px',
-          color: 'var(--text-secondary)',
-          transition: 'all .12s',
-        });
-        shareBtn.addEventListener('mouseenter', () => {
-          shareBtn.style.borderColor = 'var(--brand-gold, #D4A843)';
-          shareBtn.style.color = 'var(--text-primary)';
-        });
-        shareBtn.addEventListener('mouseleave', () => {
-          shareBtn.style.borderColor = 'var(--border-subtle, #e5e7eb)';
-          shareBtn.style.color = 'var(--text-secondary)';
-        });
-        shareBtn.addEventListener('click', async (e) => {
-          e.stopPropagation();
-          // Constrói URL preservando origin+pathname (GH Pages /tarefas/)
-          // e usando hash deep-link já suportado (v4.49+).
-          const url = `${location.origin}${location.pathname}#tasks?taskId=${task.id}`;
-          try {
-            await navigator.clipboard.writeText(url);
-            toast.success('Link copiado. Só quem tem permissão na tarefa vai conseguir abrir.');
-          } catch (err) {
-            // Fallback antigo pra contexts sem clipboard API (HTTP / iframe)
-            try {
-              const ta = document.createElement('textarea');
-              ta.value = url; ta.style.position = 'fixed'; ta.style.opacity = '0';
-              document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove();
-              toast.success('Link copiado. Só quem tem permissão na tarefa vai conseguir abrir.');
-            } catch {
-              toast.error('Não foi possível copiar. Copie manual: ' + url);
-            }
-          }
-        });
-        const closeBtn = headerEl.querySelector('.modal-close');
-        if (closeBtn) headerEl.insertBefore(shareBtn, closeBtn);
-        else headerEl.appendChild(shareBtn);
-      }
-    } catch (e) { /* fail silently — não bloqueia abertura do modal */ }
-  }
 
   // Intercept all close paths (X button, backdrop, ESC) with dirty check
   // by monkey-patching modal.close for this modal's ID
