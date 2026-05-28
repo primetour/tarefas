@@ -19,6 +19,7 @@ import { modal } from '../components/modal.js';
 import { renderPageHeader, renderFilterBar } from '../components/uiKit.js';
 import {
   fetchTemplates, fetchTemplate, archiveTemplate, uploadTemplate as uploadTemplateService,
+  renderTemplate as renderTemplateService, downloadBlob,
   validateTemplateFile, formatFileSize,
   TEMPLATE_MODULES, TEMPLATE_FORMATS, MODULE_MAP, FORMAT_MAP, PLACEHOLDERS_SPEC,
 } from '../services/templates.js';
@@ -119,11 +120,17 @@ function _renderCard(tpl, areas) {
 
       ${placeholdersHTML}
 
-      <div style="display:flex;gap:6px;margin-top:auto;padding-top:10px;border-top:1px solid var(--border-subtle);">
+      <div style="display:flex;gap:6px;margin-top:auto;padding-top:10px;border-top:1px solid var(--border-subtle);flex-wrap:wrap;">
         <a href="${_esc(tpl.fileUrl)}" target="_blank" rel="noopener" class="btn btn-secondary btn-sm"
-          style="flex:1;text-align:center;text-decoration:none;font-size:0.75rem;">
-          🔗 Abrir arquivo
+          style="flex:1;text-align:center;text-decoration:none;font-size:0.75rem;min-width:90px;">
+          🔗 Abrir
         </a>
+        ${tpl.format === 'html' && !isArchived ? `
+          <button class="btn btn-primary btn-sm tpl-action-render" data-id="${_esc(tpl.id)}"
+            style="font-size:0.75rem;flex:1;min-width:90px;" title="Renderizar com dados de teste + baixar PDF">
+            🧪 Testar PDF
+          </button>
+        ` : ''}
         ${canManage && !isArchived ? `
           <button class="btn btn-secondary btn-sm tpl-action-archive" data-id="${_esc(tpl.id)}"
             style="font-size:0.75rem;" title="Arquivar template">
@@ -260,6 +267,17 @@ export async function renderTemplatesLibrary(container) {
   // Wire ações nos cards (delegação no grid pra evitar leak)
   const grid = container.querySelector('#tpl-grid');
   grid.addEventListener('click', async (e) => {
+    // v4.63.6+ Testar render HTML→PDF via Puppeteer
+    const renderBtn = e.target.closest('.tpl-action-render');
+    if (renderBtn) {
+      e.preventDefault();
+      const id = renderBtn.dataset.id;
+      const tpl = _state.all.find(t => t.id === id);
+      if (!tpl) return;
+      _openTestRenderModal(tpl, container);
+      return;
+    }
+
     const archiveBtn = e.target.closest('.tpl-action-archive');
     if (archiveBtn) {
       e.preventDefault();
@@ -371,6 +389,155 @@ function _renderFilters(filterZone, signal) {
         _applyFilters();
         _renderResults(filterZone.closest('.page-content') || document.querySelector('#content') || document.body);
       }, { signal });
+    }
+  });
+}
+
+/* ─── Test render modal (v4.63.6+ HTML→PDF via Puppeteer) ──────────── */
+
+/**
+ * Gera objeto de dados de exemplo cobrindo a maioria dos placeholders
+ * conhecidos (PLACEHOLDERS_SPEC). Permite "teste rápido" sem o user
+ * digitar JSON.
+ */
+function _sampleData(moduleKey) {
+  const today = new Date().toLocaleDateString('pt-BR');
+  if (moduleKey === 'cotacoes') {
+    return {
+      cliente: { nome: 'João da Silva', adults: 2, children: 1 },
+      viagem: {
+        dataInicio: '12/06/2026', dataFim: '22/06/2026', noites: 10,
+        destinos: 'Paris · Roma · Veneza',
+      },
+      area: { nome: 'Lazer · PRIMETOUR', logoUrl: '' },
+      dias: [
+        { numero: 1, cidade: 'Paris',   narrativa: 'Chegada + city tour panorâmico.', atividades: ['Check-in', 'Jantar bistrô'] },
+        { numero: 2, cidade: 'Paris',   narrativa: 'Louvre + Torre Eiffel.', atividades: ['Museu', 'Sunset'] },
+        { numero: 3, cidade: 'Roma',    narrativa: 'TGV pra Roma. Coliseu à tarde.', atividades: ['Trem', 'Coliseu'] },
+        { numero: 4, cidade: 'Veneza',  narrativa: 'Gôndolas + Piazza San Marco.', atividades: ['Gondola', 'Café'] },
+      ],
+      hoteis: [
+        { cidade: 'Paris', nome: 'Le Bristol' },
+        { cidade: 'Roma',  nome: 'Hassler Roma' },
+      ],
+      voos: [
+        { rota: 'GRU → CDG', cia: 'Air France' },
+        { rota: 'VCE → GRU', cia: 'LATAM' },
+      ],
+      precos: { totalCasal: 'R$ 32.500', porPessoa: 'R$ 16.250', moeda: 'BRL' },
+      inclui:    ['Hotéis 5★', 'Café da manhã', 'Trens 1ª classe'],
+      naoInclui: ['Voos internacionais', 'Almoços', 'Despesas pessoais'],
+      today,
+    };
+  }
+  if (moduleKey === 'portal') {
+    return {
+      area: { nome: 'Lazer · PRIMETOUR' },
+      destinos: [
+        { cidade: 'Tóquio', pais: 'Japão',  tips: ['Comer em Tsukiji', 'Bairro Shibuya à noite'] },
+        { cidade: 'Quioto', pais: 'Japão',  tips: ['Templo Kinkaku-ji', 'Ryokan tradicional'] },
+      ],
+      segments: ['Gastronomia', 'Hotéis', 'Atrações'],
+      today,
+    };
+  }
+  return {
+    titulo: 'Roteiro exemplo',
+    destinos: 'Lima · Cusco · Machu Picchu',
+    noites: 7,
+    dias: [{ cidade: 'Lima', narrativa: 'Tour gastronômico.' }],
+    area: { nome: 'Operadora' },
+    today,
+  };
+}
+
+function _openTestRenderModal(tpl, container) {
+  const sample = _sampleData(tpl.module);
+  const sampleJson = JSON.stringify(sample, null, 2);
+
+  const html = `
+    <div id="tpl-render-overlay" style="
+      position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:9999;
+      display:flex;align-items:center;justify-content:center;padding:24px;overflow-y:auto;">
+      <div style="background:var(--bg-card);border-radius:10px;padding:24px;
+        max-width:680px;width:100%;box-shadow:0 24px 48px rgba(0,0,0,0.35);">
+
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+          <h2 style="font-size:1.125rem;margin:0;color:var(--text-primary);">🧪 Testar render → PDF</h2>
+          <button id="rd-x" aria-label="Fechar" style="background:none;border:none;font-size:1.25rem;
+            color:var(--text-muted);cursor:pointer;padding:4px 8px;line-height:1;">×</button>
+        </div>
+        <p style="font-size:0.8125rem;color:var(--text-muted);margin:0 0 14px;">
+          Template: <strong>${_esc(tpl.name)}</strong> · ${_esc(tpl.module)} · ${_esc(tpl.format)}
+          <br/>Edite o JSON de dados se quiser. Submit → Puppeteer renderiza + baixa PDF.
+        </p>
+
+        <label style="display:block;font-size:0.8125rem;color:var(--text-secondary);margin-bottom:4px;font-weight:500;">
+          Dados (JSON)
+        </label>
+        <textarea id="rd-json" spellcheck="false"
+          style="width:100%;min-height:280px;font-family:monospace;font-size:0.75rem;
+          padding:10px;border:1px solid var(--border-subtle);border-radius:6px;
+          background:var(--bg-surface);color:var(--text-primary);resize:vertical;">${_esc(sampleJson)}</textarea>
+        <div id="rd-msg" style="font-size:0.7rem;color:var(--text-muted);margin-top:6px;min-height:18px;"></div>
+
+        <div style="display:flex;gap:8px;margin-top:14px;justify-content:flex-end;align-items:center;">
+          <button class="btn btn-secondary" id="rd-cancel">Cancelar</button>
+          <button class="btn btn-primary" id="rd-submit">📄 Gerar PDF</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const overlay = document.createElement('div');
+  overlay.innerHTML = html;
+  document.body.appendChild(overlay.firstElementChild);
+
+  const close = () => document.getElementById('tpl-render-overlay')?.remove();
+  document.getElementById('rd-x')?.addEventListener('click', close);
+  document.getElementById('rd-cancel')?.addEventListener('click', close);
+  document.getElementById('tpl-render-overlay')?.addEventListener('click', (e) => {
+    if (e.target.id === 'tpl-render-overlay') close();
+  });
+  const keyHandler = (e) => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', keyHandler);
+  const observer = new MutationObserver(() => {
+    if (!document.getElementById('tpl-render-overlay')) {
+      document.removeEventListener('keydown', keyHandler);
+      observer.disconnect();
+    }
+  });
+  observer.observe(document.body, { childList: true });
+
+  const submitBtn = document.getElementById('rd-submit');
+  submitBtn?.addEventListener('click', async () => {
+    const jsonEl = document.getElementById('rd-json');
+    const msgEl = document.getElementById('rd-msg');
+    let data;
+    try {
+      data = JSON.parse(jsonEl.value);
+    } catch (e) {
+      msgEl.textContent = `⚠ JSON inválido: ${e.message}`;
+      msgEl.style.color = 'var(--color-danger,#EF4444)';
+      return;
+    }
+    submitBtn.disabled = true; submitBtn.textContent = 'Renderizando…';
+    msgEl.textContent = '⏳ CF rodando Puppeteer (cold start ~5s primeira vez)…';
+    msgEl.style.color = 'var(--text-muted)';
+    try {
+      const t0 = Date.now();
+      const result = await renderTemplateService(tpl.id, data);
+      const ms = Date.now() - t0;
+      downloadBlob(result.blob, result.filename);
+      msgEl.textContent = `✓ PDF gerado em ${ms}ms · ${(result.sizeBytes/1024).toFixed(1)} KB · download disparado`;
+      msgEl.style.color = 'var(--color-success,#10B981)';
+      submitBtn.textContent = '✓ Gerado';
+      setTimeout(close, 1500);
+    } catch (e) {
+      const err = String(e?.message || e).slice(0, 200);
+      msgEl.textContent = `⚠ Falhou: ${err}`;
+      msgEl.style.color = 'var(--color-danger,#EF4444)';
+      submitBtn.disabled = false; submitBtn.textContent = '📄 Gerar PDF';
     }
   });
 }

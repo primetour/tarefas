@@ -6,6 +6,65 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.6+20260528-templates-render-html-to-pdf] — 2026-05-28
+
+Release **Sprint v4.63 (7/11)** — Render engine HTML→PDF via Puppeteer.
+
+Pipeline ponta-a-ponta funcional pra HTML: client passa `{templateId,
+data}` → CF baixa template do R2 → interpola Handlebars → Puppeteer
+renderiza pra PDF A4 → retorna base64 → client decodifica + dispara
+download.
+
+**Implementado**:
+- `functions/index.js`: nova CF `renderTemplate` (callable, 1GB RAM,
+  90s timeout, max 5 instances):
+  - Valida `templateId`, fetch doc Firestore, valida status≠archived
+  - Por enquanto só `format='html'` (DOCX/PPTX em v4.63.7)
+  - Baixa HTML do R2 público
+  - Compila Handlebars + interpola com `data`
+  - Lança Chromium serverless (`@sparticuz/chromium` + `puppeteer-core`)
+  - `page.setContent(rendered, {waitUntil:'networkidle0'})` + `page.pdf({format:'A4',
+    margin: {top:'20mm', right:'15mm', bottom:'20mm', left:'15mm'},
+    printBackground:true})`
+  - Audit log `templates.render` com dataKeys preview
+  - Warn se >9MB (callable response limit é 10MB)
+- `js/services/templates.js`:
+  - `renderTemplate(templateId, data)` → CF callable → decode base64 → Blob
+  - `downloadBlob(blob, filename)` helper que dispara download
+- `js/pages/templatesLibrary.js`:
+  - Botão "🧪 Testar PDF" no card HTML ativo
+  - Modal de teste com textarea JSON pré-preenchido com `_sampleData(module)`
+  - Sample por módulo: cotações (cliente + viagem + dias[] + hotéis +
+    voos + preços), portal (destinos + tips + segments),
+    banco-roteiros (título + dias)
+  - Status inline durante render (⏳ cold start ~5s primeira vez)
+  - Reporta ms + tamanho KB no success
+  - Esc + X + clique fora pra fechar
+
+**Novas deps**:
+- `puppeteer-core@^25.1.0`
+- `@sparticuz/chromium@^149.0.0`
+- `handlebars@^4.7.9`
+
+**Cold start**: primeira invocação do dia ~5-10s (Chromium boot +
+binary download). Invocações subsequentes ~1-2s. Container ~600MB
+post-install do Chromium.
+
+**Limitações conhecidas**:
+- DOCX/PPTX retornam `unimplemented` — esperado em v4.63.7
+- PDFs >10MB estouram callable response — fix via fallback R2 + URL em v4.63.9
+- Imagens externas no HTML precisam de URL absoluta (Puppeteer faz fetch
+  desde dentro do container) + CSP do template (se houver) precisa
+  permitir os hosts
+- Fontes web (`@import` Google Fonts no `<style>`) funcionam — Chromium
+  acessa internet livre
+
+**Próxima**: v4.63.7 — Render DOCX (docxtemplater) + PPTX (pptx-template ou
+fork). Idêntica CF `renderTemplate` aceita os 3 formatos. Retorna
+base64 do DOCX/PPTX direto (sem Puppeteer).
+
+---
+
 ## [4.63.5+20260528-templates-upload-modal-refined] — 2026-05-28
 
 Release **Sprint v4.63 (6/11)** — Modal upload refinado.

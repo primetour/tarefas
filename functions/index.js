@@ -1001,6 +1001,121 @@ export const extractPlaceholders = onDocumentCreated({
 });
 
 /* ═════════════════════════════════════════════════════════
+ * renderTemplate — v4.63.6+ Render engine de templates
+ *
+ * Recebe { templateId, data } → baixa template do R2 → interpola
+ * Handlebars com data → renderiza (HTML→PDF via Puppeteer) → retorna
+ * PDF como base64 pro cliente decodificar + baixar.
+ *
+ * v4.63.6 cobre só HTML→PDF. DOCX/PPTX virão em v4.63.7 (docxtemplater).
+ *
+ * Limite: response callable ≤10MB → PDFs grandes podem estourar.
+ * Pra v4.63.9 considerar fallback: salvar PDF em R2 + retornar URL.
+ *
+ * Permission: qualquer auth (templates ativos da biblioteca).
+ * ═════════════════════════════════════════════════════════ */
+export const renderTemplate = onCall({
+  cors: ['https://primetour.github.io', 'http://localhost:5000'],
+  memory: '1GiB',                  // Chromium precisa
+  timeoutSeconds: 90,
+  maxInstances: 5,
+}, async (request) => {
+  const auth = requireAuth(request);
+  const { templateId, data = {} } = request.data || {};
+
+  if (!templateId || typeof templateId !== 'string') {
+    throw new HttpsError('invalid-argument', 'templateId obrigatório.');
+  }
+
+  // Rate limit
+  await checkRateLimit(auth.uid, 'renderTemplate', 30, 60);
+
+  // Fetch template doc
+  const snap = await db.collection('templates').doc(templateId).get();
+  if (!snap.exists) throw new HttpsError('not-found', 'Template não encontrado.');
+  const tpl = snap.data();
+  if (tpl.status === 'archived') {
+    throw new HttpsError('failed-precondition', 'Template arquivado.');
+  }
+  if (!tpl.fileUrl) {
+    throw new HttpsError('failed-precondition', 'Template sem fileUrl.');
+  }
+
+  // Por enquanto só HTML → PDF
+  if (tpl.format !== 'html') {
+    throw new HttpsError('unimplemented',
+      `Render pra ${tpl.format} não implementado em v4.63.6. Esperado em v4.63.7 (DOCX + PPTX).`);
+  }
+
+  // Baixar template do R2
+  const res = await fetch(tpl.fileUrl);
+  if (!res.ok) throw new HttpsError('internal', `Fetch template falhou (${res.status}).`);
+  const htmlRaw = await res.text();
+
+  // Compilar + interpolar Handlebars
+  let rendered;
+  try {
+    const { default: Handlebars } = await import('handlebars');
+    const compiled = Handlebars.compile(htmlRaw, { noEscape: false });
+    rendered = compiled(data);
+  } catch (e) {
+    throw new HttpsError('invalid-argument', `Handlebars falhou: ${e?.message || e}`);
+  }
+
+  // Puppeteer + Chromium serverless
+  let pdfBuf;
+  try {
+    const { default: puppeteer } = await import('puppeteer-core');
+    const { default: chromium } = await import('@sparticuz/chromium');
+    const browser = await puppeteer.launch({
+      args: chromium.args,
+      executablePath: await chromium.executablePath(),
+      headless: true,
+      defaultViewport: { width: 1240, height: 1754 },
+    });
+    try {
+      const page = await browser.newPage();
+      await page.setContent(rendered, { waitUntil: 'networkidle0', timeout: 60000 });
+      pdfBuf = await page.pdf({
+        format: 'A4',
+        printBackground: true,
+        margin: { top: '20mm', right: '15mm', bottom: '20mm', left: '15mm' },
+      });
+    } finally {
+      await browser.close();
+    }
+  } catch (e) {
+    throw new HttpsError('internal', `Puppeteer falhou: ${e?.message || e}`);
+  }
+
+  const sizeBytes = pdfBuf.length;
+  if (sizeBytes > 9 * 1024 * 1024) {
+    console.warn(`[renderTemplate] PDF grande ${sizeBytes} bytes pode estourar callable response (10MB).`);
+  }
+
+  // Audit
+  await db.collection('audit_logs').add({
+    action: 'templates.render',
+    userId: auth.uid,
+    entity: 'templates',
+    entityId: templateId,
+    details: { format: tpl.format, sizeBytes, dataKeys: Object.keys(data).slice(0, 20) },
+    severity: 'info',
+    timestamp: FieldValue.serverTimestamp(),
+  }).catch(() => {});
+
+  const safeName = (tpl.name || 'template').replace(/[^a-zA-Z0-9À-ſ\-_ ]/g, '').slice(0, 60).trim() || 'template';
+
+  return {
+    pdfBase64: pdfBuf.toString('base64'),
+    filename: `${safeName}.pdf`,
+    sizeBytes,
+    templateId,
+    templateName: tpl.name,
+  };
+});
+
+/* ═════════════════════════════════════════════════════════
  * logUserLogin — auditoria server-side com IP/UA
  * Chamada após login bem-sucedido. Cria entry em audit_logs.
  * ═════════════════════════════════════════════════════════ */

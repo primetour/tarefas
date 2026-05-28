@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 5,
-  build: '20260528-templates-upload-modal-refined',
+  patch: 6,
+  build: '20260528-templates-render-html-to-pdf',
 };
 
 /** "1.2.0" */

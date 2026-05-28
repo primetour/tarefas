@@ -324,6 +324,47 @@ export async function uploadTemplate(file, meta) {
 }
 
 /**
+ * v4.63.6+ Render template via Cloud Function renderTemplate.
+ *
+ * Chama CF que interpola Handlebars + renderiza (HTML→PDF via Puppeteer)
+ * e retorna PDF como base64. Helper decodifica + dispara download no browser.
+ *
+ * @param {string} templateId
+ * @param {Object} data — payload pra interpolação (depende do schema do template)
+ * @returns {Promise<{filename, sizeBytes, blob}>}
+ */
+export async function renderTemplate(templateId, data = {}) {
+  if (!templateId) throw new Error('templateId obrigatório');
+
+  const { getFunctions, httpsCallable } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js');
+  const { app } = await import('../firebase.js');
+  const fn = httpsCallable(getFunctions(app, 'us-central1'), 'renderTemplate');
+
+  const res = await fn({ templateId, data });
+  const { pdfBase64, filename, sizeBytes, templateName } = res.data;
+  if (!pdfBase64) throw new Error('CF não retornou pdfBase64');
+
+  // Decode base64 → Blob
+  const binary = atob(pdfBase64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  const blob = new Blob([bytes], { type: 'application/pdf' });
+
+  return { filename, sizeBytes, blob, templateName };
+}
+
+/**
+ * Trigger download de Blob no browser.
+ */
+export function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 200);
+}
+
+/**
  * Valida arquivo antes de upload (mime + size + extensão).
  * Retorna { ok: bool, error: string|null }.
  */

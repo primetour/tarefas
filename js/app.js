@@ -604,7 +604,7 @@ function setupRouter() {
     'portal-tips':          async () => { await renderPortalTips(content); },
     'portal-areas':         async () => { await renderPortalAreas(content); },
     'templates-library':    async () => {
-      const { renderTemplatesLibrary } = await import('./pages/templatesLibrary.js?v=4.63.5');
+      const { renderTemplatesLibrary } = await import('./pages/templatesLibrary.js?v=4.63.6');
       await renderTemplatesLibrary(content);
     },
     'portal-destinations':  async () => { await renderPortalDestinations(content); },
