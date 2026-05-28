@@ -6,6 +6,42 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.62.46+20260528-hidecover-headertext-all-generators] — 2026-05-28
+
+Release **Fase E pós-audit Templates Áreas (parte 2/6)** — plug `headerText`
+restantes + `hideCover` em **todos os 6 generators** (auditoria pós-sprint
+encontrou que UI prometia mas backend ignorava). Sequência de v4.62.45 que
+plugou apenas `footerText`. Pós este release: a aba "📤 Exports" em Áreas
+fica 100% funcional pra PDF/DOCX/PPTX (Web link fica pra v4.62.47).
+
+**6 plugs nesta release**:
+- **roteiroGenerator PDF**: `addFooter()` ganha `customHeaderText` (canto
+  sup direito, 6pt cinza 160). `hideCover` pula `buildCoverPage` + 1ª
+  `addPage`. Plugado também via `_exportTpl.headerText` no loop final.
+- **roteiroGenerator DOCX**: `hideCover` pula bloco inteiro de capa (logo
+  + título + destinos + período + hero + page break). Reusa `_docxExportTplEarly`.
+- **roteiroGenerator PPTX**: novo `defineSlideMaster('AREA_FOOTER')` +
+  wrap `pptx.addSlide` (espelhado do portalGenerator v4.62.45) — herda
+  footer/header em TODOS os slides. `hideCover` pula slide 1 inteiro.
+- **portalGenerator DOCX**: `hideCover` pula bloco de capa (logo + nome
+  área + "PORTAL DE DICAS" + destinos + data + page break).
+- **portalGenerator PPTX**: `hideCover` pula `pptx.addSlide()` da capa
+  (logo composite + destinos + data).
+- portalGenerator PDF (v4.62.45 já), portalGenerator PPTX/DOCX header
+  (master/section.headers já).
+
+**Auditoria pós-sprint resolveu** (CLAUDE.md §11.k principle): UI promete e
+backend deve cumprir. Antes desta release, 8 dos 13 caminhos zumbis pra
+exports tinham UI funcionando mas backend silenciosamente ignorando o campo.
+
+**Próximas releases planejadas**:
+- v4.62.47 — audit logs em saveArea/saveBusinessUnit/deleteArea
+- v4.62.48 — UX Exports (maxlength=300, counter, copiar pra todos)
+- v4.62.49 — Wrapper sync BU↔Áreas + alias roteiros↔cotacoes
+- v4.62.50 — Rename canônico roteiros→cotacoes (schema + UI + doc)
+
+---
+
 ## [4.62.33+20260527-roteiros-fix-confirm-duplicado-listeners] — 2026-05-27
 
 Release **HOTFIX — Confirm de excluir cotação dispara 5-6×**:

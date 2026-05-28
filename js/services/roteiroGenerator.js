@@ -720,7 +720,15 @@ function addSectionTitle(doc, y, title, primary, secondary) {
 /** Footer minimalista: logo opcional + paginação. SEM data, SEM nome da BU
  *  (são infos internas/técnicas que poluem documento de cliente).
  */
-function addFooter(doc, areaName, pageNum, totalPages, primary, logoFooter = null, customFooterText = '') {
+function addFooter(doc, areaName, pageNum, totalPages, primary, logoFooter = null, customFooterText = '', customHeaderText = '') {
+  // v4.62.46+ headerText custom (canto superior direito, 1 linha, cinza claro)
+  if (customHeaderText) {
+    doc.setFontSize(6);
+    doc.setFont('Poppins', 'normal');
+    doc.setTextColor(160, 160, 160);
+    doc.text(String(customHeaderText).slice(0, 200), PAGE_W - MARGIN, 8, { align: 'right' });
+  }
+
   // Linha separadora discreta
   doc.setDrawColor(220, 220, 220);
   doc.setLineWidth(0.2);
@@ -840,11 +848,15 @@ export async function generateRoteiroPDF(roteiro, area = null) {
   }
 
   /* ─── PAGE 1: COVER ──────────────────────────────────────── */
-  await buildCoverPage(doc, roteiro, buName, primary, secondary, images.heroUrl, logoCoverPng);
+  // v4.62.46+ hideCover: se ligado pelo template, pula a capa.
+  const _exportTplEarly = resolveExportTemplate(area, 'roteiros', 'pdf');
+  if (!_exportTplEarly.hideCover) {
+    await buildCoverPage(doc, roteiro, buName, primary, secondary, images.heroUrl, logoCoverPng);
+  }
 
   /* ─── PAGES 2+: DAY BY DAY ───────────────────────────────── */
   if (roteiro.days?.length) {
-    doc.addPage();
+    if (!_exportTplEarly.hideCover) doc.addPage();
     await buildDayByDayPages(doc, roteiro, primary, secondary, accent, images.byCity);
   }
 
@@ -904,16 +916,19 @@ export async function generateRoteiroPDF(roteiro, area = null) {
 
   /* ─── FOOTERS (retroactive) ──────────────────────────────── */
   // v4.62.43+ Fase E.3: footerText custom da área (Áreas → Exports → PDF)
+  // v4.62.46+ headerText também plugado (era zumbi até v4.62.45)
   const _exportTpl = resolveExportTemplate(area, 'roteiros', 'pdf');
-  const _customFooter = formatExportText(_exportTpl.footerText || '', {
+  const _ctx = {
     areaName: buName,
     clientName: roteiro.client?.name || '',
     title: roteiro.title || '',
-  });
+  };
+  const _customFooter = formatExportText(_exportTpl.footerText || '', _ctx);
+  const _customHeader = formatExportText(_exportTpl.headerText || '', _ctx);
   const totalPages = doc.internal.getNumberOfPages();
   for (let i = 2; i <= totalPages - 1; i++) {
     doc.setPage(i);
-    addFooter(doc, buName, i - 1, totalPages - 2, primary, logoFooter, _customFooter);
+    addFooter(doc, buName, i - 1, totalPages - 2, primary, logoFooter, _customFooter, _customHeader);
   }
 
   /* ─── SAVE & LOG ─────────────────────────────────────────── */
@@ -2131,6 +2146,47 @@ export async function generateRoteiroPPTX(roteiro, area = null) {
 
   const W = 10, H = 5.625;
 
+  // v4.62.46+ Fase E pós-audit: slide master com footerText/headerText custom
+  // + hideCover. Pattern espelhado do portalGenerator.js (v4.62.45). Todos os
+  // slides criados depois herdam footer/header automaticamente via wrap addSlide.
+  const _pptxExportTpl = resolveExportTemplate(area, 'roteiros', 'pptx');
+  const _pptxCtx = {
+    areaName: buName,
+    clientName: roteiro.client?.name || '',
+    title: roteiro.title || '',
+  };
+  const _pptxCustomFooter = formatExportText(_pptxExportTpl.footerText || '', _pptxCtx);
+  const _pptxCustomHeader = formatExportText(_pptxExportTpl.headerText || '', _pptxCtx);
+  const _pptxHideCover    = !!_pptxExportTpl.hideCover;
+  if (_pptxCustomFooter || _pptxCustomHeader) {
+    const masterObjs = [];
+    if (_pptxCustomFooter) {
+      const lines = String(_pptxCustomFooter).split('\n').slice(0, 3);
+      masterObjs.push({ text: {
+        text: lines.join('\n'),
+        options: { x: 0.3, y: H - 0.4, w: W - 0.6, h: 0.35,
+          fontSize: 8, color: '888888', fontFace: _PPTX_FONT,
+          align: 'center', valign: 'top' },
+      }});
+    }
+    if (_pptxCustomHeader) {
+      masterObjs.push({ text: {
+        text: _pptxCustomHeader,
+        options: { x: 0.3, y: 0.15, w: W - 0.6, h: 0.25,
+          fontSize: 8, color: '888888', fontFace: _PPTX_FONT,
+          align: 'right', valign: 'top' },
+      }});
+    }
+    try {
+      pptx.defineSlideMaster({ title: 'AREA_FOOTER', objects: masterObjs });
+    } catch (e) { console.warn('[roteiroPptx] slide master falhou:', e?.message); }
+  }
+  // Wrap addSlide pra herdar master automaticamente em todos os slides.
+  const _origAddSlide = pptx.addSlide.bind(pptx);
+  if (_pptxCustomFooter || _pptxCustomHeader) {
+    pptx.addSlide = (opts = {}) => _origAddSlide({ masterName: 'AREA_FOOTER', ...opts });
+  }
+
   // ─── Resolve imagens (hero + cidades + hotéis) ────────────
   let images = { heroUrl: null, byCity: {}, byHotel: {} };
   try { images = await enrichRoteiroImages(roteiro); }
@@ -2175,6 +2231,8 @@ export async function generateRoteiroPPTX(roteiro, area = null) {
   }
 
   // ─── Slide 1: Cover ───────────────────────────────────────
+  // v4.62.46+ hideCover: pula slide de capa inteiro se template ligou
+  if (!_pptxHideCover) {
   const cover = pptx.addSlide();
   cover.background = { color: secondary };
 
@@ -2235,6 +2293,7 @@ export async function generateRoteiroPPTX(roteiro, area = null) {
       });
     }
   }
+  } // end if (!_pptxHideCover)
 
   // ─── Day-by-day slides ─────────────────────────────────────
   const days = roteiro.days || [];
@@ -2716,7 +2775,11 @@ export async function generateRoteiroDOCX(roteiro, area = null) {
 
   const children = [];
 
+  // v4.62.46+ hideCover (resolve cedo p/ pular capa inteira se template pediu)
+  const _docxExportTplEarly = resolveExportTemplate(area, 'roteiros', 'docx');
+
   /* ── Capa ─────────────────────────────────────────────── */
+  if (!_docxExportTplEarly.hideCover) {
   // 4.46.1+ Logo da BU (top, opcional)
   if (logoBuf?.arrayBuffer) {
     try {
@@ -2779,6 +2842,7 @@ export async function generateRoteiroDOCX(roteiro, area = null) {
   }
 
   children.push(p([new PageBreak()]));
+  } // end if (!hideCover)
 
   /* ── Dia a dia ────────────────────────────────────────── */
   if (Array.isArray(roteiro.days) && roteiro.days.length) {
@@ -3038,7 +3102,7 @@ export async function generateRoteiroDOCX(roteiro, area = null) {
   }));
 
   /* ── v4.62.45+ Fase E pós-audit: footerText/headerText custom da BU ── */
-  const _docxExportTpl = resolveExportTemplate(area, 'roteiros', 'docx');
+  const _docxExportTpl = _docxExportTplEarly; // reusa o resolvido pra hideCover
   const _docxCustomFooter = formatExportText(_docxExportTpl.footerText || '', {
     areaName: buName, clientName: roteiro.client?.name || '', title: roteiro.title || '',
   });

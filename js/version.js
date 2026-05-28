@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 62,
-  patch: 45,
-  build: '20260528-exports-plug-footer-header-portal-roteiro',
+  patch: 46,
+  build: '20260528-hidecover-headertext-all-generators',
 };
 
 /** "1.2.0" */

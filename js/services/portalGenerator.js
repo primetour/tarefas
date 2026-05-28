@@ -666,25 +666,30 @@ async function generateDocx({ allTips, segments, areaName, area, colors, filenam
 
   // Use shared fetchImgData (CORS-safe, returns arrayBuffer + mimeType)
 
+  // v4.62.46+ resolve template cedo p/ hideCover (template completo é reusado linha ~871)
+  const _docxExportTplEarly = resolveExportTemplate(area, 'portal', 'docx');
+
   // Cover — logo (se houver) + nome da área + destinos + data
   // Padrão alinhado com o PDF: logo grande no topo, depois título.
-  const coverLogoData = await fetchImgData(area?.logoUrl);
-  if (coverLogoData?.arrayBuffer) {
-    try {
-      children.push(new Paragraph({
-        children:[new ImageRun({data:coverLogoData.arrayBuffer,
-          transformation:{width:280,height:140},type:coverLogoData.ext})],
-        alignment:AlignmentType.CENTER,
-        spacing:{before:1800,after:200},
-      }));
-    } catch(e) { console.warn('DOCX cover logo skip:', e.message); }
+  if (!_docxExportTplEarly.hideCover) {
+    const coverLogoData = await fetchImgData(area?.logoUrl);
+    if (coverLogoData?.arrayBuffer) {
+      try {
+        children.push(new Paragraph({
+          children:[new ImageRun({data:coverLogoData.arrayBuffer,
+            transformation:{width:280,height:140},type:coverLogoData.ext})],
+          alignment:AlignmentType.CENTER,
+          spacing:{before:1800,after:200},
+        }));
+      } catch(e) { console.warn('DOCX cover logo skip:', e.message); }
+    }
+    children.push(new Paragraph({children:[new TextRun({font:_DOCX_FONT,text:areaName.toUpperCase(),bold:true,size:52,color:gold,characterSpacing:200})],alignment:AlignmentType.CENTER,spacing:{before:coverLogoData?.arrayBuffer?0:2400,after:160}}));
+    children.push(new Paragraph({children:[new TextRun({font:_DOCX_FONT,text:'PORTAL DE DICAS',size:18,color:'888888',characterSpacing:300})],alignment:AlignmentType.CENTER,spacing:{after:600}}));
+    for(const{dest}of allTips) children.push(new Paragraph({children:[new TextRun({font:_DOCX_FONT,text:destLabel(dest),bold:true,size:28,color:navy})],alignment:AlignmentType.CENTER,spacing:{after:120}}));
+    children.push(new Paragraph({children:[new TextRun({font:_DOCX_FONT,text:'─────────────────────────',color:gold,size:16})],alignment:AlignmentType.CENTER,spacing:{before:400,after:200}}));
+    children.push(new Paragraph({children:[new TextRun({font:_DOCX_FONT,text:date,size:16,color:'AAAAAA'})],alignment:AlignmentType.CENTER}));
+    children.push(new Paragraph({children:[new PageBreak()]}));
   }
-  children.push(new Paragraph({children:[new TextRun({font:_DOCX_FONT,text:areaName.toUpperCase(),bold:true,size:52,color:gold,characterSpacing:200})],alignment:AlignmentType.CENTER,spacing:{before:coverLogoData?.arrayBuffer?0:2400,after:160}}));
-  children.push(new Paragraph({children:[new TextRun({font:_DOCX_FONT,text:'PORTAL DE DICAS',size:18,color:'888888',characterSpacing:300})],alignment:AlignmentType.CENTER,spacing:{after:600}}));
-  for(const{dest}of allTips) children.push(new Paragraph({children:[new TextRun({font:_DOCX_FONT,text:destLabel(dest),bold:true,size:28,color:navy})],alignment:AlignmentType.CENTER,spacing:{after:120}}));
-  children.push(new Paragraph({children:[new TextRun({font:_DOCX_FONT,text:'─────────────────────────',color:gold,size:16})],alignment:AlignmentType.CENTER,spacing:{before:400,after:200}}));
-  children.push(new Paragraph({children:[new TextRun({font:_DOCX_FONT,text:date,size:16,color:'AAAAAA'})],alignment:AlignmentType.CENTER}));
-  children.push(new Paragraph({children:[new PageBreak()]}));
 
   for(const{tip,dest}of allTips){
     const imgs=imagesByDest[dest?.id]||{};
@@ -868,7 +873,7 @@ async function generateDocx({ allTips, segments, areaName, area, colors, filenam
   // v4.62.45+ Fase E pós-audit: footerText/headerText custom da BU em DOCX.
   // headerText vira parágrafo de pré-rodapé. footerText vai como Section
   // footer real do docx (cabeçalho/rodapé fixo em todas as páginas).
-  const _docxExportTpl = resolveExportTemplate(area, 'portal', 'docx');
+  const _docxExportTpl = _docxExportTplEarly; // reusa do hideCover
   const _docxCustomFooter = formatExportText(_docxExportTpl.footerText || '', { areaName, title: 'Portal de Dicas' });
   const _docxCustomHeader = formatExportText(_docxExportTpl.headerText || '', { areaName, title: 'Portal de Dicas' });
 
@@ -989,8 +994,13 @@ async function generatePDF({
   // v4.62.45+ Fase E pós-audit: resolve template do export pra footerText
   // custom da área (Áreas → Exports → PDF). Aparece como pequena linha à
   // esquerda do rodapé padrão. Suporta placeholders {areaName}/{today}/etc.
+  // v4.62.46+ headerText + hideCover plugados também.
   const _pdfExportTpl = resolveExportTemplate(area, 'portal', 'pdf');
   const _pdfCustomFooter = formatExportText(_pdfExportTpl.footerText || '', {
+    areaName,
+    title: 'Portal de Dicas',
+  });
+  const _pdfCustomHeader = formatExportText(_pdfExportTpl.headerText || '', {
     areaName,
     title: 'Portal de Dicas',
   });
@@ -1022,6 +1032,11 @@ async function generatePDF({
       let yy = 285;
       for (const line of lines) { doc.text(line, MARGIN, yy); yy += 2.5; }
     }
+    // v4.62.46+ headerText custom (canto superior direito, 1 linha)
+    if (_pdfCustomHeader) {
+      doc.setFontSize(6); setF('normal'); doc.setTextColor(160,160,160);
+      doc.text(_pdfCustomHeader, PAGE_W - MARGIN, 8, { align: 'right' });
+    }
   };
 
   // ── COVER (extraído em função pra reuso na última página) ───────
@@ -1051,8 +1066,14 @@ async function generatePDF({
     doc.text(new Date().toLocaleDateString('pt-BR',{year:'numeric',month:'long'}),
       PAGE_W/2, dY+10, {align:'center'});
   };
-  drawCover();
-  doc.addPage(); y=MARGIN; addFooter();
+  // v4.62.46+ hideCover: se ligado, pula a capa (PDF compacto sem cover)
+  if (!_pdfExportTpl.hideCover) {
+    drawCover();
+    doc.addPage(); y=MARGIN; addFooter();
+  } else {
+    // Sem cover, mas precisa pelo menos 1 página com footer
+    addFooter();
+  }
 
   // ── CAPAS DE SEÇÃO (apenas pros 4 principais) + TOC ─────────────
   // Pros 4 segmentos "principais", inserimos uma página-divisória antes do
@@ -1626,6 +1647,8 @@ async function generatePptx({ allTips, segments, areaName, area, colors, filenam
       };
     } catch(e) { console.warn('[PPTX] composite cover logo failed:', e?.message); }
   }
+  // v4.62.46+ hideCover: pula capa inteira se template ligou
+  if (!_pptxHideCover) {
   const cover = pptx.addSlide(); cover.background={color:bgHex};
   // Logo grande centralizado (ocupa metade superior da capa)
   if (coverLogoComposite) {
@@ -1657,6 +1680,7 @@ async function generatePptx({ allTips, segments, areaName, area, colors, filenam
     x:0.5, y:H-0.5, w:W-1, h:0.3,
     ...F({fontSize:9, color:'FFFFFF', align:'center', transparency:60}),
   });
+  } // end if (!_pptxHideCover)
 
   for (const { tip, dest } of allTips) {
     const label = destLabel(dest);
