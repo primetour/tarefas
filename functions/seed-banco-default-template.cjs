@@ -47,8 +47,16 @@ const TEMPLATE_FORMAT = 'html';
   console.log(`  ✓ ${fileUrl}`);
 
   if (!existingSnap.empty) {
-    await existingSnap.docs[0].ref.update({ isDefault: false, updatedAt: FV.serverTimestamp() });
-    console.log(`  ✓ antigo (${existingSnap.docs[0].id}) → isDefault=false`);
+    // v4.63.20+ Achado audit: arquivar (não só desmarcar default). Antes,
+    // antigo ficava status=active mas isDefault=false → usuario podia atribuir
+    // versão velha em vez da nova.
+    await existingSnap.docs[0].ref.update({
+      isDefault: false, status: 'archived',
+      archivedAt: FV.serverTimestamp(),
+      archivedReason: 'Superseded by newer seed (auto via re-seed script)',
+      updatedAt: FV.serverTimestamp(),
+    });
+    console.log(`  ✓ antigo (${existingSnap.docs[0].id}) → archived + isDefault=false`);
   }
 
   await db.collection('templates').doc(templateId).set({
