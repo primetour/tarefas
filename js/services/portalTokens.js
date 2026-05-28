@@ -9,11 +9,13 @@
  * tipográficas ficam coerentes entre canais.
  */
 
-/* ─── Paleta default (sobrescrita pelo area.colors) ─────────── */
-export const DEFAULT_COLORS = {
-  primary:   '#475569',  // slate-600
-  secondary: '#1F2937',  // gray-800
-};
+/* ─── Paleta default ───────────────────────────────────────────
+ * v4.62.39+ Fase A.3: agora re-exporta do SSOT (areaDefaults.js).
+ * Mantido aqui só pra compat com imports legados (`PORTAL_DEFAULT_COLORS`).
+ * Novos arquivos: importar direto de `./areaDefaults.js`.
+ */
+import { DEFAULT_COLORS as _SSOT_COLORS } from './areaDefaults.js';
+export const DEFAULT_COLORS = _SSOT_COLORS;
 
 /* Resolve cores: aceita area inteiro ou { primary, secondary } */
 export function getPortalColors(area) {

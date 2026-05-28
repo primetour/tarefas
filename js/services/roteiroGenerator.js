@@ -8,6 +8,10 @@ import { store } from '../store.js';
 import { toast } from '../components/toast.js';
 import { fetchAreas, fetchImages } from './portal.js';
 import { recordGeneration as logGeneration } from './roteiros.js';
+// v4.62.39+ Fase A.3: SSOT de defaults pra colors/fonts/editorial/brand.
+// Resolve D6 (defaults invertidos PDF/PPTX vs DOCX), D7 (brand toggle),
+// E1/E2/E4 (60+ literais hardcoded).
+import { resolveAreaDefaults, resolveExternalBrandName, DEFAULT_COLORS } from './areaDefaults.js';
 // Reuso de helpers do gerador do Portal de Dicas — fontes, composite logo,
 // cover crop e sanitizer (mesmo padrão visual e tratamento de imagens).
 import {
@@ -768,13 +772,17 @@ export async function generateRoteiroPDF(roteiro, area = null) {
   try { await loadPoppinsOnDoc(doc); }
   catch (e) { console.warn('[roteiroGenerator] Poppins falhou, usando Helvetica:', e.message); }
 
-  // Cores neutras como default (não amarelo). Ouro só se a área pedir.
-  const primary = area?.colors?.primary || '#475569';   // slate-600 (cinza)
-  const secondary = area?.colors?.secondary || '#0F172A'; // slate-900
-  const accent = area?.colors?.accent || primary;
-  // Branding externo: sempre "PRIMETOUR" (sem nome interno da BU "Lazer", "Corporate" etc).
-  // O logo da área é o que diferencia visualmente.
-  const buName = 'PRIMETOUR';
+  // v4.62.39+ Fase A.3: resolve via SSOT (areaDefaults.js).
+  // Antes: 6 literais '#475569'/'#0F172A' espalhados (com PDF/PPTX divergindo do
+  // DOCX — D6 da auditoria). Agora único caminho.
+  const _tpl = resolveAreaDefaults(area, 'roteiros');
+  const primary   = _tpl.colors.primary;
+  const secondary = _tpl.colors.secondary;
+  const accent    = _tpl.colors.accent || primary;
+  // v4.62.40 Fase B (D7): brand name agora respeita toggle area.brand.useExternalName.
+  // Antes: hardcoded 'PRIMETOUR' (inconsistente com Portal de Dicas).
+  // Agora: usa area.name se toggle ativo (default), 'PRIMETOUR' se false.
+  const buName = resolveExternalBrandName(area);
 
   // Resolve imagens (banco → Unsplash → Wikipedia) — não-blocker
   let images = { heroUrl: null, byCity: {}, byHotel: {} };
@@ -2081,11 +2089,12 @@ function buildClosingPage(doc, roteiro, buName, primary, secondary, logoCoverPng
 export async function generateRoteiroPPTX(roteiro, area = null) {
   await loadPptxGenJS();
 
-  // Cores neutras default (cinza/azul-escuro, não amarelo)
-  const primary = (area?.colors?.primary || '#475569').replace('#', '');
-  const secondary = (area?.colors?.secondary || '#0F172A').replace('#', '');
-  // Branding externo: sempre PRIMETOUR (não exibe nome interno da BU "Lazer")
-  const buName = 'PRIMETOUR';
+  // v4.62.39+ Fase A.3: cores via SSOT (areaDefaults.js)
+  const _tpl = resolveAreaDefaults(area, 'roteiros');
+  const primary   = _tpl.colors.primary.replace('#', '');
+  const secondary = _tpl.colors.secondary.replace('#', '');
+  // v4.62.40 Fase B (D7): brand name respeita toggle (era hardcoded)
+  const buName = resolveExternalBrandName(area);
 
   const pptx = new PptxGenJS();
   pptx.layout = 'LAYOUT_16x9';
@@ -2631,12 +2640,16 @@ export async function generateRoteiroDOCX(roteiro, area = null) {
     })
   );
 
-  // Cores (hex sem #) — pra TextRun.color
-  const primaryHex   = ((area?.colors?.primary)   || '#0F172A').replace('#', '');
-  const secondaryHex = ((area?.colors?.secondary) || '#475569').replace('#', '');
+  // v4.62.39+ Fase A.3 (fix D6): cores via SSOT — ANTES tinha defaults
+  // INVERTIDOS aqui (primary='#0F172A'/secondary='#475569') vs PDF/PPTX
+  // (primary='#475569'/secondary='#0F172A'). Drift silencioso de cores.
+  const _tpl = resolveAreaDefaults(area, 'roteiros');
+  const primaryHex   = _tpl.colors.primary.replace('#', '');
+  const secondaryHex = _tpl.colors.secondary.replace('#', '');
   const mutedHex     = '6B7280';
   const accentHex    = primaryHex;
-  const buName       = area?.name || 'PRIMETOUR';
+  // v4.62.40 Fase B (D7): brand respeita toggle
+  const buName       = resolveExternalBrandName(area);
   const today        = new Date().toLocaleDateString('pt-BR', { year: 'numeric', month: 'long', day: 'numeric' });
 
   // Helpers locais — wrappers do docx API pra reduzir ruído visual

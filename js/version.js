@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 62,
-  patch: 38,
-  build: '20260527-portal-dicas-segmentos-editar-excluir',
+  patch: 39,
+  build: '20260528-areas-templates-fase-a-ssot-defaults',
 };
 
 /** "1.2.0" */

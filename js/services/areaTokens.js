@@ -49,29 +49,21 @@
  *   - roteiroGenerator.js idem
  */
 
-/* ─── Defaults (override do legacy portalTokens.DEFAULT_COLORS) ───── */
+/* ─── Defaults ──────────────────────────────────────────────────────
+ * v4.62.39+ Fase A.3: re-export do SSOT (areaDefaults.js) pra eliminar
+ * duplicação. Aliases locais (DEFAULT_AREA_*) mantidos por compat — código
+ * legado que importa daqui continua funcionando sem mudança. Imports novos:
+ * usar `./areaDefaults.js` diretamente.
+ */
+import {
+  DEFAULT_COLORS    as _SSOT_COLORS,
+  DEFAULT_FONTS     as _SSOT_FONTS,
+  DEFAULT_EDITORIAL as _SSOT_EDITORIAL,
+} from './areaDefaults.js';
 
-export const DEFAULT_AREA_COLORS = {
-  primary:   '#475569',  // slate-600
-  secondary: '#1F2937',  // gray-800
-};
-
-export const DEFAULT_AREA_FONTS = {
-  headline:    'Poppins',     // títulos. Igual Portal de Dicas atual.
-  body:        'Poppins',     // corpo de texto.
-  accentScale: 'normal',
-};
-
-export const DEFAULT_AREA_EDITORIAL = {
-  voice:        'caloroso',
-  sectionStyle: 'revista',
-  coverStyle:   'fullbleed',
-  // chromeAccent: cor de overlines/lines do hero.
-  //   'white'         → texto branco sempre (default — funciona em qualquer hero escuro)
-  //   'gold-on-dark'  → usa um amber fixo (#D4A843) independente da marca
-  //   'primary'       → usa area.colors.primary (perigoso se primary for dark)
-  chromeAccent: 'white',
-};
+export const DEFAULT_AREA_COLORS    = _SSOT_COLORS;
+export const DEFAULT_AREA_FONTS     = _SSOT_FONTS;
+export const DEFAULT_AREA_EDITORIAL = _SSOT_EDITORIAL;
 
 export const DEFAULT_AREA_MODULES = {
   portal:   {},  // Sem overrides — usa defaults globais

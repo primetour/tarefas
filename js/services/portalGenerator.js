@@ -10,6 +10,11 @@
 // Tokens compartilhados com o portal web — defaults de cor, fontes etc.
 // Importa só o que é puro (sem firebase). Mantém identidade unificada.
 import { DEFAULT_COLORS as PORTAL_DEFAULT_COLORS, getPortalColors } from './portalTokens.js';
+// v4.62.39+ Fase A.3 — SSOT defaults + brand toggle (D7).
+// portalTokens.PORTAL_DEFAULT_COLORS legacy mantido pra compat (re-exporta
+// os mesmos valores do SSOT agora). Imports diretos do areaDefaults daqui em
+// diante. portalTokens.js fica como adapter de transição.
+import { resolveAreaDefaults, resolveExternalBrandName } from './areaDefaults.js';
 
 // SEGMENTS defaults (hardcoded como fallback se fetch falhar) + dinâmicos
 // (carregados de portal_segments quando user cria customs).
@@ -414,12 +419,12 @@ export async function generateTip({ tip, area, dest, segments, format, extraTips
   await _loadSegmentsAsync();
 
   const allTips  = [{ tip, dest }, ...extraTips];
-  const areaName = area?.name || 'PRIMETOUR';
-  const colors   = {
-    // Defaults centralizados em portalTokens.js (compartilhado com o web)
-    primary:   area?.colors?.primary   || PORTAL_DEFAULT_COLORS.primary,
-    secondary: area?.colors?.secondary || PORTAL_DEFAULT_COLORS.secondary,
-  };
+  // v4.62.40 Fase B (D7): brand name respeita area.brand.useExternalName toggle.
+  // Antes: sempre area.name || 'PRIMETOUR' (sem opção de forçar guarda-chuva).
+  const areaName = resolveExternalBrandName(area);
+  // v4.62.39+ Fase A.3: cores via SSOT (resolve overrides por módulo + global)
+  const _tpl = resolveAreaDefaults(area, 'portal');
+  const colors = { primary: _tpl.colors.primary, secondary: _tpl.colors.secondary };
   const filename = buildFilename(allTips, format);
 
   const imagesByDest = {};
@@ -2234,6 +2239,13 @@ async function generateWebLink({ allTips, segments, areaName, area, colors, form
       areaLogoUrl:    area?.logoUrl    || null,
       areaLogoUrlAlt: area?.logoUrlAlt || null,
       colors,
+      // v4.62.39 (Fase A.1 — fix D1): persiste fonts/editorial/modules pra
+      // portal-view.html ler. Antes: UI salvava em portal_areas.fonts mas
+      // generator omitia aqui → portal-view fallback Poppins/defaults.
+      // Modelo copiado de roteiros.js:855 que já salva area inteira.
+      fonts:     area?.fonts     || null,
+      editorial: area?.editorial || null,
+      modules:   area?.modules   || null,
       imagesByDest,
       createdBy: {
         uid:   uid,
