@@ -1085,6 +1085,136 @@ export async function generateRoteiroPDF(roteiro, area = null) {
 // mesma combo. TTL 30s defensivo se promise pendurar.
 const _generateInFlight = new Map();   // key=`${roteiroId}::${format}` → timestamp
 
+/**
+ * v4.63.29+ Gera Web Link pra Cotação. Espelha generateWebLink do
+ * portalGenerator.js — cria doc em `roteiro_web_links/{token}`, URL pública.
+ *
+ * Shape do doc (compatível com roteiro-view.html legacy linha 690):
+ *   { data: roteiro, area, webTemplate, webExports, createdBy, viewCount,
+ *     createdAt }
+ *
+ * Se area.templateRefs.cotacoes.web setado, grava `webTemplate` metadata
+ * (templateId, templateName, templateMode, fileUrl). URL aponta pra
+ * `roteiro-view-tpl.html` (template runtime); senão `roteiro-view.html`
+ * canônico.
+ *
+ * Footer/header do export.web vem de resolveExportTemplate(area, 'cotacoes',
+ * 'web') — alias bidirectional pra schema legacy `roteiros`.
+ */
+async function generateRoteiroWebLink(roteiro, area) {
+  // Lazy imports (mesmo padrão do generateWebLink portal)
+  const { doc, collection, setDoc, serverTimestamp } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js');
+  const { db }    = await import('../firebase.js');
+  const { store } = await import('../store.js');
+
+  const token = _buildRoteiroWebLinkToken(roteiro);
+  const ref   = doc(collection(db, 'roteiro_web_links'), token);
+
+  // Resolve exports.web da Cotação (alias bidirectional cobre legacy)
+  const _webExportTpl = resolveExportTemplate(area, 'cotacoes', 'web');
+  const _title = roteiro?.title || roteiro?.cliente?.nome || 'Cotação PRIMETOUR';
+  const _clientName = roteiro?.cliente?.nome || roteiro?.client?.name || '';
+  const _webFooterText = formatExportText(_webExportTpl.footerText || '', {
+    areaName: area?.name || '', title: _title, clientName: _clientName,
+  });
+  const _webHeaderText = formatExportText(_webExportTpl.headerText || '', {
+    areaName: area?.name || '', title: _title, clientName: _clientName,
+  });
+
+  // v4.63.29+ Web template uploaded (espelha portalGenerator §16)
+  let _webTemplateMeta = null;
+  const _webTplId = area?.templateRefs?.cotacoes?.web || area?.templateRefs?.roteiros?.web;
+  if (_webTplId) {
+    try {
+      const { fetchTemplate } = await import('./templates.js');
+      const _tpl = await fetchTemplate(_webTplId);
+      if (_tpl && _tpl.status === 'active') {
+        _webTemplateMeta = {
+          templateId:   _tpl.id,
+          templateName: _tpl.name,
+          templateMode: _tpl.templateMode || 'full',
+          // v4.63.29+ NÃO grava fileUrl (lição §16: CF getTemplateHtml busca via
+          // templateId, evita anônimo editar webTemplate.fileUrl no Firestore
+          // pra apontar pra outro lugar).
+        };
+      } else if (_tpl) {
+        console.warn(`[roteiroGenerator web] template ${_webTplId} status=${_tpl.status} (não-active) — ignorado, usando fallback canônico`);
+      } else {
+        console.warn(`[roteiroGenerator web] template ${_webTplId} não encontrado — usando fallback canônico`);
+      }
+    } catch (e) {
+      console.warn('[roteiroGenerator web] fetchTemplate falhou:', e?.message);
+    }
+  }
+
+  const profile = store.get('userProfile') || {};
+  const uid     = store.get('currentUser')?.uid || null;
+
+  try {
+    await setDoc(ref, {
+      token,
+      format: 'web',
+      // Schema compatível com roteiro-view.html (payload.data || payload.roteiro)
+      data:      roteiro,
+      area:      area || {},
+      // v4.63.29+ Template Web Link metadata (null se sem template configurado)
+      webTemplate: _webTemplateMeta,
+      // Exports footer/header já resolvido (placeholders formatados)
+      webExports: {
+        footerText: _webFooterText,
+        headerText: _webHeaderText,
+      },
+      createdBy: {
+        uid,
+        name:  profile.name || profile.displayName || 'Usuário',
+        email: profile.email || '',
+      },
+      createdAt: serverTimestamp(),
+      viewCount: 0,
+    });
+  } catch (e) {
+    console.error('[PRIMETOUR roteiro web] Erro ao salvar roteiro_web_links:', e);
+    throw e;
+  }
+
+  // URL final
+  const baseUrl = window.location.origin + window.location.pathname.replace(/index\.html$/, '');
+  const directUrl = _webTemplateMeta
+    ? `${baseUrl}roteiro-view-tpl.html#${token}`
+    : `${baseUrl}roteiro-view.html#${token}`;
+
+  return { url: directUrl, directUrl, token };
+}
+
+/**
+ * Token slug pra roteiro_web_links — versão simplificada (sem dependência
+ * de helper específico). Formato: `client-slug-area-yyyy-mm` com fallback
+ * pra random 16 chars se sem dados.
+ */
+function _buildRoteiroWebLinkToken(roteiro) {
+  const slugify = s => String(s || '')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '').slice(0, 40);
+
+  const clientSlug = slugify(roteiro?.cliente?.nome || roteiro?.client?.name || roteiro?.title);
+  const periodSlug = (() => {
+    const d = roteiro?.travel?.startDate || roteiro?.startDate;
+    if (typeof d === 'string') {
+      const m = d.match(/^(\d{4})-(\d{2})/);
+      if (m) return `${m[1]}-${m[2]}`;
+    }
+    return '';
+  })();
+  const rand = () => {
+    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
+    return Array.from(crypto.getRandomValues(new Uint8Array(6)))
+      .map(b => chars[b % chars.length]).join('');
+  };
+
+  const parts = [clientSlug, periodSlug].filter(Boolean);
+  return parts.length ? `${parts.join('-')}-${rand()}` : rand() + rand();
+}
+
 export async function generateRoteiro({ roteiro, areaId = null, area = null, format = 'pdf' }) {
   const inflightKey = `${roteiro?.id || 'novo'}::${format}`;
   const startedAt = _generateInFlight.get(inflightKey);
@@ -1110,8 +1240,10 @@ export async function generateRoteiro({ roteiro, areaId = null, area = null, for
       case 'docx':
         return await generateRoteiroDOCX(sanitized, area);
       case 'web':
-        // 4.45.0+ planned — fallback temporário
-        throw new Error('Link web em desenvolvimento (Sprint 5 Phase 4).');
+        // v4.63.29+ Implementado end-to-end: cria doc em roteiro_web_links + URL
+        // pública. roteiro-view.html (legacy) ou roteiro-view-tpl.html (template
+        // custom) renderiza. Espelha generateWebLink do portalGenerator §16.
+        return await generateRoteiroWebLink(sanitized, area);
       default:
         throw new Error(`Formato desconhecido: ${format}`);
     }

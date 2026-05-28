@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 28,
-  build: '20260528-areas-exports-rename-cotacoes',
+  patch: 29,
+  build: '20260528-cotacoes-web-link-runtime',
 };
 
 /** "1.2.0" */

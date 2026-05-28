@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Carregando…</title>
+  <style>
+    body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #FAFAF7; color: #1F2937; }
+    .loading-state { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; padding: 24px; text-align: center; }
+    .loading-state .spinner { width: 48px; height: 48px; border: 4px solid #E5E7EB; border-top-color: #D4A843; border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 16px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-state h1 { font-size: 1.125rem; font-weight: 600; margin: 8px 0; color: #1F2937; }
+    .loading-state p { font-size: 0.875rem; color: #6B7280; max-width: 360px; }
+    .err-state { background: #FEF2F2; border-left: 4px solid #EF4444; padding: 16px; margin: 24px auto; max-width: 600px; border-radius: 4px; }
+    .err-state h2 { color: #B91C1C; font-size: 1rem; margin: 0 0 4px; }
+    .err-state p { color: #7F1D1D; font-size: 0.875rem; margin: 0; }
+    .fallback-link { display: inline-block; margin-top: 12px; padding: 8px 16px; background: #D4A843; color: #fff; text-decoration: none; border-radius: 4px; font-size: 0.875rem; }
+  </style>
+</head>
+<body>
+
+<div id="boot" class="loading-state">
+  <div class="spinner"></div>
+  <h1>Carregando sua cotação…</h1>
+  <p>Estamos preparando uma versão personalizada pra você.</p>
+</div>
+
+<script type="module">
+  // v4.63.29+ Renderer client-side de templates Web Link pra COTAÇÕES.
+  // Espelho exato de portal-view-tpl.html adaptado pra collection
+  // roteiro_web_links + shape data.roteiro/area do roteiro-view.html.
+  //
+  // Lê roteiro_web_links/{token} → busca webTemplate via CF getTemplateHtml
+  // → interpola Handlebars no browser → substitui body. Fallback graceful:
+  // qualquer erro redireciona pra roteiro-view.html canônico.
+
+  import { initializeApp }   from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+  import { getFirestore, doc, getDoc, updateDoc, increment }
+                              from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+  import { firebaseConfig }  from './js/config.js';
+
+  const showErr = (title, msg, fallbackToken) => {
+    document.getElementById('boot').innerHTML = `
+      <div class="err-state">
+        <h2>${title}</h2>
+        <p>${msg}</p>
+        ${fallbackToken ? `<a class="fallback-link" href="./roteiro-view.html#${fallbackToken}">Abrir versão padrão</a>` : ''}
+      </div>
+    `;
+    document.title = title;
+  };
+
+  // Token vem por #hash (igual roteiro-view.html) OU ?t=token
+  const params = new URLSearchParams(window.location.search);
+  const token  = (window.location.hash.slice(1) || params.get('t') || '').trim();
+  if (!token) { showErr('Link inválido', 'Este link não contém um token de acesso.'); throw new Error('no token'); }
+
+  const app = initializeApp(firebaseConfig, 'roteiro-view-tpl');
+  const db  = getFirestore(app);
+
+  let docSnap;
+  try { docSnap = await getDoc(doc(db, 'roteiro_web_links', token)); }
+  catch (e) {
+    showErr('Erro de conexão', 'Não foi possível carregar. Tente novamente em instantes.', token);
+    throw e;
+  }
+  if (!docSnap.exists()) {
+    showErr('Cotação não encontrada', 'Este link pode ter expirado ou foi removido.');
+    throw new Error('not found');
+  }
+  const data = docSnap.data();
+
+  // Incrementa view counter (não-bloqueante)
+  updateDoc(doc(db, 'roteiro_web_links', token), { viewCount: increment(1) }).catch(() => {});
+
+  // Sem webTemplate? Redireciona pro view canônico
+  const webTpl = data.webTemplate;
+  if (!webTpl || !webTpl.templateId) {
+    console.warn('[roteiro-view-tpl] sem webTemplate metadata, redirecionando pra canônico');
+    window.location.replace('./roteiro-view.html#' + token);
+    throw new Error('redirect to canonical');
+  }
+
+  // Modo 'slots' (futuro): redireciona pra roteiro-view.html que vai ler
+  // webTemplate.slots.* e injetar partes. Implementação futura em roteiro-view.html.
+  if (webTpl.templateMode === 'slots') {
+    window.location.replace('./roteiro-view.html#' + token + '?slots=1');
+    throw new Error('slots redirect');
+  }
+
+  // Modo 'full': renderiza template completo
+  // 1. Fetch HTML via CF proxy (mesma CF do Portal — getTemplateHtml com CORS)
+  let templateHtml;
+  try {
+    const proxyUrl = 'https://us-central1-gestor-de-tarefas-primetour.cloudfunctions.net/getTemplateHtml?tplId=' + encodeURIComponent(webTpl.templateId);
+    const r = await fetch(proxyUrl);
+    if (!r.ok) throw new Error(`CF proxy ${r.status}`);
+    templateHtml = await r.text();
+  } catch (e) {
+    console.error('[roteiro-view-tpl] template fetch falhou:', e);
+    showErr('Template indisponível', 'Voltando pra versão padrão…', token);
+    setTimeout(() => window.location.replace('./roteiro-view.html#' + token), 1500);
+    throw e;
+  }
+
+  // 2. Carrega Handlebars CDN
+  await new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/handlebars@4.7.8/dist/handlebars.min.js';
+    s.onload = resolve;
+    s.onerror = () => reject(new Error('Handlebars CDN falhou'));
+    document.head.appendChild(s);
+  }).catch(e => {
+    console.error('[roteiro-view-tpl] Handlebars CDN:', e);
+    showErr('Falha ao carregar', 'Erro ao preparar o conteúdo.', token);
+    throw e;
+  });
+
+  // 3. Monta data pro template (shape da Cotação — diferente do Portal!)
+  // roteiro tem: title, cliente, viagem, dias[], hoteis[], valores[], etc.
+  const roteiro = data.data || data.roteiro || {};
+  const area = data.area || {};
+
+  const baseUrl    = window.location.origin + window.location.pathname.replace(/roteiro-view-tpl\.html$/, '');
+  const directUrl  = `${baseUrl}roteiro-view.html#${token}`;
+  const previewUrl = `https://us-central1-gestor-de-tarefas-primetour.cloudfunctions.net/previewLink?t=${encodeURIComponent(token)}`;
+
+  const today = new Date().toLocaleDateString('pt-BR');
+  const templateData = {
+    area: {
+      nome:        area?.name        || 'PRIMETOUR',
+      logoUrl:     area?.logoUrl     || '',
+      logoUrlAlt:  area?.logoUrlAlt  || '',
+      corPrimary:  area?.colors?.primary   || '#D4A843',
+      corSecondary: area?.colors?.secondary || '#0F172A',
+      corAccent:   area?.colors?.accent || area?.colors?.primary || '#D4A843',
+    },
+    // Shape da Cotação (espelha PLACEHOLDERS_SPEC.cotacoes/roteiros em templates.js)
+    cliente:    roteiro?.cliente || roteiro?.client || {},
+    viagem:     roteiro?.travel || roteiro?.viagem || {},
+    briefing:   roteiro?.briefing || roteiro?.notes || '',
+    title:      roteiro?.title || 'Cotação',
+    dias:       Array.isArray(roteiro?.days) ? roteiro.days
+               : Array.isArray(roteiro?.dias) ? roteiro.dias
+               : Array.isArray(roteiro?.itinerary) ? roteiro.itinerary
+               : [],
+    hoteis:     Array.isArray(roteiro?.hotels) ? roteiro.hotels
+               : Array.isArray(roteiro?.hoteis) ? roteiro.hoteis : [],
+    voos:       Array.isArray(roteiro?.flights) ? roteiro.flights
+               : Array.isArray(roteiro?.voos) ? roteiro.voos : [],
+    services:   roteiro?.services || roteiro?.servicos || {},
+    pricing:    roteiro?.pricing || roteiro?.valores || {},
+    includes:   roteiro?.includes || roteiro?.inclusos || {},
+    today,
+    // Web-exclusive
+    webUrl: directUrl,
+    previewUrl,
+    token,
+    webExports: data.webExports || {},
+    createdBy: data.createdBy || {},
+    createdAt: data.createdAt?.toDate?.()?.toLocaleDateString?.('pt-BR') || '',
+    views: data.viewCount || 0,
+    customFooterText: data.webExports?.footerText || '',
+    customHeaderText: data.webExports?.headerText || '',
+    hideCover: false,
+  };
+
+  // 4. Setup JS hooks default no-op
+  window.PRIMETOUR = window.PRIMETOUR || {};
+  window.PRIMETOUR.onDiaClick     = window.PRIMETOUR.onDiaClick     || ((idx) => console.debug('[PRIMETOUR] onDiaClick noop', idx));
+  window.PRIMETOUR.onHotelClick   = window.PRIMETOUR.onHotelClick   || ((id)  => console.debug('[PRIMETOUR] onHotelClick noop', id));
+  window.PRIMETOUR.onPriceClick   = window.PRIMETOUR.onPriceClick   || ((key) => console.debug('[PRIMETOUR] onPriceClick noop', key));
+  window.PRIMETOUR.token = token;
+  window.PRIMETOUR.data  = templateData;
+  window.PRIMETOUR.rawDoc = data;
+
+  // 5. Render Handlebars
+  let renderedHtml;
+  try {
+    const tpl = window.Handlebars.compile(templateHtml, { noEscape: false });
+    renderedHtml = tpl(templateData);
+  } catch (e) {
+    console.error('[roteiro-view-tpl] Handlebars render falhou:', e);
+    showErr('Erro de template', `O template tem um erro: ${e.message?.slice(0,80) || 'desconhecido'}`, token);
+    throw e;
+  }
+
+  // 6. Substitui document inteiro pelo rendered HTML.
+  document.open();
+  document.write(renderedHtml);
+  document.close();
+</script>
+</body>
+</html>

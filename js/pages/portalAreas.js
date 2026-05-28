@@ -84,14 +84,15 @@ function exportsModuleBlock(key, label, current = {}) {
   ];
   // v4.62.51+ Fix audit pos-sprint: esconder formatos não-implementados por módulo.
   // v4.63.28+ Rename roteiros → cotacoes (Renê: "nomenclatura correta em Roteiros
-  // não é Cotação?"). Reader em areaDefaults.js:122 já tem alias bidirectional,
-  // backward compat garantida. Web pra cotacoes virá em v4.63.29 (generator real).
+  // não é Cotação?"). Reader em areaDefaults.js:122 já tem alias bidirectional.
+  // v4.63.29+ Web habilitado pra cotacoes — generateRoteiroWebLink implementado,
+  // roteiro-view-tpl.html runtime criado. Cotações agora 100% paridade com Portal.
   // - portal exporta 4 formatos (PDF/DOCX/PPTX/Web)
-  // - cotacoes exporta 3 (PDF/DOCX/PPTX) — web em v4.63.29+ (runtime pendente)
+  // - cotacoes exporta 4 formatos (PDF/DOCX/PPTX/Web) — paridade total
   // - banco-roteiros exporta apenas PDF (reusa roteiroGenerator PDF via adapter)
   const SUPPORTED_FMTS = {
     portal:           ['pdf', 'docx', 'pptx', 'web'],
-    cotacoes:         ['pdf', 'docx', 'pptx'],
+    cotacoes:         ['pdf', 'docx', 'pptx', 'web'],
     'banco-roteiros': ['pdf'],
   };
   const allowedIds = SUPPORTED_FMTS[key] || ['pdf', 'docx', 'pptx', 'web'];
@@ -711,13 +712,12 @@ function showAreaModal(area, areas = []) {
       // SUPPORTED_FMTS: mesma lógica do exportsModuleBlock — só formatos que generators usam
       // v4.63.12+ Fix Zumbi #1: key canônica é 'cotacoes' (rename v4.62.50).
       // v4.63.22+ 'web' habilitado pra Portal (runtime portal-view-tpl.html).
-      // v4.63.25+ Cotações 'web' DESABILITADO até roteiro-view-tpl.html existir
-      // (admin atribuiria template silencioso sem runtime). Re-habilitar quando
-      // generateWebLink for portado pra roteiroGenerator.js + view tpl criado.
+      // v4.63.29+ Cotações 'web' RE-HABILITADO — generateRoteiroWebLink real +
+      // roteiro-view-tpl.html runtime. Paridade 100% com Portal de Dicas.
       // Banco mantém só HTML.
       const SUPPORTED_FMTS_TPL = {
         portal:           ['html', 'web', 'docx', 'pptx'],
-        cotacoes:         ['html', 'docx', 'pptx'],
+        cotacoes:         ['html', 'web', 'docx', 'pptx'],
         'banco-roteiros': ['html'],
       };
 
