@@ -89,7 +89,11 @@
 
 <footer class="site-footer" id="site-footer" style="display:none;">
   <img id="footer-logo" class="footer-logo" style="display:none;" alt="">
+  <!-- v4.62.47+ exports.web.footerText custom da BU (preenchido em portal-view JS abaixo) -->
+  <div id="footer-custom-text" style="display:none; font-size:11px; color:#888; text-align:center; padding:8px 16px; line-height:1.5; white-space:pre-line;"></div>
 </footer>
+<!-- v4.62.47+ exports.web.headerText custom da BU (faixa fina topo da página) -->
+<div id="custom-header-text" style="display:none; position:fixed; top:0; left:0; right:0; background:rgba(255,255,255,.95); color:#666; font-size:11px; text-align:right; padding:4px 16px; z-index:1000; line-height:1.4;"></div>
 
 <script type="module">
 import { initializeApp }    from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
@@ -228,6 +232,23 @@ const db=getFirestore(app);
 
   document.getElementById('site-header').style.display='flex';
   document.getElementById('site-footer').style.display='block';
+
+  // v4.62.47+ Render exports.web custom (footerText / headerText) salvos
+  // em portal_web_links.webExports. Antes: campo era zumbi — UI salvava
+  // mas portal-view ignorava. hideCover é NO-OP pra Web (não tem capa).
+  const _webExp = data.webExports || {};
+  if (_webExp.headerText) {
+    const hb = document.getElementById('custom-header-text');
+    hb.textContent = String(_webExp.headerText).slice(0, 200);
+    hb.style.display = 'block';
+    // Empurra site-header pra baixo p/ não cobrir a faixa
+    document.getElementById('site-header').style.marginTop = '22px';
+  }
+  if (_webExp.footerText) {
+    const fc = document.getElementById('footer-custom-text');
+    fc.textContent = String(_webExp.footerText);
+    fc.style.display = 'block';
+  }
 
   if(allTips.length>1){renderMulti(appEl,allTips,segments,activeSegs,imagesByDest);}
   else{const{tip,dest}=allTips[0]||{};renderSingle(appEl,tip,dest,segments,activeSegs,imagesByDest[dest?.id]||{},true);}

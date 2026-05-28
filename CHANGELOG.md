@@ -6,6 +6,45 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.62.47+20260528-web-link-exports-audit-logs] — 2026-05-28
+
+Release **Fase E pós-audit Templates Áreas (parte 3/6)** — encerra os 14
+caminhos zumbis pra exports. Último que faltava: o **Web link** (portal
+público renderizado via portal-view.html) agora respeita
+`exports.portal.web.footerText/headerText`. Bônus: audit logs em
+`saveArea` / `saveBusinessUnit` / `deleteArea` (governança das mudanças
+de template visual).
+
+**Plugs**:
+- portalGenerator `generateWebLink`: persiste `webExports.{footerText,
+  headerText}` resolvidos (placeholders já formatados) em
+  `portal_web_links/{token}`.
+- portal-view.html: lê `data.webExports` no boot.
+  - `headerText` → faixa fina fixa no topo (rgba branca .95 + texto
+    cinza 11px right-align, z-index 1000). Empurra `site-header` pra
+    baixo via `marginTop:22px`.
+  - `footerText` → div sob o logo do footer (cinza 11px, center,
+    multi-line via `white-space:pre-line`).
+  - `hideCover` é NO-OP pra Web (não existe slide de capa em página HTML
+    — UI já esconde toggle em formato Web a partir de v4.62.48).
+
+**Audit logs (governança)**:
+- `saveArea` → `portal_areas.create` / `portal_areas.update`.
+- `deleteArea` → `portal_areas.delete` com `severity:'critical'`.
+- `saveBusinessUnit` → reusa labels `portal_areas.*` (mesmo conceito
+  semântico até v4.62.49 unificar). Entity é `business_units` pra
+  rastrear separado.
+
+**Estado da auditoria pós v4.62.47** (resolveu 14 de 14 caminhos zumbis):
+- ✅ PDF (portal + roteiros + banco-roteiros): footer + header + hideCover
+- ✅ DOCX (portal + roteiros): footer + header + hideCover
+- ✅ PPTX (portal + roteiros): footer + header + hideCover via slide
+  master pattern
+- ✅ Web link (portal): footer + header (hideCover NO-OP)
+- ✅ Audit logs em saveArea/deleteArea/saveBU
+
+---
+
 ## [4.62.46+20260528-hidecover-headertext-all-generators] — 2026-05-28
 
 Release **Fase E pós-audit Templates Áreas (parte 2/6)** — plug `headerText`

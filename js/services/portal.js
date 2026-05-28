@@ -11,6 +11,7 @@ import {
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { db }    from '../firebase.js';
 import { store } from '../store.js';
+import { auditLog } from '../auth/audit.js';
 
 /* ─── Cloudflare R2 ───────────────────────────────────────── */
 // v4.57.49 fix I1 security: R2_UPLOAD_TOKEN e R2_WORKER_URL REMOVIDOS do
@@ -194,13 +195,25 @@ export async function fetchAreas() {
 export async function saveArea(id, data) {
   // 4.49.2+ Wire da perm granular portal_areas_manage (era checked via portal_manage)
   if (!store.canManagePortalAreas()) throw new Error('Permissão negada.');
+  const isCreate = !id;
   const ref = id ? doc(db, 'portal_areas', id) : doc(collection(db, 'portal_areas'));
   await setDoc(ref, {
     ...data,
     updatedAt: serverTimestamp(),
     updatedBy: uid(),
-    ...(id ? {} : { createdAt: serverTimestamp(), createdBy: uid() }),
+    ...(isCreate ? { createdAt: serverTimestamp(), createdBy: uid() } : {}),
   }, { merge: true });
+  // v4.62.47+ Audit log (Fase E pós-audit): governança das mudanças em
+  // Áreas/BU (cores, logo, templates de export). Antes: invisível pra
+  // master — nenhuma rastreabilidade quando time muda template visual.
+  try {
+    await auditLog(
+      isCreate ? 'portal_areas.create' : 'portal_areas.update',
+      'portal_areas',
+      ref.id,
+      { name: data?.name || null, hasLogo: !!data?.logoUrl, hasModules: !!data?.modules },
+    );
+  } catch {}
   return ref.id;
 }
 
@@ -235,6 +248,11 @@ export async function deleteArea(id) {
   } catch (e) {
     console.warn('[deleteArea] cleanup portal_destinations.areaId falhou:', e?.message);
   }
+  // v4.62.47+ Audit log (Fase E pós-audit): delete de área é critical
+  // — destinos órfãos, exports zumbis, possível perda de templates.
+  try {
+    await auditLog('portal_areas.delete', 'portal_areas', id, { name: areaName }, { severity: 'critical' });
+  } catch {}
 }
 
 /* ─── Destinations ────────────────────────────────────────── */

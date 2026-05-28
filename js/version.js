@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 62,
-  patch: 46,
-  build: '20260528-hidecover-headertext-all-generators',
+  patch: 47,
+  build: '20260528-web-link-exports-audit-logs',
 };
 
 /** "1.2.0" */

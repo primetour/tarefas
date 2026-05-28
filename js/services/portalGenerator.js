@@ -2344,6 +2344,15 @@ async function generateWebLink({ allTips, segments, areaName, area, colors, form
   const profile = store.get('userProfile') || {};
   const uid     = store.get('currentUser')?.uid || null;
 
+  // v4.62.47+ Fase E pós-audit (Web link): persiste exports.web pra
+  // portal-view.html ler. Antes: UI Áreas → Exports → Web salvava mas
+  // backend ignorava (último zumbi de exports). headerText vira faixa
+  // superior na page renderizada; footerText vira texto sob o logo footer;
+  // hideCover é NO-OP pra Web (não existe slide de capa em página HTML).
+  const _webExportTpl = resolveExportTemplate(area, 'portal', 'web');
+  const _webFooterText = formatExportText(_webExportTpl.footerText || '', { areaName, title: 'Portal de Dicas' });
+  const _webHeaderText = formatExportText(_webExportTpl.headerText || '', { areaName, title: 'Portal de Dicas' });
+
   try {
     await setDoc(ref, {
       token,
@@ -2362,6 +2371,11 @@ async function generateWebLink({ allTips, segments, areaName, area, colors, form
       fonts:     area?.fonts     || null,
       editorial: area?.editorial || null,
       modules:   area?.modules   || null,
+      // v4.62.47+ exports.web ja resolvido (placeholders formatados) — só ler em portal-view
+      webExports: {
+        footerText: _webFooterText,
+        headerText: _webHeaderText,
+      },
       imagesByDest,
       createdBy: {
         uid:   uid,

@@ -46,6 +46,7 @@ import { collection, doc, getDoc, getDocs, query, where, setDoc, serverTimestamp
 import { db } from '../firebase.js';
 import { store } from '../store.js';
 import { resolveAreaDefaults } from './areaDefaults.js';
+import { auditLog } from '../auth/audit.js';
 
 const COLLECTION = 'business_units';
 
@@ -114,16 +115,28 @@ export async function saveBusinessUnit(id, data) {
   if (!store.canManagePortalAreas?.() && !store.isMaster?.()) {
     throw new Error('Permissão negada.');
   }
+  const isCreate = !id;
   const ref = id ? doc(db, COLLECTION, id) : doc(collection(db, COLLECTION));
   const payload = {
     ...data,
     active: data.active !== false,
     updatedAt: serverTimestamp(),
     updatedBy: uid(),
-    ...(id ? {} : { createdAt: serverTimestamp(), createdBy: uid() }),
+    ...(isCreate ? { createdAt: serverTimestamp(), createdBy: uid() } : {}),
   };
   await setDoc(ref, payload, { merge: true });
   _buCache = null;
+  // v4.62.47+ Audit log (Fase E pós-audit): reusa labels portal_areas
+  // (mesmo conceito semântico — Áreas e BUs são facetas da mesma entidade
+  // até v4.62.49 quando sync wrapper unificar).
+  try {
+    await auditLog(
+      isCreate ? 'portal_areas.create' : 'portal_areas.update',
+      'business_units',
+      ref.id,
+      { name: data?.name || null, slug: data?.slug || null, category: data?.category || null },
+    );
+  } catch {}
   return ref.id;
 }
 
