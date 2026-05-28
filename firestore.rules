@@ -614,6 +614,14 @@ service cloud.firestore {
       allow write: if isAuth() && isAdmin();
     }
 
+    // v4.62.44+ Fase F — SSOT unificado business_units.
+    // Mesmas regras de portal_areas (read=qualquer auth, write=admin).
+    // Vai substituir portal_areas progressivamente nas próximas releases.
+    match /business_units/{docId} {
+      allow read:  if isAuth();
+      allow write: if isAuth() && isAdmin();
+    }
+
     match /portal_destinations/{docId} {
       allow read:  if isAuth();
       // v4.59.0+ SSOT geo: write é admin-only no client.

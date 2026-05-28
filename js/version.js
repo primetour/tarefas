@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 62,
-  patch: 43,
-  build: '20260528-areas-templates-fase-e-ui-exports-tab',
+  patch: 44,
+  build: '20260528-areas-templates-fase-f-business-units-foundation',
 };
 
 /** "1.2.0" */
