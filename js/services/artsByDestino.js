@@ -1,49 +1,59 @@
 /**
- * artsByDestino — adapta as coleções do Portal de Dicas
- * (portal_destinations, portal_tips, portal_images) pro wizard de Artes por Destino.
+ * artsByDestino — adapta as coleções do Portal de Dicas pro wizard de Artes.
  *
- * Estratégia de carregamento:
- *   - 1 fetch global de portal_images (assetCategory: 'location') em fetchDestinos()
- *   - cache local _imagesByLocation indexado por city+country
- *   - todas as buscas posteriores (capa, slides, banco curado) usam o cache
- *
- * Etapa B (futura): plugar fetchTip + callLLM pra gerar highlights reais.
+ * Estratégia:
+ *   - 1 fetch global de portal_images em fetchDestinos() (sem filtro de assetCategory:
+ *     pega location, hotel, restaurant, etc — só exclui logo). Cache local indexado
+ *     por city E country (fallback se cidade vazia).
+ *   - buildSlidesForDestino chama fetchTip() e fatia os segmentos em 7 highlights.
  */
 
 import { fetchDestinations, fetchTip, fetchImages } from './portal.js';
 
-// Cache local — populado em fetchDestinos(), usado em fetchBancoCurado/buildSlides
-let _imagesByLocation = new Map();  // key = "city|country" → array de imagens
+// Caches locais (populados em fetchDestinos)
+let _imagesByCity    = new Map();   // city lowercase trim → array de imagens
+let _imagesByCountry = new Map();   // country lowercase trim → array
 
-function keyFor(city, country) {
-  return `${(city || '').toLowerCase()}|${(country || '').toLowerCase()}`;
-}
+const normKey = s => (s || '').toString().toLowerCase().trim();
 
 function getImagesForDestino(destino) {
-  const raw = destino._raw || destino;
-  return _imagesByLocation.get(keyFor(raw.city, raw.country)) || [];
+  const raw = destino?._raw || destino || {};
+  const byCity    = _imagesByCity.get(normKey(raw.city)) || [];
+  if (byCity.length) return byCity;
+  return _imagesByCountry.get(normKey(raw.country)) || [];
 }
 
-/**
- * Lista destinos do Portal de Dicas + carrega banco de imagens em paralelo.
- * Adiciona `capaUrl` (1ª foto da cidade) em cada destino.
- */
+/* ── Destinos + indexação global de imagens ───────────────── */
+
 export async function fetchDestinos() {
   const [docs, allImgs] = await Promise.all([
     fetchDestinations(),
-    fetchImages({ assetCategory: 'location' }),
+    fetchImages({}),    // sem filtros — pega tudo (até 500)
   ]);
 
-  // Indexa imagens por city+country
-  _imagesByLocation = new Map();
+  console.log('[artsByDestino] portal_destinations:', docs.length, '| portal_images:', allImgs.length);
+
+  _imagesByCity = new Map();
+  _imagesByCountry = new Map();
   for (const img of allImgs) {
-    const k = keyFor(img.city, img.country);
-    if (!_imagesByLocation.has(k)) _imagesByLocation.set(k, []);
-    _imagesByLocation.get(k).push(img);
+    if (img.assetCategory === 'logo') continue;
+    if (!img.url) continue;
+    if (img.city) {
+      const k = normKey(img.city);
+      if (!_imagesByCity.has(k)) _imagesByCity.set(k, []);
+      _imagesByCity.get(k).push(img);
+    }
+    if (img.country) {
+      const k = normKey(img.country);
+      if (!_imagesByCountry.has(k)) _imagesByCountry.set(k, []);
+      _imagesByCountry.get(k).push(img);
+    }
   }
 
   return docs.map(d => {
-    const imgs = _imagesByLocation.get(keyFor(d.city, d.country)) || [];
+    const imgs = (_imagesByCity.get(normKey(d.city)) || []).length
+      ? _imagesByCity.get(normKey(d.city))
+      : (_imagesByCountry.get(normKey(d.country)) || []);
     return {
       id: d.id,
       nome: d.city || d.country || '—',
@@ -56,75 +66,110 @@ export async function fetchDestinos() {
   });
 }
 
-/**
- * Constrói 8 slides pro destino selecionado, usando fotos do banco curado real.
- * Slides 2-8 ainda com placeholders de texto (etapa B trará tips reais).
- */
+/* ── Slides: tip real fatiado em highlights ───────────────── */
+
+// Mapeamento das chaves de segmento pra labels usados no manuscrito do slide
+const SEGMENT_LABELS = {
+  informacoes_gerais: 'Visão geral',
+  bairros:            'Bairros',
+  atracoes:           'Atrações',
+  atracoes_criancas:  'Pra crianças',
+  restaurantes:       'Gastronomia',
+  vida_noturna:       'Vida noturna',
+  espetaculos:        'Espetáculos',
+  compras:            'Compras',
+  arredores:          'Arredores',
+  highlights:         'Highlights',
+  agenda_cultural:    'Agenda cultural',
+};
+
+function stripHtml(s) {
+  return String(s || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function segmentToText(seg) {
+  if (!seg) return '';
+  if (seg.content && typeof seg.content === 'string') {
+    return stripHtml(seg.content);
+  }
+  if (Array.isArray(seg.items) && seg.items.length) {
+    return seg.items.slice(0, 3).map(it => it.name || it.title || it.description || '').filter(Boolean).join(', ');
+  }
+  if (seg.info && typeof seg.info === 'object') {
+    return Object.values(seg.info).filter(v => typeof v === 'string' && v.trim()).join(' · ');
+  }
+  return '';
+}
+
+function tipToHighlights(tip) {
+  if (!tip?.segments) return [];
+  const out = [];
+  for (const [key, seg] of Object.entries(tip.segments)) {
+    const txt = segmentToText(seg);
+    if (!txt) continue;
+    const label = SEGMENT_LABELS[key] || key.replace(/_/g, ' ');
+    out.push({
+      nome: label,
+      titulo: label.toUpperCase(),
+      descricao: txt.length > 180 ? txt.slice(0, 177) + '...' : txt,
+    });
+  }
+  return out;
+}
+
 export async function buildSlidesForDestino(destino) {
   const imgs = getImagesForDestino(destino);
   const nome = destino.nome;
-  // Pra cada slide, escolhe foto do banco (cíclico se acabar)
   const foto = (idx) => imgs[idx % Math.max(imgs.length, 1)]?.url || '';
 
-  // TODO Etapa B: const tip = await fetchTip(destino.id); fatiar em 7 highlights via callLLM
-  console.info('[artsByDestino] TODO etapa B: tip real de', destino.id, '— usando placeholders');
-
-  return [
-    { id: 'capa',  layoutId: 'capa',         nome, titulo: 'Tudo sobre',  descricao: '',
-      fotoUrl: foto(0) },
-    { id: 'intro', layoutId: 'foto-cima',    nome, titulo: 'VISÃO GERAL',
-      descricao: `Conheça os destaques de ${nome} para inspirar sua próxima viagem.`,
-      fotoUrl: foto(1) },
-    { id: 'h2',    layoutId: 'lateral-esq',  nome: `${nome} 02`, titulo: 'PONTO ALTO 2',
-      descricao: 'Em breve: dica real do Portal de Dicas (etapa B).',
-      fotoUrl: foto(2) },
-    { id: 'h3',    layoutId: 'foto-cima',    nome: `${nome} 03`, titulo: 'PONTO ALTO 3',
-      descricao: 'Em breve: dica real do Portal de Dicas (etapa B).',
-      fotoUrl: foto(3) },
-    { id: 'h4',    layoutId: 'lateral-dir',  nome: `${nome} 04`, titulo: 'PONTO ALTO 4',
-      descricao: 'Em breve: dica real do Portal de Dicas (etapa B).',
-      fotoUrl: foto(4) },
-    { id: 'h5',    layoutId: 'foto-cima',    nome: `${nome} 05`, titulo: 'PONTO ALTO 5',
-      descricao: 'Em breve: dica real do Portal de Dicas (etapa B).',
-      fotoUrl: foto(5) },
-    { id: 'h6',    layoutId: 'lateral-esq',  nome: `${nome} 06`, titulo: 'PONTO ALTO 6',
-      descricao: 'Em breve: dica real do Portal de Dicas (etapa B).',
-      fotoUrl: foto(6) },
-    { id: 'h7',    layoutId: 'foto-cima',    nome: `${nome} 07`, titulo: 'PONTO ALTO 7',
-      descricao: 'Em breve: dica real do Portal de Dicas (etapa B).',
-      fotoUrl: foto(7) },
-  ];
-}
-
-/**
- * Banco curado pro picker de fotos (sheet Foto).
- * Lê do cache populado em fetchDestinos() — sem ida extra ao Firestore.
- */
-export async function fetchBancoCurado(destinoId) {
-  // Como o cache é indexado por city+country e aqui só temos id, varremos
-  // pra achar (rápido em memória). Em produção poderíamos manter um destinos cache também.
-  for (const [, imgs] of _imagesByLocation) {
-    if (imgs.some(img => img.destinoId === destinoId)) {
-      return imgs.map(toBancoItem);
-    }
+  let highlights = [];
+  try {
+    const tip = await fetchTip(destino.id);
+    highlights = tipToHighlights(tip);
+    console.log('[artsByDestino] tip:', destino.id, '| segmentos com conteudo:', highlights.length);
+  } catch (e) {
+    console.warn('[artsByDestino] erro ao buscar tip:', e);
   }
-  // Fallback: tenta usar o destino atual via raw lookup — passamos o destino completo
-  // (chamador atualizado pra passar destino, não só id, ou guardamos no state)
-  console.warn('[artsByDestino] fetchBancoCurado: destino não encontrado no cache:', destinoId);
-  return [];
+
+  // Fallback se destino não tem tip
+  if (!highlights.length) {
+    highlights = Array.from({ length: 7 }, (_, i) => ({
+      nome: `${nome} ${String(i + 2).padStart(2, '0')}`,
+      titulo: `PONTO ALTO ${i + 2}`,
+      descricao: 'Cadastre conteúdo deste destino no Portal de Dicas pra aparecer aqui.',
+    }));
+  }
+
+  // Distribui os 7 highlights nos 3 layouts disponíveis (variedade visual)
+  const layouts = ['foto-cima', 'lateral-esq', 'foto-cima', 'lateral-dir', 'foto-cima', 'lateral-esq', 'foto-cima'];
+  const slides = [
+    { id: 'capa', layoutId: 'capa', nome, titulo: 'Tudo sobre', descricao: '', fotoUrl: foto(0) },
+  ];
+  highlights.slice(0, 7).forEach((h, i) => {
+    slides.push({
+      id: `h${i + 1}`,
+      layoutId: layouts[i],
+      nome: h.nome,
+      titulo: h.titulo,
+      descricao: h.descricao,
+      fotoUrl: foto(i + 1),
+    });
+  });
+  return slides;
 }
 
-/**
- * Versão alternativa: recebe o destino completo (com _raw) pra pegar imgs do cache.
- */
+/* ── Banco curado pro picker de fotos (sheet Foto) ────────── */
+
 export function getBancoCuradoForDestino(destino) {
-  return getImagesForDestino(destino).map(toBancoItem);
-}
-
-function toBancoItem(img) {
-  return {
+  return getImagesForDestino(destino).map(img => ({
     id: img.id,
     url: img.url,
     nome: img.name || img.assetCategory || 'Foto',
-  };
+  }));
+}
+
+// API legada (não usada mais — wizard usa getBancoCuradoForDestino direto)
+export async function fetchBancoCurado(destinoId) {
+  console.warn('[artsByDestino] fetchBancoCurado(id) deprecated; use getBancoCuradoForDestino(destino)');
+  return [];
 }
