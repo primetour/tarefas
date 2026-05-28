@@ -37,7 +37,21 @@ const state = {
   bancoCategoria: 'todas',               // 'todas' | 'location' | 'hotel' | ...
   openSheet: null,                       // 'formato' | 'estilo' | 'texto' | 'foto' | 'baixar' | null
   generated: null,
+  // ─── Canva-style overrides (por slideIdx → field) ───
+  // { 0: { hand: { fontFamily, fontSize, color, align, weight }, titulo: {...}, desc: {...} } }
+  // fontSize em PX no preview atual (escalado no export).
+  slideOverrides: {},
+  selectedField: null,                   // 'hand' | 'titulo' | 'desc' | null
 };
+
+// Fontes disponíveis no editor Canva-style (carregadas via Google Fonts no HTML)
+const CANVAS_FONTS = [
+  { id: 'sans',     label: 'Sans (padrão)',  css: "var(--font-sans)" },
+  { id: 'caveat',   label: 'Manuscrita',     css: "'Caveat', cursive" },
+  { id: 'playfair', label: 'Playfair (serif)', css: "'Playfair Display', serif" },
+  { id: 'roboto-slab', label: 'Slab (forte)', css: "'Roboto Slab', serif" },
+  { id: 'montserrat',  label: 'Montserrat',  css: "'Montserrat', sans-serif" },
+];
 
 // ───── DOM refs ─────
 const $ = (s, ctx = document) => ctx.querySelector(s);
@@ -212,6 +226,8 @@ async function pickDestino(id) {
     state.activeSlideIdx = 0;
     state.generated = null;
     state.uniformScale = null;
+    state.slideOverrides = {};
+    state.selectedField = null;
     hideLoader();
     setView('editor');
     renderEditor();
@@ -376,8 +392,16 @@ function renderCanvas() {
   const template = MOCK_TEMPLATES.find(t => t.id === state.templateId);
   $('#canvas-preview').innerHTML = buildSlideHtml(slide, template, state.previewFormato, state.activeSlideIdx + 1, state.slides.length);
   const slideNode = $('#canvas-preview .slide-render');
-  if (slideNode) requestAnimationFrame(() => fitSlideContent(slideNode));
+  if (slideNode) {
+    requestAnimationFrame(() => {
+      fitSlideContent(slideNode);
+      applyOverridesToSlide(slideNode, state.activeSlideIdx);
+    });
+  }
   wireEditInPlace();
+  wireCanvasSelection();
+  // Deseleciona ao trocar de slide
+  deselectElement();
 }
 
 // ───── Auto-fit ─────
@@ -473,6 +497,103 @@ function wireEditInPlace() {
 }
 
 let _reprefitTimer = null;
+/* ─── Canva-style: seleção + overrides + toolbar flutuante ─── */
+
+function wireCanvasSelection() {
+  $$('#canvas-preview .slot-text').forEach(el => {
+    // Click no texto seleciona — mas se já está em modo edit (focado), não interfere
+    el.addEventListener('mousedown', (e) => {
+      // Se está editando esse mesmo elemento, deixa o cursor passar
+      if (el === document.activeElement && el === document.querySelector('.slot-text.is-selected')) return;
+      const field = el.dataset.field;
+      if (!field) return;
+      selectElement(field);
+    });
+  });
+}
+
+function selectElement(field) {
+  state.selectedField = field;
+  $$('#canvas-preview .slot-text').forEach(x => x.classList.toggle('is-selected', x.dataset.field === field));
+  showFloatingToolbar(field);
+}
+
+function deselectElement() {
+  state.selectedField = null;
+  $$('#canvas-preview .slot-text').forEach(x => x.classList.remove('is-selected'));
+  hideFloatingToolbar();
+}
+
+function showFloatingToolbar(field) {
+  const el = $(`#canvas-preview .slot-text[data-field="${field}"]`);
+  const bar = $('#float-toolbar');
+  if (!el || !bar) return;
+  const rect = el.getBoundingClientRect();
+  // Posiciona acima do elemento (com fallback embaixo se topo da tela)
+  bar.classList.add('show');
+  bar.style.left = '0px';
+  bar.style.top  = '0px';
+  // Mede pra centralizar
+  const barRect = bar.getBoundingClientRect();
+  let top = rect.top - barRect.height - 12;
+  let left = rect.left + rect.width / 2 - barRect.width / 2;
+  if (top < 12) top = rect.bottom + 12;                       // se não cabe acima, vai pra baixo
+  left = Math.max(12, Math.min(left, window.innerWidth - barRect.width - 12));
+  bar.style.left = left + 'px';
+  bar.style.top  = top + 'px';
+
+  // Sincroniza valores da toolbar com o override atual
+  const override = state.slideOverrides[state.activeSlideIdx]?.[field] || {};
+  const elFontSize = parseFloat(getComputedStyle(el).fontSize);
+  $('#ft-font').value = override.fontFamily || 'sans';
+  $('#ft-size').textContent = Math.round(override.fontSize || elFontSize) + 'px';
+}
+
+function hideFloatingToolbar() {
+  $('#float-toolbar')?.classList.remove('show');
+}
+
+function setOverride(field, props) {
+  const idx = state.activeSlideIdx;
+  if (!state.slideOverrides[idx]) state.slideOverrides[idx] = {};
+  if (!state.slideOverrides[idx][field]) state.slideOverrides[idx][field] = {};
+  Object.assign(state.slideOverrides[idx][field], props);
+  // Aplica visualmente sem rerender
+  const slideNode = $('#canvas-preview .slide-render');
+  if (slideNode) applyOverridesToSlide(slideNode, idx);
+}
+
+function clearOverride(field) {
+  const idx = state.activeSlideIdx;
+  if (state.slideOverrides[idx]) delete state.slideOverrides[idx][field];
+  // Re-render limpa os styles inline aplicados
+  renderCanvas();
+  // Reseleciona pro user continuar editando
+  requestAnimationFrame(() => selectElement(field));
+}
+
+function applyOverridesToSlide(slideNode, slideIdx) {
+  applyOverridesToSlideScaled(slideNode, slideIdx, 1);
+}
+
+function applyOverridesToSlideScaled(slideNode, slideIdx, scale = 1) {
+  const overrides = state.slideOverrides[slideIdx];
+  if (!overrides) return;
+  for (const [field, props] of Object.entries(overrides)) {
+    const el = slideNode.querySelector(`.text-${field}`);
+    if (!el) continue;
+    if (props.fontFamily) {
+      const f = CANVAS_FONTS.find(x => x.id === props.fontFamily);
+      if (f) el.style.fontFamily = f.css;
+    }
+    if (props.fontSize) el.style.fontSize = (props.fontSize * scale) + 'px';
+    if (props.color)    el.style.color = props.color;
+    if (props.align)    el.style.textAlign = props.align;
+    if (props.weight)   el.style.fontWeight = props.weight;
+    if (props.style)    el.style.fontStyle = props.style;
+  }
+}
+
 function onSlotEdit(e) {
   const el = e.currentTarget;
   const slide = state.slides[state.activeSlideIdx];
@@ -906,6 +1027,12 @@ async function generateAllImages() {
     await new Promise(r => requestAnimationFrame(r));
     items.forEach(it => fitSlideContent(it.node));
 
+    // Aplica overrides Canva-style escalados pro tamanho do export (1080px)
+    const previewSlide = $('#canvas-preview .slide-render');
+    const previewWidth = previewSlide ? previewSlide.getBoundingClientRect().width : 360;
+    const exportScale = 1080 / previewWidth;
+    items.forEach(it => applyOverridesToSlideScaled(it.node, it.i, exportScale));
+
     // ─── Fase 3: html2canvas → PNG ───
     for (const it of items) {
       const canvas = await html2canvas(it.node, { useCORS: true, scale: 1, backgroundColor: null });
@@ -1045,6 +1172,43 @@ async function initWizard() {
 
   $('#sheet-backdrop').addEventListener('click', closeSheet);
   $$('.sheet-close').forEach(b => b.addEventListener('click', closeSheet));
+
+  // Toolbar flutuante Canva-style
+  $('#ft-font')?.addEventListener('change', e => {
+    if (!state.selectedField) return;
+    setOverride(state.selectedField, { fontFamily: e.target.value });
+  });
+  $('#ft-size-plus')?.addEventListener('click', () => {
+    if (!state.selectedField) return;
+    const el = $(`#canvas-preview .slot-text[data-field="${state.selectedField}"]`);
+    if (!el) return;
+    const cur = parseFloat(getComputedStyle(el).fontSize);
+    const novo = Math.min(120, cur + 2);
+    setOverride(state.selectedField, { fontSize: novo });
+    $('#ft-size').textContent = Math.round(novo) + 'px';
+  });
+  $('#ft-size-minus')?.addEventListener('click', () => {
+    if (!state.selectedField) return;
+    const el = $(`#canvas-preview .slot-text[data-field="${state.selectedField}"]`);
+    if (!el) return;
+    const cur = parseFloat(getComputedStyle(el).fontSize);
+    const novo = Math.max(8, cur - 2);
+    setOverride(state.selectedField, { fontSize: novo });
+    $('#ft-size').textContent = Math.round(novo) + 'px';
+  });
+  $('#ft-reset')?.addEventListener('click', () => {
+    if (!state.selectedField) return;
+    clearOverride(state.selectedField);
+  });
+  $('#ft-close')?.addEventListener('click', deselectElement);
+
+  // Click fora do canvas e fora da toolbar deseleciona
+  document.addEventListener('mousedown', (e) => {
+    if (!state.selectedField) return;
+    const inText = e.target.closest('#canvas-preview .slot-text');
+    const inToolbar = e.target.closest('#float-toolbar');
+    if (!inText && !inToolbar) deselectElement();
+  });
 }
 
 // ───── HTML do wizard (injetado no overlay) ─────
@@ -1128,6 +1292,21 @@ const OVERLAY_HTML = `
     <div class="spinner"></div>
     <div class="loader-text" id="loader-text">Carregando...</div>
   </div>
+
+  <!-- Toolbar flutuante Canva-style (aparece ao selecionar texto) -->
+  <div class="float-toolbar" id="float-toolbar">
+    <select class="ft-font" id="ft-font" title="Fonte">
+      ${CANVAS_FONTS.map(f => `<option value="${f.id}">${f.label}</option>`).join('')}
+    </select>
+    <div class="ft-size-group">
+      <button class="ft-btn" id="ft-size-minus" title="Diminuir">−</button>
+      <span class="ft-size" id="ft-size">—</span>
+      <button class="ft-btn" id="ft-size-plus" title="Aumentar">+</button>
+    </div>
+    <button class="ft-btn ft-reset" id="ft-reset" title="Resetar texto pro padrão">↺</button>
+    <button class="ft-btn ft-close" id="ft-close" title="Fechar">✕</button>
+  </div>
+
   <div class="render-bay" id="render-bay" aria-hidden="true"></div>
 `;
 
@@ -1147,7 +1326,7 @@ function loadCssOnce(href, id) {
   document.head.appendChild(l);
 }
 async function loadDeps() {
-  loadCssOnce('https://fonts.googleapis.com/css2?family=Caveat:wght@400;700&display=swap', 'gi-ic-caveat');
+  loadCssOnce('https://fonts.googleapis.com/css2?family=Caveat:wght@400;700&family=Playfair+Display:wght@400;700;800&family=Roboto+Slab:wght@400;700;800&family=Montserrat:wght@400;600;700;800&display=swap', 'gi-ic-fonts');
   loadCssOnce('js/pages/artsByDestino/wizard.css', 'gi-ic-wizard-css');
   await Promise.all([
     window.html2canvas ? Promise.resolve() : loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js'),
