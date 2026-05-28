@@ -6,6 +6,55 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.3+20260528-templates-extract-placeholders] — 2026-05-28
+
+Release **Sprint v4.63 (4/11)** — CF `extractPlaceholders` reativa.
+
+Trigger `onDocumentCreated('templates/{templateId}')` que, ao
+upload novo template entrar no Firestore, automaticamente:
+1. Baixa o arquivo do R2 público (`fileUrl`)
+2. Extrai placeholders Handlebars `{{var.path}}`
+3. Popula `templates.{id}.placeholders[]` ordenado alfabeticamente
+4. Atualiza `placeholdersExtractedAt` + zera `placeholdersExtractionError`
+
+**Estratégia por formato**:
+- **HTML**: regex `{{...}}` direto no texto
+- **DOCX**: `pizzip` extrai `.xml` de `word/` → regex no XML interno
+  (com concat de `<w:t>` runs adjacentes pra recuperar placeholders
+  quebrados por Word em múltiplos runs)
+- **PPTX**: idem em `ppt/slides/*.xml` + `ppt/slideMasters/*.xml`
+
+**Regex Handlebars**:
+- Captura `{{var}}`, `{{var.path}}`, `{{#each var}}`, `{{#if var}}`,
+  `{{var.[0].name}}`
+- Ignora `{{@key}}`, `{{this}}`, `{{!comments}}`, `{{> partials}}`,
+  `{{/each}}`, `{{/if}}`
+
+**Tolerância**:
+- Falhas gravam `placeholdersExtractionError` no doc (não-bloqueante).
+- Idempotente (re-roda se trigger disparar de novo).
+- Cap em 200 placeholders/template (defensivo).
+
+**Dependência nova**: `pizzip@^3.2.0` em functions/ pra parse de
+ZIPs (DOCX/PPTX são ZIPs com XMLs dentro).
+
+**E2E validado**:
+- Upload HTML 343 bytes com 16 placeholders distintos (12 únicos após dedup)
+- Trigger disparou em ~3s pós upload
+- Doc atualizado com `placeholders: ['area.nome', 'cidade',
+  'cliente.adults', 'cliente.children', 'cliente.nome', 'dias',
+  'narrativa', 'numero', 'precos.totalCasal', 'viagem.dataFim',
+  'viagem.dataInicio', 'viagem.noites']` ✅
+- `extractionDone:true`, `extractionError:null` ✅
+- Helpers (`{{#each}}`, `{{#if}}`) corretamente identificados como
+  placeholders das variáveis, não como tokens isolados ✅
+
+**Próxima**: v4.63.4 — UI Biblioteca de Templates (listagem com
+filtros por módulo/formato/área, cards com preview de placeholders
+extraídos, ações editar/duplicar/arquivar).
+
+---
+
 ## [4.63.2+20260528-templates-r2-worker-mime-fix] — 2026-05-28
 
 Release **Sprint v4.63 (3/11)** — Upload R2 end-to-end funcional.

@@ -897,6 +897,110 @@ export const uploadTemplate = onCall({
 });
 
 /* ═════════════════════════════════════════════════════════
+ * extractPlaceholders — v4.63.3+ trigger reativo onCreate
+ *
+ * Quando upload de template entra no Firestore, baixa o arquivo,
+ * extrai placeholders Handlebars `{{var.path}}` e popula o campo
+ * `placeholders[]` no doc. Permite UI mostrar quais variáveis o
+ * template usa antes de atribuir a uma área.
+ *
+ * Estratégia por formato:
+ *   - HTML: regex direto no texto
+ *   - DOCX/PPTX: pizzip extrai .xml internos → regex no XML
+ *
+ * Idempotente. Falhas gravam `placeholdersExtractionError` (não-bloqueante).
+ * ═════════════════════════════════════════════════════════ */
+function _extractHandlebarsFromText(text) {
+  if (!text) return [];
+  const re = /\{\{\s*(?:#(?:each|if|unless|with)\s+)?([a-zA-Z_][\w.[\]\-]*)\s*[}~]/g;
+  const found = new Set();
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    const path = m[1];
+    if (!path) continue;
+    if (path.startsWith('@')) continue;
+    if (path === 'this') continue;
+    found.add(path);
+  }
+  return [...found];
+}
+
+async function _extractOfficePlaceholders(buf) {
+  const { default: PizZip } = await import('pizzip');
+  let zip;
+  try {
+    zip = new PizZip(buf);
+  } catch (e) {
+    throw new Error(`Arquivo Office mal formado: ${e.message}`);
+  }
+  const found = new Set();
+  for (const filename of Object.keys(zip.files)) {
+    if (!filename.endsWith('.xml')) continue;
+    if (!filename.startsWith('word/') && !filename.startsWith('ppt/')) continue;
+    const content = zip.file(filename)?.asText() || '';
+    if (!content) continue;
+    // Concatena runs adjacentes pra recuperar placeholders quebrados
+    const cleaned = content
+      .replace(/<\/w:t><[^>]+><w:t[^>]*>/g, '')
+      .replace(/<\/a:t><[^>]+><a:t[^>]*>/g, '');
+    for (const p of _extractHandlebarsFromText(cleaned)) found.add(p);
+  }
+  return [...found];
+}
+
+export const extractPlaceholders = onDocumentCreated({
+  document: 'templates/{templateId}',
+  region: 'us-central1',
+  memory: '256MiB',
+  timeoutSeconds: 60,
+}, async (event) => {
+  const snap = event.data;
+  if (!snap) return;
+  const tpl = snap.data();
+  if (!tpl?.fileUrl || !tpl?.format) {
+    console.log('[extractPlaceholders] skip: sem fileUrl ou format');
+    return;
+  }
+  const templateId = event.params.templateId;
+  console.log(`[extractPlaceholders] inicio templateId=${templateId} format=${tpl.format}`);
+
+  try {
+    const res = await fetch(tpl.fileUrl);
+    if (!res.ok) throw new Error(`Fetch falhou (${res.status})`);
+
+    let placeholders = [];
+    if (tpl.format === 'html') {
+      const text = await res.text();
+      placeholders = _extractHandlebarsFromText(text);
+    } else if (tpl.format === 'docx' || tpl.format === 'pptx') {
+      const ab = await res.arrayBuffer();
+      placeholders = await _extractOfficePlaceholders(Buffer.from(ab));
+    } else {
+      throw new Error(`Format desconhecido: ${tpl.format}`);
+    }
+
+    placeholders = placeholders.sort().slice(0, 200);
+
+    await snap.ref.update({
+      placeholders,
+      placeholdersExtractedAt: FieldValue.serverTimestamp(),
+      placeholdersExtractionError: null,
+    });
+    console.log(`[extractPlaceholders] ok templateId=${templateId}: ${placeholders.length}`);
+  } catch (e) {
+    const errMsg = String(e?.message || e).slice(0, 500);
+    console.error(`[extractPlaceholders] FALHOU ${templateId}:`, errMsg);
+    try {
+      await snap.ref.update({
+        placeholders: [],
+        placeholdersExtractionError: errMsg,
+        placeholdersExtractedAt: FieldValue.serverTimestamp(),
+      });
+    } catch {}
+  }
+});
+
+/* ═════════════════════════════════════════════════════════
  * logUserLogin — auditoria server-side com IP/UA
  * Chamada após login bem-sucedido. Cria entry em audit_logs.
  * ═════════════════════════════════════════════════════════ */

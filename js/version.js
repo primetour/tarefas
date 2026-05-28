@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 2,
-  build: '20260528-templates-r2-worker-mime-fix',
+  patch: 3,
+  build: '20260528-templates-extract-placeholders',
 };
 
 /** "1.2.0" */
