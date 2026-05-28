@@ -14,7 +14,7 @@ import { DEFAULT_COLORS as PORTAL_DEFAULT_COLORS, getPortalColors } from './port
 // portalTokens.PORTAL_DEFAULT_COLORS legacy mantido pra compat (re-exporta
 // os mesmos valores do SSOT agora). Imports diretos do areaDefaults daqui em
 // diante. portalTokens.js fica como adapter de transição.
-import { resolveAreaDefaults, resolveExternalBrandName } from './areaDefaults.js';
+import { resolveAreaDefaults, resolveExternalBrandName, resolveExportTemplate, formatExportText } from './areaDefaults.js';
 
 // SEGMENTS defaults (hardcoded como fallback se fetch falhar) + dinâmicos
 // (carregados de portal_segments quando user cria customs).
@@ -865,6 +865,33 @@ async function generateDocx({ allTips, segments, areaName, area, colors, filenam
     children.push(new Paragraph({children:[new PageBreak()]}));
   }
 
+  // v4.62.45+ Fase E pós-audit: footerText/headerText custom da BU em DOCX.
+  // headerText vira parágrafo de pré-rodapé. footerText vai como Section
+  // footer real do docx (cabeçalho/rodapé fixo em todas as páginas).
+  const _docxExportTpl = resolveExportTemplate(area, 'portal', 'docx');
+  const _docxCustomFooter = formatExportText(_docxExportTpl.footerText || '', { areaName, title: 'Portal de Dicas' });
+  const _docxCustomHeader = formatExportText(_docxExportTpl.headerText || '', { areaName, title: 'Portal de Dicas' });
+
+  const _Header = window.docx.Header;
+  const _Footer = window.docx.Footer;
+  const sectionProps = { properties: {}, children };
+  if (_docxCustomFooter && _Footer) {
+    sectionProps.footers = {
+      default: new _Footer({
+        children: _docxCustomFooter.split('\n').slice(0, 3).map(line =>
+          new Paragraph({ children: [new TextRun({ font: _DOCX_FONT, text: line, size: 14, color: '8E8E93' })], alignment: AlignmentType.CENTER })
+        ),
+      }),
+    };
+  }
+  if (_docxCustomHeader && _Header) {
+    sectionProps.headers = {
+      default: new _Header({
+        children: [new Paragraph({ children: [new TextRun({ font: _DOCX_FONT, text: _docxCustomHeader, size: 14, color: '8E8E93' })], alignment: AlignmentType.RIGHT })],
+      }),
+    };
+  }
+
   // Document com Poppins como fonte padrão pra TODOS os runs (sem
   // precisar passar `font: 'Poppins'` em cada TextRun individualmente)
   const doc = new Document({
@@ -873,7 +900,7 @@ async function generateDocx({ allTips, segments, areaName, area, colors, filenam
         document: { run: { font: 'Poppins' } },
       },
     },
-    sections:[{properties:{},children}],
+    sections: [sectionProps],
   });
   const blob = await Packer.toBlob(doc);
   triggerDownload(blob, filename, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
@@ -959,6 +986,15 @@ async function generatePDF({
     }).catch(() => ({ dataUrl: footerSourceMeta.dataUrl, widthMm: 30, heightMm: 10 }));
   }
 
+  // v4.62.45+ Fase E pós-audit: resolve template do export pra footerText
+  // custom da área (Áreas → Exports → PDF). Aparece como pequena linha à
+  // esquerda do rodapé padrão. Suporta placeholders {areaName}/{today}/etc.
+  const _pdfExportTpl = resolveExportTemplate(area, 'portal', 'pdf');
+  const _pdfCustomFooter = formatExportText(_pdfExportTpl.footerText || '', {
+    areaName,
+    title: 'Portal de Dicas',
+  });
+
   const addPage=()=>{doc.addPage();y=MARGIN;addFooter();};
   const checkPage=(n=10)=>{if(y+n>275)addPage();};
   // Rodapé: logo composite (sem card branco) — fundo branco da página
@@ -979,6 +1015,13 @@ async function generatePDF({
       `City Guides  ·  ${new Date().toLocaleDateString('pt-BR')}  ·  p.${pg}`,
       PAGE_W/2, 293, { align:'center' }
     );
+    // v4.62.45+ footerText custom da BU (máx 3 linhas, à esquerda do rodapé padrão)
+    if (_pdfCustomFooter) {
+      doc.setFontSize(6); setF('normal'); doc.setTextColor(160,160,160);
+      const lines = String(_pdfCustomFooter).split('\n').slice(0, 3);
+      let yy = 285;
+      for (const line of lines) { doc.text(line, MARGIN, yy); yy += 2.5; }
+    }
   };
 
   // ── COVER (extraído em função pra reuso na última página) ───────
@@ -1524,6 +1567,44 @@ async function generatePptx({ allTips, segments, areaName, area, colors, filenam
   const FONT = _PPTX_TPL.fonts.body || 'Poppins';
   const FONT_FALLBACK = 'Arial';
   const F = (extra={}) => ({ fontFace: `${FONT}, ${FONT_FALLBACK}, sans-serif`, ...extra });
+
+  // v4.62.45+ Fase E pós-audit: slide master com footerText custom da BU.
+  // PptxGenJS define slide master — todos os slides criados depois herdam
+  // o objeto. headerText/footerText aparecem em TODOS os slides.
+  const _pptxExportTpl = resolveExportTemplate(area, 'portal', 'pptx');
+  const _pptxCustomFooter = formatExportText(_pptxExportTpl.footerText || '', { areaName, title: 'Portal de Dicas' });
+  const _pptxCustomHeader = formatExportText(_pptxExportTpl.headerText || '', { areaName, title: 'Portal de Dicas' });
+  const _pptxHideCover    = !!_pptxExportTpl.hideCover;
+  if (_pptxCustomFooter || _pptxCustomHeader) {
+    const masterObjs = [];
+    if (_pptxCustomFooter) {
+      const lines = String(_pptxCustomFooter).split('\n').slice(0, 3);
+      masterObjs.push({ text: {
+        text: lines.join('\n'),
+        options: { x: 0.3, y: H - 0.4, w: W - 0.6, h: 0.35,
+          fontSize: 8, color: '888888', fontFace: `${FONT}, ${FONT_FALLBACK}, sans-serif`,
+          align: 'center', valign: 'top' },
+      }});
+    }
+    if (_pptxCustomHeader) {
+      masterObjs.push({ text: {
+        text: _pptxCustomHeader,
+        options: { x: 0.3, y: 0.15, w: W - 0.6, h: 0.25,
+          fontSize: 8, color: '888888', fontFace: `${FONT}, ${FONT_FALLBACK}, sans-serif`,
+          align: 'right', valign: 'top' },
+      }});
+    }
+    try {
+      pptx.defineSlideMaster({ title: 'AREA_FOOTER', objects: masterObjs });
+    } catch (e) { console.warn('[portalPptx] slide master falhou:', e?.message); }
+  }
+  // v4.62.45+ Wrap addSlide pra aplicar master AREA_FOOTER automaticamente.
+  // Pattern usado em vários lugares (cover, section, content slides) — wrap
+  // garante que todos herdem footer/header sem mexer em cada chamada.
+  const _origAddSlide = pptx.addSlide.bind(pptx);
+  if (_pptxCustomFooter || _pptxCustomHeader) {
+    pptx.addSlide = (opts = {}) => _origAddSlide({ masterName: 'AREA_FOOTER', ...opts });
+  }
 
   // ── COVER (espelhada do PDF) ────────────────────────────────
   // bg = secondary (escuro). Logo grande no centro (compositado com

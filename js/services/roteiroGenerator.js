@@ -3037,14 +3037,43 @@ export async function generateRoteiroDOCX(roteiro, area = null) {
     alignment: AlignmentType.CENTER, spacing: { before: 100 },
   }));
 
+  /* ── v4.62.45+ Fase E pós-audit: footerText/headerText custom da BU ── */
+  const _docxExportTpl = resolveExportTemplate(area, 'roteiros', 'docx');
+  const _docxCustomFooter = formatExportText(_docxExportTpl.footerText || '', {
+    areaName: buName, clientName: roteiro.client?.name || '', title: roteiro.title || '',
+  });
+  const _docxCustomHeader = formatExportText(_docxExportTpl.headerText || '', {
+    areaName: buName, clientName: roteiro.client?.name || '', title: roteiro.title || '',
+  });
+
+  const _Header = window.docx?.Header;
+  const _Footer = window.docx?.Footer;
+  const _section = {
+    properties: { page: { margin: { top: 720, right: 720, bottom: 720, left: 720 } } },
+    children,
+  };
+  if (_docxCustomFooter && _Footer) {
+    _section.footers = {
+      default: new _Footer({
+        children: _docxCustomFooter.split('\n').slice(0, 3).map(line =>
+          new Paragraph({ children: [tr(line, { size: 14, color: '8E8E93' })], alignment: AlignmentType.CENTER })
+        ),
+      }),
+    };
+  }
+  if (_docxCustomHeader && _Header) {
+    _section.headers = {
+      default: new _Header({
+        children: [new Paragraph({ children: [tr(_docxCustomHeader, { size: 14, color: '8E8E93' })], alignment: AlignmentType.RIGHT })],
+      }),
+    };
+  }
+
   /* ── Monta documento + save ───────────────────────────── */
   const document = new Document({
     creator: 'PRIMETOUR',
     title: roteiro.title || 'Roteiro de Viagem',
-    sections: [{
-      properties: { page: { margin: { top: 720, right: 720, bottom: 720, left: 720 } } },
-      children,
-    }],
+    sections: [_section],
   });
 
   const blob = await Packer.toBlob(document);

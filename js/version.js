@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 62,
-  patch: 44,
-  build: '20260528-areas-templates-fase-f-business-units-foundation',
+  patch: 45,
+  build: '20260528-exports-plug-footer-header-portal-roteiro',
 };
 
 /** "1.2.0" */
