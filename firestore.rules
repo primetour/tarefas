@@ -684,10 +684,28 @@ service cloud.firestore {
     match /portal_web_links/{docId} {
       allow read:   if true;  // public — link holder can read
       allow create: if isAuth();
-      // Update público: só permite incrementar viewCount, sem alterar token/content
+      // v4.63.25+ Update público: lock list COMPLETA. Anônimo NÃO pode editar
+      // webTemplate, tipData, imagesByDest, webExports, segments, colors,
+      // createdBy, areaName, areaLogoUrl, areaLogoUrlAlt, fonts, editorial,
+      // modules. Auditoria HIGH (sprint Web Link v4.63.22-24) descobriu que
+      // a lock list anterior (só token + content) deixava anônimo trocar
+      // webTemplate.templateId — info leak cross-área via CF getTemplateHtml.
       allow update: if isAuth()
-                    || (request.resource.data.token == resource.data.token
-                        && request.resource.data.content == resource.data.content);
+                    || (request.resource.data.token       == resource.data.token
+                        && request.resource.data.content     == resource.data.content
+                        && request.resource.data.webTemplate == resource.data.webTemplate
+                        && request.resource.data.tipData     == resource.data.tipData
+                        && request.resource.data.imagesByDest == resource.data.imagesByDest
+                        && request.resource.data.webExports  == resource.data.webExports
+                        && request.resource.data.segments    == resource.data.segments
+                        && request.resource.data.colors      == resource.data.colors
+                        && request.resource.data.createdBy   == resource.data.createdBy
+                        && request.resource.data.areaName    == resource.data.areaName
+                        && request.resource.data.areaLogoUrl == resource.data.areaLogoUrl
+                        && request.resource.data.areaLogoUrlAlt == resource.data.areaLogoUrlAlt
+                        && request.resource.data.fonts       == resource.data.fonts
+                        && request.resource.data.editorial   == resource.data.editorial
+                        && request.resource.data.modules     == resource.data.modules);
       allow delete: if isAuth() && isAdmin();
     }
 

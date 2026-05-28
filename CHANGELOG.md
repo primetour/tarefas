@@ -6,6 +6,61 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.25+20260528-web-link-audit-hotfix] — 2026-05-28
+
+**Hotfix HIGH** — auditoria pós-sprint Web Link (3 releases v4.63.22-24)
+delegada a Agent paralelo + double-check manual. Agent achou 14 itens
+(3 HIGH security/runtime, 7 MEDIUM, 4 LOW). Esta release ataca os 3 HIGHs.
+
+**HIGH #1 — Firestore rule `portal_web_links` permitia anônimo trocar `webTemplate`**:
+- `firestore.rules:684-708` lock list anterior só checava `token + content`.
+  Anônimo (sem auth) podia editar `webTemplate.templateId` → CF
+  `getTemplateHtml` aceitava o templateId trocado → info leak cross-área
+  (template de Luxury renderizando dados de Lazer, etc.).
+- Fix: lock list **completa** — anônimo só pode alterar `views` (via increment).
+  Bloqueia mudanças em webTemplate, tipData, imagesByDest, webExports,
+  segments, colors, createdBy, areaName, areaLogoUrl, fonts, editorial,
+  modules.
+
+**HIGH #2 — `getTemplateHtml` sem limite de tamanho (DoS amplification)**:
+- `functions/index.js:1315-1318` — `fetch(fileUrl)` + `r.text()` sem cap.
+  Admin malicioso (com `templates_manage`) sobe template HTML 50MB+. Cada
+  request triggera CF baixando 50MB → OOM (memória 256MiB) + custo egress R2.
+- Fix: `TEMPLATE_WEB_MAX_BYTES = 8MB` (TEMPLATE_FORMATS.web.maxMB). Check
+  `content-length` declarado ANTES do `.text()` (early reject). Depois do
+  download, double-check `html.length`. Retorna 413 Payload Too Large.
+
+**HIGH #3 — Método HTTP não restrito**:
+- `getTemplateHtml` aceitava POST/PUT/DELETE com 200. Viola REST contract
+  e o CHANGELOG declara GET-only.
+- Fix: rejeita não-GET com 405 + header `Allow: GET, OPTIONS`. OPTIONS
+  continua liberado pra preflight.
+
+**MEDIUM bônus — audit log**:
+- CF `getTemplateHtml` agora grava `audit_logs.templates.serve_web` com
+  ip, ua, bytes, templateName, timestamp. Fire-and-forget — não bloqueia
+  resposta. Importante pra forense LGPD (quem viu qual template).
+
+**HIGH cross-module bônus (pre-commit, já em v4.63.25)**:
+- `portalAreas.js:707` — Cotações declarava `web` em SUPPORTED_FMTS_TPL
+  mas `roteiroGenerator.case 'web'` joga erro fatal e `roteiro-view-tpl.html`
+  não existe. Admin atribuiria silenciosamente. Removido `'web'` de
+  cotacoes até runtime existir (backlog v4.63.27+).
+
+**Próximas (backlog)**:
+- v4.63.26: MEDIUMs — fallback graceful avisa (toast warn + audit log,
+  §16.c), modo `slots` desabilitado em WEB_TEMPLATE_MODES, stop gravar
+  `webTemplate.fileUrl` redundante (Agent finding).
+- v4.63.27+: Cotações Web Link (`roteiro-view-tpl.html` + `generateRoteiroWebLink`).
+
+**Lição estrutural** (vai pra CLAUDE.md §16): Firestore rules de UPDATE
+em docs públicos (`allow read: if true`) precisam de **lock list explícita
+COMPLETA** — não basta lockar 2-3 campos críticos. Default: anônimo só pode
+modificar campos numericamente monótonos (views, counter). Tudo o mais
+precisa ser lockado por `request.resource.data.X == resource.data.X`.
+
+---
+
 ## [4.63.24+20260528-web-template-cors-proxy] — 2026-05-28
 
 **Hotfix** do runtime Web Link (v4.63.23). A entrega do v4.63.23 estava 99%

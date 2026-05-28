@@ -702,10 +702,14 @@ function showAreaModal(area, areas = []) {
 
       // SUPPORTED_FMTS: mesma lógica do exportsModuleBlock — só formatos que generators usam
       // v4.63.12+ Fix Zumbi #1: key canônica é 'cotacoes' (rename v4.62.50).
-      // v4.63.22+ 'web' adicionado pra Portal (e Cotações futuro). Banco mantém só HTML.
+      // v4.63.22+ 'web' habilitado pra Portal (runtime portal-view-tpl.html).
+      // v4.63.25+ Cotações 'web' DESABILITADO até roteiro-view-tpl.html existir
+      // (admin atribuiria template silencioso sem runtime). Re-habilitar quando
+      // generateWebLink for portado pra roteiroGenerator.js + view tpl criado.
+      // Banco mantém só HTML.
       const SUPPORTED_FMTS_TPL = {
         portal:           ['html', 'web', 'docx', 'pptx'],
-        cotacoes:         ['html', 'web', 'docx', 'pptx'],
+        cotacoes:         ['html', 'docx', 'pptx'],
         'banco-roteiros': ['html'],
       };
 

@@ -1285,6 +1285,13 @@ export const renderTemplate = onCall({
  * Cache: 5min CDN (template muda raramente, web link tem token único).
  * Sem auth — templates ativos são públicos (compartilhamento web link).
  * ═════════════════════════════════════════════════════════ */
+// v4.63.25+ Audit Web Link sprint findings:
+// - HIGH: Content-Length cap pra evitar DoS amplification (admin malicioso
+//   sobe template 50MB → CF OOM + custo egress R2). MAX = TEMPLATE_FORMATS.web.maxMB.
+// - HIGH: 405 pra métodos != GET (POST/PUT/DELETE retornavam 200, viola REST).
+// - MEDIUM: audit log fire-and-forget pra forense (quem requisitou qual tpl).
+const TEMPLATE_WEB_MAX_BYTES = 8 * 1024 * 1024;  // 8MB (TEMPLATE_FORMATS.web.maxMB)
+
 export const getTemplateHtml = onRequest({
   region: 'us-central1',
   memory: '256MiB',
@@ -1292,9 +1299,16 @@ export const getTemplateHtml = onRequest({
   cors: true,
 }, async (req, res) => {
   res.set('Access-Control-Allow-Origin', '*');
-  res.set('Access-Control-Allow-Methods', 'GET');
+  res.set('Access-Control-Allow-Methods', 'GET, OPTIONS');
   res.set('Cache-Control', 'public, max-age=300, s-maxage=300');
   if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+
+  // v4.63.25 HIGH: rejeitar não-GET (Firebase Functions framework não restringe nativo)
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    res.set('Allow', 'GET, OPTIONS');
+    res.status(405).type('text/plain').send('Method Not Allowed');
+    return;
+  }
 
   const tplId = String(req.query.tplId || '').trim();
   if (!tplId || !/^[a-zA-Z0-9_-]+$/.test(tplId)) {
@@ -1314,7 +1328,38 @@ export const getTemplateHtml = onRequest({
 
     const r = await fetch(tpl.fileUrl);
     if (!r.ok) { res.status(502).type('text/plain').send(`R2 fetch failed (${r.status})`); return; }
+
+    // v4.63.25 HIGH: Content-Length cap (DoS amplification). Se header faltar,
+    // ainda lê e checa tamanho do buffer.
+    const declaredLen = parseInt(r.headers.get('content-length') || '0', 10);
+    if (declaredLen > TEMPLATE_WEB_MAX_BYTES) {
+      console.warn(`[getTemplateHtml] template ${tplId} excede limite: ${declaredLen} bytes`);
+      res.status(413).type('text/plain').send(`Template too large (>${TEMPLATE_WEB_MAX_BYTES} bytes)`);
+      return;
+    }
     const html = await r.text();
+    if (html.length > TEMPLATE_WEB_MAX_BYTES) {
+      console.warn(`[getTemplateHtml] template ${tplId} excede após download: ${html.length} bytes`);
+      res.status(413).type('text/plain').send(`Template too large (>${TEMPLATE_WEB_MAX_BYTES} bytes)`);
+      return;
+    }
+
+    // v4.63.25 MEDIUM: audit fire-and-forget (não bloqueia resposta).
+    db.collection('audit_logs').add({
+      action: 'templates.serve_web',
+      entityType: 'templates',
+      entityId: tplId,
+      actorId: 'public',
+      details: {
+        templateName: tpl.name || '',
+        ip: req.ip || req.get('x-forwarded-for') || 'unknown',
+        ua: (req.get('user-agent') || '').slice(0, 200),
+        bytes: html.length,
+      },
+      severity: 'info',
+      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+    }).catch(e => console.warn('[getTemplateHtml] audit log falhou:', e?.message));
+
     res.type('text/html; charset=utf-8').send(html);
   } catch (e) {
     console.error('[getTemplateHtml]', e?.message || e);

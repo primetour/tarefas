@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 24,
-  build: '20260528-web-template-cors-proxy',
+  patch: 25,
+  build: '20260528-web-link-audit-hotfix',
 };
 
 /** "1.2.0" */
