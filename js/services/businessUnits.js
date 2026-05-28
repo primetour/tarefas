@@ -126,6 +126,19 @@ export async function saveBusinessUnit(id, data) {
   };
   await setDoc(ref, payload, { merge: true });
   _buCache = null;
+
+  // v4.62.49+ Fase F.3 (BU↔Áreas bidirectional sync): mirror em
+  // portal_areas pra retrocompat com pages legadas (saveArea espelha
+  // de volta — sem loop pq cada lado faz merge:true direto).
+  try {
+    const areaRef = doc(db, 'portal_areas', ref.id);
+    await setDoc(areaRef, {
+      ...payload,
+      _mirroredFrom: 'business_units',
+    }, { merge: true });
+  } catch (e) {
+    console.warn('[saveBusinessUnit] mirror portal_areas falhou:', e?.message);
+  }
   // v4.62.47+ Audit log (Fase E pós-audit): reusa labels portal_areas
   // (mesmo conceito semântico — Áreas e BUs são facetas da mesma entidade
   // até v4.62.49 quando sync wrapper unificar).

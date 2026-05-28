@@ -85,7 +85,13 @@ export const ENTRY_TYPES = [
  * Refactors internos / hardening / outros features ficam no track "Geral".
  */
 export const MODULES = [
+  // v4.62.50+ Renê 28/05/2026: nomenclatura nova é "Cotações", legado era "Roteiros".
+  // ID continua 'roteiros' (220+ dev_hours docs já gravados — rename forçaria
+  // backfill destrutivo). Em vez disso: 'cotacoes' funciona como ALIAS aceito
+  // em todos os readers (areaDefaults.js + MODULE_MAP). UI sempre exibe "Cotações".
+  // Quando criar entry nova, pode usar 'roteiros' (legado) ou 'cotacoes' (canônico).
   { id: 'roteiros', label: 'Gerador de Cotações', color: '#D4A843', icon: '🗺',
+    aliases: ['cotacoes'],
     desc: 'Produção de cotações personalizadas (cliente + viajantes + dias + serviços + materiais).' },
   { id: 'portal',   label: 'Portal de Dicas',     color: '#8B5CF6', icon: '💡',
     desc: 'Catálogo editorial de destinos, áreas e dicas reutilizáveis em materiais.' },
@@ -103,6 +109,9 @@ export const MODULES = [
     desc: 'Curadoria de roteiros prontos (Classic Collection, etc.) — referência manual + base de conhecimento da IA.' },
 ];
 export const MODULE_MAP = Object.fromEntries(MODULES.map(m => [m.id, m]));
+// v4.62.50+ alias map: 'cotacoes' resolve pra MODULES.roteiros (e vice-versa)
+// Sempre que reader fizer MODULE_MAP[id], aceita ambos os ids.
+MODULES.forEach(m => (m.aliases || []).forEach(a => { MODULE_MAP[a] = m; }));
 
 // Padrões pra detecção heurística — somente quando entry não tem `modules`.
 // 4.40.28+ INTENCIONALMENTE só miram TÍTULO + SLUG + PHASE LABEL.
@@ -113,7 +122,8 @@ export const MODULE_MAP = Object.fromEntries(MODULES.map(m => [m.id, m]));
 const MODULE_PATTERNS = {
   // \b...s?\b cobre "roteiro" / "roteiros" (sem o `s?` o boundary
   // não fecha quando vem o 's' no plural).
-  roteiros: /\b(roteiros?|itinerar|gerador[-_ ]?de[-_ ]?roteiros?)\b/i,
+  // v4.62.50+ pattern aceita cotacoes/cotação/cotações também (nomenclatura nova)
+  roteiros: /\b(roteiros?|itinerar|cotac[oõ]es?|cota[cç][aã]o|gerador[-_ ]?de[-_ ]?(roteiros?|cotac[oõ]es?))\b/i,
   // Portal de DICAS especificamente (não confundir com "Portal de Solicitações")
   portal:   /\b(portal[-_ ]?de[-_ ]?dicas?|portal[-_ ]?tips?|portal-?tips?)\b/i,
   // Banco de Imagens — pattern restrito pra não pegar "image" genérico em IA Hub

@@ -197,12 +197,31 @@ export async function saveArea(id, data) {
   if (!store.canManagePortalAreas()) throw new Error('Permissão negada.');
   const isCreate = !id;
   const ref = id ? doc(db, 'portal_areas', id) : doc(collection(db, 'portal_areas'));
-  await setDoc(ref, {
+  const payload = {
     ...data,
     updatedAt: serverTimestamp(),
     updatedBy: uid(),
     ...(isCreate ? { createdAt: serverTimestamp(), createdBy: uid() } : {}),
-  }, { merge: true });
+  };
+  await setDoc(ref, payload, { merge: true });
+
+  // v4.62.49+ Fase F.3 (BU↔Áreas bidirectional sync): mirror em
+  // business_units pra unificar SSOT gradualmente. Mesma estratégia que
+  // saveBusinessUnit usa de volta. Usa ref.id como BU id (mesmo doc id
+  // em ambas as collections — já validado no backfill v4.62.44).
+  // No-op silencioso se falhar (não bloqueia write principal).
+  try {
+    const buRef = doc(db, 'business_units', ref.id);
+    await setDoc(buRef, {
+      ...payload,
+      active: data.active !== false,
+      legacyPortalAreaId: ref.id,
+      _mirroredFrom: 'portal_areas',
+    }, { merge: true });
+  } catch (e) {
+    console.warn('[saveArea] mirror business_units falhou:', e?.message);
+  }
+
   // v4.62.47+ Audit log (Fase E pós-audit): governança das mudanças em
   // Áreas/BU (cores, logo, templates de export). Antes: invisível pra
   // master — nenhuma rastreabilidade quando time muda template visual.
@@ -211,7 +230,7 @@ export async function saveArea(id, data) {
       isCreate ? 'portal_areas.create' : 'portal_areas.update',
       'portal_areas',
       ref.id,
-      { name: data?.name || null, hasLogo: !!data?.logoUrl, hasModules: !!data?.modules },
+      { name: data?.name || null, hasLogo: !!data?.logoUrl, hasModules: !!data?.modules, mirroredBU: true },
     );
   } catch {}
   return ref.id;

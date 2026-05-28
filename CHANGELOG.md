@@ -6,6 +6,50 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.62.49+20260528-bu-sync-bidirectional-cotacoes-alias] — 2026-05-28
+
+Release **Fase E pós-audit Templates Áreas (parte 5/6 + 6/6)** — combina
+sync bidirectional BU↔Áreas + alias roteiros↔cotacoes. Encerra a sprint
+de templates de áreas.
+
+**BU↔Áreas sync bidirectional (D8 fix definitivo)**:
+- `saveArea` (portal.js) → escreve em `portal_areas/{id}` E mirror em
+  `business_units/{id}` com mesmo doc id + flag `_mirroredFrom`.
+- `saveBusinessUnit` (businessUnits.js) → escreve em `business_units/{id}`
+  E mirror em `portal_areas/{id}`. Sem loop (merge:true direto, sem
+  trigger reativo).
+- `resolveBU` já tinha fallback portal_areas (v4.62.44). Não muda.
+- `fetchAreas` NÃO muda (risco de cross-page impact); reader continua
+  servindo de portal_areas que agora sempre tem dado fresh via mirror.
+- Audit log atualizado pra `mirroredBU:true` em detalhes.
+
+**Alias roteiros↔cotacoes (nomenclatura nova canônica)**:
+- Renê 28/05/2026: "cotações é a nova nomenclatura. antes era gerador
+  de roteiros".
+- `areaDefaults.resolveAreaDefaults` + `resolveExportTemplate`: aceita
+  ambos os keys, merge favorece o solicitado.
+  - `area.modules.roteiros.exports.pdf.footerText` é lido também quando
+    chamada vem com `moduleKey='cotacoes'` (e vice-versa).
+- `devHours.MODULES.roteiros.aliases:['cotacoes']` + populate
+  `MODULE_MAP['cotacoes']` → reader aceita ambos.
+- `devHours.MODULE_PATTERNS.roteiros` regex aceita "cotação", "cotações",
+  "cotacoes" pra heurística de detecção em entries futuros.
+- IDs em Firestore continuam 'roteiros' (220+ docs já gravados —
+  rename forçaria backfill destrutivo). UI sempre exibe "Cotações".
+
+**Estado pós sprint inteira (v4.62.39 → v4.62.49)**:
+- ✅ Fase A: D1 (persistência portal_web_links), D6 (defaults DOCX
+  invertidos), A.3 SSOT areaDefaults
+- ✅ Fase B: toggle useExternalName + Banco aceita área
+- ✅ Fase C: fontes dinâmicas DOCX + PPTX nativos
+- ✅ Fase D: editorial.voice em prompts IA
+- ✅ Fase E: 14/14 caminhos zumbis pra exports (PDF/DOCX/PPTX/Web ×
+  portal/roteiros/banco-roteiros × footer/header/hideCover)
+- ✅ Fase F: SSOT business_units + sync wrapper bidirectional
+- ✅ Audit logs governança + UX polish + alias nomenclatura
+
+---
+
 ## [4.62.48+20260528-ux-exports-counter-copy-all-banco-override] — 2026-05-28
 
 Release **Fase E pós-audit Templates Áreas (parte 4/6)** — polish UX da

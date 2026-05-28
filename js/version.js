@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 62,
-  patch: 48,
-  build: '20260528-ux-exports-counter-copy-all-banco-override',
+  patch: 49,
+  build: '20260528-bu-sync-bidirectional-cotacoes-alias',
 };
 
 /** "1.2.0" */

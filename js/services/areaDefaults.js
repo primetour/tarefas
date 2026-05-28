@@ -119,7 +119,12 @@ export const DEFAULT_EXPORTS = {
  * acessar area.modules diretamente, pra evitar drift.
  */
 export function resolveExportTemplate(area, moduleKey, format) {
-  const fmt = (area?.modules?.[moduleKey]?.exports?.[format]) || {};
+  // v4.62.49+ alias roteiros↔cotacoes (Renê: "cotações é a nova nomenclatura")
+  // Tanto 'roteiros' como 'cotacoes' lêem o outro como fallback.
+  const aliasKey = moduleKey === 'cotacoes' ? 'roteiros' : (moduleKey === 'roteiros' ? 'cotacoes' : null);
+  const fmtPrimary = area?.modules?.[moduleKey]?.exports?.[format];
+  const fmtAlias   = aliasKey ? area?.modules?.[aliasKey]?.exports?.[format] : null;
+  const fmt = fmtPrimary || fmtAlias || {};
   return {
     ...(DEFAULT_EXPORTS[format] || {}),
     ...fmt,
@@ -156,22 +161,29 @@ export function formatExportText(text, ctx = {}) {
  * ═══════════════════════════════════════════════════════════════════════ */
 export function resolveAreaDefaults(area, moduleKey = null) {
   const a = area || {};
-  const m = (moduleKey && a.modules?.[moduleKey]) || {};
+  // v4.62.49+ alias roteiros↔cotacoes (canônico novo, legado tolerado).
+  // Lê o módulo solicitado E o alias — merge favorece o solicitado.
+  const aliasKey = moduleKey === 'cotacoes' ? 'roteiros' : (moduleKey === 'roteiros' ? 'cotacoes' : null);
+  const m  = (moduleKey && a.modules?.[moduleKey]) || {};
+  const mA = (aliasKey  && a.modules?.[aliasKey])  || {};
   return {
     colors: {
       ...DEFAULT_COLORS,
       ...(a.colors || {}),
-      ...(m.colors || {}),
+      ...(mA.colors || {}),  // alias roteiros↔cotacoes (v4.62.49+)
+      ...(m.colors  || {}),  // solicitado tem precedência sobre alias
     },
     fonts: {
       ...DEFAULT_FONTS,
       ...(a.fonts || {}),
-      ...(m.fonts || {}),
+      ...(mA.fonts || {}),
+      ...(m.fonts  || {}),
     },
     editorial: {
       ...DEFAULT_EDITORIAL,
       ...(a.editorial || {}),
-      ...(m.editorial || {}),
+      ...(mA.editorial || {}),
+      ...(m.editorial  || {}),
     },
     brand: {
       ...DEFAULT_BRAND,
