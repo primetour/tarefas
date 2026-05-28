@@ -16,6 +16,8 @@ import {
   // v4.63.37+ Tags por item (perfil de cliente / ambiente / dietas)
   fetchTipTags, addTipTag,
 } from '../services/portal.js';
+// v4.63.40+ Markdown leve nos campos de texto (B/I/U/link)
+import { wrapSelection } from '../services/richText.js';
 
 // 4.40.18+ Segmentos dinâmicos = defaults + custom (carregados do Firestore).
 // Antes era const SEGMENTS importada estática. Agora _allSegments é mutável
@@ -848,8 +850,9 @@ function buildPlaceListPanel(seg, data) {
       <!-- Theme description -->
       <div style="margin-bottom:16px;">
         <label style="${LBL}">Descrição do tema <span style="font-weight:400;color:var(--text-muted);">(opcional)</span></label>
+        ${richToolbar('#place-theme-desc')}
         <textarea id="place-theme-desc" class="portal-field" style="width:100%;resize:vertical;" rows="2"
-          placeholder="Texto introdutório sobre este segmento neste destino…"
+          placeholder="Texto introdutório… (** negrito **, _ itálico _, [texto](url))"
         >${esc(data.themeDesc||'')}</textarea>
       </div>
       <!-- Items -->
@@ -876,6 +879,32 @@ function buildPlaceListPanel(seg, data) {
 function renderPlaceListEntry(item, i, cats, isAgenda) {
   if (item && item.type === 'subtitle') return placeSubtitleBlock(item, i);
   return placeItemBlock(item, i, cats, isAgenda);
+}
+
+// v4.63.40+ Toolbar mini de markdown: B / I / U / Link.
+// Renderiza inline acima do textarea/input alvo. Data attribute aponta target.
+function richToolbar(targetSel, opts = {}) {
+  const compact = !!opts.compact;
+  const sz = compact ? '0.7rem' : '0.75rem';
+  return `<div class="rich-toolbar" data-target="${esc(targetSel)}"
+    style="display:flex;gap:3px;margin-bottom:4px;font-size:${sz};">
+    <button type="button" class="rt-btn" data-rt="bold" title="Negrito (** **)"
+      style="border:1px solid var(--border-subtle);background:var(--bg-card);
+      padding:2px 8px;font-weight:700;cursor:pointer;border-radius:3px;
+      color:var(--text-secondary);font-family:inherit;">B</button>
+    <button type="button" class="rt-btn" data-rt="italic" title="Itálico (_ _)"
+      style="border:1px solid var(--border-subtle);background:var(--bg-card);
+      padding:2px 8px;font-style:italic;cursor:pointer;border-radius:3px;
+      color:var(--text-secondary);font-family:inherit;">I</button>
+    <button type="button" class="rt-btn" data-rt="underline" title="Sublinhado (__ __)"
+      style="border:1px solid var(--border-subtle);background:var(--bg-card);
+      padding:2px 8px;text-decoration:underline;cursor:pointer;border-radius:3px;
+      color:var(--text-secondary);font-family:inherit;">U</button>
+    <button type="button" class="rt-btn" data-rt="link" title="Link externo"
+      style="border:1px solid var(--border-subtle);background:var(--bg-card);
+      padding:2px 8px;cursor:pointer;border-radius:3px;
+      color:var(--text-secondary);font-family:inherit;">🔗</button>
+  </div>`;
 }
 
 function placeSubtitleBlock(item, i) {
@@ -991,9 +1020,10 @@ function placeItemBlock(item, i, cats, isAgenda) {
 
     <div style="margin-bottom:10px;">
       <label style="${LBL}">Descrição</label>
+      ${richToolbar(`.place-desc[data-index="${i}"]`)}
       <textarea class="place-desc portal-field" data-index="${i}"
         style="width:100%;resize:vertical;" rows="3"
-        placeholder="Descrição do local…">${esc(item.descricao||'')}</textarea>
+        placeholder="Descrição do local… (** negrito **, _ itálico _, __ sublinhado __, [texto](url))">${esc(item.descricao||'')}</textarea>
     </div>
 
     ${isAgenda ? `
@@ -1168,6 +1198,44 @@ function bindPlaceList(key, isAgenda = false) {
     document.getElementById('agenda-periodo')?.addEventListener('input', markDirty);
     document.getElementById('agenda-dica')?.addEventListener('input', markDirty);
   }
+
+  // ───── v4.63.40+ Rich text toolbar (markdown leve) ─────
+  // Click em .rt-btn dentro do container chama wrapSelection no textarea/input
+  // alvo. data-target no .rich-toolbar é o selector CSS pra encontrar o campo.
+  container?.addEventListener('click', (e) => {
+    const btn = e.target.closest('.rt-btn');
+    if (!btn) return;
+    e.preventDefault();
+    const toolbar = btn.closest('.rich-toolbar');
+    const targetSel = toolbar?.dataset.target;
+    if (!targetSel) return;
+    const field = document.querySelector(targetSel);
+    if (!field) return;
+    const action = btn.dataset.rt;
+    if (action === 'bold')      wrapSelection(field, '**');
+    else if (action === 'italic')    wrapSelection(field, '_');
+    else if (action === 'underline') wrapSelection(field, '__');
+    else if (action === 'link') {
+      const url = prompt('URL do link (https://…):', 'https://');
+      if (url && url.trim() && url.trim() !== 'https://') {
+        const cleanUrl = url.trim();
+        // Se tem seleção, envolve; se não, insere placeholder
+        const start = field.selectionStart, end = field.selectionEnd;
+        const sel = field.value.slice(start, end);
+        const placeholder = sel || 'texto';
+        wrapSelection(field, { open: `[${placeholder ? '' : ''}`, close: `](${cleanUrl})` });
+        // Hack: a wrapSelection com objeto não inclui placeholder no meio.
+        // Re-fazer manual:
+        const before = field.value.slice(0, start);
+        const after = field.value.slice(end);
+        field.value = `${before}[${placeholder}](${cleanUrl})${after}`;
+        field.focus();
+        const newStart = start + 1; // após [
+        field.setSelectionRange(newStart, newStart + placeholder.length);
+        field.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    }
+  });
 
   // ───── v4.63.37+ Tags: add/remove chips ─────
   // Click no ✕ remove chip

@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 39,
-  build: '20260528-portal-subtitles-livres',
+  patch: 40,
+  build: '20260528-portal-rich-text-markdown',
 };
 
 /** "1.2.0" */

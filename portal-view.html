@@ -121,6 +121,56 @@ let SEGMENTS=[
 ];
 
 const esc=s=>String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+// v4.63.40+ Markdown leve inline (espelha js/services/richText.js).
+// Implementação completa em /js/services/richText.js — aqui repetida pra
+// portal-view.html ser standalone (sem import).
+function parseRich(input){
+  if(!input)return[];
+  const s=String(input);const out=[];let i=0;const len=s.length;
+  const pushText=(txt,fmt={})=>{if(!txt)return;out.push({text:txt,...fmt});};
+  while(i<len){
+    if(s[i]==='['){
+      const cb=s.indexOf(']',i+1);
+      if(cb!==-1&&s[cb+1]==='('){
+        const cp=s.indexOf(')',cb+2);
+        if(cp!==-1){
+          const lt=s.slice(i+1,cb);const url=s.slice(cb+2,cp).trim();
+          if(lt&&url){
+            const inner=parseRich(lt);const isA=url.startsWith('#');
+            inner.forEach(seg=>pushText(seg.text,{...seg,...(isA?{anchor:url.slice(1)}:{link:url})}));
+            i=cp+1;continue;
+          }
+        }
+      }
+    }
+    if(s[i]==='*'&&s[i+1]==='*'){
+      const end=s.indexOf('**',i+2);
+      if(end!==-1){parseRich(s.slice(i+2,end)).forEach(seg=>pushText(seg.text,{...seg,bold:true}));i=end+2;continue;}
+    }
+    if(s[i]==='_'&&s[i+1]==='_'){
+      const end=s.indexOf('__',i+2);
+      if(end!==-1){parseRich(s.slice(i+2,end)).forEach(seg=>pushText(seg.text,{...seg,underline:true}));i=end+2;continue;}
+    }
+    if(s[i]==='_'&&s[i+1]!=='_'){
+      const end=s.indexOf('_',i+1);
+      if(end!==-1&&s[end+1]!=='_'&&s[end-1]!=='_'){parseRich(s.slice(i+1,end)).forEach(seg=>pushText(seg.text,{...seg,italic:true}));i=end+1;continue;}
+    }
+    let j=i;while(j<len){const c=s[j],c2=s[j+1];if(c==='['||(c==='*'&&c2==='*')||c==='_')break;j++;}
+    if(j>i){pushText(s.slice(i,j));i=j;}else{pushText(s[i]);i++;}
+  }
+  return out;
+}
+function richToHtml(input){
+  return parseRich(input).map(s=>{
+    let h=esc(s.text);
+    if(s.bold)h=`<strong>${h}</strong>`;
+    if(s.italic)h=`<em>${h}</em>`;
+    if(s.underline)h=`<u>${h}</u>`;
+    if(s.link){const u=/^https?:\/\//i.test(s.link)?s.link:`https://${s.link}`;h=`<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${h}</a>`;}
+    else if(s.anchor)h=`<a href="#seg-${esc(s.anchor)}" data-internal-link="1">${h}</a>`;
+    return h;
+  }).join('');
+}
 const shade=(hex,amt)=>{const n=parseInt(hex.replace('#',''),16);const r=Math.min(255,Math.max(0,(n>>16)+amt));const g=Math.min(255,Math.max(0,((n>>8)&0xff)+amt));const b=Math.min(255,Math.max(0,(n&0xff)+amt));return '#'+((r<<16)|(g<<8)|b).toString(16).padStart(6,'0')};
 // Normaliza URL: adiciona https:// se não tiver protocolo (mesmo helper do PDF)
 const normalizeUrl=u=>{const s=String(u||'').trim();if(!s)return '';return /^[a-z][a-z0-9+.-]*:/i.test(s)?s:'https://'+s;};
@@ -878,8 +928,8 @@ function renderPlaces(sd,data,imgs,isAgenda){
         ${Array.isArray(item.tags)&&item.tags.length
           ? `<div class="place-card-tags" style="display:flex;flex-wrap:wrap;gap:4px;margin:6px 0 4px;">${item.tags.map(t=>`<span style="display:inline-block;padding:2px 8px;background:rgba(212,168,67,0.14);border:1px solid rgba(212,168,67,0.32);border-radius:999px;font-size:0.65rem;color:var(--portal-text-secondary,#475569);font-weight:500;letter-spacing:.02em;">${esc(t)}</span>`).join('')}</div>`
           : ''}
-        ${item.descricao?`<div class="place-card-desc">${esc(item.descricao)}</div>`:''}
-        ${item.observacoes?`<div class="place-card-extra place-card-obs">💡 ${esc(item.observacoes)}</div>`:''}
+        ${item.descricao?`<div class="place-card-desc">${richToHtml(item.descricao)}</div>`:''}
+        ${item.observacoes?`<div class="place-card-extra place-card-obs">💡 ${richToHtml(item.observacoes)}</div>`:''}
         ${detailsParts.length?`<div class="place-card-details">${detailsParts.join('')}</div>`:''}
         ${hasSite(item)?`<a class="pill-link" href="${esc(normalizeUrl(item.site))}" target="_blank" rel="noopener noreferrer">Visitar site</a>`:''}
         ${hasExtra?`<button class="place-card-toggle" type="button"><span class="toggle-label">Ver mais</span></button>`:''}

@@ -15,6 +15,41 @@ import { DEFAULT_COLORS as PORTAL_DEFAULT_COLORS, getPortalColors } from './port
 // os mesmos valores do SSOT agora). Imports diretos do areaDefaults daqui em
 // diante. portalTokens.js fica como adapter de transição.
 import { resolveAreaDefaults, resolveExternalBrandName, resolveExportTemplate, formatExportText } from './areaDefaults.js';
+// v4.63.40+ Markdown leve nos campos de descrição/observações.
+import { parseRich, richToPlain } from './richText.js';
+
+/**
+ * v4.63.40+ Converte texto markdown leve em runs do docx (TextRun/ExternalHyperlink).
+ * baseOpts permite override do size/italic/color base — usado pra observações.
+ */
+function _richDescToDocxRuns(text, font, gold, ExternalHyperlink, TextRun, baseOpts = {}) {
+  const segs = parseRich(text);
+  if (!segs.length) {
+    return [new TextRun({ font, text: '', size: baseOpts.size || 18, color: baseOpts.color || '474650' })];
+  }
+  const runs = [];
+  for (const s of segs) {
+    const runOpts = {
+      font,
+      text: s.text,
+      size: baseOpts.size || 18,
+      color: baseOpts.color || '474650',
+      bold: !!s.bold,
+      italics: !!(s.italic || baseOpts.italic),
+      underline: s.underline ? { type: 'single' } : undefined,
+    };
+    if (s.link) {
+      const safeUrl = /^https?:\/\//i.test(s.link) ? s.link : `https://${s.link}`;
+      runs.push(new ExternalHyperlink({
+        link: safeUrl,
+        children: [new TextRun({ ...runOpts, color: gold, underline: { type: 'single' }, style: 'Hyperlink' })],
+      }));
+    } else {
+      runs.push(new TextRun(runOpts));
+    }
+  }
+  return runs;
+}
 
 // SEGMENTS defaults (hardcoded como fallback se fetch falhar) + dinâmicos
 // (carregados de portal_segments quando user cria customs).
@@ -1026,11 +1061,21 @@ async function generateDocx({ allTips, segments, areaName, area, colors, filenam
             } catch(e) { console.warn('Item image skip:', e.message); }
           }
 
-          if(item.descricao) children.push(new Paragraph({children:[new TextRun({font:_DOCX_FONT,text:item.descricao,size:18,color:'474650'})],spacing:{after:80}}));
+          // v4.63.40+ Rich text: parse markdown e mapeia pra TextRuns com bold/italics/underline + ExternalHyperlink
+          if (item.descricao) {
+            const runs = _richDescToDocxRuns(item.descricao, _DOCX_FONT, gold, ExternalHyperlink, TextRun);
+            children.push(new Paragraph({ children: runs, spacing: { after: 80 } }));
+          }
           const det=[item.endereco&&`📍 ${item.endereco}`,item.telefone&&`📞 ${item.telefone}`].filter(Boolean);
           if(det.length) children.push(new Paragraph({children:[new TextRun({font:_DOCX_FONT,text:det.join('   '),size:16,color:'888888'})],spacing:{after:60}}));
           if(hasValidSite(item)) children.push(new Paragraph({children:[new TextRun({font:_DOCX_FONT,text:'🌐 ',size:16}),new ExternalHyperlink({link:normalizeUrl(item.site),children:[new TextRun({font:_DOCX_FONT,text:normalizeUrl(item.site),size:18,style:'Hyperlink',color:gold})]})],spacing:{after:60}}));
-          if(item.observacoes) children.push(new Paragraph({children:[new TextRun({font:_DOCX_FONT,text:`💡 ${item.observacoes}`,size:16,italics:true,color:'AAAAAA'})],spacing:{after:80}}));
+          if (item.observacoes) {
+            // v4.63.40+ Rich text nas observações também
+            const obsRuns = [new TextRun({ font: _DOCX_FONT, text: '💡 ', size: 16 })];
+            const obsContent = _richDescToDocxRuns(item.observacoes, _DOCX_FONT, gold, ExternalHyperlink, TextRun, { size: 16, italic: true, color: 'AAAAAA' });
+            obsRuns.push(...obsContent);
+            children.push(new Paragraph({ children: obsRuns, spacing: { after: 80 } }));
+          }
           children.push(new Paragraph({border:{bottom:{style:BorderStyle.SINGLE,size:2,color:'EEEEEE'}},spacing:{after:80}}));
         }
       }
@@ -1629,7 +1674,11 @@ async function generatePDF({
           let descLines = [];
           if (item.descricao) {
             setF('normal'); doc.setFontSize(8);
-            descLines = doc.splitTextToSize(cleanText(item.descricao), textW-4);
+            // v4.63.40+ Rich text: PDF renderiza como plain text (markdown stripped).
+            // Bold/italic/underline/link se perdem no PDF — usuário tem cobertura
+            // no Word + Web link (formatos rich). Próxima iteração pode fazer
+            // segmented rendering aqui se Renê precisar.
+            descLines = doc.splitTextToSize(richToPlain(cleanText(item.descricao)), textW-4);
           }
           const det = [
             item.endereco && `End. ${cleanText(item.endereco)}`,

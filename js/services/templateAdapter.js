@@ -315,16 +315,48 @@ export function portalToTemplateData({ allTips, area, segments, areaName, images
         // {{#each tags}} pra exibir chips. Renderer legado ignora silenciosamente.
         // v4.63.39+ Subtítulos preservam type='subtitle' + text para template
         // iterar e renderizar como heading. `name` aliasado pra `text` por compat.
+        // v4.63.40+ Rich text: descricao/observacoes podem ter markdown
+        // (**bold**, _italic_, __underline__, [link](url)). Convertemos pra
+        // HTML safe ANTES de passar pro template (templates usam triple-stash
+        // {{{desc}}} pra renderizar HTML sem escape, OU double-stash {{desc}}
+        // que mantém escapado e markdown vira texto literal — backward compat).
+        // Helper inline pra evitar ciclo de import com richText.js:
+        const _esc = (s) => String(s || '').replace(/[&<>"']/g, (c) =>
+          ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        const _toHtml = (input) => {
+          if (!input) return '';
+          // Importação dinâmica é overhead — fallback rápido com regex:
+          // Strip-safe transform de markdown → HTML básico. Se markdown ausente,
+          // retorna texto escapado direto.
+          let html = _esc(input);
+          // Bold **x** (não-greedy)
+          html = html.replace(/\*\*([^*]+?)\*\*/g, '<strong>$1</strong>');
+          // Underline __x__
+          html = html.replace(/__([^_]+?)__/g, '<u>$1</u>');
+          // Italic _x_ (não em volta de underline)
+          html = html.replace(/(^|[^_])_([^_]+?)_(?!_)/g, '$1<em>$2</em>');
+          // Link [texto](url) — url já escapada
+          html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, txt, url) => {
+            if (url.startsWith('#')) return `<a href="#seg-${url.slice(1)}" data-internal-link="1">${txt}</a>`;
+            const safe = /^https?:\/\//i.test(url) ? url : `https://${url}`;
+            return `<a href="${safe}" target="_blank" rel="noopener noreferrer">${txt}</a>`;
+          });
+          return html;
+        };
         out.items = rawItems.map(p => {
           if (p?.type === 'subtitle') {
             return { isSubtitle: true, type: 'subtitle', text: p.text || '', name: p.text || '' };
           }
+          const desc = p?.descricao || p?.notes || p?.observation || p?.description || p?.address || '';
+          const obs  = p?.observacoes || '';
           return {
             name: p?.titulo || p?.name || p?.title || '',
-            desc: p?.descricao || p?.notes || p?.observation || p?.description || p?.address || '',
+            desc,             // legado: texto cru pra templates antigos
+            descHtml: _toHtml(desc),   // v4.63.40+ HTML pré-renderizado
             categoria: p?.categoria || '',
             tags: Array.isArray(p?.tags) ? p.tags : [],
-            observacoes: p?.observacoes || '',
+            observacoes: obs,
+            observacoesHtml: _toHtml(obs),
           };
         });
       }
