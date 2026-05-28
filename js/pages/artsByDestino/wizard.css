@@ -796,18 +796,25 @@
 }
 
 /* ═══ LAYOUT 2 — FOTO CIMA ═══════════════════
-   Padding 4% top, 6% laterais, 6% bottom — texto perto da foto.
+   Foto top + faixa bottom. Tamanho da faixa via var(--solid-h)
+   (dimensionado pelo conteúdo no JS). Default 36% (slim).
 ═════════════════════════════════════════════ */
-.slide-render[data-layout="foto-cima"] .slot-photo    { top: 0; left: 0; right: 0; height: 58%; }
-.slide-render[data-layout="foto-cima"] .solid-primary { top: 58%; left: 0; right: 0; bottom: 0; }
-.slide-render[data-layout="foto-cima"] .slot-text-block {
-  top: calc(58% + 4% * 1);
-  left: 6%; right: 6%;
-  bottom: 6%;
+.slide-render[data-layout="foto-cima"] .slot-photo    {
+  top: 0; left: 0; right: 0;
+  height: calc(100% - var(--solid-h, 36%));
 }
-.slide-render[data-layout="foto-cima"] .text-hand   { font-size: calc(30px * var(--slide-scale)); }
-.slide-render[data-layout="foto-cima"] .text-titulo { font-size: calc(19px * var(--slide-scale)); }
-.slide-render[data-layout="foto-cima"] .text-desc   { font-size: calc(14px * var(--slide-scale)); }
+.slide-render[data-layout="foto-cima"] .solid-primary {
+  left: 0; right: 0; bottom: 0;
+  height: var(--solid-h, 36%);
+}
+.slide-render[data-layout="foto-cima"] .slot-text-block {
+  left: 6%; right: 6%;
+  top: auto; bottom: 6%;
+  /* fluxo natural pela base — height auto */
+}
+.slide-render[data-layout="foto-cima"] .text-hand   { font-size: calc(28px * var(--slide-scale)); }
+.slide-render[data-layout="foto-cima"] .text-titulo { font-size: calc(18px * var(--slide-scale)); }
+.slide-render[data-layout="foto-cima"] .text-desc   { font-size: calc(13px * var(--slide-scale)); }
 
 /* ═══ LAYOUT 3 — LATERAL ESQUERDA ═══════════
    Faixa esquerda 50% (era 45%) — mais espaço pro texto.
@@ -849,17 +856,18 @@
    Mesmas bases tipográficas → padronização entre slides funciona certa.
 */
 
-/* Layout EMBAIXO (foto-cima) — foto top 62% + faixa CHEIA bottom */
+/* Layout EMBAIXO (foto-cima story) — foto top + faixa bottom dimensionada por conteúdo */
 .slide-render.story[data-layout="foto-cima"] .slot-photo {
   top: 0; left: 0; right: 0; bottom: auto;
-  width: auto; height: 62%;
+  width: auto; height: calc(100% - var(--solid-h, 32%));
 }
 .slide-render.story[data-layout="foto-cima"] .solid-primary {
-  top: 62%; left: 0; right: 0; bottom: 0;
-  width: auto; height: auto;
+  left: 0; right: 0; bottom: 0; top: auto;
+  width: auto; height: var(--solid-h, 32%);
 }
 .slide-render.story[data-layout="foto-cima"] .slot-text-block {
-  top: calc(62% + 4%); left: 6%; right: 6%; bottom: 6%;
+  top: auto; bottom: 6%;
+  left: 6%; right: 6%;
   width: auto;
   align-items: flex-start;
   justify-content: flex-start;

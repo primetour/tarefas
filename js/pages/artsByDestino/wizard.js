@@ -370,24 +370,29 @@ async function prefitAllSlides() {
         });
       }
 
-      // Mede altura natural do .slot-text-block (após uniform aplicado) e pega
-      // o MAIOR de cada (formato, layout). Vai virar --solid-h no render.
-      // Salva em PERCENTUAL da altura do slide pra escalar entre preview/export.
+      // Mede altura natural do .slot-text-block após uniform aplicado.
+      // Salva em PERCENTUAL da altura do slide. SÓ pra layouts onde
+      // faz sentido dimensionar pela altura (foto-cima em ambos formatos —
+      // laterais story caem aqui via effectiveLayout).
       await new Promise(r => requestAnimationFrame(r));
+      const SOLID_LIMITS = {
+        carrossel: { 'foto-cima': { min: 0.28, max: 0.48, padding: 0.10 } },
+        story:     { 'foto-cima': { min: 0.22, max: 0.42, padding: 0.10 } },
+      };
       for (const lid in byLayout) {
+        const limits = SOLID_LIMITS[formato]?.[lid];
+        if (!limits) continue;
         let maxRatio = 0;
         byLayout[lid].forEach(({ node }) => {
           const block = node.querySelector('.slot-text-block');
           if (!block) return;
           const slideH = node.getBoundingClientRect().height || 1;
-          // scrollHeight = altura natural do conteúdo. Soma padding generoso (12%).
           const blockH = block.scrollHeight;
-          const ratio = (blockH / slideH) + 0.12;   // +12% padding total (cima+baixo)
+          const ratio = (blockH / slideH) + limits.padding;
           if (ratio > maxRatio) maxRatio = ratio;
         });
         if (maxRatio > 0) {
-          // Mínimo 30% (não vira faixa minúscula); máximo 60% (não cobre demais)
-          const finalH = Math.max(0.30, Math.min(0.60, maxRatio));
+          const finalH = Math.max(limits.min, Math.min(limits.max, maxRatio));
           state._solidHeights ??= { carrossel: {}, story: {} };
           state._solidHeights[formato][lid] = finalH;
         }
