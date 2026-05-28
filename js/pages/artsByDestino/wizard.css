@@ -355,6 +355,15 @@
 }
 
 /* ═══ Tela TÓPICOS — lista de checkboxes ═══ */
+.topicos-counter {
+  font-size: 13px;
+  color: var(--ink-soft);
+  text-align: center;
+  margin: 0 0 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
 .topicos-list {
   display: flex;
   flex-direction: column;

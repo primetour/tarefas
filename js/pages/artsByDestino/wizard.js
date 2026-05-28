@@ -245,9 +245,8 @@ async function pickDestino(id) {
     state.conteudoPorTopico = conteudoPorTopico;
     state.fotosDisponiveis = fotosDisponiveis;
     state.conteudoFonte = fonte;
-    // Default inteligente: todos os tópicos disponíveis ficam marcados
-    // (próxima etapa terá UI pra IC desmarcar)
-    state.topicosSelecionados = new Set(ordemTopicos.filter(k => k !== 'capa'));
+    // Default inteligente: marca tópicos com conteúdo decente, até 7 (capa + 7 = 8 slides)
+    state.topicosSelecionados = computeDefaultTopicos(ordemTopicos, conteudoPorTopico);
 
     // Deriva slides a partir do conteúdo + formato atual (cache em state.slides)
     recomputeSlides();
@@ -265,6 +264,28 @@ async function pickDestino(id) {
     alert('Erro ao carregar destino: ' + err.message);
     console.error(err);
   }
+}
+
+// Default inteligente — escolhe tópicos com conteúdo bom, até 7.
+// Prioriza descrição >= 40 chars; se ficar abaixo de 3, completa com curtos.
+function computeDefaultTopicos(ordem, conteudoPorTopico, max = 7) {
+  const candidatos = ordem.filter(k => k !== 'capa');
+  // 1ª passada: descrição decente
+  const bons = candidatos.filter(k => (conteudoPorTopico[k]?.descricao || '').length >= 40);
+  if (bons.length >= max) return new Set(bons.slice(0, max));
+  // 2ª passada: completa com curtos pra ter pelo menos 3-4 slides
+  const resto = candidatos.filter(k => !bons.includes(k));
+  return new Set([...bons, ...resto].slice(0, max));
+}
+
+// Atualiza contador no botão "Gerar X slides →" e label "X de Y selecionados"
+function updateTopicosCounter() {
+  const sel = state.topicosSelecionados?.size || 0;
+  const total = (state.ordemTopicos || []).filter(k => k !== 'capa').length;
+  const btn = $('#btn-topicos-continuar');
+  if (btn) btn.textContent = `Gerar ${sel + 1} slides →`;   // +1 = capa
+  const counter = $('#topicos-counter');
+  if (counter) counter.textContent = `${sel} de ${total} marcados`;
 }
 
 // ─── Tela 3: TÓPICOS — lista do que o destino tem disponível ───
@@ -307,8 +328,11 @@ function renderTopicos() {
       if (e.target.checked) state.topicosSelecionados.add(key);
       else state.topicosSelecionados.delete(key);
       e.target.closest('.topico-card').classList.toggle('checked', e.target.checked);
+      updateTopicosCounter();
     });
   });
+
+  updateTopicosCounter();
 }
 
 // ─── derivarSlides: função pura. Slides = (conteudoPorTopico × topicosSelecionados × formato) ───
@@ -1479,14 +1503,25 @@ async function initWizard() {
   $('#search-input').addEventListener('input', e => renderDestinos(e.target.value));
   $('#btn-menu').addEventListener('click', () => alert('Menu (em breve): salvar rascunho, ajuda, sair.'));
 
-  // ─── Etapa 2: fluxo das 4 telas ───
-  // Tela 1: cards de formato (Story / Carrossel)
+  // ─── Etapa 2-3: fluxo das 4 telas ───
+  // Tela 1: cards de formato (Story / Carrossel) — se IC já tem destino+tópicos,
+  // re-encaixa direto no resultado preservando contexto.
   $$('#view-formato .formato-card').forEach(card => {
     card.addEventListener('click', () => {
       state.formato = card.dataset.formato;
-      state.previewFormato = state.formato;       // sincroniza com toggle do canvas
-      state.formatos = new Set([state.formato]);  // sincroniza Set legado
-      setView('destino');
+      state.previewFormato = state.formato;
+      state.formatos = new Set([state.formato]);
+      // Re-encaixe: se já tem destino+tópicos escolhidos, pula direto pro resultado
+      const temContexto = state.destino && state.topicosSelecionados?.size > 0;
+      if (temContexto) {
+        recomputeSlides();
+        state.activeSlideIdx = 0;
+        state.uniformScale = null;
+        setView('resultado');
+        renderEditor();
+      } else {
+        setView('destino');
+      }
     });
   });
   // Back buttons de cada tela
@@ -1514,8 +1549,16 @@ async function initWizard() {
 
   $$('.canvas-format-toggle button').forEach(b => {
     b.addEventListener('click', () => {
-      state.previewFormato = b.dataset.fmt;
+      // Atualiza state.formato (SSOT) + previewFormato (compat) e re-encaixa slides
+      state.formato = b.dataset.fmt;
+      state.previewFormato = state.formato;
+      state.formatos = new Set([state.formato]);
       $$('.canvas-format-toggle button').forEach(x => x.classList.toggle('active', x === b));
+      // Re-encaixe: como layout de alguns tópicos pode mudar (ex: lateral colapsa
+      // pra foto-cima no story via effectiveLayout), recomputa pra refletir.
+      recomputeSlides();
+      // Limpa uniformScale (vai ser recalculado pelo formato novo no próximo prefit)
+      state.uniformScale = null;
       renderCanvas();
     });
   });
@@ -1685,6 +1728,7 @@ const OVERLAY_HTML = `
       </div>
     </header>
     <div class="welcome-content">
+      <div class="topicos-counter" id="topicos-counter"></div>
       <div class="topicos-list" id="topicos-list"></div>
       <div class="topicos-actions">
         <button class="btn-primary topicos-continuar" id="btn-topicos-continuar">Gerar material →</button>
