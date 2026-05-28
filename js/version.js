@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 31,
-  build: '20260528-portal-gerar-filter-hastip',
+  patch: 32,
+  build: '20260528-portal-pdf-centurion-luma-fix',
 };
 
 /** "1.2.0" */

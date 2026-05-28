@@ -996,7 +996,25 @@ async function generatePDF({
   const FONT = FONT_OK ? 'Poppins' : 'helvetica';
   const setF = (style='normal') => doc.setFont(FONT, style);
 
-  const primary=colors.primary||PORTAL_DEFAULT_COLORS.primary, second=colors.secondary||PORTAL_DEFAULT_COLORS.secondary;
+  const primary=colors.primary||PORTAL_DEFAULT_COLORS.primary;
+  let second=colors.secondary||PORTAL_DEFAULT_COLORS.secondary;
+
+  // v4.63.32+ Defensive fix — se secondary é muito claro (perto de branco),
+  // força navy escuro hardcoded #0A1628. Áreas como Centurion configuradas
+  // com `secondary=#ffffff` quebravam TUDO: capa branca, títulos invisíveis,
+  // TOC sem cabeçalho. jsPDF foi desenhado assumindo navy escuro como
+  // secondary (cor de "tinta" pra títulos sobre fundo claro + cor de
+  // "fundo" pra capa sobre logo branca). Branco quebra os 2 usos.
+  // Renê reportou "capa em branco + bairros sem títulos" — esse era o motivo.
+  const _luma = (hex) => {
+    const r = hexToR(hex), g = hexToG(hex), b = hexToB(hex);
+    return (0.299*r + 0.587*g + 0.114*b) / 255;
+  };
+  if (_luma(second) > 0.85) {
+    console.warn(`[portalPdf] area.colors.secondary=${second} muito claro pra PDF — forçando navy escuro #0A1628`);
+    second = '#0A1628';
+  }
+
   const PAGE_W=210,MARGIN=16,CONTENT=210-16*2;
   let y=MARGIN;
   const pR=hexToR(primary),pG=hexToG(primary),pB=hexToB(primary);
