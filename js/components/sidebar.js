@@ -75,7 +75,7 @@ const NAV_GROUPS = [
       // v4.50.4+ "Landing Pages" e "CMS / Site" removidos da sidebar (Renê 22/05) —
       // rotas continuam funcionando via hash direto, mas não aparecem no nav.
       { route: 'sites-btg',        icon: 'cms',              label: 'Sites',                  perm: 'portal_manage', href: 'btg/dashboard/sites/' },
-      { route: 'arts-editor',      icon: 'arts-editor',      label: 'Editor de Artes',        perm: 'portal_manage'  },
+      { route: 'arts-editor',      icon: 'arts-editor',      label: 'Gerador de Imagens',     perm: null /* TODO: restringir depois (era portal_manage) */ },
       // 4.49.12+ Luxury Travel: gated por luxury_travel_manage (antes sempre visível)
       { route: 'luxury-travel',    icon: 'luxury-travel',    label: 'Revista Luxury Travel',  perm: 'luxury_travel_manage' },
       // 4.49.11+ Pautas/Clipping = análise → analytics_view (consistente com newsMonitor.js)

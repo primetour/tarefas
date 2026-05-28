@@ -187,7 +187,112 @@ function injectResponsiveStyles() {
 /* ════════════════════════════════════════════════════════════
    Main render
    ════════════════════════════════════════════════════════════ */
+/* ════════════════════════════════════════════════════════════
+   ENTRY POINT — Gerador de Imagens (v2)
+   Tela seletora de "templates" (modos de geração).
+   - Card 1: Artes por destino (Carrossel/Story) — abre o módulo /artes/ (IC)
+   - Card 2: Editor avançado (canvas Fabric.js) — abre o editor original
+   Adicionar template novo no futuro = adicionar card aqui.
+   ════════════════════════════════════════════════════════════ */
 export async function renderArtsEditor(container) {
+  // Por enquanto a permissão é aberta (sidebar perm: null).
+  // Cada card pode ter seu próprio gate de permissão.
+  return renderSelectorScreen(container);
+}
+
+function renderSelectorScreen(container) {
+  injectSelectorStyles();
+  const canAdvanced = store.canManagePortal();
+
+  container.innerHTML = `
+    <div class="page-header" style="margin-bottom:24px;">
+      <h1 class="page-title">Gerador de Imagens</h1>
+      <p class="page-subtitle">Escolha o tipo de imagem que você quer gerar.</p>
+    </div>
+    <div class="gi-grid">
+      <button class="gi-card" data-mode="ic">
+        <div class="gi-card-icon">🌍</div>
+        <h3>Artes por destino</h3>
+        <p>Pack de carrossel e story personalizado por destino do Portal de Dicas. Indicado para ICs.</p>
+        <span class="gi-card-badge">Carrossel · Story</span>
+      </button>
+      ${canAdvanced ? `
+        <button class="gi-card" data-mode="canvas">
+          <div class="gi-card-icon">🎨</div>
+          <h3>Editor avançado</h3>
+          <p>Edição livre em canvas com camadas, textos, filtros e templates próprios.</p>
+          <span class="gi-card-badge">Avançado</span>
+        </button>
+      ` : ''}
+    </div>
+  `;
+
+  container.querySelectorAll('.gi-card').forEach(card => {
+    card.addEventListener('click', () => {
+      const mode = card.dataset.mode;
+      if (mode === 'canvas') renderCanvasEditor(container);
+      if (mode === 'ic')     renderICByDestino(container);
+    });
+  });
+}
+
+function injectSelectorStyles() {
+  if (document.getElementById('gi-selector-css')) return;
+  const style = document.createElement('style');
+  style.id = 'gi-selector-css';
+  style.textContent = `
+    .gi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+      max-width: 880px;
+    }
+    .gi-card {
+      background: var(--card-bg, #fff);
+      border: 1px solid var(--border, #e5e5e5);
+      border-radius: 12px;
+      padding: 28px 24px;
+      text-align: left;
+      cursor: pointer;
+      font-family: inherit;
+      color: inherit;
+      transition: border-color 150ms, transform 150ms, box-shadow 150ms;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      align-items: flex-start;
+    }
+    .gi-card:hover {
+      border-color: var(--brand, #2BA9A7);
+      transform: translateY(-2px);
+      box-shadow: 0 6px 16px rgba(0,0,0,0.06);
+    }
+    .gi-card-icon { font-size: 32px; line-height: 1; }
+    .gi-card h3 { margin: 0; font-size: 17px; font-weight: 700; }
+    .gi-card p  { margin: 0; font-size: 13px; color: var(--text-muted, #666); line-height: 1.45; }
+    .gi-card-badge {
+      font-size: 10px; font-weight: 700; letter-spacing: 0.08em;
+      text-transform: uppercase; color: var(--brand-dark, #1F8482);
+      background: rgba(43,169,167,0.1);
+      padding: 4px 10px; border-radius: 4px; margin-top: 4px;
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+// Card "Artes por destino" — abre o módulo de wizard em overlay full-screen.
+// Ao fechar, volta automaticamente pra tela seletora.
+async function renderICByDestino(container) {
+  const { renderArtsByDestino } = await import('./artsByDestino/wizard.js');
+  renderArtsByDestino(container, {
+    onClose: () => renderSelectorScreen(container),
+  });
+}
+
+/* ════════════════════════════════════════════════════════════
+   Editor avançado (canvas Fabric.js) — implementação original
+   ════════════════════════════════════════════════════════════ */
+async function renderCanvasEditor(container) {
   if (!store.canManagePortal()) {
     container.innerHTML = `<div class="empty-state" style="min-height:60vh;">
       <div class="empty-state-icon">🔒</div>
@@ -203,7 +308,8 @@ export async function renderArtsEditor(container) {
   container.innerHTML = `
     <div class="page-header arts-page-header" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;">
       <div class="page-header-left">
-        <h1 class="page-title">Editor de Artes</h1>
+        <button class="btn btn-ghost btn-sm" id="gi-back-to-selector" style="margin-bottom:6px;">← Gerador de Imagens</button>
+        <h1 class="page-title">Editor avançado</h1>
         <p class="page-subtitle">Templates para redes sociais, e-mails e comunicados</p>
       </div>
       <div class="page-header-actions" style="display:flex;gap:8px;flex-wrap:wrap;">
@@ -298,6 +404,9 @@ function wireMainEvents(container, isAdmin, categories) {
 
   // Guide
   container.querySelector('#arts-guide-btn')?.addEventListener('click', showBestPractices);
+
+  // Voltar pra tela seletora do Gerador de Imagens
+  container.querySelector('#gi-back-to-selector')?.addEventListener('click', () => renderSelectorScreen(container));
 }
 
 /* ─── Template grid ────────────────────────────────────────── */
@@ -1327,7 +1436,7 @@ async function showTemplateManager(container) {
       await deleteTemplate(btn.dataset.tid);
       toast.success('Template excluído.');
       mgr.remove();
-      renderArtsEditor(container);
+      renderCanvasEditor(container);
     });
   });
   list.querySelectorAll('.tm-dup-btn').forEach(btn => {
@@ -1337,7 +1446,7 @@ async function showTemplateManager(container) {
       await saveTemplate(null, { ...orig, name: orig.name + ' (cópia)', id: undefined });
       toast.success('Template duplicado!');
       mgr.remove();
-      renderArtsEditor(container);
+      renderCanvasEditor(container);
     });
   });
 }
@@ -1490,7 +1599,7 @@ async function showTemplateEditor(container, templateId) {
       });
       toast.success('Template salvo!');
       edModal.remove();
-      renderArtsEditor(container);
+      renderCanvasEditor(container);
     } catch (e) {
       toast.error('Erro: ' + e.message);
       btn.disabled = false; btn.textContent = '💾 Salvar';
