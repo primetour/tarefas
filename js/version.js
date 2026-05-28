@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 34,
-  build: '20260528-portal-auto-photos-accent-card-bankguard-fix',
+  patch: 35,
+  build: '20260528-portal-segments-reorder',
 };
 
 /** "1.2.0" */

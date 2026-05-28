@@ -588,19 +588,83 @@ async function updateSegments(destinationId) {
   }
 
   const segsWithContent = SEGMENTS.filter(s => available.includes(s.key));
-  container.innerHTML = segsWithContent.map(s => `
-    <label style="display:flex;align-items:center;gap:10px;padding:8px 10px;
-      border-radius:var(--radius-sm);cursor:pointer;transition:background .1s;"
-      onmouseover="this.style.background='var(--bg-surface)'"
-      onmouseout="this.style.background=''">
-      <input type="checkbox" name="segment" value="${s.key}" checked
-        style="width:15px;height:15px;accent-color:var(--brand-gold);cursor:pointer;">
-      <span style="font-size:0.875rem;color:var(--text-primary);">${esc(s.label)}</span>
-    </label>
-  `).join('');
-  // 4.35.7+ Bind via addEventListener (antes era inline `onchange="updatePreview()"`,
-  // mas updatePreview() vive no escopo do módulo ES — inline lookups na window
-  // davam ReferenceError + quebravam a geração de material).
+  // v4.63.35+ Lista reorderable: ↑/↓ por item. A ORDEM da lista no DOM
+  // determina a ordem dos segmentos no PDF/DOCX/PPTX/web — `generatePreview`/
+  // `generateTip` lêem via `querySelectorAll('input[name=segment]:checked')`
+  // que preserva DOM order. Reorganizar visualmente = reorganizar no export.
+  const renderItem = (s, idx, total) => `
+    <div class="portal-seg-item" data-key="${esc(s.key)}" style="display:flex;align-items:center;gap:8px;
+      padding:6px 8px;border-radius:var(--radius-sm);transition:background .1s;background:var(--bg-card,transparent);
+      border:1px solid var(--border-subtle);">
+      <div style="display:flex;flex-direction:column;gap:1px;flex-shrink:0;">
+        <button type="button" class="portal-seg-up" data-key="${esc(s.key)}"
+          ${idx === 0 ? 'disabled' : ''} aria-label="Mover pra cima"
+          title="Mover pra cima"
+          style="width:22px;height:14px;padding:0;display:flex;align-items:center;justify-content:center;
+          background:transparent;border:none;cursor:${idx === 0 ? 'not-allowed' : 'pointer'};
+          color:${idx === 0 ? 'var(--text-muted)' : 'var(--text-secondary)'};font-size:0.7rem;line-height:1;">▲</button>
+        <button type="button" class="portal-seg-down" data-key="${esc(s.key)}"
+          ${idx === total - 1 ? 'disabled' : ''} aria-label="Mover pra baixo"
+          title="Mover pra baixo"
+          style="width:22px;height:14px;padding:0;display:flex;align-items:center;justify-content:center;
+          background:transparent;border:none;cursor:${idx === total - 1 ? 'not-allowed' : 'pointer'};
+          color:${idx === total - 1 ? 'var(--text-muted)' : 'var(--text-secondary)'};font-size:0.7rem;line-height:1;">▼</button>
+      </div>
+      <label style="display:flex;align-items:center;gap:10px;cursor:pointer;flex:1;margin:0;padding:4px 0;">
+        <input type="checkbox" name="segment" value="${esc(s.key)}" checked
+          style="width:15px;height:15px;accent-color:var(--brand-gold);cursor:pointer;">
+        <span style="font-size:0.875rem;color:var(--text-primary);user-select:none;">${esc(s.label)}</span>
+      </label>
+    </div>
+  `;
+  container.innerHTML = `
+    <div style="font-size:0.7rem;color:var(--text-muted);margin-bottom:6px;line-height:1.4;">
+      Use ▲▼ pra reordenar — a ordem aqui é a mesma do PDF/Word/PPT/web.
+    </div>
+    <div id="portal-segments-list" style="display:flex;flex-direction:column;gap:4px;">
+      ${segsWithContent.map((s, i) => renderItem(s, i, segsWithContent.length)).join('')}
+    </div>
+  `;
+
+  // Helpers de reorder — mexe DOM e re-aplica disabled nos ▲▼ extremos.
+  const updateArrowStates = () => {
+    const items = [...container.querySelectorAll('.portal-seg-item')];
+    items.forEach((it, idx) => {
+      const up = it.querySelector('.portal-seg-up');
+      const down = it.querySelector('.portal-seg-down');
+      if (up) {
+        up.disabled = idx === 0;
+        up.style.cursor = idx === 0 ? 'not-allowed' : 'pointer';
+        up.style.color = idx === 0 ? 'var(--text-muted)' : 'var(--text-secondary)';
+      }
+      if (down) {
+        down.disabled = idx === items.length - 1;
+        down.style.cursor = idx === items.length - 1 ? 'not-allowed' : 'pointer';
+        down.style.color = idx === items.length - 1 ? 'var(--text-muted)' : 'var(--text-secondary)';
+      }
+    });
+  };
+
+  // Click delegation (sobrevive a re-render — bind no container)
+  container.addEventListener('click', (e) => {
+    const upBtn = e.target.closest('.portal-seg-up');
+    const downBtn = e.target.closest('.portal-seg-down');
+    if (!upBtn && !downBtn) return;
+    e.preventDefault();
+    const btn = upBtn || downBtn;
+    if (btn.disabled) return;
+    const item = btn.closest('.portal-seg-item');
+    if (!item) return;
+    if (upBtn && item.previousElementSibling) {
+      item.parentNode.insertBefore(item, item.previousElementSibling);
+    } else if (downBtn && item.nextElementSibling) {
+      item.parentNode.insertBefore(item.nextElementSibling, item);
+    }
+    updateArrowStates();
+    updatePreview();
+  });
+
+  // Bind checkboxes
   container.querySelectorAll('input[name=segment]').forEach(cb => {
     cb.addEventListener('change', updatePreview);
   });

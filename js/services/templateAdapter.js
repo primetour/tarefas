@@ -253,8 +253,13 @@ export function portalToTemplateData({ allTips, area, segments, areaName, images
     }
   });
 
-  // Convert raw segments map → ordered iterable array per dest
-  const SEGMENT_ORDER = [
+  // Convert raw segments map → ordered iterable array per dest.
+  // v4.63.35+ Renê: "dar a possibilidade de escolher a ordem de exibição dos
+  // segmentos nos arquivos antes de exportar". A ordem default vem do SSOT
+  // canônico abaixo, MAS se o caller passar `segments` (array de keys),
+  // respeita essa ordem — assim a UI portalTips.js controla a ordem do export
+  // via reorder (↑/↓).
+  const SEGMENT_DEFS = [
     { key: 'informacoes_gerais',  label: 'Informações Gerais', mode: 'special_info' },
     { key: 'bairros',             label: 'Bairros',            mode: 'simple_list' },
     { key: 'atracoes',            label: 'Atrações',           mode: 'place_list' },
@@ -267,6 +272,17 @@ export function portalToTemplateData({ allTips, area, segments, areaName, images
     { key: 'highlights',          label: 'Highlights',         mode: 'place_list' },
     { key: 'agenda_cultural',     label: 'Agenda Cultural',    mode: 'agenda' },
   ];
+  const DEF_BY_KEY = Object.fromEntries(SEGMENT_DEFS.map(d => [d.key, d]));
+
+  // Ordem efetiva: segments passado pelo caller (UI reorder) OU default SSOT.
+  // Se caller passou keys que não estão em SEGMENT_DEFS (ex: custom segments
+  // do CRUD), faz fallback gracioso construindo def mínima.
+  const orderedKeys = Array.isArray(segments) && segments.length
+    ? segments
+    : SEGMENT_DEFS.map(d => d.key);
+  const SEGMENT_ORDER = orderedKeys.map(k =>
+    DEF_BY_KEY[k] || { key: k, label: k.replace(/_/g, ' '), mode: 'place_list' }
+  );
 
   for (const entry of byDest.values()) {
     const segs = entry.segments || {};
