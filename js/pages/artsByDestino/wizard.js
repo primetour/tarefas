@@ -310,11 +310,17 @@ function renderTopicos() {
   list.innerHTML = ordem.map(key => {
     const c = state.conteudoPorTopico[key] || {};
     const checked = state.topicosSelecionados.has(key);
+    const fonte = c._fonte;
+    const fonteBadge = fonte === 'banco-curado'
+      ? '<span class="topico-fonte fonte-curado" title="Conteúdo curado pela Prime">✦ curado</span>'
+      : fonte === 'portal-tip'
+        ? '<span class="topico-fonte fonte-portal" title="Conteúdo vindo do Portal de Dicas">Portal</span>'
+        : '';
     return `
       <label class="topico-card ${checked ? 'checked' : ''}">
         <input type="checkbox" data-topico="${key}" ${checked ? 'checked' : ''}>
         <div class="topico-content">
-          <div class="topico-label">${escapeHtml(c.label || key)}</div>
+          <div class="topico-label">${escapeHtml(c.label || key)}${fonteBadge}</div>
           <div class="topico-preview">${escapeHtml((c.descricao || '').slice(0, 90))}${(c.descricao || '').length > 90 ? '…' : ''}</div>
         </div>
         <div class="topico-check"></div>

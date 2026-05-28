@@ -15,6 +15,9 @@ import {
   DEFAULT_SEGMENTS, getSegments,
   fetchDestinations, fetchTips, fetchImages,
 } from './portal.js';
+import {
+  fetchAllVariations, pickVariation, getTopicosComBanco,
+} from './artsContentBank.js';
 
 // Caches (populados em fetchDestinos)
 let _imagesByCity    = new Map();
@@ -84,6 +87,7 @@ export async function fetchDestinos() {
     fetchImages({}),    // até 500
     fetchTips({}),      // até 500 — tudo de uma vez
     getSegments(),      // builtin + custom
+    fetchAllVariations(),  // arts_content_bank — silently handles vazio
   ]);
 
   console.log(
@@ -244,25 +248,50 @@ export async function loadConteudoForDestino(destino) {
   };
   const ordemTopicos = ['capa'];
 
-  // Demais tópicos vêm do tip (extraídos por segment com conteúdo)
+  // Tópicos: preferimos arts_content_bank (curado), caímos no portal_tips, senão vazio.
+  // Cada tópico pode ter fonte diferente — mistura é OK (parte curado, parte portal).
   const tip = tipDestinoId ? _tipsByDestId.get(tipDestinoId) : null;
-  let fonte = 'empty';
-  if (tip) {
-    const highlights = tipToHighlightsByKey(tip);  // dict topicoKey → highlight
-    for (const segDef of _segmentsAll) {
-      if (!highlights[segDef.key]) continue;
+  const portalHighlights = tip ? tipToHighlightsByKey(tip) : {};
+  const topicosCurados   = tipDestinoId ? getTopicosComBanco(tipDestinoId) : new Set();
+  let temCurado = false, temPortal = false;
+
+  for (const segDef of _segmentsAll) {
+    // 1ª escolha: banco curado
+    const variation = tipDestinoId ? pickVariation(tipDestinoId, segDef.key) : null;
+    if (variation?.conteudo) {
       conteudoPorTopico[segDef.key] = {
-        ...highlights[segDef.key],
-        label: segDef.label,
+        nome:      variation.conteudo.hand   || segDef.label,
+        titulo:    variation.conteudo.titulo || segDef.label.toUpperCase(),
+        descricao: variation.conteudo.descricao || '',
+        label:     segDef.label,
         segmentMode: segDef.mode,
+        _fonte:    'banco-curado',
+        _variationId: variation.id,
       };
       ordemTopicos.push(segDef.key);
+      temCurado = true;
+      continue;
     }
-    if (ordemTopicos.length > 1) fonte = 'portal-tip';
-    console.log('[artsByDestino] loadConteudo:', tipDestinoId, '| tópicos:', ordemTopicos.length - 1);
+    // 2ª escolha: portal_tips
+    if (portalHighlights[segDef.key]) {
+      conteudoPorTopico[segDef.key] = {
+        ...portalHighlights[segDef.key],
+        label: segDef.label,
+        segmentMode: segDef.mode,
+        _fonte: 'portal-tip',
+      };
+      ordemTopicos.push(segDef.key);
+      temPortal = true;
+    }
   }
 
-  // Empty fallback: nenhum tópico além da capa
+  // Fonte global do destino (resumo): curado domina, depois portal, senão empty
+  const fonte = temCurado ? 'banco-curado' : (temPortal ? 'portal-tip' : 'empty');
+  console.log('[artsByDestino] loadConteudo:', tipDestinoId,
+    '| tópicos:', ordemTopicos.length - 1,
+    '| curados:', topicosCurados.size,
+    '| fonte:', fonte);
+
   return { ordemTopicos, conteudoPorTopico, fotosDisponiveis, fonte };
 }
 

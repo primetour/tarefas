@@ -849,6 +849,14 @@ service cloud.firestore {
       allow create: if isAuth();
     }
 
+    // v4.63+ Gerador de Imagens: banco de conteúdos curados (separado do Portal de Dicas).
+    // Read: qualquer autenticado (IC consome no Gerador).
+    // Write: admin (curadoria interna; futura UI dedicada).
+    match /arts_content_bank/{docId} {
+      allow read:  if isAuth();
+      allow write: if isAuth() && isAdmin();
+    }
+
     match /ai_generations/{docId} {
       allow read:   if isAuth() && isAdmin();
       allow create: if isAuth();
