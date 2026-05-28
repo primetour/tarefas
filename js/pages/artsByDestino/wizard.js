@@ -20,14 +20,17 @@ const getBancoCurado = () => getBancoCuradoForDestino(state.destino, state.banco
 
 // ───── State ─────
 const state = {
-  view: 'welcome',                       // 'welcome' | 'editor'
+  // ─── Navegação (Etapa 2: 4 telas em sequência) ───
+  view: 'formato',                       // 'formato' | 'destino' | 'topicos' | 'resultado'
+  formato: null,                         // 'story' | 'carrossel' — escolhido na 1ª tela
   destinoId: null,
   destino: null,                         // doc completo (com _raw)
-  filterContinent: '',                   // filtro welcome
-  filterCountry: '',                     // filtro welcome
+  filterContinent: '',                   // filtro destino
+  filterCountry: '',                     // filtro destino
   filterTipo: 'todos',                   // todos | location | hotel | restaurant | train | cruise
   filterSoComConteudo: false,            // só destinos com tip rica/parcial
   searchQuery: '',
+  // Compat: formatos (Set) ainda usado por código velho de export. Etapa futura unifica.
   formatos: new Set(['carrossel', 'story']),
   templateId: 'classico-teal',
 
@@ -255,13 +258,57 @@ async function pickDestino(id) {
     state.slideOverrides = {};
     state.selectedField = null;
     hideLoader();
-    setView('editor');
-    renderEditor();
+    setView('topicos');
+    renderTopicos();
   } catch (err) {
     hideLoader();
     alert('Erro ao carregar destino: ' + err.message);
     console.error(err);
   }
+}
+
+// ─── Tela 3: TÓPICOS — lista do que o destino tem disponível ───
+function renderTopicos() {
+  const title = $('#topicos-title');
+  if (title && state.destino) title.textContent = `Assuntos sobre ${state.destino.nome}`;
+
+  const list = $('#topicos-list');
+  if (!list) return;
+  const ordem = state.ordemTopicos.filter(k => k !== 'capa');
+
+  if (!ordem.length) {
+    list.innerHTML = `
+      <div class="topicos-empty">
+        <p>Este destino ainda não tem dicas cadastradas no Portal de Dicas.</p>
+        <p>Você pode continuar mesmo assim — os slides ficarão com aviso para você editar manualmente.</p>
+      </div>
+    `;
+    return;
+  }
+
+  list.innerHTML = ordem.map(key => {
+    const c = state.conteudoPorTopico[key] || {};
+    const checked = state.topicosSelecionados.has(key);
+    return `
+      <label class="topico-card ${checked ? 'checked' : ''}">
+        <input type="checkbox" data-topico="${key}" ${checked ? 'checked' : ''}>
+        <div class="topico-content">
+          <div class="topico-label">${escapeHtml(c.label || key)}</div>
+          <div class="topico-preview">${escapeHtml((c.descricao || '').slice(0, 90))}${(c.descricao || '').length > 90 ? '…' : ''}</div>
+        </div>
+        <div class="topico-check"></div>
+      </label>
+    `;
+  }).join('');
+
+  list.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+    cb.addEventListener('change', e => {
+      const key = e.target.dataset.topico;
+      if (e.target.checked) state.topicosSelecionados.add(key);
+      else state.topicosSelecionados.delete(key);
+      e.target.closest('.topico-card').classList.toggle('checked', e.target.checked);
+    });
+  });
 }
 
 // ─── derivarSlides: função pura. Slides = (conteudoPorTopico × topicosSelecionados × formato) ───
@@ -1430,8 +1477,32 @@ async function initWizard() {
   }
 
   $('#search-input').addEventListener('input', e => renderDestinos(e.target.value));
-  $('#btn-back-welcome').addEventListener('click', () => setView('welcome'));
   $('#btn-menu').addEventListener('click', () => alert('Menu (em breve): salvar rascunho, ajuda, sair.'));
+
+  // ─── Etapa 2: fluxo das 4 telas ───
+  // Tela 1: cards de formato (Story / Carrossel)
+  $$('#view-formato .formato-card').forEach(card => {
+    card.addEventListener('click', () => {
+      state.formato = card.dataset.formato;
+      state.previewFormato = state.formato;       // sincroniza com toggle do canvas
+      state.formatos = new Set([state.formato]);  // sincroniza Set legado
+      setView('destino');
+    });
+  });
+  // Back buttons de cada tela
+  $('#btn-back-formato')?.addEventListener('click', () => setView('formato'));
+  $('#btn-back-destino')?.addEventListener('click', () => setView('destino'));
+  $('#btn-back-topicos')?.addEventListener('click', () => setView('topicos'));
+  // Tela 3: continuar pra resultado
+  $('#btn-topicos-continuar')?.addEventListener('click', () => {
+    recomputeSlides();
+    state.activeSlideIdx = 0;
+    state.uniformScale = null;
+    state.slideOverrides = {};
+    state.selectedField = null;
+    setView('resultado');
+    renderEditor();
+  });
 
   $$('.tool-btn').forEach(b => {
     b.addEventListener('click', () => {
@@ -1555,11 +1626,42 @@ async function initWizard() {
 const OVERLAY_HTML = `
   <button class="gi-ic-close" type="button" aria-label="Fechar">✕</button>
 
-  <section class="view active" id="view-welcome">
+  <!-- ━━━━━━━━ Tela 1: FORMATO ━━━━━━━━ -->
+  <section class="view active" id="view-formato">
     <header class="welcome-header">
       <div class="welcome-title-wrap">
-        <h1>Crie suas artes</h1>
-        <p>Escolha o destino que você vai divulgar.</p>
+        <h1>Que formato você quer?</h1>
+        <p>Escolha onde você vai postar — isso define o tamanho do material.</p>
+      </div>
+    </header>
+    <div class="welcome-content">
+      <div class="formato-cards">
+        <button class="formato-card" data-formato="story">
+          <div class="formato-thumb formato-thumb-story"></div>
+          <div class="formato-info">
+            <h3>Story</h3>
+            <p>9:16 vertical · Instagram Stories</p>
+          </div>
+        </button>
+        <button class="formato-card" data-formato="carrossel">
+          <div class="formato-thumb formato-thumb-carrossel"></div>
+          <div class="formato-info">
+            <h3>Carrossel</h3>
+            <p>4:5 · Feed do Instagram</p>
+          </div>
+        </button>
+      </div>
+      <p class="formato-hint">WhatsApp e E-mail virão em breve.</p>
+    </div>
+  </section>
+
+  <!-- ━━━━━━━━ Tela 2: DESTINO ━━━━━━━━ -->
+  <section class="view" id="view-destino">
+    <header class="welcome-header">
+      <button class="btn-icon header-back" id="btn-back-formato" aria-label="Voltar ao formato">←</button>
+      <div class="welcome-title-wrap">
+        <h1>Qual destino?</h1>
+        <p>Escolha sobre qual lugar você vai criar o material.</p>
       </div>
     </header>
     <div class="welcome-content">
@@ -1573,9 +1675,27 @@ const OVERLAY_HTML = `
     </div>
   </section>
 
-  <section class="view" id="view-editor">
+  <!-- ━━━━━━━━ Tela 3: TÓPICOS ━━━━━━━━ -->
+  <section class="view" id="view-topicos">
+    <header class="welcome-header">
+      <button class="btn-icon header-back" id="btn-back-destino" aria-label="Voltar aos destinos">←</button>
+      <div class="welcome-title-wrap">
+        <h1 id="topicos-title">Quais assuntos?</h1>
+        <p>Cada assunto selecionado vira um slide do material.</p>
+      </div>
+    </header>
+    <div class="welcome-content">
+      <div class="topicos-list" id="topicos-list"></div>
+      <div class="topicos-actions">
+        <button class="btn-primary topicos-continuar" id="btn-topicos-continuar">Gerar material →</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ━━━━━━━━ Tela 4: RESULTADO ━━━━━━━━ -->
+  <section class="view" id="view-resultado">
     <header class="editor-header">
-      <button class="btn-icon" id="btn-back-welcome" aria-label="Trocar destino">←</button>
+      <button class="btn-icon" id="btn-back-topicos" aria-label="Voltar aos tópicos">←</button>
       <div class="editor-title" id="editor-title">—</div>
       <button class="btn-icon" id="btn-menu" aria-label="Menu">⋮</button>
     </header>
@@ -1708,7 +1828,8 @@ export async function renderArtsByDestino(_parentContainer, { onClose } = {}) {
   _overlayEl.querySelector('.gi-ic-close').addEventListener('click', closeArtsByDestino);
 
   // Reset state pra abrir limpo
-  state.view = 'welcome';
+  state.view = 'formato';
+  state.formato = null;
   state.destinoId = null;
   state.destino = null;
   state.ordemTopicos = [];

@@ -286,6 +286,166 @@
   background: transparent;
 }
 
+/* ═══ Etapa 2 — header back button (telas com voltar) ═══ */
+.welcome-header { position: relative; }
+.welcome-header .header-back {
+  position: absolute;
+  top: 16px; left: 12px;
+  z-index: 2;
+}
+
+/* ═══ Tela FORMATO — 2 cards grandes ═══ */
+.formato-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  max-width: 720px;
+  margin: 16px auto 0;
+}
+@media (max-width: 480px) {
+  .formato-cards { grid-template-columns: 1fr; }
+}
+.formato-card {
+  background: var(--card);
+  border: 2px solid var(--line);
+  border-radius: 16px;
+  padding: 0;
+  cursor: pointer;
+  overflow: hidden;
+  transition: transform var(--t-fast), border-color var(--t-fast), box-shadow var(--t);
+  font-family: inherit;
+  color: inherit;
+  display: flex;
+  flex-direction: column;
+  text-align: left;
+}
+.formato-card:hover { transform: translateY(-2px); border-color: var(--teal); box-shadow: var(--shadow-hover); }
+.formato-card:active { transform: translateY(0); }
+
+.formato-thumb {
+  background: linear-gradient(135deg, var(--teal) 0%, var(--teal-dark) 100%);
+  position: relative;
+}
+.formato-thumb-story     { aspect-ratio: 9 / 16; max-height: 220px; }
+.formato-thumb-carrossel { aspect-ratio: 4 / 5;  max-height: 220px; }
+.formato-thumb::before {
+  content: '';
+  position: absolute;
+  inset: 12%;
+  background: rgba(255,255,255,0.15);
+  border-radius: 8px;
+}
+.formato-thumb::after {
+  content: '';
+  position: absolute;
+  left: 16%; right: 16%; bottom: 14%; height: 22%;
+  background: rgba(255,255,255,0.9);
+  border-radius: 4px;
+}
+.formato-info { padding: 16px 18px; }
+.formato-info h3 { margin: 0; font-size: 18px; font-weight: 700; }
+.formato-info p  { margin: 4px 0 0; font-size: 13px; color: var(--ink-soft); }
+
+.formato-hint {
+  text-align: center;
+  margin: 24px 0 0;
+  font-size: 13px;
+  color: var(--ink-faint);
+  font-style: italic;
+}
+
+/* ═══ Tela TÓPICOS — lista de checkboxes ═══ */
+.topicos-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-width: 720px;
+  margin: 0 auto;
+}
+.topico-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  background: var(--card);
+  border: 2px solid var(--line);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: border-color var(--t-fast), background var(--t-fast);
+}
+.topico-card:hover { border-color: rgba(43,169,167,0.4); }
+.topico-card.checked {
+  border-color: var(--teal);
+  background: rgba(43,169,167,0.04);
+}
+.topico-card input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  width: 0; height: 0;
+  pointer-events: none;
+}
+.topico-content { flex: 1; min-width: 0; }
+.topico-label {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.topico-preview {
+  font-size: 12px;
+  color: var(--ink-soft);
+  margin-top: 2px;
+  line-height: 1.35;
+}
+.topico-check {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: 2px solid var(--line);
+  flex-shrink: 0;
+  position: relative;
+  transition: background var(--t-fast), border-color var(--t-fast);
+}
+.topico-card.checked .topico-check {
+  background: var(--teal);
+  border-color: var(--teal);
+}
+.topico-card.checked .topico-check::after {
+  content: '✓';
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.topicos-empty {
+  text-align: center;
+  padding: 32px 24px;
+  color: var(--ink-soft);
+  background: var(--card);
+  border-radius: 12px;
+  border: 1px dashed var(--line);
+  font-size: 14px;
+}
+.topicos-empty p { margin: 6px 0; }
+
+.topicos-actions {
+  position: sticky;
+  bottom: 0;
+  padding: 16px 0;
+  margin-top: 24px;
+  background: linear-gradient(to top, var(--bg) 60%, transparent);
+}
+.topicos-continuar {
+  display: block;
+  width: 100%;
+  max-width: 720px;
+  margin: 0 auto;
+  font-size: 16px;
+  padding: 16px 24px;
+}
+
 /* Abas de tipo (Todos / Destinos / Hotéis / etc) — acima dos filtros geo */
 .welcome-tipos {
   display: flex;
