@@ -156,6 +156,54 @@
   background: transparent;
 }
 
+/* Abas de tipo (Todos / Destinos / Hotéis / etc) — acima dos filtros geo */
+.welcome-tipos {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  margin-bottom: 14px;
+  padding-bottom: 4px;
+  scrollbar-width: none;
+}
+.welcome-tipos::-webkit-scrollbar { display: none; }
+.welcome-tipo {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  color: var(--ink-soft);
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 20px;
+  cursor: pointer;
+  font-family: inherit;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background var(--t-fast), color var(--t-fast), border-color var(--t-fast);
+}
+.welcome-tipo:hover { border-color: var(--teal); }
+.welcome-tipo.active {
+  background: var(--teal);
+  border-color: var(--teal);
+  color: #fff;
+}
+.welcome-tipo-count {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: rgba(0,0,0,0.08);
+  color: var(--ink-soft);
+  min-width: 20px;
+  text-align: center;
+}
+.welcome-tipo.active .welcome-tipo-count {
+  background: rgba(255,255,255,0.25);
+  color: #fff;
+}
+
 /* Filtros welcome (continente / país) */
 .welcome-filters { margin-bottom: 16px; }
 .welcome-filters:empty { display: none; }

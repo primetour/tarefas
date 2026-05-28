@@ -1,7 +1,8 @@
 import { MOCK_FORMATOS, MOCK_TEMPLATES, MOCK_LAYOUTS } from './mock-data.js';
 import {
   fetchDestinos, buildSlidesForDestino,
-  getBancoCuradoForDestino, getBancoCuradoCounts, PICKER_CATEGORIAS,
+  getBancoCuradoForDestino, getBancoCuradoCounts, getCategoriasParaDestino,
+  PICKER_CATEGORIAS,
 } from '../../services/artsByDestino.js';
 
 // Cache local — populado em initWizard via fetchDestinos()
@@ -16,6 +17,7 @@ const state = {
   destino: null,                         // doc completo (com _raw)
   filterContinent: '',                   // filtro welcome
   filterCountry: '',                     // filtro welcome
+  filterTipo: 'todos',                   // todos | location | hotel | restaurant | train | cruise
   searchQuery: '',
   formatos: new Set(['carrossel', 'story']),
   templateId: 'classico-teal',
@@ -40,6 +42,49 @@ function setView(name) {
 }
 
 // ───── Welcome — destinos ─────
+
+// Abas de tipo (filtra destinos que TÊM fotos de cada categoria)
+function renderTipos() {
+  const wrap = $('#welcome-tipos');
+  if (!wrap) return;
+  const destinos = getDestinos();
+
+  // Conta destinos que têm pelo menos 1 foto de cada categoria
+  const counts = { todos: destinos.length };
+  for (const cat of PICKER_CATEGORIAS) {
+    if (cat.key === 'todas') continue;
+    counts[cat.key] = destinos.filter(d => getCategoriasParaDestino(d).has(cat.key)).length;
+  }
+
+  // Mapping pra labels do welcome (singular vs plural diferente do banco curado)
+  const TIPO_TABS = [
+    { key: 'todos',      label: 'Todos',       icon: '🌍' },
+    { key: 'location',   label: 'Destinos',    icon: '📍' },
+    { key: 'hotel',      label: 'Hotéis',      icon: '🏨' },
+    { key: 'restaurant', label: 'Restaurantes',icon: '🍽' },
+    { key: 'train',      label: 'Trens',       icon: '🚄' },
+    { key: 'cruise',     label: 'Cruzeiros',   icon: '🚢' },
+  ];
+
+  wrap.innerHTML = TIPO_TABS
+    .filter(t => t.key === 'todos' || counts[t.key] > 0)
+    .map(t => `
+      <button class="welcome-tipo ${state.filterTipo === t.key ? 'active' : ''}" data-tipo="${t.key}">
+        <span>${t.icon}</span>
+        <span>${t.label}</span>
+        <span class="welcome-tipo-count">${counts[t.key] || 0}</span>
+      </button>
+    `).join('');
+
+  wrap.querySelectorAll('.welcome-tipo').forEach(btn => {
+    btn.addEventListener('click', () => {
+      state.filterTipo = btn.dataset.tipo;
+      renderTipos();
+      renderDestinos(state.searchQuery);
+    });
+  });
+}
+
 function renderFilters() {
   const fc = $('#welcome-filters');
   if (!fc) return;
@@ -93,6 +138,7 @@ function renderDestinos(filter = '') {
   grid.innerHTML = getDestinos()
     .filter(d => !state.filterContinent || d.continent === state.filterContinent)
     .filter(d => !state.filterCountry   || d.country   === state.filterCountry)
+    .filter(d => state.filterTipo === 'todos' || getCategoriasParaDestino(d).has(state.filterTipo))
     .filter(d => !norm || d.nome.toLowerCase().includes(norm))
     .map(d => {
       const bg = d.capaUrl
@@ -913,6 +959,7 @@ async function initWizard() {
     _destinos = [];
   }
   hideLoader();
+  renderTipos();
   renderFilters();
   renderDestinos();
 
@@ -980,6 +1027,7 @@ const OVERLAY_HTML = `
         <span style="font-size:18px">🔍</span>
         <input id="search-input" placeholder="Busque por destino..." />
       </div>
+      <div class="welcome-tipos" id="welcome-tipos"></div>
       <div class="welcome-filters" id="welcome-filters"></div>
       <div class="destinos-grid" id="destinos-grid"></div>
     </div>

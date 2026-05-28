@@ -229,6 +229,22 @@ export function getBancoCuradoCounts(destino) {
   return counts;
 }
 
+/**
+ * Set das categorias com pelo menos 1 foto disponível pra esse destino.
+ * Usado pelos filtros de tipo na tela welcome (mostrar só destinos
+ * que têm hotel/restaurante/etc cadastrado).
+ */
+export function getCategoriasParaDestino(destino) {
+  const imgs = getImagesForDestino(destino);
+  const set = new Set();
+  for (const img of imgs) {
+    if (img.assetCategory && img.assetCategory !== 'logo') {
+      set.add(img.assetCategory);
+    }
+  }
+  return set;
+}
+
 // API legada (não usada mais — wizard usa getBancoCuradoForDestino direto)
 export async function fetchBancoCurado(destinoId) {
   console.warn('[artsByDestino] fetchBancoCurado(id) deprecated; use getBancoCuradoForDestino(destino)');
