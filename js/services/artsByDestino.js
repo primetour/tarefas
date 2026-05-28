@@ -8,7 +8,7 @@
  *   - buildSlidesForDestino chama fetchTip() e fatia os segmentos em 7 highlights.
  */
 
-import { fetchDestinations, fetchTip, fetchImages } from './portal.js';
+import { DEFAULT_SEGMENTS, fetchDestinations, fetchTip, fetchImages } from './portal.js';
 
 // Caches locais (populados em fetchDestinos)
 let _imagesByCity    = new Map();   // city lowercase trim → array de imagens
@@ -66,52 +66,66 @@ export async function fetchDestinos() {
   });
 }
 
-/* ── Slides: tip real fatiado em highlights ───────────────── */
-
-// Mapeamento das chaves de segmento pra labels usados no manuscrito do slide
-const SEGMENT_LABELS = {
-  informacoes_gerais: 'Visão geral',
-  bairros:            'Bairros',
-  atracoes:           'Atrações',
-  atracoes_criancas:  'Pra crianças',
-  restaurantes:       'Gastronomia',
-  vida_noturna:       'Vida noturna',
-  espetaculos:        'Espetáculos',
-  compras:            'Compras',
-  arredores:          'Arredores',
-  highlights:         'Highlights',
-  agenda_cultural:    'Agenda cultural',
-};
+/* ── Slides: tip real fatiado em highlights ─────────────────
+   Usa DEFAULT_SEGMENTS importado de portal.js (mesma source-of-truth
+   do Portal de Dicas) + extração POR MODE (special_info / simple_list /
+   place_list / agenda) respeitando o schema híbrido title/titulo, description/descricao.
+*/
 
 function stripHtml(s) {
   return String(s || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-function segmentToText(seg) {
-  if (!seg) return '';
-  if (seg.content && typeof seg.content === 'string') {
-    return stripHtml(seg.content);
+function pickItemTitle(it) { return it?.title || it?.titulo || ''; }
+function pickItemDesc(it)  { return it?.description || it?.descricao || ''; }
+
+// Extrai texto curto pra descrição do highlight, respeitando o `mode` do segmento
+// (mesmas regras que o portalGenerator usa internamente).
+function segmentToHighlightText(segDef, segData) {
+  if (!segData) return '';
+
+  if (segDef.mode === 'special_info') {
+    // Informações Gerais: descricao livre é o melhor candidato
+    const inf = segData.info || {};
+    return inf.descricao || inf.dica || '';
   }
-  if (Array.isArray(seg.items) && seg.items.length) {
-    return seg.items.slice(0, 3).map(it => it.name || it.title || it.description || '').filter(Boolean).join(', ');
+
+  if (segDef.mode === 'simple_list') {
+    // Bairros / Arredores: themeDesc (intro do segmento) OU lista dos primeiros 3
+    if (segData.themeDesc && segData.themeDesc.trim()) return segData.themeDesc;
+    const titles = (segData.items || []).map(pickItemTitle).filter(Boolean).slice(0, 4);
+    if (titles.length === 0) return '';
+    if (titles.length === 1) return titles[0];
+    return `${titles.slice(0, -1).join(', ')} e ${titles.slice(-1)}.`;
   }
-  if (seg.info && typeof seg.info === 'object') {
-    return Object.values(seg.info).filter(v => typeof v === 'string' && v.trim()).join(' · ');
+
+  if (segDef.mode === 'place_list' || segDef.mode === 'agenda') {
+    // Atrações / Restaurantes / etc: descrição do 1º item OU lista dos primeiros 3
+    const items = (segData.items || []).filter(pickItemTitle);
+    if (!items.length) return '';
+    const firstWithDesc = items.find(pickItemDesc);
+    if (firstWithDesc) return pickItemDesc(firstWithDesc);
+    const titles = items.slice(0, 3).map(pickItemTitle);
+    return `Lugares como ${titles.join(', ')}.`;
   }
+
+  // Fallback genérico (custom segments)
+  if (typeof segData.content === 'string') return segData.content;
   return '';
 }
 
 function tipToHighlights(tip) {
   if (!tip?.segments) return [];
   const out = [];
-  for (const [key, seg] of Object.entries(tip.segments)) {
-    const txt = segmentToText(seg);
-    if (!txt) continue;
-    const label = SEGMENT_LABELS[key] || key.replace(/_/g, ' ');
+  for (const segDef of DEFAULT_SEGMENTS) {
+    const segData = tip.segments[segDef.key];
+    const txt = segmentToHighlightText(segDef, segData);
+    const clean = stripHtml(txt);
+    if (!clean) continue;
     out.push({
-      nome: label,
-      titulo: label.toUpperCase(),
-      descricao: txt.length > 180 ? txt.slice(0, 177) + '...' : txt,
+      nome: segDef.label,
+      titulo: segDef.label.toUpperCase(),
+      descricao: clean.length > 180 ? clean.slice(0, 177) + '...' : clean,
     });
   }
   return out;
