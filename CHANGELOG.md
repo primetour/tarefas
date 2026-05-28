@@ -6,6 +6,44 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.1+20260528-templates-cf-upload-r2] — 2026-05-28
+
+Release **Sprint v4.63 (2/11)** — CF `uploadTemplate` deployada.
+
+Permite upload real de templates pelo client com validação server-side
+e armazenamento no R2 (mesmo bucket de imagens, prefix novo `templates/`).
+
+**Implementado**:
+- `functions/index.js`:
+  - `'templates/'` adicionado ao `ALLOWED_PREFIXES` de `getR2UploadUrl`
+  - Nova CF callable `uploadTemplate` (512MB, 60s timeout, max 10 instances):
+    - Valida nome (≤120 chars), módulo (cotacoes/portal/banco-roteiros),
+      formato (html/docx/pptx), base64, ownerType (area/global)
+    - Permission check: `_checkTemplatesPermission(uid)` (master OR role
+      com `templates_manage:true` OR role doc `isSystem:true`)
+    - Decode base64 + size check (limite por formato: HTML 5MB, DOCX 10MB,
+      PPTX 15MB) + tamanho mínimo 50 bytes
+    - SHA-256 via Node crypto pra integridade e dedup futura
+    - Validação de extensão se filename fornecido (defensivo)
+    - Rate limit: 10/min IP, 5/min user
+    - Upload PUT pro Worker R2 com `Bearer R2_UPLOAD_TOKEN`
+    - Path: `templates/{module}/{templateId}.{ext}`
+    - Cria doc em `templates/` via Admin SDK (bypass rules) com schema
+      completo: status='active', version=1, versionHistory[], placeholders=[]
+      (populado pela CF extractPlaceholders v4.63.2)
+    - Audit log `templates.create` com hash truncado
+- `js/services/templates.js`:
+  - Helper `uploadTemplate(file, meta)` que lê File como base64 +
+    chama CF + retorna `{templateId, fileUrl, fileSha256, sizeBytes}`
+
+**Deployment**: `firebase deploy --only functions:uploadTemplate` — sucesso.
+
+**Próxima**: v4.63.2 — CF `extractPlaceholders` que abre o arquivo
+uploaded e extrai variáveis `{{...}}` via Handlebars regex + docxtemplater
+inspector. Popula `templates.{id}.placeholders[]` automaticamente.
+
+---
+
 ## [4.63.0+20260528-templates-foundation-schema-rules-role] — 2026-05-28
 
 Release **Sprint v4.63 Foundation (1/11)** — Upload de Templates real.

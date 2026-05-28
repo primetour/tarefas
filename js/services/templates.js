@@ -278,6 +278,52 @@ export function formatFileSize(bytes) {
 }
 
 /**
+ * v4.63.1+ Upload de template via Cloud Function uploadTemplate.
+ *
+ * Decodifica File pra base64 + chama CF que valida + faz upload pro R2 +
+ * cria doc Firestore. Retorna { templateId, fileUrl, fileSha256, sizeBytes }.
+ *
+ * @param {File} file — File object do <input type="file">
+ * @param {Object} meta — { name, module, format, ownerType, ownerId, isDefault }
+ */
+export async function uploadTemplate(file, meta) {
+  if (!canManageTemplates()) throw new Error('Permissão negada (templates_manage).');
+  const valid = validateTemplateFile(file, meta.format);
+  if (!valid.ok) throw new Error(valid.error);
+
+  // Lê arquivo como base64
+  const fileBase64 = await new Promise((res, rej) => {
+    const fr = new FileReader();
+    fr.onload = () => {
+      // result = "data:<mime>;base64,<data>" → pega só a parte base64
+      const dataUrl = fr.result || '';
+      const idx = dataUrl.indexOf(',');
+      res(idx >= 0 ? dataUrl.slice(idx + 1) : dataUrl);
+    };
+    fr.onerror = () => rej(fr.error || new Error('FileReader falhou'));
+    fr.readAsDataURL(file);
+  });
+
+  // Chama CF
+  const { getFunctions, httpsCallable } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js');
+  const { app } = await import('../firebase.js');
+  const fn = httpsCallable(getFunctions(app, 'us-central1'), 'uploadTemplate');
+
+  const payload = {
+    name: meta.name,
+    module: meta.module,
+    format: meta.format,
+    ownerType: meta.ownerType || 'area',
+    ownerId: meta.ownerId || null,
+    isDefault: !!meta.isDefault,
+    originalFilename: file.name || '',
+    fileBase64,
+  };
+  const res = await fn(payload);
+  return res.data; // { templateId, fileUrl, fileSha256, sizeBytes }
+}
+
+/**
  * Valida arquivo antes de upload (mime + size + extensão).
  * Retorna { ok: bool, error: string|null }.
  */

@@ -529,6 +529,7 @@ export const getR2UploadUrl = onCall({
   const ALLOWED_PREFIXES = [
     'agents/', 'logos/', 'portal/', 'tasks/',
     'hoteis/', 'cruzeiros/', 'trens/',   // 4.35.32+ novas categorias do banco
+    'templates/',                          // v4.63.1+ Biblioteca de Templates upload
   ];
   // Continentes (location-based) começam com letra minúscula sem prefixo fixo:
   // brasil/sao-paulo/sao-paulo/...  →  permitido se NÃO bater em nenhum prefixo
@@ -719,6 +720,176 @@ export const getSharePointToken = onCall({
   if (!res.ok) throw new HttpsError('internal', `MS auth ${res.status}: ${await res.text()}`);
   const d = await res.json();
   return { access_token: d.access_token, expires_in: d.expires_in };
+});
+
+/* ═════════════════════════════════════════════════════════
+ * uploadTemplate — v4.63.1+ Upload de Templates (HTML/DOCX/PPTX)
+ *
+ * Sprint v4.63.x: biblioteca de templates uploaded substituível.
+ * - Recebe arquivo base64 + metadata
+ * - Valida mime/size/extensão
+ * - Calcula sha256
+ * - Upload server-side pro R2 worker (path: templates/{module}/{templateId}.{ext})
+ * - Cria doc em `templates/` via Admin SDK
+ * - Retorna { templateId, fileUrl, fileSha256 }
+ *
+ * Permissão: master OR role.permissions.templates_manage === true.
+ * ═════════════════════════════════════════════════════════ */
+const TEMPLATE_FORMATS_CF = {
+  html: { ext: ['html', 'htm'], maxMB: 5,  mime: 'text/html' },
+  docx: { ext: ['docx'],        maxMB: 10, mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' },
+  pptx: { ext: ['pptx'],        maxMB: 15, mime: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' },
+};
+const TEMPLATE_MODULES_CF = ['cotacoes', 'portal', 'banco-roteiros'];
+
+async function _checkTemplatesPermission(uid) {
+  if (!uid) return false;
+  const u = await db.collection('users').doc(uid).get();
+  if (!u.exists) return false;
+  const ud = u.data();
+  if (ud?.isMaster === true) return true;
+  const role = ud?.role || ud?.roleId;
+  if (!role) return false;
+  if (role === 'master') return true;
+  const r = await db.collection('roles').doc(role).get();
+  if (!r.exists) return false;
+  const perms = r.data()?.permissions || {};
+  return perms.templates_manage === true || r.data()?.isSystem === true;
+}
+
+export const uploadTemplate = onCall({
+  cors: ['https://primetour.github.io', 'http://localhost:5000'],
+  secrets: [R2_UPLOAD_TOKEN],
+  memory: '512MiB',
+  timeoutSeconds: 60,
+  maxInstances: 10,
+}, async (request) => {
+  const auth = requireAuth(request);
+  const { name, module, format, fileBase64, ownerType = 'area', ownerId = null,
+          originalFilename = '', isDefault = false } = request.data || {};
+
+  // Validações iniciais
+  if (!name || typeof name !== 'string' || name.length > 120) {
+    throw new HttpsError('invalid-argument', 'name obrigatório (string, max 120 chars).');
+  }
+  if (!TEMPLATE_MODULES_CF.includes(module)) {
+    throw new HttpsError('invalid-argument', `module inválido (${module}). Esperado: ${TEMPLATE_MODULES_CF.join('/')}.`);
+  }
+  const fmtSpec = TEMPLATE_FORMATS_CF[format];
+  if (!fmtSpec) {
+    throw new HttpsError('invalid-argument', `format inválido (${format}). Esperado: html/docx/pptx.`);
+  }
+  if (!fileBase64 || typeof fileBase64 !== 'string') {
+    throw new HttpsError('invalid-argument', 'fileBase64 obrigatório.');
+  }
+  if (!['area', 'global'].includes(ownerType)) {
+    throw new HttpsError('invalid-argument', 'ownerType deve ser area ou global.');
+  }
+  if (ownerType === 'area' && !ownerId) {
+    throw new HttpsError('invalid-argument', 'ownerId obrigatório quando ownerType=area.');
+  }
+
+  // Permission check
+  const canManage = await _checkTemplatesPermission(auth.uid);
+  if (!canManage) {
+    throw new HttpsError('permission-denied', 'Requer permissão templates_manage ou role master.');
+  }
+
+  // Decode base64 + size check
+  let buf;
+  try { buf = Buffer.from(fileBase64, 'base64'); }
+  catch { throw new HttpsError('invalid-argument', 'fileBase64 mal formado.'); }
+  const sizeBytes = buf.length;
+  const maxBytes = fmtSpec.maxMB * 1024 * 1024;
+  if (sizeBytes > maxBytes) {
+    throw new HttpsError('invalid-argument', `Arquivo ${(sizeBytes / 1024 / 1024).toFixed(1)}MB excede limite ${fmtSpec.maxMB}MB pra ${format}.`);
+  }
+  if (sizeBytes < 50) {
+    throw new HttpsError('invalid-argument', 'Arquivo vazio ou muito pequeno.');
+  }
+
+  // sha256 pra integridade + dedup futura
+  const crypto = await import('crypto');
+  const fileSha256 = crypto.createHash('sha256').update(buf).digest('hex');
+
+  // Validate extension if filename provided (defensive)
+  if (originalFilename) {
+    const ext = (originalFilename.split('.').pop() || '').toLowerCase();
+    if (!fmtSpec.ext.includes(ext)) {
+      throw new HttpsError('invalid-argument', `Extensão .${ext} não bate com formato ${format} (esperado: ${fmtSpec.ext.join('/')}).`);
+    }
+  }
+
+  // Rate limit (mais apertado que R2 — upload de template é evento raro)
+  await checkRateLimitIP(request, 'uploadTemplate', 10, 60);
+  await checkRateLimit(auth.uid, 'uploadTemplate', 5, 60);
+
+  // templateId pré-gerado (Firestore auto-id format)
+  const templateId = db.collection('templates').doc().id;
+  const ext = fmtSpec.ext[0];
+  const r2Path = `templates/${module}/${templateId}.${ext}`;
+
+  // Upload pro R2 worker (server-side, com token do secret)
+  const r2WorkerUrl = 'https://primetour-images.rene-castro.workers.dev';
+  const uploadRes = await fetch(`${r2WorkerUrl}/${r2Path}`, {
+    method: 'PUT',
+    headers: {
+      'Authorization': `Bearer ${R2_UPLOAD_TOKEN.value()}`,
+      'Content-Type': fmtSpec.mime,
+    },
+    body: buf,
+  });
+  if (!uploadRes.ok) {
+    const errText = await uploadRes.text().catch(() => '');
+    throw new HttpsError('internal', `R2 upload falhou (${uploadRes.status}): ${errText.slice(0, 200)}`);
+  }
+  const fileUrl = `https://pub-ad909dc0c977450a93ee5faa79c7374d.r2.dev/${r2Path}`;
+
+  // Cria doc Firestore (Admin SDK bypassa rules — mesmo padrão de outros uploads)
+  const now = FieldValue.serverTimestamp();
+  const docData = {
+    name,
+    module,
+    format,
+    fileUrl,
+    fileStoragePath: r2Path,
+    fileSize: sizeBytes,
+    fileSha256,
+    fileMime: fmtSpec.mime,
+    placeholders: [],      // populado pela CF extractPlaceholders (v4.63.2)
+    previewUrl: null,      // populado pela CF generateTemplatePreview (v4.63.5)
+    ownerType,
+    ownerId,
+    isDefault: !!isDefault,
+    status: 'active',
+    version: 1,
+    parentTemplateId: null,
+    versionHistory: [{ version: 1, sha: fileSha256, uploadedAt: new Date() }],
+    duplicatedFrom: null,
+    uploadedAt: now,
+    uploadedBy: auth.uid,
+    updatedAt: now,
+    updatedBy: auth.uid,
+  };
+  await db.collection('templates').doc(templateId).set(docData);
+
+  // Audit log
+  await db.collection('audit_logs').add({
+    action: 'templates.create',
+    userId: auth.uid,
+    entity: 'templates',
+    entityId: templateId,
+    details: { name, module, format, ownerType, ownerId, sizeBytes, fileSha256: fileSha256.slice(0, 16) },
+    severity: 'info',
+    timestamp: now,
+  }).catch(() => {});
+
+  return {
+    templateId,
+    fileUrl,
+    fileSha256,
+    sizeBytes,
+  };
 });
 
 /* ═════════════════════════════════════════════════════════

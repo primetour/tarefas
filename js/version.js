@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 0,
-  build: '20260528-templates-foundation-schema-rules-role',
+  patch: 1,
+  build: '20260528-templates-cf-upload-r2',
 };
 
 /** "1.2.0" */
