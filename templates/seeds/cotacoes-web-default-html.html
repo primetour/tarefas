@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{area.nome}} — Cotação de Viagem</title>
+  <meta property="og:title" content="{{area.nome}} — Cotação de Viagem">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="{{webUrl}}">
+  {{#if images.heroImage}}<meta property="og:image" content="{{images.heroImage}}">{{/if}}
+
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --primary: {{area.corPrimary}};
+      --secondary: {{area.corSecondary}};
+      --gold: #D4A843;
+      --text-dark: #1F2937;
+      --text-muted: #6B7280;
+      --bg-light: #FAFAF7;
+      --bg-card: #FFFFFF;
+      --border-light: #E5E7EB;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Poppins', -apple-system, sans-serif;
+      background: var(--bg-light); color: var(--text-dark);
+      line-height: 1.6;
+    }
+
+    /* Header sticky com brand */
+    header.brand {
+      position: sticky; top: 0; z-index: 100;
+      background: var(--secondary);
+      color: #fff;
+      padding: 16px 24px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      display: flex; align-items: center; gap: 16px;
+    }
+    header.brand .area-logo {
+      max-height: 36px;
+    }
+    header.brand .titles {
+      flex: 1;
+    }
+    header.brand h1 {
+      font-size: 1.1rem; font-weight: 600; letter-spacing: 0.5px;
+    }
+    header.brand .subtitle {
+      font-size: 0.75rem; opacity: 0.85;
+      letter-spacing: 0.05em; text-transform: uppercase;
+    }
+    {{#if customHeaderText}}
+    header.brand .custom-header {
+      font-size: 0.7rem; opacity: 0.8;
+      text-transform: uppercase; letter-spacing: 0.1em;
+    }
+    {{/if}}
+
+    /* Hero */
+    .hero {
+      padding: 64px 24px;
+      background: linear-gradient(135deg, var(--secondary) 0%, color-mix(in srgb, var(--secondary), var(--primary) 30%) 100%);
+      color: #fff;
+      text-align: center;
+    }
+    .hero h2 {
+      font-size: 2.5rem; font-weight: 700;
+      max-width: 720px; margin: 0 auto 12px;
+      line-height: 1.15;
+    }
+    .hero .client-name {
+      font-size: 1.1rem; opacity: 0.9; margin-bottom: 8px;
+    }
+    .hero .period {
+      font-size: 0.95rem; opacity: 0.75;
+    }
+
+    /* Container */
+    main {
+      max-width: 1100px; margin: 0 auto; padding: 48px 24px;
+    }
+
+    /* Cards de seção */
+    .section-card {
+      background: var(--bg-card);
+      border-radius: 12px;
+      padding: 32px;
+      margin-bottom: 24px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .section-card h3 {
+      font-size: 1.5rem; font-weight: 600;
+      color: var(--primary);
+      margin-bottom: 16px;
+      border-left: 4px solid var(--primary);
+      padding-left: 16px;
+    }
+
+    /* Dia a dia */
+    .day {
+      padding: 16px 0;
+      border-bottom: 1px solid var(--border-light);
+    }
+    .day:last-child { border-bottom: none; }
+    .day-num {
+      display: inline-block;
+      background: var(--primary); color: #fff;
+      width: 36px; height: 36px;
+      border-radius: 50%;
+      text-align: center; line-height: 36px;
+      font-weight: 600; margin-right: 12px;
+    }
+    .day-title {
+      font-weight: 600; font-size: 1.05rem;
+      color: var(--text-dark);
+      display: inline-block; vertical-align: middle;
+    }
+    .day-desc {
+      margin-top: 8px; padding-left: 48px;
+      color: var(--text-muted); font-size: 0.9rem;
+    }
+
+    /* Hotéis + Voos cards horizontais */
+    .h-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+      gap: 12px;
+    }
+    .h-card {
+      padding: 14px 16px;
+      background: var(--bg-light);
+      border-left: 3px solid var(--primary);
+      border-radius: 6px;
+    }
+    .h-card .name {
+      font-weight: 600; font-size: 0.95rem;
+    }
+    .h-card .meta {
+      font-size: 0.8rem; color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    /* Pricing — destaque */
+    .pricing-block {
+      background: linear-gradient(135deg, var(--primary) 0%, var(--gold) 100%);
+      color: #fff;
+      padding: 32px;
+      border-radius: 12px;
+      text-align: center;
+      margin: 32px 0;
+    }
+    .pricing-block .total {
+      font-size: 2.2rem; font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .pricing-block .per-person {
+      font-size: 1rem; opacity: 0.9;
+    }
+    .pricing-block .currency {
+      font-size: 0.85rem; opacity: 0.8;
+      margin-top: 8px;
+    }
+
+    /* Footer */
+    footer {
+      background: var(--secondary);
+      color: #fff;
+      padding: 32px 24px; text-align: center;
+      margin-top: 64px;
+    }
+    footer p { font-size: 0.85rem; opacity: 0.85; margin-bottom: 6px; }
+    footer .custom-footer {
+      font-size: 0.8rem; opacity: 0.7;
+      max-width: 480px; margin: 12px auto 0;
+      white-space: pre-line;
+    }
+
+    /* Mobile */
+    @media (max-width: 640px) {
+      .hero { padding: 40px 16px; }
+      .hero h2 { font-size: 1.7rem; }
+      main { padding: 24px 16px; }
+      .section-card { padding: 20px; }
+      .day-desc { padding-left: 0; }
+      .pricing-block .total { font-size: 1.7rem; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header brand -->
+  <header class="brand">
+    {{#if area.logoUrl}}<img src="{{area.logoUrl}}" alt="{{area.nome}}" class="area-logo">{{/if}}
+    <div class="titles">
+      <h1>{{area.nome}} · Cotação de Viagem</h1>
+      {{#if customHeaderText}}<div class="custom-header">{{customHeaderText}}</div>{{/if}}
+    </div>
+  </header>
+
+  <!-- Hero -->
+  <section class="hero">
+    <div class="client-name">Cotação preparada para</div>
+    <h2>{{#if cliente.nome}}{{cliente.nome}}{{else}}{{#if cliente.name}}{{cliente.name}}{{else}}Cliente{{/if}}{{/if}}</h2>
+    {{#if viagem.startDate}}
+    <div class="period">
+      {{#if viagem.nights}}{{viagem.nights}} noites · {{/if}}
+      {{viagem.startDate}}{{#if viagem.endDate}} → {{viagem.endDate}}{{/if}}
+    </div>
+    {{/if}}
+  </section>
+
+  <main>
+
+    <!-- Resumo / Briefing -->
+    {{#if briefing}}
+    <section class="section-card">
+      <h3>Resumo</h3>
+      <p style="white-space:pre-line; color:var(--text-muted);">{{briefing}}</p>
+    </section>
+    {{/if}}
+
+    <!-- Dia a Dia -->
+    {{#if dias.length}}
+    <section class="section-card">
+      <h3>Roteiro Dia a Dia</h3>
+      {{#each dias}}
+      <div class="day">
+        <span class="day-num">{{#if this.number}}{{this.number}}{{else}}{{@index}}{{/if}}</span>
+        <span class="day-title">{{#if this.title}}{{this.title}}{{else}}Dia {{@index}}{{/if}}</span>
+        {{#if this.description}}<div class="day-desc">{{this.description}}</div>{{/if}}
+      </div>
+      {{/each}}
+    </section>
+    {{/if}}
+
+    <!-- Aéreo -->
+    {{#if voos.length}}
+    <section class="section-card">
+      <h3>Aéreo</h3>
+      <div class="h-list">
+        {{#each voos}}
+        <div class="h-card">
+          <div class="name">{{this.airline}} {{this.flightNumber}}</div>
+          <div class="meta">{{this.from}} → {{this.to}}{{#if this.date}} · {{this.date}}{{/if}}</div>
+        </div>
+        {{/each}}
+      </div>
+    </section>
+    {{/if}}
+
+    <!-- Hotéis -->
+    {{#if hoteis.length}}
+    <section class="section-card">
+      <h3>Hospedagem</h3>
+      <div class="h-list">
+        {{#each hoteis}}
+        <div class="h-card">
+          <div class="name">{{this.name}}</div>
+          <div class="meta">
+            {{#if this.nights}}{{this.nights}} noites{{/if}}
+            {{#if this.category}} · {{this.category}}{{/if}}
+            {{#if this.location}} · {{this.location}}{{/if}}
+          </div>
+        </div>
+        {{/each}}
+      </div>
+    </section>
+    {{/if}}
+
+    <!-- Inclusos -->
+    {{#if includes}}
+    <section class="section-card">
+      <h3>Inclusos</h3>
+      <div style="color:var(--text-muted); font-size:0.9rem; white-space:pre-line;">
+        {{#if includes.text}}{{includes.text}}{{else}}{{includes}}{{/if}}
+      </div>
+    </section>
+    {{/if}}
+
+    <!-- Pricing -->
+    {{#if pricing.total}}
+    <div class="pricing-block">
+      <div class="total">{{#if pricing.currency}}{{pricing.currency}}{{else}}R$ {{/if}} {{pricing.total}}</div>
+      {{#if pricing.perPerson}}<div class="per-person">{{pricing.currency}} {{pricing.perPerson}} por pessoa</div>{{/if}}
+      <div class="currency">Cotação sujeita a disponibilidade e variação cambial</div>
+    </div>
+    {{/if}}
+
+  </main>
+
+  <footer>
+    <p>{{area.nome}} · Cotação preparada por {{createdBy.name}}</p>
+    {{#if createdAt}}<p style="opacity:0.7; font-size:0.75rem;">Em {{createdAt}}</p>{{/if}}
+    {{#if customFooterText}}<div class="custom-footer">{{customFooterText}}</div>{{/if}}
+  </footer>
+
+  <!-- JS hooks (opcional — designer pode override window.PRIMETOUR.onDiaClick etc.) -->
+  <script>
+    // Wire dias pra trigger PRIMETOUR.onDiaClick (default noop)
+    document.querySelectorAll('.day').forEach((el, idx) => {
+      el.style.cursor = 'pointer';
+      el.addEventListener('click', () => window.PRIMETOUR?.onDiaClick?.(idx));
+    });
+    document.querySelectorAll('.h-card').forEach((el) => {
+      el.style.cursor = 'pointer';
+      el.addEventListener('click', () => window.PRIMETOUR?.onHotelClick?.(el.querySelector('.name')?.textContent));
+    });
+  </script>
+
+</body>
+</html>
