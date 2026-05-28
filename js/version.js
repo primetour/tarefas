@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 4,
-  build: '20260528-templates-library-ui',
+  patch: 5,
+  build: '20260528-templates-upload-modal-refined',
 };
 
 /** "1.2.0" */

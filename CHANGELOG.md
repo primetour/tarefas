@@ -6,6 +6,49 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.5+20260528-templates-upload-modal-refined] — 2026-05-28
+
+Release **Sprint v4.63 (6/11)** — Modal upload refinado.
+
+Refator do `_openUploadModal` em `templatesLibrary.js`: drag-drop zone
+visual + preview de placeholders detectados pré-submit + sidebar com
+spec do módulo selecionado + auto-detect formato pela extensão.
+
+**Features novas**:
+- **Drag-drop zone** com border dashed + hover state azul + dropzone
+  full visual (não só `<input file>`)
+- **Auto-detect formato** quando arquivo droppado/escolhido (extensão
+  → seta select correspondente)
+- **Card de arquivo** mostra nome, tamanho formatado, mime; botão
+  "Trocar arquivo" pra reset
+- **Preview de placeholders pré-submit** (HTML lê client-side via
+  `FileReader.text()` + regex Handlebars; DOCX/PPTX mostra info
+  "extração no servidor após upload" pois são ZIPs)
+- **Sidebar `PLACEHOLDERS_SPEC`** (280px direita) com lista de
+  variáveis disponíveis por módulo (cotacoes/portal/banco-roteiros);
+  re-render automático ao mudar módulo
+- **Badges de match** nos placeholders detectados:
+  - ✓ verde se reconhecido na spec do módulo
+  - ⚠ amarelo se não reconhecido (warning explicativo)
+- **Contador 0/120** no campo nome com cor vermelha > 90% limite
+- **Esc fecha modal** (handler global removido junto com modal via
+  MutationObserver)
+- **X no canto** + clique fora + Cancel — 3 caminhos pra fechar
+- **Hint na barra de submit** mostra "Validando + enviando pro R2…"
+  durante upload
+
+**Layout**: grid 1fr / 280px (form esquerda, spec direita) — em
+modal 720px max-width.
+
+**E2E target**: testar drag-drop visual, auto-detect formato,
+preview detectado vs spec, upload submit + sucesso.
+
+**Próxima**: v4.63.6 — CF `renderHtmlToPdf` (Puppeteer com
+@sparticuz/chromium) + helper client `renderTemplate({templateId, data})`
+que retorna PDF binário pronto pra download. Início das render engines.
+
+---
+
 ## [4.63.4+20260528-templates-library-ui] — 2026-05-28
 
 Release **Sprint v4.63 (5/11)** — UI Biblioteca de Templates.

@@ -375,59 +375,145 @@ function _renderFilters(filterZone, signal) {
   });
 }
 
-/* ─── Upload modal (placeholder — UI completa em v4.63.5) ─────────── */
+/* ─── Upload modal (v4.63.5+ drag-drop + preview placeholders + spec) ── */
+
+/**
+ * Extrai placeholders Handlebars de texto plano (HTML).
+ * Espelha CF extractPlaceholders (functions/index.js) — manter sincronizado.
+ * DOCX/PPTX só dão pra parsear server-side (precisaria pizzip no browser);
+ * a partir desses, preview client-side mostra "extração roda no servidor".
+ */
+function _previewHandlebars(text) {
+  if (!text) return [];
+  const re = /\{\{\s*(?:#(?:each|if|unless|with)\s+)?([a-zA-Z_][\w.[\]\-]*)\s*[}~]/g;
+  const found = new Set();
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    const p = m[1];
+    if (!p || p.startsWith('@') || p === 'this') continue;
+    found.add(p);
+  }
+  return [...found].sort();
+}
 
 function _openUploadModal(container) {
-  // v4.63.4 stub: input file inline temporário só pra continuar testando.
-  // v4.63.5 vai trazer modal completo com nome, módulo, formato, ownerType, drop zone.
+  // Estado interno do modal
+  const _modal = {
+    selectedFile: null,
+    detectedPlaceholders: [],
+    detectedError: null,
+    selectedModule: TEMPLATE_MODULES[0]?.id || 'cotacoes',
+    selectedFormat: TEMPLATE_FORMATS[0]?.id || 'html',
+  };
+
   const html = `
     <div id="tpl-upload-overlay" style="
-      position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:9999;
-      display:flex;align-items:center;justify-content:center;padding:24px;">
-      <div style="background:var(--bg-card);border-radius:8px;padding:24px;max-width:520px;width:100%;
-        box-shadow:0 20px 40px rgba(0,0,0,0.3);">
-        <h2 style="font-size:1.125rem;margin:0 0 6px;color:var(--text-primary);">📤 Subir template</h2>
-        <p style="font-size:0.8125rem;color:var(--text-muted);margin:0 0 16px;">
-          v4.63.4 — modal simplificado · UI completa em v4.63.5
+      position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:9999;
+      display:flex;align-items:center;justify-content:center;padding:24px;overflow-y:auto;">
+      <div style="background:var(--bg-card);border-radius:10px;padding:24px;
+        max-width:720px;width:100%;box-shadow:0 24px 48px rgba(0,0,0,0.35);">
+
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+          <h2 style="font-size:1.125rem;margin:0;color:var(--text-primary);">📤 Subir template</h2>
+          <button id="up-x" aria-label="Fechar" style="background:none;border:none;font-size:1.25rem;
+            color:var(--text-muted);cursor:pointer;padding:4px 8px;line-height:1;">×</button>
+        </div>
+        <p style="font-size:0.8125rem;color:var(--text-muted);margin:0 0 18px;">
+          HTML serve PDF + Web link · DOCX e PPTX renderizam Word/PowerPoint nativos.
+          Use <code>{{placeholders}}</code> Handlebars no template.
         </p>
 
-        <div style="display:grid;gap:10px;font-size:0.8125rem;">
-          <label>
-            <span style="display:block;color:var(--text-muted);margin-bottom:3px;">Nome</span>
-            <input id="up-name" class="form-input" type="text" maxlength="120"
-              placeholder="Ex: BTG Cotação Padrão Q1 2026" style="width:100%;" />
-          </label>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <div style="display:grid;grid-template-columns:1fr 280px;gap:18px;">
+
+          <!-- Form -->
+          <div style="display:grid;gap:12px;font-size:0.8125rem;">
             <label>
-              <span style="display:block;color:var(--text-muted);margin-bottom:3px;">Módulo</span>
-              <select id="up-module" class="form-input" style="width:100%;">
-                ${TEMPLATE_MODULES.map(m => `<option value="${m.id}">${m.icon} ${m.label}</option>`).join('')}
+              <span style="display:block;color:var(--text-secondary);margin-bottom:4px;font-weight:500;">Nome</span>
+              <input id="up-name" class="form-input" type="text" maxlength="120"
+                placeholder="Ex: BTG Cotação Padrão Q1 2026" style="width:100%;" />
+              <span id="up-name-counter" style="display:block;font-size:0.65rem;color:var(--text-muted);margin-top:3px;text-align:right;">0/120</span>
+            </label>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+              <label>
+                <span style="display:block;color:var(--text-secondary);margin-bottom:4px;font-weight:500;">Módulo</span>
+                <select id="up-module" class="form-input" style="width:100%;">
+                  ${TEMPLATE_MODULES.map(m => `<option value="${m.id}">${m.icon} ${m.label}</option>`).join('')}
+                </select>
+              </label>
+              <label>
+                <span style="display:block;color:var(--text-secondary);margin-bottom:4px;font-weight:500;">Formato</span>
+                <select id="up-format" class="form-input" style="width:100%;">
+                  ${TEMPLATE_FORMATS.map(x => `<option value="${x.id}">${x.label}</option>`).join('')}
+                </select>
+              </label>
+            </div>
+
+            <label>
+              <span style="display:block;color:var(--text-secondary);margin-bottom:4px;font-weight:500;">Área dona</span>
+              <select id="up-owner" class="form-input" style="width:100%;">
+                <option value="global">🌐 Global (todas as áreas podem usar)</option>
+                ${_state.areas.map(a => `<option value="${a.id}">${_esc(a.name)}</option>`).join('')}
               </select>
             </label>
-            <label>
-              <span style="display:block;color:var(--text-muted);margin-bottom:3px;">Formato</span>
-              <select id="up-format" class="form-input" style="width:100%;">
-                ${TEMPLATE_FORMATS.map(x => `<option value="${x.id}">${x.label}</option>`).join('')}
-              </select>
-            </label>
+
+            <!-- Drop zone -->
+            <div>
+              <span style="display:block;color:var(--text-secondary);margin-bottom:4px;font-weight:500;font-size:0.8125rem;">Arquivo</span>
+              <div id="up-dropzone" style="
+                border:2px dashed var(--border-subtle);border-radius:8px;
+                padding:24px 16px;text-align:center;background:var(--bg-surface);
+                cursor:pointer;transition:all 0.15s;">
+                <div id="up-dropzone-idle" style="display:block;">
+                  <div style="font-size:1.5rem;margin-bottom:6px;">📁</div>
+                  <div style="font-size:0.8125rem;color:var(--text-secondary);font-weight:500;">
+                    Arraste o arquivo aqui ou <span style="color:var(--brand-blue,#3B82F6);text-decoration:underline;">clique pra escolher</span>
+                  </div>
+                  <div style="font-size:0.7rem;color:var(--text-muted);margin-top:6px;">
+                    HTML ≤5MB · DOCX ≤10MB · PPTX ≤15MB
+                  </div>
+                </div>
+                <div id="up-dropzone-file" style="display:none;">
+                  <div style="font-size:0.875rem;font-weight:600;color:var(--text-primary);" id="up-file-name">—</div>
+                  <div style="font-size:0.7rem;color:var(--text-muted);margin-top:3px;" id="up-file-meta">—</div>
+                  <button id="up-file-clear" style="background:none;border:none;color:var(--brand-blue,#3B82F6);
+                    font-size:0.7rem;cursor:pointer;margin-top:6px;text-decoration:underline;">
+                    Trocar arquivo
+                  </button>
+                </div>
+                <input id="up-file" type="file" accept=".html,.htm,.docx,.pptx" style="display:none;" />
+              </div>
+            </div>
           </div>
-          <label>
-            <span style="display:block;color:var(--text-muted);margin-bottom:3px;">Área dona</span>
-            <select id="up-owner" class="form-input" style="width:100%;">
-              <option value="global">🌐 Global (todas as áreas podem usar)</option>
-              ${_state.areas.map(a => `<option value="${a.id}">${_esc(a.name)}</option>`).join('')}
-            </select>
-          </label>
-          <label>
-            <span style="display:block;color:var(--text-muted);margin-bottom:3px;">Arquivo</span>
-            <input id="up-file" type="file" accept=".html,.htm,.docx,.pptx" class="form-input" style="width:100%;" />
-            <span style="display:block;font-size:0.7rem;color:var(--text-muted);margin-top:3px;">
-              HTML ≤5MB · DOCX ≤10MB · PPTX ≤15MB · Use {{placeholders}} Handlebars
-            </span>
-          </label>
+
+          <!-- Sidebar: spec de placeholders -->
+          <div style="background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:8px;
+            padding:14px;font-size:0.75rem;max-height:480px;overflow-y:auto;">
+            <h4 style="margin:0 0 8px;font-size:0.8125rem;color:var(--text-primary);">
+              📚 Variáveis disponíveis
+            </h4>
+            <p style="font-size:0.7rem;color:var(--text-muted);margin:0 0 12px;line-height:1.4;">
+              Use no template como <code>{{var.path}}</code>. Lista varia por módulo.
+            </p>
+            <div id="up-spec-list"></div>
+          </div>
         </div>
 
-        <div style="display:flex;gap:8px;margin-top:18px;justify-content:flex-end;">
+        <!-- Preview de placeholders detectados -->
+        <div id="up-preview" style="margin-top:16px;display:none;
+          background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:8px;padding:12px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <h4 style="margin:0;font-size:0.8125rem;color:var(--text-primary);">
+              🔍 Placeholders detectados no arquivo
+            </h4>
+            <span id="up-preview-count" style="font-size:0.7rem;color:var(--text-muted);"></span>
+          </div>
+          <div id="up-preview-list" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
+          <p id="up-preview-msg" style="margin:8px 0 0;font-size:0.7rem;color:var(--text-muted);"></p>
+        </div>
+
+        <div style="display:flex;gap:8px;margin-top:18px;justify-content:flex-end;align-items:center;">
+          <span id="up-submit-hint" style="font-size:0.7rem;color:var(--text-muted);"></span>
           <button class="btn btn-secondary" id="up-cancel">Cancelar</button>
           <button class="btn btn-primary" id="up-submit">Subir template</button>
         </div>
@@ -440,22 +526,234 @@ function _openUploadModal(container) {
   document.body.appendChild(overlay.firstElementChild);
 
   const close = () => {
-    const ov = document.getElementById('tpl-upload-overlay');
-    if (ov) ov.remove();
+    document.getElementById('tpl-upload-overlay')?.remove();
   };
 
+  // Esc fecha (CLAUDE.md §11.k overlay handler — listener removido junto com modal)
+  const keyHandler = (e) => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', keyHandler);
+  const observer = new MutationObserver(() => {
+    if (!document.getElementById('tpl-upload-overlay')) {
+      document.removeEventListener('keydown', keyHandler);
+      observer.disconnect();
+    }
+  });
+  observer.observe(document.body, { childList: true });
+
+  // Fechar via X / cancel / clique fora
+  document.getElementById('up-x')?.addEventListener('click', close);
   document.getElementById('up-cancel')?.addEventListener('click', close);
   document.getElementById('tpl-upload-overlay')?.addEventListener('click', (e) => {
     if (e.target.id === 'tpl-upload-overlay') close();
   });
 
-  document.getElementById('up-submit')?.addEventListener('click', async () => {
-    const name = document.getElementById('up-name')?.value?.trim();
-    const module = document.getElementById('up-module')?.value;
-    const format = document.getElementById('up-format')?.value;
-    const ownerVal = document.getElementById('up-owner')?.value;
-    const fileEl = document.getElementById('up-file');
-    const file = fileEl?.files?.[0];
+  const nameEl   = document.getElementById('up-name');
+  const moduleEl = document.getElementById('up-module');
+  const formatEl = document.getElementById('up-format');
+  const ownerEl  = document.getElementById('up-owner');
+  const fileEl   = document.getElementById('up-file');
+  const dropZone = document.getElementById('up-dropzone');
+  const submitBtn = document.getElementById('up-submit');
+
+  // Counter nome
+  const nameCounter = document.getElementById('up-name-counter');
+  nameEl?.addEventListener('input', () => {
+    const len = (nameEl.value || '').length;
+    nameCounter.textContent = `${len}/120`;
+    nameCounter.style.color = len > 110 ? 'var(--color-danger,#EF4444)' : 'var(--text-muted)';
+  });
+
+  // Spec sidebar — re-render quando módulo muda
+  const renderSpec = () => {
+    const mod = moduleEl?.value || _modal.selectedModule;
+    const spec = PLACEHOLDERS_SPEC[mod] || [];
+    const list = document.getElementById('up-spec-list');
+    if (!list) return;
+    list.innerHTML = spec.map(s => `
+      <div style="margin-bottom:6px;padding-bottom:6px;border-bottom:1px solid var(--border-subtle);">
+        <code style="font-size:0.7rem;color:var(--brand-blue,#3B82F6);font-weight:600;">{{${_esc(s.key)}}}</code>
+        <div style="font-size:0.65rem;color:var(--text-muted);margin-top:2px;line-height:1.3;">${_esc(s.desc)}</div>
+      </div>
+    `).join('') || `<p style="font-size:0.7rem;color:var(--text-muted);">Sem spec disponível pra esse módulo.</p>`;
+    _modal.selectedModule = mod;
+    _updatePreviewBadges();
+  };
+  renderSpec();
+  moduleEl?.addEventListener('change', renderSpec);
+
+  formatEl?.addEventListener('change', () => {
+    _modal.selectedFormat = formatEl.value;
+    // Re-validar se já tem arquivo
+    if (_modal.selectedFile) handleFile(_modal.selectedFile);
+  });
+
+  // Drag-drop visual
+  dropZone?.addEventListener('click', (e) => {
+    if (e.target.id === 'up-file-clear') return;
+    fileEl?.click();
+  });
+  ['dragenter', 'dragover'].forEach(ev => {
+    dropZone?.addEventListener(ev, (e) => {
+      e.preventDefault();
+      dropZone.style.borderColor = 'var(--brand-blue,#3B82F6)';
+      dropZone.style.background = 'rgba(59,130,246,0.08)';
+    });
+  });
+  ['dragleave', 'drop'].forEach(ev => {
+    dropZone?.addEventListener(ev, (e) => {
+      e.preventDefault();
+      dropZone.style.borderColor = 'var(--border-subtle)';
+      dropZone.style.background = 'var(--bg-surface)';
+    });
+  });
+  dropZone?.addEventListener('drop', (e) => {
+    e.preventDefault();
+    const f = e.dataTransfer?.files?.[0];
+    if (f) {
+      // Define no input pra mesmo handler
+      const dt = new DataTransfer();
+      dt.items.add(f);
+      fileEl.files = dt.files;
+      handleFile(f);
+    }
+  });
+
+  fileEl?.addEventListener('change', () => {
+    const f = fileEl.files?.[0];
+    if (f) handleFile(f);
+  });
+
+  document.getElementById('up-file-clear')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    _modal.selectedFile = null;
+    _modal.detectedPlaceholders = [];
+    _modal.detectedError = null;
+    fileEl.value = '';
+    document.getElementById('up-dropzone-idle').style.display = 'block';
+    document.getElementById('up-dropzone-file').style.display = 'none';
+    document.getElementById('up-preview').style.display = 'none';
+  });
+
+  async function handleFile(file) {
+    _modal.selectedFile = file;
+    document.getElementById('up-dropzone-idle').style.display = 'none';
+    document.getElementById('up-dropzone-file').style.display = 'block';
+    document.getElementById('up-file-name').textContent = file.name;
+    document.getElementById('up-file-meta').textContent =
+      `${formatFileSize(file.size)} · ${file.type || 'tipo desconhecido'}`;
+
+    // Auto-detect formato pela extensão
+    const ext = (file.name.split('.').pop() || '').toLowerCase();
+    let autoFormat = null;
+    for (const f of TEMPLATE_FORMATS) {
+      if (f.ext.includes(ext)) { autoFormat = f.id; break; }
+    }
+    if (autoFormat && formatEl.value !== autoFormat) {
+      formatEl.value = autoFormat;
+      _modal.selectedFormat = autoFormat;
+    }
+
+    // Validate
+    const valid = validateTemplateFile(file, formatEl.value);
+    const previewEl = document.getElementById('up-preview');
+    const previewList = document.getElementById('up-preview-list');
+    const previewMsg = document.getElementById('up-preview-msg');
+    const previewCount = document.getElementById('up-preview-count');
+
+    if (!valid.ok) {
+      previewEl.style.display = 'block';
+      previewList.innerHTML = '';
+      previewMsg.textContent = `⚠ ${valid.error}`;
+      previewMsg.style.color = 'var(--color-danger,#EF4444)';
+      previewCount.textContent = '';
+      return;
+    }
+
+    // Extract placeholders (HTML client-side, DOCX/PPTX deferido pro servidor)
+    if (formatEl.value === 'html') {
+      try {
+        const text = await file.text();
+        _modal.detectedPlaceholders = _previewHandlebars(text);
+        _modal.detectedError = null;
+        previewEl.style.display = 'block';
+        _renderDetected();
+      } catch (e) {
+        _modal.detectedError = e.message;
+        previewMsg.textContent = `⚠ Erro lendo arquivo: ${e.message}`;
+        previewMsg.style.color = 'var(--color-danger,#EF4444)';
+      }
+    } else {
+      // DOCX/PPTX são ZIPs — parse só no servidor
+      _modal.detectedPlaceholders = [];
+      previewEl.style.display = 'block';
+      previewList.innerHTML = '';
+      previewMsg.textContent = `ℹ Extração de placeholders pra ${formatEl.value.toUpperCase()} acontece no servidor após upload.`;
+      previewMsg.style.color = 'var(--text-muted)';
+      previewCount.textContent = '';
+    }
+  }
+
+  function _renderDetected() {
+    const previewList = document.getElementById('up-preview-list');
+    const previewMsg = document.getElementById('up-preview-msg');
+    const previewCount = document.getElementById('up-preview-count');
+    const detected = _modal.detectedPlaceholders;
+    if (!detected.length) {
+      previewList.innerHTML = '';
+      previewMsg.textContent = '⚠ Nenhum placeholder Handlebars detectado. Template gerará output estático.';
+      previewMsg.style.color = 'var(--color-warning,#F59E0B)';
+      previewCount.textContent = '0';
+      return;
+    }
+    previewCount.textContent = `${detected.length} encontrados`;
+    _updatePreviewBadges();
+  }
+
+  function _updatePreviewBadges() {
+    const previewList = document.getElementById('up-preview-list');
+    const previewMsg = document.getElementById('up-preview-msg');
+    if (!previewList || !_modal.detectedPlaceholders.length) return;
+    const spec = PLACEHOLDERS_SPEC[_modal.selectedModule] || [];
+    const specKeys = new Set(spec.map(s => s.key.replace(/\.\[i\]\./g, '.').replace(/\[i\]/g, '')));
+    // Normalize: remove índices [N] pra match
+    const normalize = (k) => k.replace(/\[\d+\]/g, '').replace(/\.\d+\./g, '.');
+
+    let unknown = 0;
+    previewList.innerHTML = _modal.detectedPlaceholders.map(p => {
+      const norm = normalize(p);
+      const recognized = specKeys.has(p) || specKeys.has(norm)
+        || [...specKeys].some(k => norm.startsWith(k + '.') || k.startsWith(norm + '.'));
+      if (!recognized) unknown++;
+      const color = recognized ? 'var(--color-success,#10B981)' : 'var(--color-warning,#F59E0B)';
+      const bg = recognized ? 'rgba(16,185,129,0.1)' : 'rgba(245,158,11,0.1)';
+      return `<span style="
+        display:inline-flex;align-items:center;gap:4px;
+        background:${bg};color:${color};
+        font-size:0.7rem;font-weight:500;padding:3px 8px;border-radius:999px;
+        font-family:monospace;" title="${recognized ? 'Reconhecido na spec' : 'Não reconhecido — verifique nome ou adicione na spec'}">
+        ${recognized ? '✓' : '⚠'} ${_esc(p)}
+      </span>`;
+    }).join('');
+
+    const previewMsgEl = document.getElementById('up-preview-msg');
+    if (previewMsgEl) {
+      if (unknown > 0) {
+        previewMsgEl.textContent = `⚠ ${unknown} placeholder(s) não reconhecido(s) na spec do módulo ${_modal.selectedModule}. Verifique se o nome está correto.`;
+        previewMsgEl.style.color = 'var(--color-warning,#F59E0B)';
+      } else {
+        previewMsgEl.textContent = `✓ Todos os ${_modal.detectedPlaceholders.length} placeholders batem com a spec do módulo.`;
+        previewMsgEl.style.color = 'var(--color-success,#10B981)';
+      }
+    }
+  }
+
+  // Submit
+  submitBtn?.addEventListener('click', async () => {
+    const name = nameEl?.value?.trim();
+    const module = moduleEl?.value;
+    const format = formatEl?.value;
+    const ownerVal = ownerEl?.value;
+    const file = _modal.selectedFile;
 
     if (!name) { toast.error('Nome obrigatório'); return; }
     if (!file) { toast.error('Selecione um arquivo'); return; }
@@ -463,8 +761,9 @@ function _openUploadModal(container) {
     const valid = validateTemplateFile(file, format);
     if (!valid.ok) { toast.error(valid.error); return; }
 
-    const submitBtn = document.getElementById('up-submit');
     if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Subindo…'; }
+    const hintEl = document.getElementById('up-submit-hint');
+    if (hintEl) hintEl.textContent = 'Validando + enviando pro R2…';
 
     try {
       const result = await uploadTemplateService(file, {
@@ -472,13 +771,13 @@ function _openUploadModal(container) {
         ownerType: ownerVal === 'global' ? 'global' : 'area',
         ownerId:   ownerVal === 'global' ? null     : ownerVal,
       });
-      toast.success(`Template criado (${result.templateId}). Extração de placeholders rodando em background.`);
+      toast.success(`Template "${name}" criado. Extração de placeholders rodando em background (~3s).`);
       close();
-      // Re-render lista
       await renderTemplatesLibrary(container);
     } catch (e) {
       toast.error('Erro: ' + (e.message || e));
       if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Subir template'; }
+      if (hintEl) hintEl.textContent = '';
     }
   });
 }
