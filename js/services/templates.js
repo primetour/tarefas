@@ -231,7 +231,9 @@ export async function createTemplate(data) {
 
 /**
  * Atualiza metadata de template (nome, isDefault, etc.). NÃO sobe arquivo
- * novo — pra isso, use `createNewVersion()` (v4.63.10).
+ * novo — versionamento real fica pra v4.64+ (audit pós-sprint zumbi #3:
+ * `createNewVersion()` foi prometido mas nunca implementado; pra subir
+ * arquivo novo, hoje só fazendo upload novo + arquivar o antigo).
  */
 export async function updateTemplate(id, patch) {
   if (!canManageTemplates()) throw new Error('Permissão negada (templates_manage).');

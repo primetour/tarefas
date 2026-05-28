@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 13,
-  build: '20260528-security-ssrf-lockdown',
+  patch: 14,
+  build: '20260528-perf-progress-orphan-warn',
 };
 
 /** "1.2.0" */

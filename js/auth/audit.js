@@ -158,7 +158,9 @@ export const ACTION_LABELS = {
   'templates.archive':       'Template arquivado',
   'templates.delete':        'Template excluído (hard delete + Storage)',
   'templates.duplicate':     'Template duplicado pra outra área',
-  'templates.new_version':   'Nova versão de template uploaded',
+  // v4.63.14+ Zumbi #3 (audit pós-sprint): removida 'templates.new_version'
+  // — comentário em updateTemplate prometia createNewVersion() mas função
+  // nunca existiu. Versionamento real fica pra release futura (v4.64+).
   'templates.fallback':      'Template configurado falhou → pipeline antigo (v4.63.12+)',
   // Banco de Imagens
   'portal_images.upload':    'Imagem enviada ao banco',

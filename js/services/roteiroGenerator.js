@@ -794,14 +794,21 @@ export async function generateRoteiroPDF(roteiro, area = null) {
   const _tplId = area?.templateRefs?.[_refKey]?.html
               || area?.templateRefs?.roteiros?.html;  // alias retrocompat
   if (_tplId) {
+    // v4.63.14+ Perf #1 (audit pós-sprint): progress indicator dinâmico.
+    // Antes: 10s silenciosos, user achava que travou.
+    let _progressId = null;
+    try { _progressId = toast.info('Carregando template…', 'Gerando PDF', 90_000); } catch {}
     try {
       const { renderTemplate, downloadBlob } = await import('./templates.js');
       const { roteiroToTemplateData, bancoToTemplateData } = await import('./templateAdapter.js');
+      try { if (_progressId) toast.update(_progressId, 'Renderizando PDF (Puppeteer ~5-10s)…'); } catch {}
       const data = _refKey === 'banco-roteiros'
         ? bancoToTemplateData(roteiro, area)
         : roteiroToTemplateData(roteiro, area);
       const result = await renderTemplate(_tplId, data);
+      try { if (_progressId) toast.update(_progressId, 'Baixando arquivo…'); } catch {}
       downloadBlob(result.blob, result.filename);
+      try { if (_progressId) toast.remove(_progressId); } catch {}
       try {
         if (roteiro.id) {
           await logGeneration({
@@ -819,6 +826,7 @@ export async function generateRoteiroPDF(roteiro, area = null) {
       // v4.63.12+ Fix HIGH Bug #7/#8/#9 (audit pós-sprint): fallback graceful
       // antes silencioso — user veia pipeline antigo achando que template
       // estava aplicado. Agora avisa explicitamente + audit log.
+      try { if (_progressId) toast.remove(_progressId); } catch {}
       console.warn('[roteiroGenerator] template falhou, fallback jsPDF:', e?.message || e);
       try {
         toast.warning(`Template configurado falhou (${e?.message?.slice(0,80) || 'erro desconhecido'}). Gerando com padrão do sistema. Verifique no Editor de Áreas → Templates.`);
@@ -2182,16 +2190,23 @@ export async function generateRoteiroPPTX(roteiro, area = null) {
   const _tplId = area?.templateRefs?.[_refKey]?.pptx
               || area?.templateRefs?.roteiros?.pptx;
   if (_tplId) {
+    // v4.63.14+ Perf #1: progress indicator dinâmico
+    let _progressId = null;
+    try { _progressId = toast.info('Carregando template…', 'Gerando PPTX', 90_000); } catch {}
     try {
       const { renderTemplate, downloadBlob } = await import('./templates.js');
       const { roteiroToTemplateData, bancoToTemplateData } = await import('./templateAdapter.js');
+      try { if (_progressId) toast.update(_progressId, 'Renderizando PPTX (docxtemplater ~3s)…'); } catch {}
       const data = _refKey === 'banco-roteiros' ? bancoToTemplateData(roteiro, area) : roteiroToTemplateData(roteiro, area);
       const result = await renderTemplate(_tplId, data);
+      try { if (_progressId) toast.update(_progressId, 'Baixando arquivo…'); } catch {}
       downloadBlob(result.blob, result.filename);
+      try { if (_progressId) toast.remove(_progressId); } catch {}
       try { await logGeneration({ roteiroId: roteiro.id, format: 'pptx', areaId: area?.id || roteiro.areaId || '', destinations: (roteiro.travel?.destinations || []).map(d => d.city || d.country), via: 'template', templateId: _tplId }); } catch {}
       return { filename: result.filename };
     } catch (e) {
       // v4.63.12+ fallback graceful agora avisa user + audit log
+      try { if (_progressId) toast.remove(_progressId); } catch {}
       console.warn('[roteiroGenerator] template PPTX falhou, fallback pptxgenjs:', e?.message || e);
       try { toast.warning(`Template PPTX falhou (${e?.message?.slice(0,80) || 'erro'}). Gerando com padrão do sistema.`); } catch {}
       try {
@@ -2772,16 +2787,23 @@ export async function generateRoteiroDOCX(roteiro, area = null) {
   const _tplId = area?.templateRefs?.[_refKey]?.docx
               || area?.templateRefs?.roteiros?.docx;
   if (_tplId) {
+    // v4.63.14+ Perf #1: progress indicator dinâmico
+    let _progressId = null;
+    try { _progressId = toast.info('Carregando template…', 'Gerando DOCX', 90_000); } catch {}
     try {
       const { renderTemplate, downloadBlob } = await import('./templates.js');
       const { roteiroToTemplateData, bancoToTemplateData } = await import('./templateAdapter.js');
+      try { if (_progressId) toast.update(_progressId, 'Renderizando DOCX (docxtemplater ~3s)…'); } catch {}
       const data = _refKey === 'banco-roteiros' ? bancoToTemplateData(roteiro, area) : roteiroToTemplateData(roteiro, area);
       const result = await renderTemplate(_tplId, data);
+      try { if (_progressId) toast.update(_progressId, 'Baixando arquivo…'); } catch {}
       downloadBlob(result.blob, result.filename);
+      try { if (_progressId) toast.remove(_progressId); } catch {}
       try { await logGeneration({ roteiroId: roteiro.id, format: 'docx', areaId: area?.id || roteiro.areaId || '', destinations: (roteiro.travel?.destinations || []).map(d => d.city || d.country), via: 'template', templateId: _tplId }); } catch {}
       return { filename: result.filename };
     } catch (e) {
       // v4.63.12+ fallback graceful agora avisa user + audit log
+      try { if (_progressId) toast.remove(_progressId); } catch {}
       console.warn('[roteiroGenerator] template DOCX falhou, fallback docx.js:', e?.message || e);
       try { toast.warning(`Template DOCX falhou (${e?.message?.slice(0,80) || 'erro'}). Gerando com padrão do sistema.`); } catch {}
       try {

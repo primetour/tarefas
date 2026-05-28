@@ -674,9 +674,27 @@ function showAreaModal(area, areas = []) {
     const grid = modal.querySelector('#area-tpl-refs-grid');
     if (!grid) return;
     try {
-      const { fetchTemplates, TEMPLATE_MODULES, TEMPLATE_FORMATS } = await import('../services/templates.js');
+      const { fetchTemplates, fetchTemplate, TEMPLATE_MODULES, TEMPLATE_FORMATS } = await import('../services/templates.js');
       const all = await fetchTemplates({ status: 'active' });
       const currentRefs = area?.templateRefs || {};
+
+      // v4.63.14+ Fix Bug #8/#9 (audit pós-sprint): coleta orphan refs (IDs
+      // configurados em area.templateRefs mas que sumiram da lista active —
+      // archived, deleted, ownerType mudou). Fetch individual pra mostrar
+      // mensagem específica ao user (em vez de orphan virar select vazio).
+      const orphanFetched = new Map();
+      const refIds = [];
+      for (const modKey of Object.keys(currentRefs || {})) {
+        const fmtMap = currentRefs[modKey] || {};
+        for (const fmtKey of Object.keys(fmtMap)) {
+          const id = fmtMap[fmtKey];
+          if (id && !all.some(t => t.id === id)) refIds.push(id);
+        }
+      }
+      await Promise.all(refIds.map(async id => {
+        try { const t = await fetchTemplate(id); if (t) orphanFetched.set(id, t); }
+        catch {}
+      }));
 
       // SUPPORTED_FMTS: mesma lógica do exportsModuleBlock — só formatos que generators usam
       // v4.63.12+ Fix Zumbi #1 (audit pós-sprint): key canônica é 'cotacoes'
@@ -699,19 +717,35 @@ function showAreaModal(area, areas = []) {
             && (t.ownerType === 'global' || (t.ownerType === 'area' && t.ownerId === area?.id))
           );
           const currentVal = currentRefs?.[mod.id]?.[fmtId] || '';
+          // v4.63.14+ Fix Bug #8/#9 (audit pós-sprint): se templateRef aponta
+          // pra ID que NÃO está na lista de compatíveis (arquivado, deleted,
+          // mudou de owner), avisar inline em vez de sumir silenciosamente.
+          const orphanRef = currentVal && !compatible.some(t => t.id === currentVal);
+          const orphanTpl = orphanRef ? (all.find(t => t.id === currentVal) || orphanFetched.get(currentVal)) : null;
+          const orphanReason = orphanRef
+            ? (orphanTpl
+                ? (orphanTpl.status === 'archived'
+                    ? `Template "${orphanTpl.name}" está arquivado`
+                    : `Template "${orphanTpl.name}" mudou de owner ou formato`)
+                : `Template ${currentVal.slice(0,12)}… não existe (excluído)`)
+            : '';
           return `
             <div style="display:grid;grid-template-columns:130px 1fr;gap:10px;align-items:center;padding:6px 0;">
               <span style="font-size:0.75rem;color:var(--text-muted);">${esc(fmt.label)}</span>
-              <select class="area-tpl-ref-select form-input"
-                data-tpl-mod="${esc(mod.id)}" data-tpl-fmt="${esc(fmtId)}"
-                style="width:100%;font-size:0.8125rem;">
-                <option value="">— Usar padrão do sistema (sem template) —</option>
-                ${compatible.map(t => `
-                  <option value="${esc(t.id)}" ${t.id === currentVal ? 'selected' : ''}>
-                    ${esc(t.name)}${t.ownerType === 'global' ? ' · 🌐' : ''}${t.isDefault ? ' · ★ default' : ''}
-                  </option>
-                `).join('')}
-              </select>
+              <div>
+                <select class="area-tpl-ref-select form-input"
+                  data-tpl-mod="${esc(mod.id)}" data-tpl-fmt="${esc(fmtId)}"
+                  style="width:100%;font-size:0.8125rem;${orphanRef ? 'border-color:var(--color-warning,#F59E0B);' : ''}">
+                  <option value="">— Usar padrão do sistema (sem template) —</option>
+                  ${orphanRef ? `<option value="${esc(currentVal)}" selected style="color:var(--color-warning,#F59E0B);">⚠ ${esc(orphanReason)}</option>` : ''}
+                  ${compatible.map(t => `
+                    <option value="${esc(t.id)}" ${t.id === currentVal ? 'selected' : ''}>
+                      ${esc(t.name)}${t.ownerType === 'global' ? ' · 🌐' : ''}${t.isDefault ? ' · ★ default' : ''}
+                    </option>
+                  `).join('')}
+                </select>
+                ${orphanRef ? `<p style="font-size:0.6875rem;color:var(--color-warning,#F59E0B);margin:3px 0 0;">⚠ Geração vai cair pro padrão do sistema. Selecione novo template ou — Usar padrão —.</p>` : ''}
+              </div>
             </div>
           `;
         }).join('');

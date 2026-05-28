@@ -6,6 +6,56 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.14+20260528-perf-progress-orphan-warn] — 2026-05-28
+
+Release **pós-auditoria Sprint v4.63 (parte 3)** — Perf #1 progress indicator,
+Zumbi #3 cleanup, Bug #8/#9 orphan template warn.
+
+**Perf #1 (HIGH UX) — Progress indicator nos generators**:
+Antes desta release, gerar PDF via template = 10s de botão spinner mudo,
+user achava que travou (CLAUDE.md §11.b: indicador dinâmico obrigatório).
+Agora `toast.info(...)` persistent (90s timeout) com 3 steps atualizados
+via novo método `toast.update(id, message)`:
+
+1. "Carregando template…" (durante import dinâmico do módulo)
+2. "Renderizando PDF (Puppeteer ~5-10s)…" / "Renderizando DOCX (docxtemplater ~3s)…"
+3. "Baixando arquivo…" (antes do downloadBlob)
+
+Toast dismissed automaticamente em success OU em falha (antes do fallback warn).
+Aplicado em: `roteiroGenerator` (PDF, DOCX, PPTX branches) + `portalGenerator`.
+
+**Zumbi #3 (HIGH) — `templates.new_version` phantom**:
+Comentário em `updateTemplate()` prometia `createNewVersion()` (v4.63.10),
+mas função nunca existiu. `audit.js` declarava action `templates.new_version`
+sem callsite. Removidos: action do map e comentário enganoso. Versionamento
+real fica pra v4.64+ (pra subir arquivo novo hoje: upload novo + arquivar
+o antigo).
+
+**Bug #8/#9 (MEDIUM UX) — Orphan template ref warn**:
+Antes: se `area.templateRefs[mod][fmt]` apontava pra template arquivado/
+deletado, o dropdown sumia a referência sem aviso. User configurava algo,
+voltava semana depois e a config "evaporava". Generators caíam pro pipeline
+antigo silenciosamente.
+
+Agora: detecta refs órfãs em batch (Promise.all `fetchTemplate(id)` pros
+IDs que sumiram da lista active), mostra opção `<option>⚠ Template "X" está
+arquivado</option>` selecionada com border amarelo + frase explicativa
+abaixo do select. User pode escolher novo template OU explicitamente —Usar
+padrão—.
+
+**Novo método `toast.update(id, message, title?)`**:
+Atualiza mensagem de toast existente sem recriar. Retorna `true/false`
+conforme toast existir. Habilita progress steps em qualquer outro lugar
+do app.
+
+**Arquivos tocados**: `js/components/toast.js` (novo método update),
+`js/services/roteiroGenerator.js` (3 branches), `js/services/portalGenerator.js`,
+`js/auth/audit.js` (remove phantom action), `js/services/templates.js`
+(comentário updateTemplate), `js/pages/portalAreas.js` (orphan detection +
+warning UI), `index.html`, `js/version.js`, `CHANGELOG.md`.
+
+---
+
 ## [4.63.13+20260528-security-ssrf-lockdown] — 2026-05-28
 
 Release **pós-auditoria Sprint v4.63 (parte 2)** — security lockdown.

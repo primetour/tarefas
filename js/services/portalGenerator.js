@@ -460,14 +460,25 @@ export async function generateTip({ tip, area, dest, segments, format, extraTips
     const _tplFmtKey = format === 'pdf' ? 'html' : format;  // PDF é renderizado a partir de HTML
     const _tplId = area?.templateRefs?.portal?.[_tplFmtKey];
     if (_tplId) {
+      // v4.63.14+ Perf #1: progress indicator dinâmico
+      let _progressId = null;
+      let _toast = null;
+      try {
+        _toast = (await import('../components/toast.js')).toast;
+        _progressId = _toast.info('Carregando template…', `Gerando ${format.toUpperCase()}`, 90_000);
+      } catch {}
       try {
         const { renderTemplate, downloadBlob } = await import('./templates.js');
         const { portalToTemplateData } = await import('./templateAdapter.js');
+        try { if (_progressId && _toast) _toast.update(_progressId, format === 'pdf' ? 'Renderizando PDF (Puppeteer ~5-10s)…' : `Renderizando ${format.toUpperCase()} (docxtemplater ~3s)…`); } catch {}
         const data = portalToTemplateData({ allTips, area, segments, areaName });
         const result = await renderTemplate(_tplId, data);
+        try { if (_progressId && _toast) _toast.update(_progressId, 'Baixando arquivo…'); } catch {}
         downloadBlob(result.blob, result.filename);
+        try { if (_progressId && _toast) _toast.remove(_progressId); } catch {}
         return { filename: result.filename };
       } catch (e) {
+        try { if (_progressId && _toast) _toast.remove(_progressId); } catch {}
         // v4.63.12+ Fix HIGH Bug #7/#8/#9 (audit pós-sprint): fallback graceful
         // antes silencioso. Avisa user + audit log pra triagem ("achei que minha
         // marca tava aplicada mas saiu o padrão").

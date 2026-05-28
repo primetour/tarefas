@@ -90,6 +90,24 @@ class ToastManager {
   error(message, title)    { return this.show('error',   message, title); }
   warning(message, title)  { return this.show('warning', message, title); }
   info(message, title)     { return this.show('info',    message, title); }
+
+  /**
+   * v4.63.14+ Atualiza mensagem de toast existente sem recriar — usado em
+   * progress steps de operações longas (ex: gerar PDF via template ~10s).
+   * Padrão Renê CLAUDE.md §11.b: feedback dinâmico em vez de "Gerando…"
+   * estático que parece travado.
+   */
+  update(id, message, title = null) {
+    const el = this.toasts.get(id);
+    if (!el) return false;
+    const msgNode = el.querySelector('.toast-message');
+    if (msgNode) msgNode.textContent = message;
+    if (title) {
+      const titleNode = el.querySelector('.toast-title');
+      if (titleNode) titleNode.textContent = title;
+    }
+    return true;
+  }
 }
 
 export const toast = new ToastManager();
