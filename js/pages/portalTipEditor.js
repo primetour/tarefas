@@ -11,7 +11,7 @@ import { store }  from '../store.js';
 import { toast }  from '../components/toast.js';
 import {
   fetchDestinations, fetchTip, saveTip, fetchCategories, saveCategories,
-  SEGMENTS, getSegments, saveCustomSegment, slugifySegmentKey,
+  SEGMENTS, getSegments, saveCustomSegment, deleteCustomSegment, slugifySegmentKey,
   CONTINENTS, MONTHS,
 } from '../services/portal.js';
 
@@ -316,22 +316,35 @@ function renderSegmentNav() {
   // 4.49.6+ Usa canManagePortalSegments() (granular) — libera botão "+ Novo
   // segmento" pro analista. Mantém compat com legado canManagePortal/master.
   const canManage = store.canManagePortalSegments?.() || store.canManagePortal?.() || store.isMaster?.();
+  // v4.62.38: segmentos custom têm ações de editar/deletar inline (right side
+  // do botão). Builtin não — protegidos por design. Só aparece pra quem tem
+  // canManagePortalSegments. Ações usam classe própria pra interceptar click
+  // ANTES do click do .seg-nav-btn pai.
   nav.innerHTML = _allSegments.map(s => {
     const hasContent = segHasContent(s.key);
     const isExpired  = isExpiredSeg(s.key);
     const isActive   = s.key === activeSegKey;
-    return `<button class="seg-nav-btn" data-key="${s.key}"
-      style="width:100%;text-align:left;padding:9px 14px;border:none;
-      background:${isActive ? 'var(--brand-gold)15' : 'transparent'};
-      border-left:3px solid ${isActive ? 'var(--brand-gold)' : 'transparent'};
-      cursor:pointer;display:flex;align-items:center;gap:8px;font-size:0.8125rem;">
-      <span style="flex:1;color:${isActive ? 'var(--brand-gold)' : 'var(--text-primary)'};">
-        ${esc(s.label)}${!s.builtin ? '<span style="font-size:0.625rem;color:var(--text-muted);margin-left:4px;">·custom</span>' : ''}
-      </span>
-      <span style="font-size:0.625rem;color:${isExpired?'#EF4444':hasContent?'#22C55E':'var(--text-muted)'};">
-        ${isExpired ? '⚠' : hasContent ? '●' : '○'}
-      </span>
-    </button>`;
+    const showActions = canManage && !s.builtin;
+    return `<div class="seg-nav-wrap" style="display:flex;align-items:stretch;${isActive ? 'background:rgba(212,168,67,0.06);' : ''}border-left:3px solid ${isActive ? 'var(--brand-gold)' : 'transparent'};">
+      <button class="seg-nav-btn" data-key="${esc(s.key)}"
+        style="flex:1;text-align:left;padding:9px 14px;border:none;background:transparent;
+        cursor:pointer;display:flex;align-items:center;gap:8px;font-size:0.8125rem;min-width:0;">
+        <span style="flex:1;color:${isActive ? 'var(--brand-gold)' : 'var(--text-primary)'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+          ${esc(s.label)}${!s.builtin ? '<span style="font-size:0.625rem;color:var(--text-muted);margin-left:4px;">·custom</span>' : ''}
+        </span>
+        <span style="font-size:0.625rem;color:${isExpired?'#EF4444':hasContent?'#22C55E':'var(--text-muted)'};">
+          ${isExpired ? '⚠' : hasContent ? '●' : '○'}
+        </span>
+      </button>
+      ${showActions ? `
+        <button class="seg-action-btn" data-action="edit-seg" data-key="${esc(s.key)}" data-label="${esc(s.label)}"
+          title="Renomear segmento"
+          style="background:transparent;border:none;cursor:pointer;padding:0 8px;color:var(--text-muted);font-size:0.85rem;display:flex;align-items:center;">✎</button>
+        <button class="seg-action-btn" data-action="del-seg" data-key="${esc(s.key)}" data-label="${esc(s.label)}"
+          title="Excluir segmento"
+          style="background:transparent;border:none;cursor:pointer;padding:0 8px;color:var(--text-muted);font-size:0.85rem;display:flex;align-items:center;">🗑</button>
+      ` : ''}
+    </div>`;
   }).join('') + (canManage ? `
     <button id="seg-add-new" style="width:100%;text-align:left;padding:10px 14px;border:none;
       border-top:1px dashed var(--border-subtle);background:transparent;cursor:pointer;
@@ -339,12 +352,117 @@ function renderSegmentNav() {
       + Novo segmento
     </button>` : '');
 
+  // Hover state pros ícones (entra/sai)
+  nav.querySelectorAll('.seg-action-btn').forEach(b => {
+    b.addEventListener('mouseenter', () => { b.style.color = 'var(--brand-gold)'; });
+    b.addEventListener('mouseleave', () => { b.style.color = 'var(--text-muted)'; });
+  });
+
   nav.querySelectorAll('.seg-nav-btn').forEach(btn =>
     btn.addEventListener('click', () => {
       saveCurrentSegment();
       activateSegment(btn.dataset.key);
     }));
+
+  // v4.62.38: handlers de editar/deletar segmento custom
+  nav.querySelectorAll('[data-action="edit-seg"]').forEach(btn =>
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openEditSegmentModal(btn.dataset.key, btn.dataset.label);
+    }));
+  nav.querySelectorAll('[data-action="del-seg"]').forEach(btn =>
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openDeleteSegmentConfirm(btn.dataset.key, btn.dataset.label);
+    }));
+
   document.getElementById('seg-add-new')?.addEventListener('click', openNewSegmentModal);
+}
+
+/* ─── v4.62.38 Editar / Renomear segmento custom ─────────────── */
+async function openEditSegmentModal(key, currentLabel) {
+  const { modal } = await import('../components/modal.js');
+  const seg = _allSegments.find(s => s.key === key);
+  if (!seg) return;
+  const ref = modal.open({
+    dedupeKey: 'seg-edit-modal',
+    title: '✎ Renomear segmento',
+    size: 'sm',
+    closeOnEsc: true,
+    content: `
+      <div style="display:flex;flex-direction:column;gap:14px;">
+        <div>
+          <label style="font-size:0.75rem;font-weight:600;display:block;margin-bottom:5px;">
+            Novo nome
+          </label>
+          <input type="text" class="portal-field" id="editseg-label" value="${esc(currentLabel)}"
+            style="width:100%;" maxlength="60" autofocus>
+          <div style="font-size:0.6875rem;color:var(--text-muted);margin-top:4px;">
+            O nome aparece no menu lateral. Chave técnica (<code>${esc(key)}</code>) não muda — dicas existentes continuam vinculadas.
+          </div>
+        </div>
+      </div>`,
+    footer: [
+      { label: 'Cancelar', class: 'btn-secondary', closeOnClick: true },
+      { label: 'Salvar', class: 'btn-primary', closeOnClick: false,
+        onClick: async (_, { close }) => {
+          const newLabel = ref.getBody().querySelector('#editseg-label')?.value?.trim();
+          if (!newLabel) { toast.warning('Digite um nome.'); return; }
+          if (newLabel === currentLabel) { close(); return; }
+          try {
+            await saveCustomSegment({ key, label: newLabel, mode: seg.mode || 'place_list', order: seg.order ?? 100 });
+            _allSegments = await getSegments({ force: true });
+            renderSegmentNav();
+            toast.success('Segmento renomeado.');
+            close();
+          } catch (e) { toast.error('Erro: ' + (e.message || e)); }
+        }
+      },
+    ],
+  });
+}
+
+/* ─── v4.62.38 Excluir segmento custom ──────────────────────── */
+async function openDeleteSegmentConfirm(key, label) {
+  const { modal } = await import('../components/modal.js');
+  // Conta quantas dicas têm conteúdo nesse segmento (aviso de FK soft)
+  const hasContentNow = segHasContent(key);
+  const warningHTML = hasContentNow
+    ? `<div style="padding:12px 14px;background:rgba(245,158,11,0.08);border-left:3px solid #F59E0B;border-radius:6px;font-size:0.8125rem;line-height:1.5;color:var(--text-secondary);margin-bottom:14px;">
+        <strong>Atenção:</strong> esta dica TEM conteúdo no segmento "${esc(label)}".
+        Se você excluir o segmento, o conteúdo PERMANECE salvo no banco (não some),
+        mas o segmento desaparece do menu. Pra acessar/editar de novo, terá que
+        recriar o segmento com a mesma chave (<code>${esc(key)}</code>).
+      </div>`
+    : `<div style="font-size:0.8125rem;color:var(--text-secondary);margin-bottom:14px;line-height:1.5;">
+        Esta dica não tem conteúdo neste segmento. Pode excluir sem perder dados desta dica.
+      </div>`;
+  const ok = await modal.confirm({
+    title: '🗑 Excluir segmento custom',
+    message: `${warningHTML}
+      <div style="font-size:0.8125rem;color:var(--text-primary);">
+        Excluir <strong>"${esc(label)}"</strong>?<br>
+        <span style="font-size:0.72rem;color:var(--text-muted);">
+          Segmento sai do menu lateral em TODAS as dicas do Portal de Dicas.
+          Conteúdo já salvo permanece no Firestore (não há cleanup destrutivo).
+        </span>
+      </div>`,
+    confirmText: 'Excluir', cancelText: 'Cancelar',
+    danger: true, icon: '🗑️',
+  });
+  if (!ok) return;
+  try {
+    await deleteCustomSegment(key);
+    _allSegments = await getSegments({ force: true });
+    // Se segmento ativo era esse, troca pro primeiro disponível
+    if (activeSegKey === key) {
+      activeSegKey = _allSegments[0]?.key || '';
+      activateSegment(activeSegKey);
+    } else {
+      renderSegmentNav();
+    }
+    toast.success('Segmento excluído.');
+  } catch (e) { toast.error('Erro: ' + (e.message || e)); }
 }
 
 /* ─── 4.40.18+ Modal pra criar novo segmento custom ──────────── */

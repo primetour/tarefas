@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 62,
-  patch: 37,
-  build: '20260527-notif-assignee-observer-safety-net',
+  patch: 38,
+  build: '20260527-portal-dicas-segmentos-editar-excluir',
 };
 
 /** "1.2.0" */
