@@ -999,8 +999,10 @@
 }
 .slide-render[data-layout="foto-cima"] .slot-text-block {
   left: 6%; right: 6%;
-  top: auto; bottom: 6%;
-  /* fluxo natural pela base — height auto */
+  /* Block ocupa o INTERIOR do retângulo com padding. Altura fixa = solid-h - paddings.
+     Crítico: sem altura limitada, o auto-fit não conseguia reduzir fonte → texto vazava. */
+  top: calc(100% - var(--solid-h, 36%) + 5%);
+  bottom: 6%;
 }
 .slide-render[data-layout="foto-cima"] .text-hand   { font-size: calc(28px * var(--slide-scale)); }
 .slide-render[data-layout="foto-cima"] .text-titulo { font-size: calc(18px * var(--slide-scale)); }
@@ -1056,7 +1058,8 @@
   width: auto; height: var(--solid-h, 32%);
 }
 .slide-render.story[data-layout="foto-cima"] .slot-text-block {
-  top: auto; bottom: 6%;
+  top: calc(100% - var(--solid-h, 32%) + 5%);
+  bottom: 6%;
   left: 6%; right: 6%;
   width: auto;
   align-items: flex-start;
@@ -1075,11 +1078,13 @@
   height: var(--solid-h, 38%);   /* JS sobrescreve via prefit measure */
 }
 .slide-render.story[data-layout="lateral-esq"] .slot-text-block {
-  top: auto; right: auto;
+  /* Altura limitada = retângulo - paddings, pra auto-fit reduzir fonte se precisar */
+  top: calc(100% - var(--solid-h, 38%) + 4%);
+  right: auto;
   left: 5%; bottom: 4%;
   width: 56%;
   align-items: flex-start;
-  justify-content: flex-start;   /* fluxo natural pelo bottom */
+  justify-content: flex-start;
 }
 
 /* Layout DIREITA (lateral-dir) — foto fullscreen + retângulo canto inf DIR */
@@ -1094,7 +1099,9 @@
   height: var(--solid-h, 38%);
 }
 .slide-render.story[data-layout="lateral-dir"] .slot-text-block {
-  top: auto; left: auto;
+  /* Altura limitada = retângulo - paddings, pra auto-fit reduzir fonte se precisar */
+  top: calc(100% - var(--solid-h, 38%) + 4%);
+  left: auto;
   right: 5%; bottom: 4%;
   width: 56%;
   align-items: flex-start;
