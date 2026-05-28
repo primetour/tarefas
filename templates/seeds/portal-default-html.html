@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{area.nome}} — City Guides</title>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    /* ─── CSS vars dinâmicas (cores da área via adapter) ────── */
+    :root {
+      --primary: {{area.corPrimary}};
+      --secondary: {{area.corSecondary}};
+      --gold: #D4A843;
+      --text-dark: #1F2937;
+      --text-muted: #6B7280;
+      --border-light: #E5E7EB;
+      --bg-callout: #FAF6EC;
+    }
+
+    /* ─── Reset + page setup ─────────────────────────────────── */
+    @page { size: A4; margin: 0; }
+    @media print { .destination, .section-cover, .toc-page, .cover { page-break-after: always; } }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Poppins', -apple-system, BlinkMacSystemFont, sans-serif;
+      color: var(--text-dark);
+      line-height: 1.6;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    /* ─── COVER (fundo secondary, logo central, lista destinos) ─ */
+    .cover {
+      background: var(--secondary);
+      color: #fff;
+      width: 210mm;
+      height: 297mm;
+      padding: 40mm 16mm;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      page-break-after: always;
+    }
+    .cover-logo {
+      max-width: 130mm;
+      max-height: 80mm;
+      margin: 75mm auto 0;
+      display: block;
+      object-fit: contain;
+    }
+    .cover-title-fallback {
+      font-size: 28pt;
+      font-weight: 700;
+      letter-spacing: 6px;
+      text-align: center;
+      margin-top: 80mm;
+      padding-bottom: 4mm;
+      border-bottom: 2px solid var(--primary);
+    }
+    .cover-divider {
+      width: 100%;
+      height: 0.5mm;
+      background: rgba(255,255,255,0.4);
+      margin: 8mm 0 12mm;
+    }
+    .cover-destinos {
+      list-style: none;
+      text-align: center;
+      margin: 16mm 0;
+    }
+    .cover-destinos li {
+      font-size: 14pt;
+      font-weight: 600;
+      margin: 4mm 0;
+      letter-spacing: 1px;
+    }
+    .cover-date {
+      text-align: center;
+      font-size: 9pt;
+      font-weight: 300;
+      margin-top: 4mm;
+      opacity: 0.85;
+    }
+
+    /* ─── TOC (sumário) ─────────────────────────────────────── */
+    .toc-page {
+      padding: 30mm 16mm 25mm;
+      page-break-after: always;
+    }
+    .toc-title {
+      font-size: 14pt;
+      font-weight: 700;
+      letter-spacing: 4px;
+      color: var(--primary);
+      text-transform: uppercase;
+      padding-bottom: 4mm;
+      border-bottom: 1px solid var(--border-light);
+      margin-bottom: 10mm;
+    }
+    .toc-entry {
+      display: flex;
+      justify-content: space-between;
+      padding: 2mm 0;
+      font-size: 10pt;
+      border-bottom: 1px dotted var(--border-light);
+    }
+    .toc-entry .toc-dest {
+      font-weight: 600;
+    }
+
+    /* ─── DESTINATION (hero + título + segmentos) ──────────── */
+    .destination {
+      padding: 0 0 25mm;
+      page-break-before: always;
+    }
+    .hero {
+      width: 100%;
+      height: 95mm;
+      object-fit: cover;
+      display: block;
+    }
+    .dest-header {
+      padding: 12mm 16mm 8mm;
+      border-bottom: 1px solid var(--border-light);
+    }
+    .dest-title {
+      font-size: 22pt;
+      font-weight: 700;
+      color: var(--primary);
+      letter-spacing: 2px;
+    }
+    .dest-country {
+      font-size: 10pt;
+      font-weight: 300;
+      color: var(--text-muted);
+      margin-top: 2mm;
+      text-transform: uppercase;
+      letter-spacing: 3px;
+    }
+
+    .dest-body {
+      padding: 8mm 16mm 0;
+    }
+
+    /* ─── SEGMENTOS (heading dourado, items list) ──────────── */
+    .segment {
+      margin: 10mm 0;
+      page-break-inside: avoid;
+    }
+    .segment-heading {
+      font-size: 11pt;
+      font-weight: 700;
+      letter-spacing: 3px;
+      color: var(--gold);
+      text-transform: uppercase;
+      padding-left: 4mm;
+      border-left: 3px solid var(--gold);
+      margin-bottom: 4mm;
+    }
+    .segment-narrative {
+      font-size: 10pt;
+      line-height: 1.7;
+      color: var(--text-dark);
+      margin: 2mm 0;
+    }
+    .segment-items {
+      list-style: none;
+    }
+    .segment-items li {
+      padding: 2mm 0;
+      font-size: 10pt;
+      border-bottom: 1px dotted var(--border-light);
+    }
+    .segment-items li:last-child {
+      border-bottom: none;
+    }
+    .place-name {
+      font-weight: 600;
+      color: var(--text-dark);
+    }
+    .place-desc {
+      font-weight: 300;
+      color: var(--text-muted);
+      font-size: 9pt;
+      margin-top: 1mm;
+    }
+
+    /* ─── INFO GERAIS callout ─────────────────────────────── */
+    .info-callout {
+      background: var(--bg-callout);
+      border-left: 3px solid var(--gold);
+      padding: 4mm 6mm;
+      margin: 4mm 0;
+      font-size: 9pt;
+      line-height: 1.6;
+      page-break-inside: avoid;
+    }
+    .info-chip-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 3mm;
+      margin: 3mm 0;
+    }
+    .info-chip {
+      flex: 0 0 calc(25% - 3mm);
+      background: #fff;
+      border: 1px solid var(--border-light);
+      border-radius: 2mm;
+      padding: 3mm;
+      font-size: 8pt;
+      text-align: center;
+    }
+    .info-chip-label {
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      font-size: 7pt;
+      margin-bottom: 1mm;
+    }
+    .info-chip-value {
+      font-weight: 600;
+      color: var(--text-dark);
+    }
+
+    /* ─── FOOTER fixo (page number + custom text) ──────────── */
+    .footer-area {
+      position: running(footer);
+      text-align: center;
+      font-size: 7pt;
+      color: #999;
+      padding: 0 16mm 6mm;
+    }
+    @page {
+      @bottom-center {
+        content: element(footer);
+      }
+      margin-bottom: 18mm;
+    }
+    .footer-area .footer-divider {
+      border-top: 0.5pt solid #ddd;
+      padding-top: 2mm;
+    }
+    .footer-area .footer-text-custom {
+      font-size: 6pt;
+      color: #aaa;
+      margin-top: 1mm;
+    }
+
+    /* ─── HEADER fixo (header text custom canto sup. direito) ── */
+    .header-area {
+      position: running(header);
+      text-align: right;
+      font-size: 6pt;
+      color: #aaa;
+      padding: 6mm 16mm 0;
+    }
+    @page {
+      @top-right { content: element(header); }
+      margin-top: 14mm;
+    }
+  </style>
+</head>
+<body>
+
+  {{!-- HEADER + FOOTER running elements --}}
+  {{#if customHeaderText}}
+    <div class="header-area">{{customHeaderText}}</div>
+  {{/if}}
+  <div class="footer-area">
+    <div class="footer-divider">City Guides · {{today}}</div>
+    {{#if customFooterText}}
+      <div class="footer-text-custom">{{customFooterText}}</div>
+    {{/if}}
+  </div>
+
+  {{!-- COVER (skip if hideCover) --}}
+  {{#unless hideCover}}
+  <section class="cover">
+    <div></div>
+    <div>
+      {{#if area.logoUrl}}
+        <img src="{{area.logoUrl}}" alt="{{area.nome}}" class="cover-logo">
+      {{else}}
+        <h1 class="cover-title-fallback">{{area.nome}}</h1>
+      {{/if}}
+      <div class="cover-divider"></div>
+      <ul class="cover-destinos">
+        {{#each destinos}}<li>{{label}}</li>{{/each}}
+      </ul>
+      <div class="cover-date">{{today}}</div>
+    </div>
+    <div></div>
+  </section>
+  {{/unless}}
+
+  {{!-- TOC (lista de destinos) --}}
+  {{#if destinos.length}}
+  <section class="toc-page">
+    <h2 class="toc-title">Sumário</h2>
+    {{#each destinos}}
+    <div class="toc-entry">
+      <span class="toc-dest">{{cidade}}</span>
+      <span>{{label}}</span>
+    </div>
+    {{/each}}
+  </section>
+  {{/if}}
+
+  {{!-- POR DESTINO: hero + título + segmentos --}}
+  {{#each destinos}}
+  <section class="destination">
+    {{#if heroUrl}}<img src="{{heroUrl}}" class="hero" alt="{{cidade}}">{{/if}}
+    <div class="dest-header">
+      <h2 class="dest-title">{{cidade}}</h2>
+      {{#if pais}}<div class="dest-country">{{pais}}</div>{{/if}}
+    </div>
+
+    <div class="dest-body">
+      {{#each segmentos}}
+      <section class="segment">
+        <div class="segment-heading">{{label}}</div>
+
+        {{#if narrative}}
+          <p class="segment-narrative">{{narrative}}</p>
+        {{/if}}
+
+        {{!-- info gerais (special_info) --}}
+        {{#if info}}
+          <div class="info-callout">
+            {{#if info.descricao}}<p>{{info.descricao}}</p>{{/if}}
+            {{#if info.dica}}<p style="margin-top:3mm;"><strong>Dica:</strong> {{info.dica}}</p>{{/if}}
+            {{#if info.hasChips}}
+              <div class="info-chip-grid">
+                {{#if info.populacao}}<div class="info-chip"><div class="info-chip-label">População</div><div class="info-chip-value">{{info.populacao}}</div></div>{{/if}}
+                {{#if info.moeda}}<div class="info-chip"><div class="info-chip-label">Moeda</div><div class="info-chip-value">{{info.moeda}}</div></div>{{/if}}
+                {{#if info.lingua}}<div class="info-chip"><div class="info-chip-label">Idioma</div><div class="info-chip-value">{{info.lingua}}</div></div>{{/if}}
+                {{#if info.religiao}}<div class="info-chip"><div class="info-chip-label">Religião</div><div class="info-chip-value">{{info.religiao}}</div></div>{{/if}}
+                {{#if info.voltagem}}<div class="info-chip"><div class="info-chip-label">Voltagem</div><div class="info-chip-value">{{info.voltagem}}</div></div>{{/if}}
+                {{#if info.ddd}}<div class="info-chip"><div class="info-chip-label">DDD</div><div class="info-chip-value">{{info.ddd}}</div></div>{{/if}}
+                {{#if info.fuso}}<div class="info-chip"><div class="info-chip-label">Fuso</div><div class="info-chip-value">{{info.fuso}}</div></div>{{/if}}
+              </div>
+            {{/if}}
+          </div>
+        {{/if}}
+
+        {{!-- simple_list (Bairros, Arredores) --}}
+        {{#if items}}
+          <ul class="segment-items">
+            {{#each items}}
+              <li>
+                {{#if name}}<span class="place-name">{{name}}</span>{{/if}}
+                {{#if desc}}<div class="place-desc">{{desc}}</div>{{/if}}
+                {{#unless name}}{{this}}{{/unless}}
+              </li>
+            {{/each}}
+          </ul>
+        {{/if}}
+      </section>
+      {{/each}}
+    </div>
+  </section>
+  {{/each}}
+
+</body>
+</html>

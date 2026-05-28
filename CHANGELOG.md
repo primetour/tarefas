@@ -6,6 +6,68 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.17+20260528-portal-default-template-seed] — 2026-05-28
+
+Release **Migração 1/3 generators legados → templates uploaded** — Portal de
+Dicas seed. Resposta ao Renê: *"os templates atuais que a gente trabalhou no
+passado (web link, pdf, ppt, docx) em portal de dicas, cotações e banco de
+roteiros sejam lidos, interpretados e inseridos no banco de templates...
+aquele legado é importantíssimo. nao posso perder aquilo de forma alguma"*.
+
+**O que entrega**:
+- Arquivo HTML+CSS Handlebars `templates/seeds/portal-default-html.html`
+  (10.6KB) — reproduz visualmente o `generatePDF` do `portalGenerator.js`:
+  - Cover (logo central, fundo `--secondary`, lista destinos, data)
+  - TOC (sumário dos destinos)
+  - Por destino: hero image + título + segmentos
+  - Segmentos: heading dourado (border-left 3px), narrative, items (place_list
+    com name + desc, simple_list com just text)
+  - Informações Gerais como callout (descricao + dica + chips populacao/moeda/
+    lingua/etc em grid 4 cols)
+  - Footer page-number + `customFooterText` (área Exports config)
+  - Header `customHeaderText` (canto sup. direito)
+  - Suporta `hideCover` (Exports → Capa removível)
+- `templateAdapter.portalToTemplateData` **expandido**:
+  - Adiciona `heroUrl` (de `imagesByDest[destId].hero`)
+  - Adiciona `area.corPrimary`/`corSecondary` (CSS vars)
+  - Adiciona `customFooterText`/`customHeaderText`/`hideCover`
+  - Constrói `destinos[].segmentos[]` iterável em ordem dos
+    `DEFAULT_SEGMENTS` (11 segments), cada um com `{key, label, mode,
+    narrative, items[], info{}}` populado conforme `mode` (`special_info`,
+    `simple_list`, `place_list`, `agenda`)
+  - Skip de segmentos vazios
+- `portalGenerator.generateMaterial` **passa context extra** pro adapter:
+  `imagesByDest`, `_exportTpl.footerText/headerText/hideCover` resolvidos
+  via `resolveExportTemplate(area,'portal',format)`
+- Script seed `functions/seed-portal-default-template.cjs` (dry-run +
+  apply) — upload R2 + cria doc Firestore com `ownerType:'global'`,
+  `isDefault:true`. Idempotente via SHA-256 (skip se mesmo conteúdo).
+- Template seed **criado** em produção: `o4uOC40G2p0zdhqt0vsg`. Trigger
+  `extractPlaceholders` rodou automaticamente.
+
+**Como usar** (admin/master via UI):
+1. Editor de Áreas → Lazer (ou qq área) → tab "📐 Templates"
+2. Em "Portal de Dicas → HTML" dropdown: selecionar "PRIMETOUR Portal de
+   Dicas — Default HTML 🌐 ★ default"
+3. Salvar
+4. Gerar PDF do Portal: vai usar o template em vez do jsPDF legado
+
+**Plano sprint Migração legados**:
+- ✅ v4.63.17 — Portal HTML seed (esta release)
+- ⏳ v4.63.18 — Refinamentos Portal: TOC clicável, climate grid, page breaks
+- ⏳ v4.63.19 — Cotações HTML seed (`roteiroGenerator.generatePDF` ~3302 LOC)
+- ⏳ v4.63.20 — Banco-roteiros HTML seed (~211 LOC wrapper)
+- 🔵 DOCX/PPTX: mantém generators legados como fallback eterno
+  (decisão Renê 28/05/2026)
+
+**Arquivos tocados**: `templates/seeds/portal-default-html.html` (NEW),
+`functions/seed-portal-default-template.cjs` (NEW),
+`js/services/templateAdapter.js` (portalToTemplateData expand),
+`js/services/portalGenerator.js` (generateMaterial passa context),
+`index.html`, `js/version.js`, `CHANGELOG.md`.
+
+---
+
 ## [4.63.16+20260528-r2-fallback-large-renders] — 2026-05-28
 
 Release **pós-auditoria Sprint v4.63 (parte 4)** — Perf #2 HIGH: R2 fallback

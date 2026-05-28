@@ -174,12 +174,19 @@ export function roteiroToTemplateData(roteiro, area) {
  * Mapeia allTips (array de {tip, dest}) → data Handlebars pra templates
  * do Portal de Dicas.
  */
-export function portalToTemplateData({ allTips, area, segments, areaName } = {}) {
+export function portalToTemplateData({ allTips, area, segments, areaName, imagesByDest, customFooterText, customHeaderText, hideCover } = {}) {
   // v4.63.12+ Fix HIGH Bug #11 (audit pós-sprint): agrupa tips por destino.
   // Antes (v4.63.11): cada par {tip,dest} virava 1 destino → 2 tips na mesma
   // cidade = destino duplicado, template `{{#each destinos}}` renderizava 2×.
   // Agora consolida por dest.id (ou city_country fallback) — N tips → 1 destino
   // com tips[]. Segments mergeados (último vence pra cada key).
+  //
+  // v4.63.17+ Expanded shape pra template HTML seed "PRIMETOUR Portal Default":
+  // - segmentos[] iterável por destino (em ordem dos DEFAULT_SEGMENTS)
+  // - heroUrl extraído de imagesByDest[destId].hero
+  // - area.corPrimary/corSecondary pra CSS vars
+  // - info gerais com chips planificados (hasChips, populacao, moeda, etc.)
+  // - customFooterText/customHeaderText/hideCover (vindos de exports config)
   const byDest = new Map();
   (allTips || []).forEach(({ tip, dest }) => {
     if (!dest) return;
@@ -190,26 +197,90 @@ export function portalToTemplateData({ allTips, area, segments, areaName } = {})
         cidade:   dest.city || '',
         pais:     dest.country || '',
         label:    [dest.city, dest.country].filter(Boolean).join(', '),
+        heroUrl:  imagesByDest?.[dest.id]?.hero || '',
         tips:     [],
-        segments: {},
+        segments: {},   // merged raw
+        segmentos: [],  // shaped for template iteration (v4.63.17+)
       });
     }
     const entry = byDest.get(key);
     if (tip) {
       entry.tips.push(tip);
-      // Merge segments — último vence pra cada key. Não-destrutivo.
       Object.assign(entry.segments, tip.segments || {});
     }
   });
+
+  // Convert raw segments map → ordered iterable array per dest
+  const SEGMENT_ORDER = [
+    { key: 'informacoes_gerais',  label: 'Informações Gerais', mode: 'special_info' },
+    { key: 'bairros',             label: 'Bairros',            mode: 'simple_list' },
+    { key: 'atracoes',            label: 'Atrações',           mode: 'place_list' },
+    { key: 'atracoes_criancas',   label: 'Atrações para Crianças', mode: 'place_list' },
+    { key: 'restaurantes',        label: 'Restaurantes',       mode: 'place_list' },
+    { key: 'vida_noturna',        label: 'Vida Noturna',       mode: 'place_list' },
+    { key: 'espetaculos',         label: 'Espetáculos & Teatros', mode: 'place_list' },
+    { key: 'compras',             label: 'Compras',            mode: 'place_list' },
+    { key: 'arredores',           label: 'Arredores',          mode: 'simple_list' },
+    { key: 'highlights',          label: 'Highlights',         mode: 'place_list' },
+    { key: 'agenda_cultural',     label: 'Agenda Cultural',    mode: 'agenda' },
+  ];
+
+  for (const entry of byDest.values()) {
+    const segs = entry.segments || {};
+    entry.segmentos = SEGMENT_ORDER.map(def => {
+      const data = segs[def.key];
+      if (!data) return null;
+      const out = { key: def.key, label: def.label, mode: def.mode };
+      if (def.mode === 'special_info' && data.info) {
+        const info = data.info;
+        const fuso = info.fusoSinal && info.fusoHoras ? `${info.fusoSinal}${info.fusoHoras}h` : '';
+        const hasChips = !!(info.populacao || info.moeda || info.lingua || info.religiao || info.voltagem || info.ddd || fuso);
+        out.info = {
+          descricao: info.descricao || '',
+          dica:      info.dica || '',
+          populacao: info.populacao || '', moeda: info.moeda || '', lingua: info.lingua || '',
+          religiao:  info.religiao || '',  voltagem: info.voltagem || '', ddd: info.ddd || '',
+          fuso,
+          hasChips,
+        };
+      }
+      if (def.mode === 'simple_list') {
+        out.narrative = data.themeDesc || '';
+        const rawItems = Array.isArray(data.items) ? data.items : [];
+        out.items = rawItems.map(i => typeof i === 'string' ? { name: '', desc: i } : { name: i?.name || '', desc: i?.desc || i?.description || '' });
+      }
+      if (def.mode === 'place_list') {
+        out.narrative = data.themeDesc || '';
+        const rawItems = Array.isArray(data.items) ? data.items : [];
+        out.items = rawItems.map(p => ({ name: p?.name || '', desc: p?.notes || p?.observation || p?.address || '' }));
+      }
+      if (def.mode === 'agenda') {
+        out.narrative = data.themeDesc || '';
+        const rawItems = Array.isArray(data.events || data.items) ? (data.events || data.items) : [];
+        out.items = rawItems.map(e => ({ name: e?.title || e?.name || '', desc: [e?.date, e?.venue, e?.notes].filter(Boolean).join(' · ') }));
+      }
+      // Skip se segment ficou vazio (sem narrative + sem items + sem info)
+      const hasContent = (out.narrative && out.narrative.trim())
+        || (Array.isArray(out.items) && out.items.length > 0)
+        || (out.info && (out.info.descricao || out.info.dica || out.info.hasChips));
+      return hasContent ? out : null;
+    }).filter(Boolean);
+  }
+
   return {
     area: {
-      nome:       areaName || _resolveAreaName(area),
-      logoUrl:    area?.logoUrl    || '',
-      logoUrlAlt: area?.logoUrlAlt || '',
+      nome:        areaName || _resolveAreaName(area),
+      logoUrl:     area?.logoUrl    || '',
+      logoUrlAlt:  area?.logoUrlAlt || '',
+      corPrimary:  area?.colors?.primary   || '#D4A843',
+      corSecondary: area?.colors?.secondary || '#0F172A',
     },
     destinos: Array.from(byDest.values()),
     segments: Array.isArray(segments) ? segments : [],
-    today:   _today(),
+    customFooterText: customFooterText || '',
+    customHeaderText: customHeaderText || '',
+    hideCover: !!hideCover,
+    today: _today(),
   };
 }
 

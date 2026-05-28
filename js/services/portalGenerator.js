@@ -471,7 +471,18 @@ export async function generateTip({ tip, area, dest, segments, format, extraTips
         const { renderTemplate, downloadBlob } = await import('./templates.js');
         const { portalToTemplateData } = await import('./templateAdapter.js');
         try { if (_progressId && _toast) _toast.update(_progressId, format === 'pdf' ? 'Renderizando PDF (Puppeteer ~5-10s)…' : `Renderizando ${format.toUpperCase()} (docxtemplater ~3s)…`); } catch {}
-        const data = portalToTemplateData({ allTips, area, segments, areaName });
+        // v4.63.17+ Passa imagesByDest + customFooter/Header + hideCover pro
+        // template HTML seed "PRIMETOUR Portal Default" reproduzir o jsPDF.
+        const _exportTpl = resolveExportTemplate(area, 'portal', format === 'pdf' ? 'pdf' : format);
+        const _customFooter = formatExportText(_exportTpl.footerText || '', { areaName, title: 'Portal de Dicas' });
+        const _customHeader = formatExportText(_exportTpl.headerText || '', { areaName, title: 'Portal de Dicas' });
+        const data = portalToTemplateData({
+          allTips, area, segments, areaName,
+          imagesByDest,
+          customFooterText: _customFooter,
+          customHeaderText: _customHeader,
+          hideCover: !!_exportTpl.hideCover,
+        });
         const result = await renderTemplate(_tplId, data);
         try { if (_progressId && _toast) _toast.update(_progressId, 'Baixando arquivo…'); } catch {}
         downloadBlob(result.blob, result.filename);
