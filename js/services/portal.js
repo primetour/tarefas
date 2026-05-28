@@ -103,6 +103,86 @@ export async function saveCategories(segmentKey, categories) {
   }, { merge: true });
 }
 
+/* ─── v4.63.37+ Tags por item (Portal Dicas) ──────────────────
+ * Tags pra qualificar perfil/ambiente do item: "romântico", "família",
+ * "kids-friendly", "vista", "vegano", etc. Vocabulário fixo + custom inline.
+ *
+ * Schema: portal_tip_tags/_root.tags[]  (single doc, simples)
+ * Reader: fetchTipTags() → array de strings.
+ * Writer: saveTipTags(arr) → seta o array completo (merge).
+ *
+ * UX: datalist no editor permite escolher de defaults OU digitar nova.
+ * Tag nova chama saveTipTags() (append) — auto-persiste no vocabulário.
+ */
+export const DEFAULT_TIP_TAGS = [
+  // Perfil de cliente
+  'romântico', 'família', 'kids-friendly', 'casal', 'amigos',
+  'business', 'solo', 'lua de mel',
+  // Estilo / vibe
+  'luxo', 'casual', 'autêntico', 'instagramável', 'descolado',
+  // Acessibilidade
+  'pet-friendly', 'acessível', 'kosher',
+  // Comida / bebida
+  'vegetariano', 'vegano', 'sem glúten', 'kosher',
+  // Ambiente
+  'rooftop', 'vista', 'piscina', 'jardim', 'ao ar livre', 'interior aconchegante',
+  // Timing
+  'happy hour', 'pré-jantar', 'jantar tardio', 'brunch', 'café da manhã',
+  // Práticas
+  'dress code', 'reserva obrigatória', 'aberto madrugada',
+];
+
+let _tipTagsCache = null;
+let _tipTagsCacheAt = 0;
+const TIP_TAGS_TTL = 60_000;
+
+export async function fetchTipTags({ force = false } = {}) {
+  if (!force && _tipTagsCache && (Date.now() - _tipTagsCacheAt < TIP_TAGS_TTL)) {
+    return _tipTagsCache;
+  }
+  try {
+    const snap = await getDoc(doc(db, 'portal_tip_tags', '_root'));
+    if (snap.exists()) {
+      const tags = Array.isArray(snap.data().tags) ? snap.data().tags : DEFAULT_TIP_TAGS;
+      _tipTagsCache = [...new Set(tags)].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+      _tipTagsCacheAt = Date.now();
+      return _tipTagsCache;
+    }
+  } catch(e) {}
+  _tipTagsCache = [...DEFAULT_TIP_TAGS].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  _tipTagsCacheAt = Date.now();
+  return _tipTagsCache;
+}
+
+export async function saveTipTags(tags) {
+  // Mesma perm que segmentos — analista pode gerenciar vocabulário
+  if (!store.canManagePortalSegments()) throw new Error('Permissão negada.');
+  const clean = [...new Set(tags.map(t => String(t).trim()).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  await setDoc(doc(db, 'portal_tip_tags', '_root'), {
+    tags: clean,
+    updatedAt: serverTimestamp(),
+    updatedBy: uid(),
+  }, { merge: true });
+  _tipTagsCache = clean;
+  _tipTagsCacheAt = Date.now();
+  return clean;
+}
+
+/**
+ * Adiciona uma tag nova ao vocabulário (idempotente — skip se já existe).
+ * Usado pelo editor quando user digita tag inédita.
+ */
+export async function addTipTag(tagName) {
+  const name = String(tagName).trim();
+  if (!name) return null;
+  const current = await fetchTipTags();
+  const exists = current.find(t => t.toLowerCase() === name.toLowerCase());
+  if (exists) return exists;
+  await saveTipTags([...current, name]);
+  return name;
+}
+
 /* ─── 4.40.18+ Custom Segments (dynamic) ──────────────────────
  * Permite ao admin adicionar segmentos extras além dos DEFAULT_SEGMENTS.
  * Cada custom seg vira um doc em portal_segments/{key} com:

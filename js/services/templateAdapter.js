@@ -311,7 +311,15 @@ export function portalToTemplateData({ allTips, area, segments, areaName, images
       if (def.mode === 'place_list') {
         out.narrative = data.themeDesc || '';
         const rawItems = Array.isArray(data.items) ? data.items : [];
-        out.items = rawItems.map(p => ({ name: p?.name || '', desc: p?.notes || p?.observation || p?.address || '' }));
+        // v4.63.37+ Expor `tags` no shape do template — render HTML pode iterar
+        // {{#each tags}} pra exibir chips. Renderer legado ignora silenciosamente.
+        out.items = rawItems.map(p => ({
+          name: p?.titulo || p?.name || p?.title || '',
+          desc: p?.descricao || p?.notes || p?.observation || p?.description || p?.address || '',
+          categoria: p?.categoria || '',
+          tags: Array.isArray(p?.tags) ? p.tags : [],
+          observacoes: p?.observacoes || '',
+        }));
       }
       if (def.mode === 'agenda') {
         out.narrative = data.themeDesc || '';

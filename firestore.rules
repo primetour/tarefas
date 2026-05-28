@@ -876,6 +876,14 @@ service cloud.firestore {
       allow write: if isAuth() && isAdmin();
     }
 
+    // v4.63.37+ Vocabulário de tags pra items (perfil, ambiente, dietas).
+    // Single doc `_root.tags[]`. Leitura pública pra portal-view consumir
+    // (tags renderizam como chips). Escrita restrita a quem gerencia segmentos.
+    match /portal_tip_tags/{docId} {
+      allow read:  if true;
+      allow write: if isAuth() && isAdmin();
+    }
+
     // ── Roteiros de Viagem ──────────────────────────────────
     // 4.40.31+ (Sprint 1 hardening) — update agora exige ownership ou
     // collaborator ou manager. Antes: qualquer auth user editava roteiro

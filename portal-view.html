@@ -875,6 +875,9 @@ function renderPlaces(sd,data,imgs,isAgenda){
         ${isAgenda&&(item.periodo||item.periodoIndeterminado)
           ? `<div style="font-size:var(--portal-fs-xs);color:var(--portal-primary);font-weight:600;">◷ ${item.periodoIndeterminado?'Tempo indeterminado':esc(item.periodo||'')}</div>`
           : ''}
+        ${Array.isArray(item.tags)&&item.tags.length
+          ? `<div class="place-card-tags" style="display:flex;flex-wrap:wrap;gap:4px;margin:6px 0 4px;">${item.tags.map(t=>`<span style="display:inline-block;padding:2px 8px;background:rgba(212,168,67,0.14);border:1px solid rgba(212,168,67,0.32);border-radius:999px;font-size:0.65rem;color:var(--portal-text-secondary,#475569);font-weight:500;letter-spacing:.02em;">${esc(t)}</span>`).join('')}</div>`
+          : ''}
         ${item.descricao?`<div class="place-card-desc">${esc(item.descricao)}</div>`:''}
         ${item.observacoes?`<div class="place-card-extra place-card-obs">💡 ${esc(item.observacoes)}</div>`:''}
         ${detailsParts.length?`<div class="place-card-details">${detailsParts.join('')}</div>`:''}

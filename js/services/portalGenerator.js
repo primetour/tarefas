@@ -932,6 +932,11 @@ async function generateDocx({ allTips, segments, areaName, area, colors, filenam
           }
           children.push(new Paragraph({children:[new TextRun({font:_DOCX_FONT,text:item.titulo,bold:true,size:22,color:navy})],spacing:{after:imgData?.arrayBuffer?80:60}}));
 
+          // v4.63.37+ Tags inline (chips visuais em texto separado por · e em itálico colorido)
+          if (Array.isArray(item.tags) && item.tags.length) {
+            children.push(new Paragraph({children:[new TextRun({font:_DOCX_FONT,text:item.tags.map(t => `· ${t}`).join('  '),size:14,italics:true,color:gold})],spacing:{after:60}}));
+          }
+
           if(imgData?.arrayBuffer){
             try {
               children.push(new Paragraph({
@@ -1562,6 +1567,14 @@ async function generatePDF({
           // Título
           setF('bold'); doc.setFontSize(10); doc.setTextColor(sR,sG,sB);
           doc.text(titleLines, MARGIN+2, y); y+=titleLines.length*TITLE_LH;
+          // v4.63.37+ Tags inline depois do título (itálico cinza pequeno)
+          if (Array.isArray(item.tags) && item.tags.length) {
+            setF('italic'); doc.setFontSize(7); doc.setTextColor(aR, aG, aB);
+            const tagsLine = item.tags.map(t => `· ${t}`).join('  ');
+            const tagLines = doc.splitTextToSize(cleanText(tagsLine), CONTENT-4);
+            doc.text(tagLines, MARGIN+2, y);
+            y += tagLines.length*3.6 + 1;
+          }
           // Descrição
           if (descLines.length) {
             setF('normal'); doc.setFontSize(8); doc.setTextColor(70,70,80);

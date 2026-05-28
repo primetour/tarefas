@@ -13,6 +13,8 @@ import {
   fetchDestinations, fetchTip, saveTip, fetchCategories, saveCategories,
   SEGMENTS, getSegments, saveCustomSegment, deleteCustomSegment, slugifySegmentKey,
   CONTINENTS, MONTHS,
+  // v4.63.37+ Tags por item (perfil de cliente / ambiente / dietas)
+  fetchTipTags, addTipTag,
 } from '../services/portal.js';
 
 // 4.40.18+ Segmentos dinâmicos = defaults + custom (carregados do Firestore).
@@ -35,6 +37,8 @@ let activeSegKey    = null;
 let isDirty         = false;
 let autoSaveTimer   = null;
 let categoriesCache = {};
+// v4.63.37+ cache do vocabulário de tags (carregado on boot)
+let _tipTagsList = [];
 
 /* ─── Entry ───────────────────────────────────────────────── */
 export async function renderPortalTipEditor(container) {
@@ -276,6 +280,8 @@ async function loadDestinationById(destId, destInfo = null) {
       categoriesCache[seg.key] = await fetchCategories(seg.key);
     }
   }
+  // v4.63.37+ Preload vocabulário de tags (uso global no editor)
+  try { _tipTagsList = await fetchTipTags(); } catch(e) { _tipTagsList = []; }
 
   const label = [destInfo?.city, destInfo?.country, destInfo?.continent].filter(Boolean).join(' · ');
   document.getElementById('editor-title').textContent    = tip ? 'Editando dica' : 'Nova dica';
@@ -850,6 +856,10 @@ function buildPlaceListPanel(seg, data) {
       <div id="place-list-container" style="display:flex;flex-direction:column;gap:16px;">
         ${items.map((item,i) => placeItemBlock(item, i, cats, seg.mode === 'agenda')).join('')}
       </div>
+      <!-- v4.63.37+ datalist único pra autocompletar tags em todos os items -->
+      <datalist id="place-tag-datalist">
+        ${_tipTagsList.map(t => `<option value="${esc(t)}">`).join('')}
+      </datalist>
       <button id="place-add-btn" class="btn btn-secondary btn-sm" style="margin-top:16px;">
         + Adicionar item
       </button>
@@ -893,6 +903,9 @@ function buildAgendaPanel(seg, data) {
       <div id="place-list-container" style="display:flex;flex-direction:column;gap:16px;">
         ${items.map((item,i) => placeItemBlock(item, i, cats, true)).join('')}
       </div>
+      <datalist id="place-tag-datalist">
+        ${_tipTagsList.map(t => `<option value="${esc(t)}">`).join('')}
+      </datalist>
       <button id="place-add-btn" class="btn btn-secondary btn-sm" style="margin-top:16px;">
         + Adicionar evento
       </button>
@@ -985,8 +998,40 @@ function placeItemBlock(item, i, cats, isAgenda) {
         <input type="text" class="place-obs portal-field" data-index="${i}"
           style="width:100%;" value="${esc(item.observacoes||'')}">
       </div>
+      <!-- v4.63.37+ Tags: qualificar perfil/ambiente/dieta do item -->
+      <div style="grid-column:1/-1;">
+        <label style="${LBL}">Tags <span style="font-weight:400;color:var(--text-muted);">(perfil de cliente, ambiente, dieta…)</span></label>
+        <div class="place-tags-wrap" data-index="${i}" style="display:flex;flex-wrap:wrap;gap:6px;
+          padding:8px 10px;border:1px solid var(--border-subtle);border-radius:var(--radius-sm);
+          background:var(--bg-card);min-height:36px;align-items:center;">
+          ${(Array.isArray(item.tags) ? item.tags : []).map(t => placeTagChip(t)).join('')}
+          <input type="text" class="place-tag-input portal-field" data-index="${i}"
+            list="place-tag-datalist" placeholder="+ tag…"
+            style="border:none;outline:none;background:transparent;flex:1;min-width:100px;font-size:0.8125rem;padding:2px 4px;">
+        </div>
+        <div style="font-size:0.7rem;color:var(--text-muted);margin-top:4px;">
+          Pressione <kbd style="padding:0 4px;border:1px solid var(--border-subtle);border-radius:3px;font-size:0.7rem;">Enter</kbd>
+          ou <kbd style="padding:0 4px;border:1px solid var(--border-subtle);border-radius:3px;font-size:0.7rem;">,</kbd>
+          para adicionar. Clique no <strong>✕</strong> da chip pra remover.
+        </div>
+      </div>
     </div>
   </div>`;
+}
+
+// v4.63.37+ chip visual + remove button. Tag value vai como data-tag attribute
+// (não no value de input visível) — saveCurrentSegmentData coleta via .dataset.
+function placeTagChip(tag) {
+  return `<span class="place-tag-chip" data-tag="${esc(tag)}"
+    style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px 3px 10px;
+    background:rgba(212,168,67,0.12);border:1px solid rgba(212,168,67,0.35);
+    border-radius:999px;font-size:0.75rem;color:var(--text-primary);
+    line-height:1.4;white-space:nowrap;">
+    ${esc(tag)}
+    <button type="button" class="place-tag-remove" tabindex="-1"
+      style="border:none;background:none;cursor:pointer;color:var(--text-muted);
+      padding:0;margin-left:2px;font-size:0.85rem;line-height:1;display:flex;align-items:center;">✕</button>
+  </span>`;
 }
 
 function bindPlaceList(key, isAgenda = false) {
@@ -1073,6 +1118,59 @@ function bindPlaceList(key, isAgenda = false) {
     document.getElementById('agenda-periodo')?.addEventListener('input', markDirty);
     document.getElementById('agenda-dica')?.addEventListener('input', markDirty);
   }
+
+  // ───── v4.63.37+ Tags: add/remove chips ─────
+  // Click no ✕ remove chip
+  container?.addEventListener('click', (e) => {
+    const removeBtn = e.target.closest('.place-tag-remove');
+    if (!removeBtn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const chip = removeBtn.closest('.place-tag-chip');
+    chip?.remove();
+    markDirty();
+  });
+
+  // Enter/comma no input cria chip
+  container?.addEventListener('keydown', async (e) => {
+    if (!e.target.classList.contains('place-tag-input')) return;
+    if (e.key === 'Enter' || e.key === ',') {
+      e.preventDefault();
+      const inputEl = e.target;
+      const raw = inputEl.value.trim().replace(/,$/, '').trim();
+      if (!raw) return;
+      const wrap = inputEl.closest('.place-tags-wrap');
+      // dedup case-insensitive dentro do mesmo item
+      const existing = [...wrap.querySelectorAll('.place-tag-chip')]
+        .map(c => (c.dataset.tag || '').toLowerCase());
+      if (existing.includes(raw.toLowerCase())) {
+        inputEl.value = '';
+        toast.info('Tag já adicionada neste item.');
+        return;
+      }
+      // Cria chip
+      const tmp = document.createElement('div');
+      tmp.innerHTML = placeTagChip(raw);
+      const chip = tmp.firstElementChild;
+      wrap.insertBefore(chip, inputEl);
+      inputEl.value = '';
+      markDirty();
+
+      // Se tag não estava no vocabulário, adiciona (auto-aprendizado)
+      if (!_tipTagsList.find(t => t.toLowerCase() === raw.toLowerCase())) {
+        try {
+          await addTipTag(raw);
+          _tipTagsList = [..._tipTagsList, raw].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+          // Atualiza datalist
+          const dl = document.getElementById('place-tag-datalist');
+          if (dl) dl.innerHTML = _tipTagsList.map(t => `<option value="${esc(t)}">`).join('');
+        } catch(err) {
+          // não bloqueia — tag fica salva no item mesmo se vocabulário falhar
+          console.warn('[tags] addTipTag falhou:', err?.message);
+        }
+      }
+    }
+  });
 }
 
 /**
@@ -1207,6 +1305,13 @@ function saveCurrentSegmentData() {
     }
     data.items = [...document.querySelectorAll('.place-item')].map(el => {
       const idx = parseInt(el.dataset.index);
+      // v4.63.37+ Coleta tags (chips dentro do .place-tags-wrap)
+      const tagsWrap = el.querySelector('.place-tags-wrap');
+      const tags = tagsWrap
+        ? [...tagsWrap.querySelectorAll('.place-tag-chip')]
+            .map(c => c.dataset.tag || '')
+            .filter(Boolean)
+        : [];
       return {
         categoria:          el.querySelector('.place-cat')?.value     || '',
         titulo:             el.querySelector('.place-title')?.value   || '',
@@ -1215,6 +1320,7 @@ function saveCurrentSegmentData() {
         telefone:           el.querySelector('.place-telefone')?.value|| '',
         site:               el.querySelector('.place-site')?.value    || '',
         observacoes:        el.querySelector('.place-obs')?.value     || '',
+        tags,
         ...(seg.mode === 'agenda' ? {
           periodo:            el.querySelector('.place-periodo')?.value || '',
           periodoIndeterminado: el.querySelector('.place-indeterminado')?.checked || false,
