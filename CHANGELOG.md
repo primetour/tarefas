@@ -6,6 +6,51 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.26+20260528-templates-ux-audit-fixes] — 2026-05-28
+
+**Auditoria UX Templates** (Agent paralelo + Admin SDK) achou 7+ gaps HIGH
+não cobertos pelo E2E anterior. Esta release ataca 2 bugs latentes silenciosos
++ cleanup produção.
+
+**Cleanup produção (sem release)**:
+- **CRÍTICO**: `Lazer.cotacoes.html` apontava pra `zFebJ1oCUiG7JjIbh81I`
+  ("E2E v4.63.3 — Trigger test") em produção. Renê gerava cotação Lazer →
+  template de TESTE. Trocado pro default real (`XZzybZJ0GA4QVrDe6oEM`
+  "PRIMETOUR Cotações — Default HTML" global) via Admin SDK + audit log.
+- 7 templates zumbi `E2E v4.63.x —` deletados da Biblioteca + audit logs.
+
+**Fixes HIGH no código**:
+
+- **A21** (`templatesLibrary.js:159`) — Filtro por área **excluía templates
+  globais** silenciosamente. User filtrava por "Lazer" e via menos templates
+  que o dropdown de atribuição (que usa critério correto: ownerId=area OR
+  ownerType=global). Drift entre 2 readers. Fix: incluir globais.
+
+- **B11** (`portalAreas.js:965-986`) — Save área **podia zerar templateRefs**
+  se user editasse só outras tabs (Geral, Cores, Fontes, etc.) sem abrir tab
+  Templates. `querySelectorAll('.area-tpl-ref-select')` retornava 0 selects →
+  `templateRefs={}` → save grava `null` → wipes config existente. Fix: se 0
+  selects, preserva valor original do doc (`area?.templateRefs`).
+
+**Gaps identificados mas NÃO atacados nesta release** (backlog v4.63.27+):
+
+- **A10/A13**: UI "Editar metadata" + "Desarquivar" não existem (só archive
+  one-way). Service `updateTemplate` existe, falta botão.
+- **B5**: Remove atribuição (`val=''`) — comportamento sub-investigado.
+- **E5**: Curador de Lazer pode arquivar template de BTG (gate cross-area
+  ownerId não enforced no service).
+- **F5**: `limit(500)` silencioso em fetchTemplates (sem paginação).
+- **A17**: Race isDefault (novo default não desmarca antigo da área).
+- **C1.5**: Trocar template sem cache invalidation (fetchAreas pode estar
+  cacheado).
+- **F6**: 2 templates com mesmo nome (sem dedupe).
+- **A25**: Empty state text zumbi ("em breve via modal" — modal já existe).
+
+**Próxima** (v4.63.27+): E2E UX manual via Chrome MCP cobrindo a matriz
+de 30+ cenários (post-login Renê) + fixes A10/A13/E5.
+
+---
+
 ## [4.63.25+20260528-web-link-audit-hotfix] — 2026-05-28
 
 **Hotfix HIGH** — auditoria pós-sprint Web Link (3 releases v4.63.22-24)

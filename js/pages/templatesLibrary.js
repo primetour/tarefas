@@ -156,7 +156,13 @@ function _applyFilters() {
     if (f.module && t.module !== f.module) return false;
     if (f.format && t.format !== f.format) return false;
     if (f.ownerId === 'global' && t.ownerType !== 'global') return false;
-    if (f.ownerId && f.ownerId !== 'global' && t.ownerId !== f.ownerId) return false;
+    // v4.63.26+ Fix A21: filtrar por área (ex: Lazer) DEVE incluir templates
+    // globais — mesmo critério da tab Templates por Área (portalAreas.js:719+).
+    // Sem isso, library mostra menos templates que o dropdown de atribuição
+    // (drift confuso pro user).
+    if (f.ownerId && f.ownerId !== 'global'
+        && t.ownerId !== f.ownerId
+        && t.ownerType !== 'global') return false;
     if (f.search) {
       const q = f.search.toLowerCase();
       const hay = `${t.name || ''} ${(t.placeholders || []).join(' ')}`.toLowerCase();

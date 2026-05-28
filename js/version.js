@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 25,
-  build: '20260528-web-link-audit-hotfix',
+  patch: 26,
+  build: '20260528-templates-ux-audit-fixes',
 };
 
 /** "1.2.0" */

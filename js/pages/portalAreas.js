@@ -963,16 +963,27 @@ function showAreaModal(area, areas = []) {
       const useExternalName = document.getElementById('area-use-external-name')?.checked !== false;
 
       // v4.63.10+ coleta templateRefs da tab Templates
-      const templateRefs = {};
-      modal.querySelectorAll('.area-tpl-ref-select').forEach(sel => {
-        const mod = sel.dataset.tplMod;
-        const fmt = sel.dataset.tplFmt;
-        const val = sel.value;
-        if (val) {
-          if (!templateRefs[mod]) templateRefs[mod] = {};
-          templateRefs[mod][fmt] = val;
-        }
-      });
+      // v4.63.26+ Fix B11: se a tab Templates NÃO foi renderizada (user só
+      // editou outras tabs), querySelectorAll retorna 0 selects → templateRefs
+      // ficaria {} → save grava null → **zera config existente**. Defensive:
+      // se 0 selects, preserva o que já estava no area.templateRefs original.
+      const tplSelects = modal.querySelectorAll('.area-tpl-ref-select');
+      let templateRefs = null;
+      if (tplSelects.length > 0) {
+        templateRefs = {};
+        tplSelects.forEach(sel => {
+          const mod = sel.dataset.tplMod;
+          const fmt = sel.dataset.tplFmt;
+          const val = sel.value;
+          if (val) {
+            if (!templateRefs[mod]) templateRefs[mod] = {};
+            templateRefs[mod][fmt] = val;
+          }
+        });
+      } else {
+        // Tab Templates não foi acessada nesta sessão de edit → manter doc atual.
+        templateRefs = area?.templateRefs || null;
+      }
 
       await saveArea(area?.id || null, {
         name,
@@ -991,7 +1002,8 @@ function showAreaModal(area, areas = []) {
         // v4.62.40 Fase B.1 — toggle externalName (D7 fix)
         brand:     { useExternalName },
         // v4.63.10+ atribuição template→área (generators honram em v4.63.11+)
-        templateRefs: Object.keys(templateRefs).length ? templateRefs : null,
+        // v4.63.26+ templateRefs já preserva valor original se tab não foi aberta (B11 fix)
+        templateRefs: (templateRefs && Object.keys(templateRefs).length) ? templateRefs : null,
       });
       toast.success(`Área "${name}" ${area ? 'atualizada' : 'criada'}.`);
       close();
