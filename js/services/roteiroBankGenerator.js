@@ -187,9 +187,13 @@ export function bankDocToRoteiroShape(bankDoc) {
  * Salva o arquivo via jsPDF (download automático no browser).
  *
  * @param {object} bankDoc — doc completo do roteiros_bank
+ * @param {object|null} area — v4.62.40 Fase B.2 (D4): aceita area pra branding.
+ *                              Antes (até v4.62.39): sempre null → PDF saía genérico
+ *                              cinza, sem logo nem cor da BU. Agora caller (roteiroBank.js)
+ *                              pode passar a área escolhida no dropdown.
  * @returns {Promise<{filename:string, blob:Blob}>}
  */
-export async function generateRoteiroBankPDF(bankDoc) {
+export async function generateRoteiroBankPDF(bankDoc, area = null) {
   const shape = bankDocToRoteiroShape(bankDoc);
   // Filename custom: prefixo [Banco] + título
   const cleanTitle = String(bankDoc.title || 'roteiro')
@@ -197,5 +201,5 @@ export async function generateRoteiroBankPDF(bankDoc) {
     .replace(/\s+/g, '-')
     .slice(0, 60);
   shape._exportFilename = `Banco-${cleanTitle}.pdf`;
-  return generateRoteiroPDF(shape, null);
+  return generateRoteiroPDF(shape, area);
 }

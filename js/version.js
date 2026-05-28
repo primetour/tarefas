@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 62,
-  patch: 39,
-  build: '20260528-areas-templates-fase-a-ssot-defaults',
+  patch: 40,
+  build: '20260528-areas-templates-fase-b-toggle-name-banco-area',
 };
 
 /** "1.2.0" */

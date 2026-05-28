@@ -333,6 +333,24 @@ function showAreaModal(area, areas = []) {
           <input type="text" id="area-name" class="filter-select" style="width:100%;"
             placeholder="Ex: BTG Partners" value="${esc(area?.name || '')}">
         </div>
+
+        <!-- v4.62.40 Fase B.1 (D7): toggle brand externo. Default ligado pra
+             ser consistente com Portal de Dicas (que sempre mostrou nome da
+             área). Desligado força "PRIMETOUR" guarda-chuva nas capas. -->
+        <div class="area-field" style="padding:12px 14px;background:var(--bg-soft,#F9FAFB);border-radius:6px;border:1px solid var(--border-subtle,#e5e7eb);">
+          <label style="display:flex;align-items:center;gap:10px;cursor:pointer;margin:0;">
+            <input type="checkbox" id="area-use-external-name"
+              ${area?.brand?.useExternalName !== false ? 'checked' : ''}
+              style="margin:0;width:16px;height:16px;cursor:pointer;accent-color:var(--brand-gold,#D4A843);">
+            <div style="flex:1;">
+              <div style="font-weight:600;color:var(--text-primary);">Mostrar nome da área nos exports</div>
+              <div class="hint" style="margin-top:2px;font-weight:400;">
+                Quando ligado, capas de PDF e footer do link web mostram <strong>"${esc(area?.name || 'Nome da área')}"</strong>.<br>
+                Quando desligado, mostra <strong>"PRIMETOUR"</strong> (marca guarda-chuva).
+              </div>
+            </div>
+          </label>
+        </div>
         <div class="area-field">
           <label>Categoria <span style="font-weight:400;color:var(--text-muted);">(agrupa áreas)</span></label>
           <input type="text" id="area-category" class="filter-select" style="width:100%;"
@@ -630,6 +648,9 @@ function showAreaModal(area, areas = []) {
       if (portalOv)   modules.portal   = portalOv;
       if (roteirosOv) modules.roteiros = roteirosOv;
 
+      // v4.62.40 Fase B.1: brand.useExternalName toggle (D7)
+      const useExternalName = document.getElementById('area-use-external-name')?.checked !== false;
+
       await saveArea(area?.id || null, {
         name,
         category:    document.getElementById('area-category')?.value?.trim() || '',
@@ -644,6 +665,8 @@ function showAreaModal(area, areas = []) {
         fonts:     { headline, body, accentScale },
         editorial: { voice, sectionStyle, coverStyle, chromeAccent },
         modules:   Object.keys(modules).length ? modules : null,
+        // v4.62.40 Fase B.1 — toggle externalName (D7 fix)
+        brand:     { useExternalName },
       });
       toast.success(`Área "${name}" ${area ? 'atualizada' : 'criada'}.`);
       close();

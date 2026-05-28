@@ -17,6 +17,7 @@ import { fetchRoteiroBankList, archiveRoteiroBank, duplicateRoteiroBank, isExpir
 import { continentLabel } from '../data/continents.js';
 import { generateRoteiroBankPDF } from '../services/roteiroBankGenerator.js';
 import { actionIcon } from '../components/uiKit.js';
+import { fetchAreas } from '../services/portal.js';   // v4.62.40 Fase B.2 (D4)
 
 const esc = s => s ? String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') : '';
 
@@ -713,6 +714,13 @@ export async function renderRoteiroBank(container) {
       if (action === 'export-pdf') {
         const d = state.list.find(x => x.id === id);
         if (!d) { toast.error('Roteiro não encontrado.'); return; }
+
+        // v4.62.40 Fase B.2 (D4): pergunta a área antes de gerar.
+        // Antes (v4.62.39-): PDF saía sempre genérico (sem logo nem cor da BU).
+        // Agora: dropdown com áreas + opção "Sem área (defaults PRIMETOUR)".
+        const area = await _promptAreaForBankExport();
+        if (area === undefined) return;  // user cancelou
+
         // v4.50.10+: indica progresso visualmente no próprio botão (sem toast
         // "Gerando PDF…" que duplicava com o toast.success final).
         const origHTML = btn.innerHTML;
@@ -720,7 +728,7 @@ export async function renderRoteiroBank(container) {
         btn.style.opacity = '0.6';
         btn.innerHTML = '<span style="font-size:0.7rem;">⋯</span>';
         try {
-          const res = await generateRoteiroBankPDF(d);
+          const res = await generateRoteiroBankPDF(d, area);
           toast.success(`PDF gerado: ${res.filename || 'download iniciado'}`);
         } catch (err) {
           console.error('[Banco] export PDF falhou:', err);
@@ -835,4 +843,81 @@ export async function renderRoteiroBank(container) {
     });
     refreshGrid(container, { resetPage: true });
   }, { signal });
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * v4.62.40 Fase B.2 (D4) — modal de seleção de área pra export do Banco.
+ *
+ * Antes: PDF do Banco saía sempre genérico (cinza, sem logo, sem cor da BU).
+ * Agora: user escolhe área no modal → generator aplica branding completo
+ * (logo + cores + fonts/editorial via SSOT areaDefaults).
+ *
+ * Retorna:
+ *   - objeto area completo → user escolheu
+ *   - null                 → user escolheu "Sem área (defaults PRIMETOUR)"
+ *   - undefined            → user cancelou (não gerar)
+ *
+ * Cache do fetchAreas via _bankAreasCache (60s TTL) pra modal abrir instant.
+ * ═══════════════════════════════════════════════════════════════════════ */
+let _bankAreasCache = null;
+let _bankAreasCacheAt = 0;
+const _BANK_AREAS_TTL = 60_000;
+
+async function _promptAreaForBankExport() {
+  const { modal } = await import('../components/modal.js');
+  let areas;
+  if (_bankAreasCache && Date.now() - _bankAreasCacheAt < _BANK_AREAS_TTL) {
+    areas = _bankAreasCache;
+  } else {
+    try { areas = await fetchAreas(); _bankAreasCache = areas; _bankAreasCacheAt = Date.now(); }
+    catch (e) { areas = []; console.warn('[Banco] fetchAreas falhou:', e?.message); }
+  }
+  const sorted = [...areas].sort((a, b) =>
+    (a.category || 'zz').localeCompare(b.category || 'zz') ||
+    (a.name || '').localeCompare(b.name || '')
+  );
+
+  return new Promise(resolve => {
+    const ref = modal.open({
+      title: '🎨 Escolha a área (branding do PDF)',
+      size: 'sm',
+      dedupeKey: 'bank-export-area',
+      closeOnEsc: true,
+      content: `
+        <p style="font-size:0.8125rem;color:var(--text-muted);margin:0 0 12px;line-height:1.5;">
+          O PDF do banco vai usar logo + cores + tipografia da área escolhida.
+          Pra cotação genérica sem branding de BU, escolha <em>Sem área</em>.
+        </p>
+        <div style="display:flex;flex-direction:column;gap:6px;max-height:50vh;overflow-y:auto;">
+          <label class="bank-area-opt" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border-subtle,#e5e7eb);border-radius:6px;cursor:pointer;">
+            <input type="radio" name="bank-area" value="" checked style="accent-color:var(--brand-gold,#D4A843);">
+            <div style="flex:1;">
+              <div style="font-weight:600;color:var(--text-primary);">Sem área <span style="font-weight:400;color:var(--text-muted);font-size:0.72rem;">(defaults PRIMETOUR)</span></div>
+              <div style="font-size:0.72rem;color:var(--text-muted);">PDF genérico cinza, sem logo de BU.</div>
+            </div>
+          </label>
+          ${sorted.map(a => `
+            <label class="bank-area-opt" style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border-subtle,#e5e7eb);border-radius:6px;cursor:pointer;">
+              <input type="radio" name="bank-area" value="${a.id}" style="accent-color:var(--brand-gold,#D4A843);">
+              ${a.logoUrl ? `<img src="${a.logoUrl}" alt="" style="width:36px;height:36px;object-fit:contain;background:#1F2937;border-radius:4px;padding:3px;">` : `<div style="width:36px;height:36px;background:var(--bg-surface);border-radius:4px;display:flex;align-items:center;justify-content:center;color:var(--text-muted);font-size:0.65rem;">sem<br>logo</div>`}
+              <div style="flex:1;min-width:0;">
+                <div style="font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(a.name || '?')}</div>
+                <div style="font-size:0.72rem;color:var(--text-muted);">${esc(a.category || 'Sem categoria')}${a.colors?.primary ? ` · <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${a.colors.primary};vertical-align:middle;"></span>` : ''}</div>
+              </div>
+            </label>
+          `).join('')}
+        </div>`,
+      footer: [
+        { label: 'Cancelar', class: 'btn-secondary', closeOnClick: false,
+          onClick: (_, { close }) => { resolve(undefined); close(); } },
+        { label: 'Gerar PDF', class: 'btn-primary', closeOnClick: false,
+          onClick: (_, { close }) => {
+            const sel = ref.getBody().querySelector('input[name="bank-area"]:checked')?.value || '';
+            const picked = sel ? sorted.find(a => a.id === sel) : null;
+            close();
+            resolve(picked || null);
+          } },
+      ],
+    });
+  });
 }
