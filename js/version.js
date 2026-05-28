@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 35,
-  build: '20260528-portal-segments-reorder',
+  patch: 36,
+  build: '20260528-portal-criancas-fix-move-item',
 };
 
 /** "1.2.0" */

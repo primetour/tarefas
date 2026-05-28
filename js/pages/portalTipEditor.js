@@ -906,9 +906,14 @@ function placeItemBlock(item, i, cats, isAgenda) {
     padding:16px;background:var(--bg-card);position:relative;">
 
     <div style="position:absolute;top:10px;right:10px;display:flex;gap:4px;">
-      <button class="place-move-up" data-index="${i}" style="border:none;background:none;cursor:pointer;color:var(--text-muted);padding:3px 6px;">↑</button>
-      <button class="place-move-down" data-index="${i}" style="border:none;background:none;cursor:pointer;color:var(--text-muted);padding:3px 6px;">↓</button>
-      <button class="place-remove" data-index="${i}" style="border:none;background:none;cursor:pointer;color:#EF4444;padding:3px 6px;">✕</button>
+      <button class="place-move-up" data-index="${i}" title="Mover pra cima" style="border:none;background:none;cursor:pointer;color:var(--text-muted);padding:3px 6px;">↑</button>
+      <button class="place-move-down" data-index="${i}" title="Mover pra baixo" style="border:none;background:none;cursor:pointer;color:var(--text-muted);padding:3px 6px;">↓</button>
+      <!-- v4.63.36+ Renê: items de "atrações para crianças" caíram em "atrações"
+           durante import PDF. Botão ⇄ permite mover item entre segmentos compatíveis
+           (place_list / agenda) sem precisar deletar e recriar. -->
+      <button class="place-move-seg" data-index="${i}" title="Mover pra outro segmento"
+        style="border:none;background:none;cursor:pointer;color:var(--brand-gold);padding:3px 6px;font-weight:600;">⇄</button>
+      <button class="place-remove" data-index="${i}" title="Remover" style="border:none;background:none;cursor:pointer;color:#EF4444;padding:3px 6px;">✕</button>
     </div>
 
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-right:90px;margin-bottom:10px;">
@@ -1045,6 +1050,16 @@ function bindPlaceList(key, isAgenda = false) {
     const btn = e.target.closest('button');
     if (!btn) return;
     const idx   = parseInt(btn.dataset.index);
+
+    // v4.63.36+ Move pra outro segmento compatível
+    if (btn.classList.contains('place-move-seg')) {
+      saveCurrentSegmentData();
+      const item = segmentData[key]?.items?.[idx];
+      if (!item) return;
+      openMoveSegmentModal(key, idx, item);
+      return;
+    }
+
     saveCurrentSegmentData();
     const items = segmentData[key].items;
     if (btn.classList.contains('place-remove')) items.splice(idx, 1);
@@ -1058,6 +1073,92 @@ function bindPlaceList(key, isAgenda = false) {
     document.getElementById('agenda-periodo')?.addEventListener('input', markDirty);
     document.getElementById('agenda-dica')?.addEventListener('input', markDirty);
   }
+}
+
+/**
+ * v4.63.36+ Modal pra mover um item entre segmentos compatíveis.
+ *
+ * Compatibilidade: place_list ↔ place_list (atrações, restaurantes, etc.),
+ * agenda ↔ agenda. NÃO move pra special_info (Informações Gerais) nem pra
+ * simple_list (Bairros, Arredores) pq schema do item é diferente.
+ *
+ * Use case Renê: items de "atrações para crianças" caíram em "atrações"
+ * durante import PDF. Editor permite mover sem deletar/recriar.
+ */
+function openMoveSegmentModal(fromKey, itemIdx, item) {
+  const currentSeg = _allSegments.find(s => s.key === fromKey);
+  if (!currentSeg) return;
+
+  // Segmentos compatíveis = mesmo mode (place_list ou agenda)
+  const compat = _allSegments.filter(s =>
+    s.key !== fromKey && s.mode === currentSeg.mode
+  );
+  if (!compat.length) {
+    toast.info('Nenhum segmento compatível pra mover este item.');
+    return;
+  }
+
+  const itemTitle = (item.titulo || item.title || '(sem título)').slice(0, 60);
+
+  const overlay = document.createElement('div');
+  overlay.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,0.55);
+    z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;`;
+  overlay.innerHTML = `
+    <div class="card" style="max-width:440px;width:100%;padding:0;display:flex;flex-direction:column;
+      max-height:80vh;">
+      <div style="padding:18px 22px 12px;border-bottom:1px solid var(--border-subtle);">
+        <h3 style="margin:0 0 6px;font-size:1rem;">Mover item pra outro segmento</h3>
+        <div style="font-size:0.8125rem;color:var(--text-muted);line-height:1.45;">
+          Item: <strong style="color:var(--text-primary);">${esc(itemTitle)}</strong><br>
+          De: <strong style="color:var(--text-primary);">${esc(currentSeg.label)}</strong>
+        </div>
+      </div>
+      <div style="padding:14px 22px;flex:1;overflow-y:auto;">
+        <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:8px;text-transform:uppercase;letter-spacing:.05em;">
+          Mover pra:
+        </div>
+        <div id="move-seg-list" style="display:flex;flex-direction:column;gap:6px;">
+          ${compat.map(s => `
+            <button class="move-seg-btn btn btn-secondary" data-target="${esc(s.key)}"
+              style="text-align:left;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;">
+              <span>${esc(s.label)}</span>
+              <span style="font-size:0.7rem;color:var(--text-muted);">${esc(s.mode)}</span>
+            </button>
+          `).join('')}
+        </div>
+      </div>
+      <div style="padding:12px 22px;border-top:1px solid var(--border-subtle);display:flex;justify-content:flex-end;">
+        <button id="move-seg-cancel" class="btn btn-ghost btn-sm">Cancelar</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const close = () => { overlay.remove(); document.removeEventListener('keydown', onKey); };
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey);
+  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+  overlay.querySelector('#move-seg-cancel')?.addEventListener('click', close);
+
+  overlay.querySelectorAll('.move-seg-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const targetKey = btn.dataset.target;
+      const fromItems = segmentData[fromKey]?.items;
+      if (!fromItems || !fromItems[itemIdx]) { close(); return; }
+
+      // Move
+      const [moved] = fromItems.splice(itemIdx, 1);
+      if (!segmentData[targetKey]) segmentData[targetKey] = { items: [] };
+      if (!Array.isArray(segmentData[targetKey].items)) segmentData[targetKey].items = [];
+      segmentData[targetKey].items.push(moved);
+
+      const targetSeg = _allSegments.find(s => s.key === targetKey);
+      close();
+      renderSegmentPanel(fromKey);
+      markDirty();
+      toast.success(`Movido pra "${targetSeg?.label || targetKey}".`);
+    });
+  });
 }
 
 /* ─── Read DOM → segmentData ──────────────────────────────── */

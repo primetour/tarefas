@@ -201,22 +201,31 @@ async function extractText(file) {
 
 /* ─── Heading detection ──────────────────────────────────── */
 const TOP_SECTIONS = [
-  // Ordem importa: mais específicos antes
-  { match: /^INFORMAÇÕES\s+GERAIS$/i,          key: 'informacoes_gerais' },
-  { match: /^CLIMA$/i,                          key: '__clima' },
-  { match: /^REPRESENTAÇÃO\s+BRASILEIRA/i,      key: '__representacao' },
-  { match: /^BAIRROS$/i,                        key: 'bairros' },
-  { match: /^ATRAÇÕES\s+PARA\s+CRIANÇAS$/i,     key: 'atracoes_criancas' },
-  { match: /^ATRAÇÕES$/i,                       key: 'atracoes' },
-  { match: /^RESTAURANTES$/i,                   key: 'restaurantes' },
-  { match: /^VIDA\s+NOTURNA$/i,                 key: 'vida_noturna' },
-  { match: /^CASAS?\s+DE\s+ESPETÁCULOS/i,       key: 'espetaculos' },
-  { match: /^COMPRAS$/i,                        key: 'compras' },
-  { match: /^ARREDORES$/i,                      key: 'arredores' },
-  { match: /^HIGHLIGHTS$/i,                     key: 'highlights' },
-  { match: /^AGENDA\s+CULTURAL$/i,              key: 'agenda_cultural' },
-  { match: /^EVENTOS\s+ESPORTIVOS$/i,           key: '__eventos_esportivos' },
-  { match: /^DICA$/i,                           key: '__dica' },
+  // Ordem importa: mais específicos antes.
+  // v4.63.36+ Regex tolerantes a:
+  //   - whitespace trailing/leading (\s* nas pontas)
+  //   - pontuação final opcional (\s*[:.\-–—]?\s*$)
+  //   - artigos no meio (AS/OS opcional pra "para [as] crianças")
+  //   - acento ausente (cri[aá]nças)
+  { match: /^\s*INFORMAÇÕES\s+GERAIS\s*[:.\-–—]?\s*$/i,            key: 'informacoes_gerais' },
+  { match: /^\s*CLIMA\s*[:.\-–—]?\s*$/i,                            key: '__clima' },
+  { match: /^\s*REPRESENTAÇÃO\s+BRASILEIRA/i,                       key: '__representacao' },
+  { match: /^\s*BAIRROS\s*[:.\-–—]?\s*$/i,                          key: 'bairros' },
+  // v4.63.36+ Fortalecido: aceita "ATRAÇÕES PARA (AS|OS) CRIANÇAS" e variações.
+  { match: /^\s*ATRA[ÇC][ÕO]ES\s+PARA(?:\s+(?:AS|OS))?\s+CRIAN[ÇC]AS\s*[:.\-–—]?\s*$/i, key: 'atracoes_criancas' },
+  // v4.63.36+ Variações comuns: "ATRAÇÕES INFANTIS", "PARA CRIANÇAS" sozinho
+  { match: /^\s*ATRA[ÇC][ÕO]ES\s+INFANT[IÍ]S\s*[:.\-–—]?\s*$/i,     key: 'atracoes_criancas' },
+  { match: /^\s*PARA\s+(?:AS\s+)?CRIAN[ÇC]AS\s*[:.\-–—]?\s*$/i,     key: 'atracoes_criancas' },
+  { match: /^\s*ATRA[ÇC][ÕO]ES\s*[:.\-–—]?\s*$/i,                  key: 'atracoes' },
+  { match: /^\s*RESTAURANTES\s*[:.\-–—]?\s*$/i,                     key: 'restaurantes' },
+  { match: /^\s*VIDA\s+NOTURNA\s*[:.\-–—]?\s*$/i,                   key: 'vida_noturna' },
+  { match: /^\s*CASAS?\s+DE\s+ESPET[ÁA]CULOS/i,                     key: 'espetaculos' },
+  { match: /^\s*COMPRAS\s*[:.\-–—]?\s*$/i,                          key: 'compras' },
+  { match: /^\s*ARREDORES\s*[:.\-–—]?\s*$/i,                        key: 'arredores' },
+  { match: /^\s*HIGHLIGHTS\s*[:.\-–—]?\s*$/i,                       key: 'highlights' },
+  { match: /^\s*AGENDA\s+CULTURAL\s*[:.\-–—]?\s*$/i,                key: 'agenda_cultural' },
+  { match: /^\s*EVENTOS\s+ESPORTIVOS\s*[:.\-–—]?\s*$/i,             key: '__eventos_esportivos' },
+  { match: /^\s*DICA\s*[:.\-–—]?\s*$/i,                             key: '__dica' },
 ];
 
 /* ─── v4.49.66+ Mapeamento subtítulo → segment key por palavras-chave
