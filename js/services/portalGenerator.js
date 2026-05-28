@@ -658,57 +658,113 @@ function pickImg(item, idx, imgs, segKey) {
 
 const R2_PROXY = 'https://primetour-images.rene-castro.workers.dev';
 
-/* Fetch image via CORS-safe proxy, return { dataUrl, mimeType, ext, arrayBuffer } */
+// v4.63.38+ Origins que servem CORS-safe direto (sem precisar do proxy R2).
+// O proxy R2 retorna 403 pra URLs externas — só serve pub-*.r2.dev.
+// Renê reportou: "fallback do unsplash nao funciona — exportei dica de Orlando
+// sem fotos no banco e o PDF saiu sem nenhuma foto". Causa raiz: TODAS as URLs
+// passavam pelo proxy, incluindo Unsplash/Wikipedia que falhavam.
+const DIRECT_FETCH_ORIGINS = [
+  'https://images.unsplash.com/',
+  'https://upload.wikimedia.org/',
+  'https://en.wikipedia.org/',
+  'https://pt.wikipedia.org/',
+  'https://i.imgur.com/',
+  'https://image.viagens.', // partner image servers (newsletter etc — viagens.*)
+  'https://image.centurion.',
+  'https://image.exct.net/',
+  'https://image.s10.exacttarget.com/',
+  'https://ftpprime.blob.core.windows.net/',
+  'https://storage.googleapis.com/',
+  'https://lh3.googleusercontent.com/',
+];
+
+function _shouldUseProxy(url) {
+  // Proxy SÓ pra R2 bucket (pub-*.r2.dev) ou worker direto
+  if (url.includes('pub-') && url.includes('.r2.dev/')) return true;
+  if (url.startsWith(R2_PROXY)) return false; // já é proxy
+  // Origin direto?
+  if (DIRECT_FETCH_ORIGINS.some(o => url.startsWith(o))) return false;
+  // Default conservador: proxy. (Bucket próprio + fallback safe pra orgs novas)
+  return true;
+}
+
+/* Fetch image via CORS-safe proxy OU direto se origem suporta CORS,
+   return { dataUrl, mimeType, ext, arrayBuffer } */
 async function fetchImgData(url) {
   if (!url) return null;
   try {
-    const proxyUrl = `${R2_PROXY}?url=${encodeURIComponent(url)}`;
-    const res      = await fetch(proxyUrl);
-    if (!res.ok) return null;
-    const blob     = await res.blob();
-    const mime     = blob.type || 'image/jpeg';
-    // Normalise extension
-    const extMap   = { 'image/jpeg':'jpg','image/jpg':'jpg','image/png':'png',
-                       'image/webp':'png','image/gif':'gif' };
-    const ext      = extMap[mime] || 'jpg';
-    // dataUrl for PDF/PPTX
-    const dataUrl  = await new Promise((resolve) => {
-      const r = new FileReader();
-      r.onload  = () => resolve(r.result);
-      r.onerror = () => resolve(null);
-      r.readAsDataURL(blob);
-    });
-    // ArrayBuffer for DOCX
-    let arrayBuffer = await blob.arrayBuffer();
-    let outDataUrl  = dataUrl;
-    let outExt      = ext;
-    let outMime     = mime;
-    // WebP não é suportado por docx ImageRun NEM por pptxgenjs. Converte
-    // pra PNG via canvas antes de devolver — tanto arrayBuffer (DOCX) quanto
-    // dataUrl (PDF/PPTX) usam a versão PNG. PDF do jsPDF aceita webp mas
-    // como já normalizamos, mantém consistente.
-    if (mime === 'image/webp' && typeof Image !== 'undefined' && typeof document !== 'undefined') {
-      try {
-        const img = await new Promise((resolve, reject) => {
-          const im = new Image();
-          im.onload = () => resolve(im);
-          im.onerror = reject;
-          im.src = dataUrl;
-        });
-        const canvas = document.createElement('canvas');
-        canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
-        canvas.getContext('2d').drawImage(img, 0, 0);
-        const pngBlob = await new Promise(r => canvas.toBlob(r, 'image/png'));
-        if (pngBlob) {
-          arrayBuffer = await pngBlob.arrayBuffer();
-          outDataUrl  = canvas.toDataURL('image/png');
-          outExt      = 'png';
-          outMime     = 'image/png';
+    // v4.63.38+ Decide entre proxy (R2 próprio) e fetch direto (Unsplash/Wiki CORS-*).
+    const useProxy = _shouldUseProxy(url);
+    const targetUrl = useProxy ? `${R2_PROXY}?url=${encodeURIComponent(url)}` : url;
+    const res = await fetch(targetUrl);
+    if (!res.ok) {
+      // Fallback: se proxy falhou (403/etc), tenta direto (Unsplash CORS-safe).
+      if (useProxy) {
+        console.warn(`[fetchImgData] proxy falhou ${res.status} — tentando direto: ${url.slice(0, 80)}`);
+        try {
+          const direct = await fetch(url);
+          if (!direct.ok) return null;
+          return _processImageResponse(direct);
+        } catch (e) {
+          console.warn('[fetchImgData] fetch direto também falhou:', e?.message);
+          return null;
         }
-      } catch(e) { console.warn('[portalGen] webp→png conversion failed:', e?.message); }
+      }
+      return null;
     }
-    return { dataUrl: outDataUrl, mimeType: outMime, ext: outExt, arrayBuffer };
-  } catch { return null; }
+    return _processImageResponse(res);
+  } catch (e) {
+    console.warn('[fetchImgData] erro inesperado:', e?.message);
+    return null;
+  }
+}
+
+// v4.63.38+ Helper extraído: processa Response → { dataUrl, mimeType, ext, arrayBuffer }
+// Permite reuso entre fetch via proxy E fetch direto (fallback).
+async function _processImageResponse(res) {
+  const blob     = await res.blob();
+  const mime     = blob.type || 'image/jpeg';
+  // Normalise extension
+  const extMap   = { 'image/jpeg':'jpg','image/jpg':'jpg','image/png':'png',
+                     'image/webp':'png','image/gif':'gif' };
+  const ext      = extMap[mime] || 'jpg';
+  // dataUrl for PDF/PPTX
+  const dataUrl  = await new Promise((resolve) => {
+    const r = new FileReader();
+    r.onload  = () => resolve(r.result);
+    r.onerror = () => resolve(null);
+    r.readAsDataURL(blob);
+  });
+  // ArrayBuffer for DOCX
+  let arrayBuffer = await blob.arrayBuffer();
+  let outDataUrl  = dataUrl;
+  let outExt      = ext;
+  let outMime     = mime;
+  // WebP não é suportado por docx ImageRun NEM por pptxgenjs. Converte
+  // pra PNG via canvas antes de devolver — tanto arrayBuffer (DOCX) quanto
+  // dataUrl (PDF/PPTX) usam a versão PNG. PDF do jsPDF aceita webp mas
+  // como já normalizamos, mantém consistente.
+  if (mime === 'image/webp' && typeof Image !== 'undefined' && typeof document !== 'undefined') {
+    try {
+      const img = await new Promise((resolve, reject) => {
+        const im = new Image();
+        im.onload = () => resolve(im);
+        im.onerror = reject;
+        im.src = dataUrl;
+      });
+      const canvas = document.createElement('canvas');
+      canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
+      canvas.getContext('2d').drawImage(img, 0, 0);
+      const pngBlob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+      if (pngBlob) {
+        arrayBuffer = await pngBlob.arrayBuffer();
+        outDataUrl  = canvas.toDataURL('image/png');
+        outExt      = 'png';
+        outMime     = 'image/png';
+      }
+    } catch(e) { console.warn('[portalGen] webp→png conversion failed:', e?.message); }
+  }
+  return { dataUrl: outDataUrl, mimeType: outMime, ext: outExt, arrayBuffer };
 }
 
 /* Convenience wrappers */
