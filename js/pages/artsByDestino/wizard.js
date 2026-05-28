@@ -536,42 +536,63 @@ function attachMoveable(field) {
   const el = $(`#canvas-preview .slot-text[data-field="${field}"]`);
   if (!el) return;
 
-  // Garante position absolute pra poder mover (a maioria já é, no .slot-text-block usamos flex)
-  // Aplicamos via override de transform pra não quebrar layout original quando resetar.
   const idx = state.activeSlideIdx;
   const ov = state.slideOverrides[idx]?.[field] || {};
   if (ov.dx != null) el.style.transform = `translate(${ov.dx}px, ${ov.dy || 0}px)`;
+  if (ov.width) el.style.width = ov.width + 'px';
 
   _moveable = new window.Moveable(document.body, {
     target: el,
     draggable: true,
+    resizable: true,
     origin: false,
     edge: false,
     throttleDrag: 0,
+    throttleResize: 0,
     keepRatio: false,
-    container: $('#canvas-preview .slide-render'),  // limita movimento ao slide
+    container: $('#canvas-preview .slide-render'),
     snappable: true,
     snapThreshold: 5,
     elementSnapDirections: { top: true, bottom: true, left: true, right: true, center: true, middle: true },
+    renderDirections: ['e', 'w'],  // só handles horizontais (largura do texto)
   });
 
-  let startX = ov.dx || 0;
-  let startY = ov.dy || 0;
-
+  // ── Drag ──
   _moveable.on('dragStart', (e) => {
-    startX = ov.dx || 0;
-    startY = ov.dy || 0;
-    e.set([startX, startY]);
+    e.set([ov.dx || 0, ov.dy || 0]);
   });
   _moveable.on('drag', (e) => {
     el.style.transform = `translate(${e.beforeTranslate[0]}px, ${e.beforeTranslate[1]}px)`;
   });
   _moveable.on('dragEnd', (e) => {
-    const [dx, dy] = e.lastEvent ? e.lastEvent.beforeTranslate : [startX, startY];
+    if (!e.lastEvent) return;
+    const [dx, dy] = e.lastEvent.beforeTranslate;
     setOverride(field, { dx, dy });
-    // Reposiciona toolbar (texto pode ter saído de baixo dela)
     showFloatingToolbar(field);
-    // Reattach pra Moveable recalcular pos
+    requestAnimationFrame(() => attachMoveable(field));
+  });
+
+  // ── Resize ──
+  _moveable.on('resizeStart', (e) => {
+    e.setOrigin(['%', '%']);
+    e.dragStart && e.dragStart.set([ov.dx || 0, ov.dy || 0]);
+  });
+  _moveable.on('resize', (e) => {
+    el.style.width = e.width + 'px';
+    if (e.drag) {
+      el.style.transform = `translate(${e.drag.beforeTranslate[0]}px, ${e.drag.beforeTranslate[1]}px)`;
+    }
+  });
+  _moveable.on('resizeEnd', (e) => {
+    if (!e.lastEvent) return;
+    const width = e.lastEvent.width;
+    const next = { width };
+    if (e.lastEvent.drag) {
+      next.dx = e.lastEvent.drag.beforeTranslate[0];
+      next.dy = e.lastEvent.drag.beforeTranslate[1];
+    }
+    setOverride(field, next);
+    showFloatingToolbar(field);
     requestAnimationFrame(() => attachMoveable(field));
   });
 }
@@ -655,6 +676,10 @@ function applyOverridesToSlideScaled(slideNode, slideIdx, scale = 1) {
       const dx = (props.dx || 0) * scale;
       const dy = (props.dy || 0) * scale;
       el.style.transform = `translate(${dx}px, ${dy}px)`;
+    }
+    // Resize: largura em px, escalado no export
+    if (props.width != null) {
+      el.style.width = (props.width * scale) + 'px';
     }
   }
 }
