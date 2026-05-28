@@ -873,14 +873,14 @@
 .slide-render.story[data-layout="lateral-esq"] .solid-primary {
   top: auto; right: auto;
   left: 0; bottom: 0;
-  width: 58%; height: 50%;
+  width: 65%; height: 38%;
 }
 .slide-render.story[data-layout="lateral-esq"] .slot-text-block {
-  top: calc(50% + 4%); right: auto;
-  left: 5%; bottom: 5%;
-  width: 50%;
+  top: 62%; right: auto;
+  left: 5%; bottom: 4%;
+  width: 56%;
   align-items: flex-start;
-  justify-content: flex-start;
+  justify-content: center;   /* texto centralizado vertical no retângulo */
 }
 
 /* Layout DIREITA (lateral-dir) — foto fullscreen + retângulo canto inf DIR */
@@ -891,14 +891,14 @@
 .slide-render.story[data-layout="lateral-dir"] .solid-primary {
   top: auto; left: auto;
   right: 0; bottom: 0;
-  width: 58%; height: 50%;
+  width: 65%; height: 38%;
 }
 .slide-render.story[data-layout="lateral-dir"] .slot-text-block {
-  top: calc(50% + 4%); left: auto;
-  right: 5%; bottom: 5%;
-  width: 50%;
+  top: 62%; left: auto;
+  right: 5%; bottom: 4%;
+  width: 56%;
   align-items: flex-start;
-  justify-content: flex-start;
+  justify-content: center;
 }
 
 /* Texto sempre left-aligned dentro dos retângulos (inclusive no lateral-dir) */
