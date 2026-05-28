@@ -358,6 +358,30 @@ export async function renderTemplate(templateId, data = {}) {
 }
 
 /**
+ * v4.63.9+ Duplica template pra outra área (ou pra global).
+ *
+ * @param {string} sourceTemplateId
+ * @param {Object} opts — { targetOwnerType: 'area'|'global', targetOwnerId, newName, isDefault }
+ * @returns {Promise<{templateId, fileUrl, name, duplicatedFrom}>}
+ */
+export async function duplicateTemplate(sourceTemplateId, opts = {}) {
+  if (!sourceTemplateId) throw new Error('sourceTemplateId obrigatório');
+  if (!canManageTemplates()) throw new Error('Permissão negada (templates_manage).');
+
+  const { getFunctions, httpsCallable } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js');
+  const { app } = await import('../firebase.js');
+  const fn = httpsCallable(getFunctions(app, 'us-central1'), 'duplicateTemplate');
+  const res = await fn({
+    sourceTemplateId,
+    targetOwnerType: opts.targetOwnerType || 'area',
+    targetOwnerId: opts.targetOwnerType === 'global' ? null : (opts.targetOwnerId || null),
+    newName: opts.newName,
+    isDefault: !!opts.isDefault,
+  });
+  return res.data;
+}
+
+/**
  * Trigger download de Blob no browser.
  */
 export function downloadBlob(blob, filename) {

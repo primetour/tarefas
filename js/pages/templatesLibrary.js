@@ -20,6 +20,7 @@ import { renderPageHeader, renderFilterBar } from '../components/uiKit.js';
 import {
   fetchTemplates, fetchTemplate, archiveTemplate, uploadTemplate as uploadTemplateService,
   renderTemplate as renderTemplateService, downloadBlob,
+  duplicateTemplate as duplicateTemplateService,
   validateTemplateFile, formatFileSize,
   TEMPLATE_MODULES, TEMPLATE_FORMATS, MODULE_MAP, FORMAT_MAP, PLACEHOLDERS_SPEC,
 } from '../services/templates.js';
@@ -132,6 +133,10 @@ function _renderCard(tpl, areas) {
           </button>
         ` : ''}
         ${canManage && !isArchived ? `
+          <button class="btn btn-secondary btn-sm tpl-action-duplicate" data-id="${_esc(tpl.id)}"
+            style="font-size:0.75rem;" title="Duplicar pra outra área">
+            ⎘ Duplicar
+          </button>
           <button class="btn btn-secondary btn-sm tpl-action-archive" data-id="${_esc(tpl.id)}"
             style="font-size:0.75rem;" title="Arquivar template">
             📦 Arquivar
@@ -278,6 +283,17 @@ export async function renderTemplatesLibrary(container) {
       return;
     }
 
+    // v4.63.9+ Duplicar template pra outra área
+    const dupBtn = e.target.closest('.tpl-action-duplicate');
+    if (dupBtn) {
+      e.preventDefault();
+      const id = dupBtn.dataset.id;
+      const tpl = _state.all.find(t => t.id === id);
+      if (!tpl) return;
+      _openDuplicateModal(tpl, container);
+      return;
+    }
+
     const archiveBtn = e.target.closest('.tpl-action-archive');
     if (archiveBtn) {
       e.preventDefault();
@@ -389,6 +405,119 @@ function _renderFilters(filterZone, signal) {
         _applyFilters();
         _renderResults(filterZone.closest('.page-content') || document.querySelector('#content') || document.body);
       }, { signal });
+    }
+  });
+}
+
+/* ─── Duplicate modal (v4.63.9+ duplicar pra outra área) ────────────── */
+
+function _openDuplicateModal(tpl, container) {
+  const sourceOwnerLabel = tpl.ownerType === 'global'
+    ? '🌐 Global'
+    : (_state.areas.find(a => a.id === tpl.ownerId)?.name || tpl.ownerId || '—');
+
+  // Áreas elegíveis (exclui owner atual)
+  const eligibleAreas = _state.areas.filter(a => !(tpl.ownerType === 'area' && a.id === tpl.ownerId));
+  const allowGlobal = tpl.ownerType !== 'global';
+
+  const html = `
+    <div id="tpl-dup-overlay" style="
+      position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:9999;
+      display:flex;align-items:center;justify-content:center;padding:24px;overflow-y:auto;">
+      <div style="background:var(--bg-card);border-radius:10px;padding:24px;
+        max-width:520px;width:100%;box-shadow:0 24px 48px rgba(0,0,0,0.35);">
+
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+          <h2 style="font-size:1.125rem;margin:0;color:var(--text-primary);">⎘ Duplicar template</h2>
+          <button id="dp-x" style="background:none;border:none;font-size:1.25rem;
+            color:var(--text-muted);cursor:pointer;padding:4px 8px;line-height:1;">×</button>
+        </div>
+        <p style="font-size:0.8125rem;color:var(--text-muted);margin:0 0 16px;">
+          Origem: <strong>${_esc(tpl.name)}</strong> · ${_esc(tpl.module)} · ${_esc(tpl.format)}
+          <br/>Owner atual: ${_esc(sourceOwnerLabel)}
+        </p>
+
+        <div style="display:grid;gap:12px;font-size:0.8125rem;">
+          <label>
+            <span style="display:block;color:var(--text-secondary);margin-bottom:4px;font-weight:500;">Novo nome (opcional)</span>
+            <input id="dp-name" class="form-input" type="text" maxlength="120"
+              placeholder="${_esc(tpl.name)} (cópia)" style="width:100%;" />
+          </label>
+
+          <label>
+            <span style="display:block;color:var(--text-secondary);margin-bottom:4px;font-weight:500;">Atribuir a</span>
+            <select id="dp-target" class="form-input" style="width:100%;">
+              ${allowGlobal ? '<option value="global">🌐 Global (todas as áreas)</option>' : ''}
+              ${eligibleAreas.map(a => `<option value="${_esc(a.id)}">${_esc(a.name)}</option>`).join('')}
+            </select>
+            <span style="display:block;font-size:0.7rem;color:var(--text-muted);margin-top:3px;">
+              Arquivo é copiado pra novo path no R2 — alterações no original não afetam a cópia.
+            </span>
+          </label>
+
+          <label style="display:flex;align-items:center;gap:8px;font-size:0.8125rem;">
+            <input id="dp-default" type="checkbox" style="width:14px;height:14px;accent-color:var(--brand-gold,#D4A843);">
+            <span>Marcar como template default da área destino</span>
+          </label>
+        </div>
+
+        <div id="dp-msg" style="font-size:0.7rem;color:var(--text-muted);margin-top:10px;min-height:18px;"></div>
+
+        <div style="display:flex;gap:8px;margin-top:14px;justify-content:flex-end;">
+          <button class="btn btn-secondary" id="dp-cancel">Cancelar</button>
+          <button class="btn btn-primary" id="dp-submit">⎘ Duplicar</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const overlay = document.createElement('div');
+  overlay.innerHTML = html;
+  document.body.appendChild(overlay.firstElementChild);
+
+  const close = () => document.getElementById('tpl-dup-overlay')?.remove();
+  document.getElementById('dp-x')?.addEventListener('click', close);
+  document.getElementById('dp-cancel')?.addEventListener('click', close);
+  document.getElementById('tpl-dup-overlay')?.addEventListener('click', (e) => {
+    if (e.target.id === 'tpl-dup-overlay') close();
+  });
+  const keyHandler = (e) => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', keyHandler);
+  const observer = new MutationObserver(() => {
+    if (!document.getElementById('tpl-dup-overlay')) {
+      document.removeEventListener('keydown', keyHandler);
+      observer.disconnect();
+    }
+  });
+  observer.observe(document.body, { childList: true });
+
+  const submitBtn = document.getElementById('dp-submit');
+  submitBtn?.addEventListener('click', async () => {
+    const newName = document.getElementById('dp-name')?.value?.trim();
+    const target = document.getElementById('dp-target')?.value;
+    const isDefault = document.getElementById('dp-default')?.checked;
+    const msgEl = document.getElementById('dp-msg');
+
+    if (!target) { toast.error('Selecione área destino'); return; }
+
+    submitBtn.disabled = true; submitBtn.textContent = 'Duplicando…';
+    msgEl.textContent = '⏳ Copiando arquivo R2 + criando doc…';
+    msgEl.style.color = 'var(--text-muted)';
+
+    try {
+      const targetOwnerType = target === 'global' ? 'global' : 'area';
+      const targetOwnerId = target === 'global' ? null : target;
+      const result = await duplicateTemplateService(tpl.id, {
+        targetOwnerType, targetOwnerId, newName, isDefault,
+      });
+      toast.success(`Cópia criada: "${result.name}"`);
+      close();
+      await renderTemplatesLibrary(container);
+    } catch (e) {
+      const err = String(e?.message || e).slice(0, 200);
+      msgEl.textContent = `⚠ Falhou: ${err}`;
+      msgEl.style.color = 'var(--color-danger,#EF4444)';
+      submitBtn.disabled = false; submitBtn.textContent = '⎘ Duplicar';
     }
   });
 }

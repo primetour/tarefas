@@ -6,6 +6,49 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.9+20260528-templates-duplicate-cf-ui] — 2026-05-28
+
+Release **Sprint v4.63 (10/11)** — Duplicação de template entre áreas.
+
+Permite que um template criado pra Lazer seja duplicado pra BTG Partners
+(ou Global) com 1 click. Arquivo R2 é copiado pra novo path —
+alterações no original não afetam a cópia (decisão Renê 28/05/2026:
+"copia o arquivo, mais simples").
+
+**Implementado**:
+- `functions/index.js` CF callable `duplicateTemplate` (512MB, 60s):
+  - Valida `sourceTemplateId`, `targetOwnerType` (area/global), `targetOwnerId`
+  - Permission check via `_checkTemplatesPermission` (templates_manage OR master)
+  - Rejeita duplicação pro mesmo owner
+  - Baixa arquivo do R2 original
+  - Upload pra novo path `templates/{module}/{newId}.{ext}` via Worker R2
+  - Cria novo doc Firestore com:
+    - `duplicatedFrom: sourceTemplateId` (rastreabilidade)
+    - `placeholders` copiados (sem precisar re-extrair — mesmo conteúdo)
+    - `fileSha256` mesmo (mesmo conteúdo)
+    - `version: 1`, `status: 'active'`
+  - Audit `templates.duplicate` com sourceTemplateId + newTemplateId
+- `js/services/templates.js`:
+  - `duplicateTemplate(sourceId, opts)` helper que chama CF
+- `js/pages/templatesLibrary.js`:
+  - Botão `⎘ Duplicar` no card (gated por `templates_manage`, exclui archived)
+  - Modal `_openDuplicateModal`: novo nome (opcional), select área destino
+    (exclui owner atual + permite global se não-global), toggle "marcar
+    como default da área destino"
+  - Feedback inline ⏳ → ✓ → re-render lista
+  - Esc + X + clique fora pra fechar
+
+**Pattern reusado** (CLAUDE.md §11.j): Worker R2 POST com `X-Upload-Token`
++ FormData — mesmo padrão de uploadTemplate/agents/portalImages.
+
+**Próxima v4.63.10**: integração com Editor de Áreas — tab "📐 Templates"
+no modal de edição de área permite selecionar qual template usar pra
+cada módulo×formato (HTML pra cotações, DOCX pra portal, etc).
+`area.templateRefs.{module}.{format} = templateId`. Generators
+honram esse override antes do default.
+
+---
+
 ## [4.63.8+20260528-templates-render-docx-pptx] — 2026-05-28
 
 Release **Sprint v4.63 (9/11)** — Render engine multi-formato.

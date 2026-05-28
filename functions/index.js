@@ -1165,6 +1165,137 @@ export const renderTemplate = onCall({
 });
 
 /* ═════════════════════════════════════════════════════════
+ * duplicateTemplate — v4.63.9+ duplica pra outra área
+ *
+ * Pega template original → baixa arquivo R2 → copia pra novo path
+ * (novo templateId) → cria novo doc Firestore com duplicatedFrom +
+ * preserva placeholders + metadata. Não compartilha arquivo R2 entre
+ * docs pra evitar "alguém deletou original e quebrou 5 áreas".
+ *
+ * Permission: templates_manage OR isMaster.
+ * ═════════════════════════════════════════════════════════ */
+export const duplicateTemplate = onCall({
+  cors: ['https://primetour.github.io', 'http://localhost:5000'],
+  secrets: [R2_UPLOAD_TOKEN],
+  memory: '512MiB',
+  timeoutSeconds: 60,
+  maxInstances: 10,
+}, async (request) => {
+  const auth = requireAuth(request);
+  const { sourceTemplateId, targetOwnerType, targetOwnerId, newName, isDefault = false } = request.data || {};
+
+  if (!sourceTemplateId || typeof sourceTemplateId !== 'string') {
+    throw new HttpsError('invalid-argument', 'sourceTemplateId obrigatório.');
+  }
+  if (!['area', 'global'].includes(targetOwnerType)) {
+    throw new HttpsError('invalid-argument', 'targetOwnerType deve ser area ou global.');
+  }
+  if (targetOwnerType === 'area' && !targetOwnerId) {
+    throw new HttpsError('invalid-argument', 'targetOwnerId obrigatório quando targetOwnerType=area.');
+  }
+
+  // Permission
+  const canManage = await _checkTemplatesPermission(auth.uid);
+  if (!canManage) {
+    throw new HttpsError('permission-denied', 'Requer permissão templates_manage ou role master.');
+  }
+
+  // Rate limit
+  await checkRateLimit(auth.uid, 'duplicateTemplate', 10, 60);
+
+  // Source template
+  const srcSnap = await db.collection('templates').doc(sourceTemplateId).get();
+  if (!srcSnap.exists) throw new HttpsError('not-found', 'Template original não encontrado.');
+  const src = srcSnap.data();
+
+  // Não duplicar pro mesmo owner
+  if (src.ownerType === targetOwnerType && src.ownerId === targetOwnerId) {
+    throw new HttpsError('failed-precondition', 'Template já pertence a esse owner — não há o que duplicar.');
+  }
+
+  // Baixar arquivo R2 original
+  const fetchRes = await fetch(src.fileUrl);
+  if (!fetchRes.ok) throw new HttpsError('internal', `Fetch original falhou (${fetchRes.status}).`);
+  const fileBuf = Buffer.from(await fetchRes.arrayBuffer());
+
+  // Gerar novo templateId + path
+  const newTemplateId = db.collection('templates').doc().id;
+  const ext = src.fileStoragePath.split('.').pop();
+  const newR2Path = `templates/${src.module}/${newTemplateId}.${ext}`;
+
+  // Upload pro R2 worker (mesmo padrão de uploadTemplate)
+  const r2WorkerUrl = 'https://primetour-images.rene-castro.workers.dev';
+  const filename = newR2Path.split('/').pop();
+  const fd = new FormData();
+  fd.append('file', new Blob([fileBuf], { type: src.fileMime }), filename);
+  fd.append('path', newR2Path);
+  const uploadRes = await fetch(r2WorkerUrl, {
+    method: 'POST',
+    headers: { 'X-Upload-Token': R2_UPLOAD_TOKEN.value() },
+    body: fd,
+  });
+  if (!uploadRes.ok) {
+    const errText = await uploadRes.text().catch(() => '');
+    throw new HttpsError('internal', `R2 copy falhou (${uploadRes.status}): ${errText.slice(0, 200)}`);
+  }
+  const newFileUrl = `https://pub-ad909dc0c977450a93ee5faa79c7374d.r2.dev/${newR2Path}`;
+
+  // Cria novo doc
+  const now = FieldValue.serverTimestamp();
+  const newDoc = {
+    name: newName?.trim() || `${src.name} (cópia)`,
+    module: src.module,
+    format: src.format,
+    fileUrl: newFileUrl,
+    fileStoragePath: newR2Path,
+    fileSize: src.fileSize,
+    fileSha256: src.fileSha256,    // mesmo conteúdo → mesmo hash
+    fileMime: src.fileMime,
+    fileStorageProvider: 'cloudflare-r2',
+    placeholders: src.placeholders || [],   // copia spec já extraída
+    placeholdersExtractedAt: src.placeholdersExtractedAt || null,
+    previewUrl: null,                       // preview thumb futuro
+    ownerType: targetOwnerType,
+    ownerId: targetOwnerType === 'global' ? null : targetOwnerId,
+    isDefault: !!isDefault,
+    status: 'active',
+    version: 1,
+    parentTemplateId: null,
+    versionHistory: [{ version: 1, sha: src.fileSha256, uploadedAt: new Date() }],
+    duplicatedFrom: sourceTemplateId,
+    uploadedAt: now,
+    uploadedBy: auth.uid,
+    updatedAt: now,
+    updatedBy: auth.uid,
+  };
+  await db.collection('templates').doc(newTemplateId).set(newDoc);
+
+  // Audit
+  await db.collection('audit_logs').add({
+    action: 'templates.duplicate',
+    userId: auth.uid,
+    entity: 'templates',
+    entityId: newTemplateId,
+    details: {
+      sourceTemplateId,
+      sourceName: src.name,
+      targetOwnerType,
+      targetOwnerId,
+      newTemplateId,
+    },
+    severity: 'info',
+    timestamp: now,
+  }).catch(() => {});
+
+  return {
+    templateId: newTemplateId,
+    fileUrl: newFileUrl,
+    name: newDoc.name,
+    duplicatedFrom: sourceTemplateId,
+  };
+});
+
+/* ═════════════════════════════════════════════════════════
  * logUserLogin — auditoria server-side com IP/UA
  * Chamada após login bem-sucedido. Cria entry em audit_logs.
  * ═════════════════════════════════════════════════════════ */

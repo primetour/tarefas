@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 8,
-  build: '20260528-templates-render-docx-pptx',
+  patch: 9,
+  build: '20260528-templates-duplicate-cf-ui',
 };
 
 /** "1.2.0" */
