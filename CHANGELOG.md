@@ -6,6 +6,41 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.15+20260528-templates-foco-produto] — 2026-05-28
+
+Release **config — Biblioteca de Templates virou 6º módulo de Foco em Produto**.
+
+Renê pediu (28/05/2026): *"dev hour - incluir template de áreas e biblioteca
+de templates na aba foco em produto"*.
+
+**Mudanças**:
+- `js/services/devHours.js MODULES`: adicionada entry `templates`
+  (id `templates`, aliases `template-de-areas`/`area-templates`, label
+  "Biblioteca de Templates", color `#EC4899` rosa, icon 📐). Cobre Sprint
+  v4.63 inteira + Sprint Templates Áreas v4.62.39+.
+- `MODULE_PATTERNS.templates` regex pra detecção heurística (titles com
+  "biblioteca de templates", "templates de áreas", "templateRefs",
+  "templateAdapter", "template-upload/render/duplicate/extract").
+- Backfill `functions/backfill-templates-module.cjs` (dry-run + apply):
+  29 docs atualizados com `templates` em `modules[]`:
+  - Sprint v4.63.0 → v4.63.14 (15 releases — Biblioteca de Templates)
+  - Sprint v4.62.39 → v4.62.51 (13 releases — Templates de Áreas Fases A-F + audit)
+  - v4.48.0 (sprint 6b/6c templates evoluídos)
+- `CLAUDE.md` §16 (NEW): aprendizados sprint Templates v4.63.x + pós-audit:
+  - pattern `_validateXxxFileUrl()` defesa SSRF #5
+  - Puppeteer SSRF protection allowlist (`setRequestInterception`)
+  - fallback graceful precisa AVISAR (toast warn + audit log)
+  - orphan ref detection em UI de configuração
+  - progress indicator `toast.update(id, msg)` em ops >5s
+  - drift PLACEHOLDERS_SPEC vs adapter (fix portalToTemplateData)
+  - Agent paralelo pós-sprint (ROI medido em 5 HIGH atacados / 5h dev)
+  - re-audit imediato pós-fix (lição v4.62.50→51 zumbis residuais)
+
+**Arquivos tocados**: `js/services/devHours.js`, `js/version.js`,
+`index.html`, `CHANGELOG.md`, `CLAUDE.md`, `functions/backfill-templates-module.cjs`.
+
+---
+
 ## [4.63.14+20260528-perf-progress-orphan-warn] — 2026-05-28
 
 Release **pós-auditoria Sprint v4.63 (parte 3)** — Perf #1 progress indicator,

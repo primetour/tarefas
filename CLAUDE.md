@@ -1692,3 +1692,215 @@ export async function renderPageX(container) {
 **Auditoria pendente** (próxima sessão, low priority): `grep -rn "container.addEventListener" js/pages/ | grep -v AbortController` — revela todos os candidatos. Provavelmente 5-10 pages com esse bug latente. Aplicar fix de 3 linhas em cada uma é trivial. Bug só "aparece" se user navega ida-e-volta mais de 1 vez (testes manuais rápidos não pegam — testes E2E que simulam navegação real pegariam).
 
 **Auto-correção arquitetural futura**: helper `setupPageContainer(container)` em `js/components/uiKit.js` que retorna `{ signal, destroy }` e padroniza o pattern. Pra impedir esquecimento, regra de PR: "qualquer addEventListener em container precisa de `{ signal }`" — pode virar lint rule.
+
+---
+
+## 16. Aprendizados sprint Templates upload v4.63.x + pós-auditoria (28/05/2026)
+
+Sprint **Biblioteca de Templates** (v4.63.0 → v4.63.11) entregou pipeline ponta-a-ponta de upload de templates HTML/DOCX/PPTX por área. Pós-sprint, Agent retornou 30+ achados em 5 categorias (zumbis, security, perf, bugs, recomendações) — 3 releases de hotfix (v4.63.12 → v4.63.14) consolidaram correções. Padrões abaixo são reusáveis em qualquer feature similar.
+
+### a) Pipeline de upload externo precisa de helper `_validateXxxFileUrl()` SEMPRE
+
+**Caso real v4.63.13 (Security #5)**: CFs `extractPlaceholders`, `renderTemplate`, `duplicateTemplate` faziam `fetch(tpl.fileUrl)` server-side. Sem guard, admin malicioso (ou Firestore rule frouxa) podia editar `templates.{id}.fileUrl` pra `http://169.254.169.254/computeMetadata/v1/instance/service-accounts/default/token` → CF leakaria token GCP via render PDF (SSRF).
+
+Pattern obrigatório pra qualquer schema com `fileUrl` populado por upload externo:
+
+```js
+const STORAGE_ORIGIN = 'https://pub-XXX.r2.dev/';
+function _validateStorageFileUrl(url) {
+  if (typeof url !== 'string') return false;
+  if (!url.startsWith(STORAGE_ORIGIN)) return false;
+  // Bloquear path traversal + auth embebido
+  if (url.includes('..') || url.includes('@')) return false;
+  return true;
+}
+// Aplicar em TODA CF que faz fetch desse fileUrl
+if (!_validateStorageFileUrl(doc.fileUrl)) {
+  throw new HttpsError('failed-precondition', 'fileUrl inválido (não-allowlist).');
+}
+```
+
+**Princípio**: dados schema-validáveis (URL, email, telefone, ISO date) devem ter helper centralizado em vez de regex inline em cada caller. Reader que recebe input externo (UI, importer, terceiro) precisa validar SEMPRE antes de usar.
+
+### b) Puppeteer SSRF protection — `setRequestInterception(true)` + allowlist
+
+**Caso real v4.63.13 (Security #2)**: HTML templates são arbitrários do uploader (com perm `templates_manage`). Sem intercepção, `<iframe src="http://internal-svc/secrets">` ou `<img src="http://169.254.169.254/.../token">` rodam dentro do CF e exfiltram via render PDF.
+
+Pattern pra QUALQUER browser headless renderizando conteúdo de terceiro:
+
+```js
+const ALLOWED_FETCH_ORIGINS = [
+  STORAGE_PUBLIC_ORIGIN,        // teu bucket R2/GCS público
+  'https://fonts.googleapis.com',
+  'https://fonts.gstatic.com',
+];
+await page.setRequestInterception(true);
+page.on('request', req => {
+  const url = req.url();
+  if (url.startsWith('data:') || url.startsWith('about:')) {
+    req.continue(); return;
+  }
+  const allowed = ALLOWED_FETCH_ORIGINS.some(o => url.startsWith(o + '/') || url === o);
+  if (allowed) { req.continue(); return; }
+  console.warn(`[SSRF block] ${req.resourceType()} ${url.slice(0,120)}`);
+  req.abort('blockedbyresponse');
+});
+await page.setContent(htmlRendered, { waitUntil: 'networkidle0', timeout: 60_000 });
+```
+
+**Notas**:
+- `data:` URIs sempre OK (inline images/fonts embedded base64)
+- `about:` é Chromium internal — permitir
+- `networkidle0` continua funcionando porque requests abortadas contam como concluídas
+- Log warn ajuda forense (quem tentou o quê) sem dropar a render
+
+**Princípio**: qualquer engine que executa código de N usuários diferentes (HTML, sandbox JS, formula spreadsheet) precisa de allowlist de fetches externos + audit log de bloqueios.
+
+### c) Fallback graceful precisa AVISAR — não silenciar
+
+**Caso real v4.63.12 (Bugs #7/#8/#9)**: generators tinham try/catch ao redor do template render. Se falhasse (template arquivado, ref deletada, erro de parsing), caía pro pipeline jsPDF/docx.js antigo silenciosamente. User configurava template, voltava semana depois e gerava PDF "errado" achando que estava com a marca aplicada. Renê: *"achei que minha marca tava aplicada, mas saiu o padrão"*.
+
+Pattern obrigatório:
+
+```js
+try {
+  const result = await renderViaCustomTemplate(...);
+  return result;
+} catch (e) {
+  console.warn(`[generator] template falhou, fallback antigo:`, e?.message || e);
+  // ✅ NOVO: avisa user + audit log
+  try {
+    toast.warning(`Template falhou (${e?.message?.slice(0,80) || 'erro'}). Gerando com padrão do sistema. Verifique no Editor.`);
+  } catch {}
+  try {
+    const { logAction } = await import('../auth/audit.js');
+    await logAction('templates.fallback', { module, format, templateId, areaId, reason: String(e?.message || e).slice(0, 200) });
+  } catch {}
+  // Pipeline antigo continua abaixo (fallback ainda graceful)
+}
+// ... pipeline antigo ...
+```
+
+**Princípio**: fallback é defesa em profundidade (mantém o sistema funcionando), MAS quando o caminho "feliz" do user falha, ele precisa saber. Audit log permite Renê/admin reconfigurar antes que vire reclamação. Toast warn é UX honesta.
+
+### d) Orphan ref detection em UI de configuração
+
+**Caso real v4.63.14 (Bug #8/#9)**: editor de áreas mostrava dropdown de templates com base em `fetchTemplates({ status: 'active' })`. Se `area.templateRefs[mod][fmt]` apontava pra template arquivado/deletado, o select sumia a referência silenciosamente. User configurava algo, voltava e a config "evaporava" sem aviso.
+
+Pattern pra qualquer dropdown de ref que pode apontar pra item filtrado:
+
+```js
+// 1. Coleta refs configuradas que NÃO estão na lista filtrada
+const refIds = [];
+for (const modKey of Object.keys(currentRefs || {})) {
+  for (const fmtKey of Object.keys(currentRefs[modKey] || {})) {
+    const id = currentRefs[modKey][fmtKey];
+    if (id && !activeItems.some(t => t.id === id)) refIds.push(id);
+  }
+}
+// 2. Fetch individual pra mostrar reason
+const orphanFetched = new Map();
+await Promise.all(refIds.map(async id => {
+  try { const t = await fetchSingle(id); if (t) orphanFetched.set(id, t); }
+  catch {}
+}));
+// 3. No render do dropdown
+const orphanTpl = orphanRef ? (allItems.find(t => t.id === currentVal) || orphanFetched.get(currentVal)) : null;
+const orphanReason = orphanTpl
+  ? (orphanTpl.status === 'archived' ? `Item "${orphanTpl.name}" está arquivado`
+     : `Item "${orphanTpl.name}" mudou de owner ou formato`)
+  : `Item ${currentVal.slice(0,12)}… não existe (excluído)`;
+// 4. Render warning option + frase abaixo
+<option value="X" selected style="color:var(--color-warning);">⚠ ${reason}</option>
+<p style="color:var(--color-warning);font-size:0.7rem;">⚠ Geração vai cair pro padrão. Selecione novo ou — Usar padrão —.</p>
+```
+
+**Princípio**: dropdown que filtra (active only, perm-gated, role-scoped) precisa detectar refs já configuradas que ficaram fora do filtro. Evapora silencioso = bug latente que só user descobre meses depois.
+
+### e) Progress indicator dinâmico via `toast.update(id, msg)` é obrigatório em ops >5s
+
+**Caso real v4.63.14 (Perf #1)**: gerar PDF via template = ~10s (Puppeteer cold start + render + download). Antes: botão com spinner mudo. Renê não sabia se travou. CLAUDE.md §11.b já dizia "indicador dinâmico" mas estava sendo violado.
+
+Pattern via novo `toast.update(id, message, title?)`:
+
+```js
+let _progressId = null;
+try { _progressId = toast.info('Carregando template…', 'Gerando PDF', 90_000); } catch {}
+try {
+  const data = await loadStuff();
+  try { if (_progressId) toast.update(_progressId, 'Renderizando (Puppeteer ~5-10s)…'); } catch {}
+  const result = await renderViaCF(...);
+  try { if (_progressId) toast.update(_progressId, 'Baixando arquivo…'); } catch {}
+  downloadBlob(result.blob, result.filename);
+  try { if (_progressId) toast.remove(_progressId); } catch {}
+  return result;
+} catch (e) {
+  try { if (_progressId) toast.remove(_progressId); } catch {}
+  // fallback warn + retry
+}
+```
+
+**Regra**: TODA operação que demora >5s precisa de step-by-step. Toast persistent (`duration = 90_000ms`) + `toast.update` + `toast.remove` ao concluir é o padrão. Try/catch ao redor do update/remove evita que falha no toast quebre a operação.
+
+### f) Drift entre PLACEHOLDERS_SPEC declarado e adapter implementado
+
+**Caso real v4.63.x (Audit Bug #11)**: `PLACEHOLDERS_SPEC.portal[].key` listava `destinos.[i].tips` (singular = array de N tips), mas `portalToTemplateData` mapeava `[{tip,dest}]` 1:1 → cada par virava 1 entrada em destinos com `tips: [tip]` (1 tip por destino). 2 tips na mesma cidade = 2 destinos duplicados no template `{{#each destinos}}`. Adapter quebrava a semântica documentada.
+
+Pattern de fix:
+
+```js
+// ❌ Bug: 1:1 mapping
+destinos: (allTips || []).map(({ tip, dest }) => ({
+  cidade: dest?.city, tips: tip ? [tip] : [],
+}))
+
+// ✅ Fix: agrupa por dest.id (ou fallback city_country)
+const byDest = new Map();
+(allTips || []).forEach(({ tip, dest }) => {
+  if (!dest) return;
+  const key = dest.id || `${dest.city || ''}__${dest.country || ''}`;
+  if (!byDest.has(key)) byDest.set(key, { cidade: dest.city, tips: [], segments: {} });
+  const entry = byDest.get(key);
+  if (tip) {
+    entry.tips.push(tip);
+    Object.assign(entry.segments, tip.segments || {});
+  }
+});
+destinos: Array.from(byDest.values())
+```
+
+**Princípio**: adapter SEMPRE deve respeitar a semântica do PLACEHOLDERS_SPEC. Quando estende SPEC (adicionar campo), refletir no adapter ANTES de marcar feature done. Sub-agent audit pega isso lendo os 2 arquivos cruzados — vale gastar 1 min.
+
+### g) Auditoria pós-sprint via Agent paralelo entrega ROI consistente
+
+**Pattern repetido com sucesso em 3 sprints** (Templates Áreas v4.62.39-44, Editor v4.62.16-22, Templates upload v4.63.0-11):
+
+1. Após última release da sprint, spawnar Agent (`general-purpose`) com prompt detalhado:
+   - Lista de arquivos novos + modificados
+   - Pipeline construído (ASCII flow)
+   - Pedido específico: zumbis (variáveis órfãs, comentários enganosos), race conditions, security holes, fallback UX, performance, edge cases
+   - Output ESTRUTURADO (matriz com severidade HIGH/MEDIUM/LOW, paths absolutos, linha exata)
+2. Enquanto Agent roda em background (~5 min), dev continua com outras tarefas (E2E, dev_hours, docs).
+3. Agent retorna inventário acionável.
+4. Triagem: HIGH viram v4.X+1 hotfix imediato, MEDIUM viram próximas releases (v4.X+2/+3), LOW backlog.
+
+**ROI medido** (Sprint v4.63 pós-audit):
+- 5 achados HIGH atacados em 3 releases (~5h dev total)
+- 2 SECURITY HIGH fechados (SSRF Puppeteer + fileUrl)
+- 3 UX HIGH corrigidos (toast warn fallback + progress indicator + orphan detection)
+- 1 ZUMBI HIGH limpo (createNewVersion phantom)
+- Custo: zero context burning (Agent roda paralelo)
+
+**Critério pra usar Agent paralelo**:
+- Sprint com 5+ releases
+- Múltiplos arquivos novos (>3) + alterações cross-module
+- Security surface nova (CF + uploads + render)
+- Quando não fazer: hotfix isolado, refactor pontual, feature com 1 arquivo só.
+
+### h) Re-audit imediato pega zumbis residuais (lição v4.62.50→51)
+
+**Padrão**: depois de aplicar fixes do Agent, rodar **segunda auditoria** focada APENAS nos arquivos tocados pelo fix. Pega zumbis que o fix introduziu (ex: comentário desatualizado, alias remanescente, função morta que sobrou).
+
+Caso v4.62.51: Sprint Templates Áreas Audit 1 entregou 8 zumbis. Apliquei fixes em v4.62.50 (rename canônico cotacoes). Audit 2 (após rename) achou +4 zumbis residuais nos arquivos tocados, virando v4.62.51 hotfix. Sem Audit 2, esses 4 ficariam latentes por meses.
+
+**Quando aplicar**: refactor que toca nomes/aliases/schemas em N pontos. Custo: 1 prompt + ~3 min. Benefício: pega 100% dos drifts.

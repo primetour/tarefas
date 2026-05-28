@@ -107,6 +107,13 @@ export const MODULES = [
   // de cliente). Inclui import PDF via Anthropic multimodal.
   { id: 'banco-roteiros', label: 'Banco de Roteiros', color: '#0EA5E9', icon: '📚',
     desc: 'Curadoria de roteiros prontos (Classic Collection, etc.) — referência manual + base de conhecimento da IA.' },
+  // v4.63.14+ Renê 28/05/2026: Biblioteca de Templates (Sprint v4.63 inteira)
+  // entra como 6º módulo de Foco em Produto. Inclui templates uploaded (HTML
+  // /DOCX/PPTX) + tab Templates no editor de áreas + adapter de dados +
+  // generators que honram templateRefs. Cobre Sprint v4.63.0 → v4.63.14+.
+  { id: 'templates', label: 'Biblioteca de Templates', color: '#EC4899', icon: '📐',
+    aliases: ['template-de-areas', 'area-templates'],
+    desc: 'Upload de templates customizados (HTML/DOCX/PPTX) atribuídos a áreas. Generators usam template em vez do layout codado.' },
 ];
 export const MODULE_MAP = Object.fromEntries(MODULES.map(m => [m.id, m]));
 // v4.62.50+ alias map: 'cotacoes' resolve pra MODULES.roteiros (e vice-versa)
@@ -137,6 +144,11 @@ const MODULE_PATTERNS = {
   // não importa porque retornamos todos os matches; ambos podem aplicar se
   // entry realmente tocar os 2 módulos).
   'banco-roteiros': /\b(banco[-_ ]?de[-_ ]?roteiros?|banco[-_ ]?roteiros?|roteiros?[-_ ]?bank|roteiroBank)\b/i,
+  // v4.63.14+ Biblioteca de Templates (Sprint v4.63). Cobre "templates",
+  // "biblioteca-de-templates", "template-de-areas", "templateRefs", "template-
+  // uploader", "templatesLibrary". Específico pra não conflitar com tokens
+  // genéricos como "template" sozinho em outros contextos.
+  templates: /\b(biblioteca[-_ ]?de[-_ ]?templates?|templates?[-_ ]?de[-_ ]?[aá]reas?|template[-_ ]?library|templatesLibrary|templateRefs?|template[-_ ]?uploader|template[-_ ]?adapter|template[-_ ]?engine|template[-_ ]?(upload|render|duplicate|extract|new[-_ ]?version))\b/i,
 };
 
 /**
