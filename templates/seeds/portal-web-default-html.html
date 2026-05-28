@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{area.nome}} — City Guides</title>
+  <meta property="og:title" content="{{area.nome}} — City Guides">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="{{webUrl}}">
+  {{#if destinos.0.heroUrl}}<meta property="og:image" content="{{destinos.0.heroUrl}}">{{/if}}
+
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <style>
+    :root {
+      --primary: {{area.corPrimary}};
+      --secondary: {{area.corSecondary}};
+      --gold: #D4A843;
+      --text-dark: #1F2937;
+      --text-muted: #6B7280;
+      --bg-light: #FAFAF7;
+      --bg-card: #FFFFFF;
+      --border-light: #E5E7EB;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Poppins', -apple-system, sans-serif;
+      background: var(--bg-light); color: var(--text-dark);
+      line-height: 1.6;
+    }
+
+    /* Header sticky com brand */
+    header.brand {
+      position: sticky; top: 0; z-index: 100;
+      background: var(--secondary);
+      color: #fff;
+      padding: 16px 24px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      display: flex; align-items: center; gap: 16px;
+    }
+    header.brand img.logo { max-height: 40px; max-width: 140px; object-fit: contain; }
+    header.brand h1 { font-size: 1.125rem; font-weight: 700; letter-spacing: 2px; flex: 1; }
+    header.brand .header-custom { font-size: 0.7rem; color: rgba(255,255,255,0.7); }
+
+    /* Hero principal */
+    .hero {
+      max-width: 1200px; margin: 0 auto; padding: 48px 24px;
+      text-align: center;
+    }
+    .hero h2 {
+      font-size: 2.5rem; font-weight: 700;
+      letter-spacing: 4px; text-transform: uppercase;
+      color: var(--secondary);
+      margin-bottom: 8px;
+    }
+    .hero p {
+      font-size: 1rem; color: var(--text-muted);
+      letter-spacing: 2px; text-transform: uppercase;
+    }
+
+    /* Lista destinos cards */
+    .destinos-grid {
+      max-width: 1200px; margin: 0 auto; padding: 0 24px 48px;
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 24px;
+    }
+    .destino-card {
+      background: var(--bg-card);
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.06);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+      cursor: pointer;
+    }
+    .destino-card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 12px 32px rgba(0,0,0,0.12);
+    }
+    .destino-card .hero-img {
+      width: 100%; height: 200px;
+      background: var(--secondary);
+      display: flex; align-items: center; justify-content: center;
+      color: rgba(255,255,255,0.4);
+      font-weight: 600; letter-spacing: 2px;
+    }
+    .destino-card .hero-img img {
+      width: 100%; height: 100%; object-fit: cover;
+    }
+    .destino-card .body {
+      padding: 20px;
+    }
+    .destino-card h3 {
+      font-size: 1.25rem; font-weight: 700;
+      color: var(--primary);
+      letter-spacing: 1px;
+      margin-bottom: 4px;
+    }
+    .destino-card .country {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 2px;
+    }
+    .destino-card .segments-count {
+      margin-top: 12px;
+      font-size: 0.8125rem;
+      color: var(--text-muted);
+    }
+
+    /* Footer */
+    footer {
+      background: var(--secondary);
+      color: rgba(255,255,255,0.85);
+      text-align: center;
+      padding: 32px 24px;
+      font-size: 0.875rem;
+    }
+    footer .footer-custom {
+      font-size: 0.75rem;
+      color: rgba(255,255,255,0.6);
+      margin-top: 8px;
+    }
+    footer .meta {
+      margin-top: 12px;
+      font-size: 0.7rem;
+      color: rgba(255,255,255,0.5);
+    }
+
+    @media (max-width: 768px) {
+      .hero h2 { font-size: 1.75rem; }
+      .destinos-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<header class="brand">
+  {{#if area.logoUrl}}
+    <img src="{{area.logoUrl}}" alt="{{area.nome}}" class="logo">
+  {{/if}}
+  <h1>{{area.nome}} · City Guides</h1>
+  {{#if customHeaderText}}<div class="header-custom">{{customHeaderText}}</div>{{/if}}
+</header>
+
+<section class="hero">
+  <h2>Bem-vindo</h2>
+  <p>Explore os melhores destinos selecionados pra você</p>
+</section>
+
+<section class="destinos-grid">
+  {{#each destinos}}
+    <div class="destino-card" data-dest-id="{{id}}" onclick="window.PRIMETOUR && window.PRIMETOUR.onDestinoClick && window.PRIMETOUR.onDestinoClick('{{id}}')">
+      <div class="hero-img">
+        {{#if heroUrl}}<img src="{{heroUrl}}" alt="{{cidade}}">{{else}}{{cidade}}{{/if}}
+      </div>
+      <div class="body">
+        <h3>{{cidade}}</h3>
+        {{#if pais}}<div class="country">{{pais}}</div>{{/if}}
+        <div class="segments-count">{{tips.length}} dica{{#if tips.length}}s{{/if}}</div>
+      </div>
+    </div>
+  {{/each}}
+</section>
+
+<footer>
+  <div>{{area.nome}} · {{today}}</div>
+  {{#if customFooterText}}<div class="footer-custom">{{customFooterText}}</div>{{/if}}
+  <div class="meta">
+    {{#if createdBy.name}}Preparado por {{createdBy.name}}{{/if}}
+    {{#if views}} · {{views}} visualizações{{/if}}
+  </div>
+</footer>
+
+<script>
+  // JS hooks — designer pode override
+  window.PRIMETOUR = window.PRIMETOUR || {};
+  window.PRIMETOUR.onDestinoClick = window.PRIMETOUR.onDestinoClick || function(destId) {
+    console.log('Destino clicado:', destId);
+    // Designer pode customizar: scroll, modal, analytics, navegação, etc.
+  };
+</script>
+
+</body>
+</html>

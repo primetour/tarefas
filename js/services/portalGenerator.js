@@ -2482,8 +2482,13 @@ async function generateWebLink({ allTips, segments, areaName, area, colors, form
   // URL final: usa previewLink Cloud Function pra que crawlers (WhatsApp, Slack,
   // Facebook, LinkedIn, Telegram) vejam OG meta correto (foto do destino + titulo)
   // antes de redirecionar pra portal-view real. URL antiga continua funcionando.
+  // v4.63.23+ Se há webTemplate configurado, URL aponta pra portal-view-tpl.html
+  // (renderer client-side de templates). Modo slots ainda usa portal-view.html
+  // canônico com flag ?slots=1.
   const baseUrl = window.location.origin + window.location.pathname.replace(/index\.html$/, '');
-  const directUrl  = `${baseUrl}portal-view.html#${token}`;
+  const directUrl  = _webTemplateMeta
+    ? `${baseUrl}portal-view-tpl.html#${token}`
+    : `${baseUrl}portal-view.html#${token}`;
   const previewUrl = `https://us-central1-gestor-de-tarefas-primetour.cloudfunctions.net/previewLink?t=${encodeURIComponent(token)}`;
 
   return {

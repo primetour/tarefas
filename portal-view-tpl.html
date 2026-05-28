@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Carregando…</title>
+  <style>
+    body { margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #FAFAF7; color: #1F2937; }
+    .loading-state { display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; padding: 24px; text-align: center; }
+    .loading-state .spinner { width: 48px; height: 48px; border: 4px solid #E5E7EB; border-top-color: #D4A843; border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 16px; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-state h1 { font-size: 1.125rem; font-weight: 600; margin: 8px 0; color: #1F2937; }
+    .loading-state p { font-size: 0.875rem; color: #6B7280; max-width: 360px; }
+    .err-state { background: #FEF2F2; border-left: 4px solid #EF4444; padding: 16px; margin: 24px auto; max-width: 600px; border-radius: 4px; }
+    .err-state h2 { color: #B91C1C; font-size: 1rem; margin: 0 0 4px; }
+    .err-state p { color: #7F1D1D; font-size: 0.875rem; margin: 0; }
+    .fallback-link { display: inline-block; margin-top: 12px; padding: 8px 16px; background: #D4A843; color: #fff; text-decoration: none; border-radius: 4px; font-size: 0.875rem; }
+  </style>
+</head>
+<body>
+
+<div id="boot" class="loading-state">
+  <div class="spinner"></div>
+  <h1>Carregando seu material…</h1>
+  <p>Estamos preparando uma versão personalizada pra você.</p>
+</div>
+
+<script type="module">
+  // v4.63.23+ Renderer client-side de templates Web Link.
+  // Lê portal_web_links/{token} → busca webTemplate.fileUrl no R2 →
+  // interpola Handlebars no browser → substitui body. Fallback graceful:
+  // qualquer erro redireciona pra portal-view.html canônico.
+
+  import { initializeApp }   from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+  import { getFirestore, doc, getDoc, updateDoc, increment }
+                              from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+  import { firebaseConfig }  from './js/config.js';
+
+  const showErr = (title, msg, fallbackToken) => {
+    document.getElementById('boot').innerHTML = `
+      <div class="err-state">
+        <h2>${title}</h2>
+        <p>${msg}</p>
+        ${fallbackToken ? `<a class="fallback-link" href="./portal-view.html#${fallbackToken}">Abrir versão padrão</a>` : ''}
+      </div>
+    `;
+    document.title = title;
+  };
+
+  // Token vem por #hash (igual portal-view.html) OU ?t=token
+  const params = new URLSearchParams(window.location.search);
+  const token  = (window.location.hash.slice(1) || params.get('t') || '').trim();
+  if (!token) { showErr('Link inválido', 'Este link não contém um token de acesso.'); throw new Error('no token'); }
+
+  const app = initializeApp(firebaseConfig, 'portal-view-tpl');
+  const db  = getFirestore(app);
+
+  let docSnap;
+  try { docSnap = await getDoc(doc(db, 'portal_web_links', token)); }
+  catch (e) {
+    showErr('Erro de conexão', 'Não foi possível carregar. Tente novamente em instantes.', token);
+    throw e;
+  }
+  if (!docSnap.exists()) {
+    showErr('Link não encontrado', 'Este link pode ter expirado ou foi removido.');
+    throw new Error('not found');
+  }
+  const data = docSnap.data();
+
+  // Incrementa view counter (não-bloqueante)
+  updateDoc(doc(db, 'portal_web_links', token), { views: increment(1) }).catch(() => {});
+
+  // Sem webTemplate? Redireciona pro view canônico
+  const webTpl = data.webTemplate;
+  if (!webTpl || !webTpl.fileUrl) {
+    console.warn('[portal-view-tpl] sem webTemplate metadata, redirecionando pra canônico');
+    window.location.replace('./portal-view.html#' + token);
+    throw new Error('redirect to canonical');
+  }
+
+  // Modo 'slots' (v4.63.23+): redireciona pra portal-view.html que vai ler
+  // webTemplate.slots.* e injetar partes. Implementação completa em portal-view.html.
+  if (webTpl.templateMode === 'slots') {
+    window.location.replace('./portal-view.html#' + token + '?slots=1');
+    throw new Error('slots redirect');
+  }
+
+  // Modo 'full': renderiza template completo
+  // 1. Fetch HTML do R2
+  let templateHtml;
+  try {
+    const r = await fetch(webTpl.fileUrl);
+    if (!r.ok) throw new Error(`R2 fetch ${r.status}`);
+    templateHtml = await r.text();
+  } catch (e) {
+    console.error('[portal-view-tpl] template fetch falhou:', e);
+    showErr('Template indisponível', 'Voltando pra versão padrão…', token);
+    setTimeout(() => window.location.replace('./portal-view.html#' + token), 1500);
+    throw e;
+  }
+
+  // 2. Carrega Handlebars CDN (cliente browser interpola; não há server render)
+  await new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/handlebars@4.7.8/dist/handlebars.min.js';
+    s.onload = resolve;
+    s.onerror = () => reject(new Error('Handlebars CDN falhou'));
+    document.head.appendChild(s);
+  }).catch(e => {
+    console.error('[portal-view-tpl] Handlebars CDN:', e);
+    showErr('Falha ao carregar', 'Erro ao preparar o conteúdo.', token);
+    throw e;
+  });
+
+  // 3. Monta data pro template (shape similar ao adapter portalToTemplateData
+  // mas client-side; sem acesso ao templateAdapter.js direto pq esse usa
+  // Firestore lazy import). Replicamos shape mínima.
+  const baseUrl    = window.location.origin + window.location.pathname.replace(/portal-view-tpl\.html$/, '');
+  const directUrl  = `${baseUrl}portal-view.html#${token}`;
+  const previewUrl = `https://us-central1-gestor-de-tarefas-primetour.cloudfunctions.net/previewLink?t=${encodeURIComponent(token)}`;
+
+  // Agrupa tips por destino (mesmo padrão de portalToTemplateData)
+  const byDest = new Map();
+  (data.tipData || []).forEach(({ tip, dest }) => {
+    if (!dest) return;
+    const key = dest.id || `${dest.city || ''}__${dest.country || ''}`;
+    if (!byDest.has(key)) {
+      byDest.set(key, {
+        id: dest.id || '',
+        cidade: dest.city || '',
+        pais: dest.country || '',
+        label: [dest.city, dest.country].filter(Boolean).join(', '),
+        heroUrl: data.imagesByDest?.[dest.id]?.hero || '',
+        tips: [],
+        segments: {},
+      });
+    }
+    const entry = byDest.get(key);
+    if (tip) {
+      entry.tips.push(tip);
+      Object.assign(entry.segments, tip.segments || {});
+    }
+  });
+
+  const today = new Date().toLocaleDateString('pt-BR');
+  const templateData = {
+    area: {
+      nome:        data.areaName || 'PRIMETOUR',
+      logoUrl:     data.areaLogoUrl    || '',
+      logoUrlAlt:  data.areaLogoUrlAlt || '',
+      corPrimary:  data.colors?.primary   || '#D4A843',
+      corSecondary: data.colors?.secondary || '#0F172A',
+      corAccent:   data.colors?.accent || data.colors?.primary || '#D4A843',
+    },
+    destinos: Array.from(byDest.values()),
+    segments: Array.isArray(data.segments) ? data.segments : [],
+    today,
+    // Web-exclusive
+    webUrl: directUrl,
+    previewUrl,
+    token,
+    webExports: data.webExports || {},
+    createdBy: data.createdBy || {},
+    createdAt: data.createdAt?.toDate?.()?.toLocaleDateString?.('pt-BR') || '',
+    views: data.views || 0,
+    customFooterText: data.webExports?.footerText || '',
+    customHeaderText: data.webExports?.headerText || '',
+    hideCover: false,
+  };
+
+  // 4. Setup JS hooks default no-op (designer pode override no template)
+  window.PRIMETOUR = window.PRIMETOUR || {};
+  window.PRIMETOUR.onDestinoClick   = window.PRIMETOUR.onDestinoClick   || ((id) => console.debug('[PRIMETOUR] onDestinoClick noop', id));
+  window.PRIMETOUR.onSegmentFilter  = window.PRIMETOUR.onSegmentFilter  || ((k)  => console.debug('[PRIMETOUR] onSegmentFilter noop', k));
+  window.PRIMETOUR.onMapPinClick    = window.PRIMETOUR.onMapPinClick    || ((id, latlng) => console.debug('[PRIMETOUR] onMapPinClick noop', id, latlng));
+  window.PRIMETOUR.token = token;
+  window.PRIMETOUR.data  = templateData;
+  window.PRIMETOUR.rawDoc = data;
+
+  // 5. Render Handlebars
+  let renderedHtml;
+  try {
+    const tpl = window.Handlebars.compile(templateHtml, { noEscape: false });
+    renderedHtml = tpl(templateData);
+  } catch (e) {
+    console.error('[portal-view-tpl] Handlebars render falhou:', e);
+    showErr('Erro de template', `O template tem um erro: ${e.message?.slice(0,80) || 'desconhecido'}`, token);
+    throw e;
+  }
+
+  // 6. Substitui document inteiro pelo rendered HTML.
+  // Usa document.open/write/close pra parseamento limpo + executar <script> tags
+  // (innerHTML não executa scripts). É a forma idiomática.
+  document.open();
+  document.write(renderedHtml);
+  document.close();
+</script>
+</body>
+</html>

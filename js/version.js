@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 22,
-  build: '20260528-web-template-foundation',
+  patch: 23,
+  build: '20260528-web-template-runtime',
 };
 
 /** "1.2.0" */
