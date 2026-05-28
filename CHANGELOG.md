@@ -6,6 +6,47 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.16+20260528-r2-fallback-large-renders] — 2026-05-28
+
+Release **pós-auditoria Sprint v4.63 (parte 4)** — Perf #2 HIGH: R2 fallback
+pra outputs >5MB.
+
+**Problema**: Cloud Functions callable response tem limite ~10MB. Output
+do `renderTemplate` é JSON com `fileBase64` (overhead ~33%) — PDFs grandes
+(>30 páginas com imagens) ou DOCX/PPTX com hi-res estouravam. CF logava
+warn em `if (sizeBytes > 9MB)` mas não tinha fallback — client recebia
+HttpsError genérico ou JSON truncado.
+
+**Fix arquitetural**:
+- CF `renderTemplate` detecta `sizeBytes > 5MB` (5MB threshold = 4MB de
+  gordura sobre o limite real)
+- Upload pro R2 worker em `renders/{uid}/{ts}-{templateId}.{ext}` via
+  mesmo padrão de `uploadTemplate`/`duplicateTemplate` (X-Upload-Token)
+- Retorna `{downloadUrl, mime, filename, sizeBytes, via: 'r2-fallback'}`
+  em vez de `fileBase64`
+- Audit log inclui `via: 'r2-fallback' | 'base64'` pra rastreio
+- **Graceful degradation**: se R2 upload falhar, cai pro path base64
+  normal (warn no log, tenta base64) — não bloqueia render
+
+**Cliente `templates.js renderTemplate`**:
+- Detecta `r.downloadUrl` → `fetch(downloadUrl)` → `blob()` com mime
+  ajustado se R2 worker não preservou Content-Type
+- Caso contrário → path base64 existente (decode + Blob)
+- Retorna sempre `{filename, sizeBytes, mime, blob, templateName, via}`
+
+**Não atacado nesta release**:
+- TTL/cleanup dos arquivos em `renders/` no R2 — manual via cron CF
+  futuro. Por enquanto, paths são únicos por timestamp + uid + templateId
+  (sem colisão). Custo R2 storage é negligível pra arquivos de PDF.
+
+**Arquivos tocados**: `functions/index.js` (block do renderTemplate
+return), `js/services/templates.js` (renderTemplate helper), `index.html`,
+`js/version.js`, `CHANGELOG.md`.
+
+**Deploy obrigatório**: `firebase deploy --only functions:renderTemplate`.
+
+---
+
 ## [4.63.15+20260528-templates-foco-produto] — 2026-05-28
 
 Release **config — Biblioteca de Templates virou 6º módulo de Foco em Produto**.

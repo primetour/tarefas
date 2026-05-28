@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 15,
-  build: '20260528-templates-foco-produto',
+  patch: 16,
+  build: '20260528-r2-fallback-large-renders',
 };
 
 /** "1.2.0" */

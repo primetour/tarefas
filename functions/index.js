@@ -1182,8 +1182,39 @@ export const renderTemplate = onCall({
   }
 
   const sizeBytes = outputBuf.length;
-  if (sizeBytes > 9 * 1024 * 1024) {
-    console.warn(`[renderTemplate] Output ${sizeBytes} bytes pode estourar callable response (10MB).`);
+  const safeName = (tpl.name || 'template').replace(/[^a-zA-Z0-9À-ſ\-_ ]/g, '').slice(0, 60).trim() || 'template';
+  const filename = `${safeName}.${outputExt}`;
+
+  // v4.63.16+ Fix HIGH Perf #2 (audit pós-sprint): callable response limit
+  // ~10MB força base64 + JSON overhead. Tudo >5MB sobe pra R2 worker em
+  // path renders/{uid}/{ts}-{templateId}.{ext} e retorna {downloadUrl}.
+  // Client (templates.js renderTemplate) detecta downloadUrl e fetcha blob
+  // via HTTP. Path NÃO tem TTL (manual cleanup via cron futuro).
+  const FALLBACK_THRESHOLD = 5 * 1024 * 1024; // 5MB
+  let downloadUrl = null;
+  if (sizeBytes > FALLBACK_THRESHOLD) {
+    try {
+      const r2WorkerUrl = 'https://primetour-images.rene-castro.workers.dev';
+      const ts = Date.now();
+      const r2Path = `renders/${auth.uid}/${ts}-${templateId}.${outputExt}`;
+      const fd = new FormData();
+      fd.append('file', new Blob([outputBuf], { type: outputMime }), filename);
+      fd.append('path', r2Path);
+      const uploadRes = await fetch(r2WorkerUrl, {
+        method: 'POST',
+        headers: { 'X-Upload-Token': R2_UPLOAD_TOKEN.value() },
+        body: fd,
+      });
+      if (uploadRes.ok) {
+        downloadUrl = `https://pub-ad909dc0c977450a93ee5faa79c7374d.r2.dev/${r2Path}`;
+        console.log(`[renderTemplate] Output ${sizeBytes}B > ${FALLBACK_THRESHOLD}B → R2 fallback ${r2Path}`);
+      } else {
+        const errText = await uploadRes.text().catch(() => '');
+        console.warn(`[renderTemplate] R2 fallback falhou (${uploadRes.status}): ${errText.slice(0,150)}. Tentando base64 ainda.`);
+      }
+    } catch (e) {
+      console.warn(`[renderTemplate] R2 fallback exception: ${e?.message || e}. Tentando base64 ainda.`);
+    }
   }
 
   // Audit
@@ -1192,21 +1223,38 @@ export const renderTemplate = onCall({
     userId: auth.uid,
     entity: 'templates',
     entityId: templateId,
-    details: { format: tpl.format, sizeBytes, dataKeys: Object.keys(data).slice(0, 20) },
+    details: {
+      format: tpl.format, sizeBytes,
+      dataKeys: Object.keys(data).slice(0, 20),
+      via: downloadUrl ? 'r2-fallback' : 'base64',
+    },
     severity: 'info',
     timestamp: FieldValue.serverTimestamp(),
   }).catch(() => {});
 
-  const safeName = (tpl.name || 'template').replace(/[^a-zA-Z0-9À-ſ\-_ ]/g, '').slice(0, 60).trim() || 'template';
+  // Se R2 fallback OK, retorna SEM base64 (economiza 10MB de overhead)
+  if (downloadUrl) {
+    return {
+      downloadUrl,
+      mime: outputMime,
+      filename,
+      sizeBytes,
+      templateId,
+      templateName: tpl.name,
+      via: 'r2-fallback',
+    };
+  }
 
+  // Path base64 normal (output ≤ 5MB OU R2 falhou — graceful degradation)
   return {
     // v4.63.8+ resposta unificada pra 3 formatos
     fileBase64: outputBuf.toString('base64'),
     mime: outputMime,
-    filename: `${safeName}.${outputExt}`,
+    filename,
     sizeBytes,
     templateId,
     templateName: tpl.name,
+    via: 'base64',
     // Backwards compat (clientes antigos v4.63.6 esperam pdfBase64)
     pdfBase64: tpl.format === 'html' ? outputBuf.toString('base64') : undefined,
   };

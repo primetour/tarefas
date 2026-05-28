@@ -343,20 +343,32 @@ export async function renderTemplate(templateId, data = {}) {
   const fn = httpsCallable(getFunctions(app, 'us-central1'), 'renderTemplate');
 
   const res = await fn({ templateId, data });
-  // v4.63.8+ resposta unificada {fileBase64, mime, filename, ...}. Fallback
-  // pra pdfBase64 da v4.63.6-7 quando CF antiga.
+  // v4.63.8+ resposta unificada {fileBase64, mime, filename, ...}.
+  // v4.63.16+ Output >5MB volta como {downloadUrl} (R2 fallback) em vez de
+  // base64 — callable limit ~10MB força isso. Fallback pra pdfBase64 da
+  // v4.63.6-7 quando CF antiga.
   const r = res.data || {};
-  const b64 = r.fileBase64 || r.pdfBase64;
   const mime = r.mime || 'application/pdf';
-  if (!b64) throw new Error('CF não retornou fileBase64/pdfBase64');
 
-  // Decode base64 → Blob
-  const binary = atob(b64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  const blob = new Blob([bytes], { type: mime });
+  let blob;
+  if (r.downloadUrl) {
+    // v4.63.16+ R2 fallback: fetcha o output do bucket público
+    const dlRes = await fetch(r.downloadUrl);
+    if (!dlRes.ok) throw new Error(`Download R2 falhou (${dlRes.status}) ${r.downloadUrl?.slice(0,80)}`);
+    blob = await dlRes.blob();
+    // Garante mime correto (R2 worker pode não preservar Content-Type)
+    if (blob.type !== mime) blob = new Blob([blob], { type: mime });
+  } else {
+    const b64 = r.fileBase64 || r.pdfBase64;
+    if (!b64) throw new Error('CF não retornou fileBase64/pdfBase64/downloadUrl');
+    // Decode base64 → Blob
+    const binary = atob(b64);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    blob = new Blob([bytes], { type: mime });
+  }
 
-  return { filename: r.filename, sizeBytes: r.sizeBytes, mime, blob, templateName: r.templateName };
+  return { filename: r.filename, sizeBytes: r.sizeBytes, mime, blob, templateName: r.templateName, via: r.via };
 }
 
 /**
