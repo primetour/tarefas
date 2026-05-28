@@ -24,9 +24,9 @@
 
 export const VERSION = {
   major: 4,
-  minor: 62,
-  patch: 51,
-  build: '20260528-fix-zumbis-audit-banco-roteiros-template',
+  minor: 63,
+  patch: 0,
+  build: '20260528-templates-foundation-schema-rules-role',
 };
 
 /** "1.2.0" */

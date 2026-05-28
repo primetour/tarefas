@@ -622,6 +622,17 @@ service cloud.firestore {
       allow write: if isAuth() && isAdmin();
     }
 
+    // v4.63.0+ Biblioteca de Templates uploaded (HTML/DOCX/PPTX).
+    // Read: qualquer auth (todos veem biblioteca + escolhem template da sua área).
+    // Write: nova role granular `templates_manage` OU isAdmin.
+    // Hard delete: master only (CLAUDE.md: bibliotecas são imutáveis — usar status='archived').
+    match /templates/{docId} {
+      allow read:   if isAuth();
+      allow create: if isAuth() && (isAdmin() || hasPermission('templates_manage'));
+      allow update: if isAuth() && (isAdmin() || hasPermission('templates_manage'));
+      allow delete: if isAuth() && isAdmin();
+    }
+
     match /portal_destinations/{docId} {
       allow read:  if isAuth();
       // v4.59.0+ SSOT geo: write é admin-only no client.

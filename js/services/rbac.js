@@ -146,6 +146,8 @@ export const PERMISSION_CATALOG = [
     permissions: [
       { key: 'portal_areas_view',   label: 'Visualizar templates de áreas', info: 'Ver áreas/BUs cadastradas (cores, logos). Necessário pra selecionar área ao gerar PDF/PPTX de roteiro ou material do portal.' },
       { key: 'portal_areas_manage', label: 'Gerenciar templates de áreas',  info: 'Criar, editar e excluir áreas (BUs). Cada área define cores primary/secondary + logoUrl + logoUrlAlt aplicados em todos os documentos gerados (Roteiros, Portal de Dicas).' },
+      // v4.63.0+ Sprint upload de templates real (HTML/DOCX/PPTX)
+      { key: 'templates_manage',    label: 'Gerenciar biblioteca de templates', info: 'Subir, editar, duplicar, arquivar e atribuir templates (HTML/DOCX/PPTX) à áreas. Templates substituem o layout hardcoded pra PDF, Web link, Word e PowerPoint. Hard delete (incluindo arquivo no Storage) continua master-only.' },
     ],
   },
   {
@@ -267,6 +269,7 @@ export const SYSTEM_ROLES = [
       portal_destinations_manage: true,
       portal_segments_manage: true,
       portal_areas_view: true, portal_areas_manage: true,
+      templates_manage: true,
       roteiro_access: true, roteiro_create: true, roteiro_manage: true, roteiro_view_cost: true,
       content_calendar_view: true, content_calendar_create: true, content_calendar_manage: true, content_calendar_meta_manage: true,
       site_audit_view: true, site_audit_manage: true,
@@ -314,6 +317,7 @@ export const SYSTEM_ROLES = [
       portal_destinations_manage: true,
       portal_segments_manage: true,
       portal_areas_view: true, portal_areas_manage: true,
+      templates_manage: true,
       roteiro_access: true, roteiro_create: true, roteiro_manage: true, roteiro_view_cost: true,
       content_calendar_view: true, content_calendar_create: true, content_calendar_manage: true, content_calendar_meta_manage: true,
       site_audit_view: true, site_audit_manage: true,
@@ -360,7 +364,7 @@ export const SYSTEM_ROLES = [
       portal_access: true,  portal_create: true,  portal_manage: false, portal_images_manage: false, portal_download_unlimited: true,
       portal_destinations_manage: true,
       portal_segments_manage: true,
-      portal_areas_view: true, portal_areas_manage: false,
+      portal_areas_view: true, portal_areas_manage: false, templates_manage: false,
       roteiro_access: true, roteiro_create: true, roteiro_manage: false, roteiro_view_cost: false,
       content_calendar_view: true, content_calendar_create: true, content_calendar_manage: false, content_calendar_meta_manage: true,
       site_audit_view: true, site_audit_manage: false,
@@ -410,7 +414,7 @@ export const SYSTEM_ROLES = [
       portal_manage: false,    portal_images_manage: false, portal_download_unlimited: false,
       portal_destinations_manage: false,
       portal_segments_manage: false,
-      portal_areas_view: false, portal_areas_manage: false,
+      portal_areas_view: false, portal_areas_manage: false, templates_manage: false,
       roteiro_access: false, roteiro_create: false, roteiro_manage: false, roteiro_view_cost: false,
       content_calendar_view: false, content_calendar_create: false, content_calendar_manage: false, content_calendar_meta_manage: false,
       site_audit_view: false, site_audit_manage: false,
@@ -476,7 +480,7 @@ export const SYSTEM_ROLES = [
       // 4.49.6+ Analista também cria/edita segmentos e categorias
       // (hospedagem, gastronomia, etc.) — operações cotidianas do consultor.
       portal_segments_manage: true,
-      portal_areas_view: true, portal_areas_manage: false,
+      portal_areas_view: true, portal_areas_manage: false, templates_manage: false,
       roteiro_access: true, roteiro_create: true, roteiro_manage: false, roteiro_view_cost: false,
       // v4.49.50+ Analista NÃO cria metadados por default; admin pode liberar
       // via override per-usuário ou na role customizada.

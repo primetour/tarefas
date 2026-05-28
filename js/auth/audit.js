@@ -152,6 +152,13 @@ export const ACTION_LABELS = {
   'portal_areas.create':     'Área/BU criada',
   'portal_areas.update':     'Área/BU atualizada (cores, logo, template)',
   'portal_areas.delete':     'Área/BU excluída',
+  // v4.63.0+ Biblioteca de Templates (HTML/DOCX/PPTX upload real)
+  'templates.create':        'Template uploaded',
+  'templates.update':        'Template metadata atualizada',
+  'templates.archive':       'Template arquivado',
+  'templates.delete':        'Template excluído (hard delete + Storage)',
+  'templates.duplicate':     'Template duplicado pra outra área',
+  'templates.new_version':   'Nova versão de template uploaded',
   // Banco de Imagens
   'portal_images.upload':    'Imagem enviada ao banco',
   'portal_images.update':    'Metadados de imagem atualizados',
@@ -249,6 +256,8 @@ export const ACTION_SEVERITY = {
   'clipping.delete':   'critical',
   'portal.tip_delete': 'critical',
   'portal_areas.delete': 'critical',
+  'templates.delete':    'critical',
+  'templates.archive':   'warning',
   'portal_images.delete': 'critical',
   'roteiro.delete':    'critical',
   'content_calendar.slot_deleted': 'critical',

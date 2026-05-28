@@ -6,6 +6,53 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.0+20260528-templates-foundation-schema-rules-role] — 2026-05-28
+
+Release **Sprint v4.63 Foundation (1/11)** — Upload de Templates real.
+
+Pós sprint v4.62.x (Templates de Áreas com config textual de footerText/
+hideCover), Renê pediu: "subir HTML pra web link, um arquivo pra gerar
+pdf, um ppt padrão, um .docx pra ser o template". Sistema atual NÃO
+permite upload de arquivos template — só configuração textual. Sprint
+v4.63 implementa **biblioteca real de templates** uploaded.
+
+**Arquitetura confirmada (decisões Renê 28/05/2026)**:
+- HTML → PDF (Puppeteer) + Web link (mesmo arquivo serve 2 formatos)
+- DOCX → docxtemplater (template Word com placeholders Mustache no XML)
+- PPTX → pptxtemplater (template PowerPoint idem)
+- Placeholders: Handlebars `{{cliente.nome}}` consistente nos 3 formatos
+- Permissão: nova role `templates_manage` (master + diretor por default)
+- Versionamento: nova versão, antiga vira archived
+- Duplicação: copia Storage file + cria novo doc com `duplicatedFrom`
+- Preview thumbs: só HTML em v1 (Puppeteer); Office sem preview por
+  enquanto (LibreOffice em container CF foi descartado pra v1)
+- Rollout: Cotações primeiro (PDF→DOCX→PPTX→Web), depois Portal+Banco
+
+**Implementado nesta release (foundation)**:
+- `js/services/templates.js` (NEW) — SSOT schema + helpers
+  (fetchTemplates, fetchTemplate, createTemplate, updateTemplate,
+  archiveTemplate, validateTemplateFile, formatFileSize) + constantes
+  (TEMPLATE_MODULES, TEMPLATE_FORMATS, PLACEHOLDERS_SPEC)
+- `firestore.rules`: nova `match /templates/{docId}` (read=auth,
+  write=isAdmin OR templates_manage, delete=isAdmin only)
+- `js/services/rbac.js`: nova perm `templates_manage` no grupo
+  "Templates de Áreas (BUs)" + defaults nos 5 roles (Master/Diretor:
+  true, Gerência/Analista/Consultor: false)
+- `js/auth/audit.js`: 6 actions novas (templates.create, .update,
+  .archive, .delete, .duplicate, .new_version) + severity critical pra
+  delete + warning pra archive
+
+**Próximas releases da sprint**:
+- v4.63.1 — CF `uploadTemplate` (validate + sha256 + Storage write)
+- v4.63.2 — CF `extractPlaceholders` (Handlebars + docxtemplater regex)
+- v4.63.3-4 — UI Biblioteca (list + upload modal)
+- v4.63.5-7 — Render engines (Puppeteer PDF + Web + DOCX + PPTX)
+- v4.63.8 — UI tab "📐 Templates" no editor de área + adapter
+- v4.63.9-10 — Duplicação + versionamento
+- v4.63.11 — Integração Cotações + E2E
+
+---
+
 ## [4.62.51+20260528-fix-zumbis-audit-banco-roteiros-template] — 2026-05-28
 
 **Fix dos zumbis encontrados na auditoria final pós-sprint** (Agent
