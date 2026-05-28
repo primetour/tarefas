@@ -6,6 +6,40 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.7+20260528-templates-hotfix-puppeteer-buffer] — 2026-05-28
+
+**HOTFIX CRÍTICO** descoberto em E2E imediatamente após deploy v4.63.6:
+`puppeteer-core@25+` retorna `Uint8Array` (não `Buffer` como em
+versões antigas) de `page.pdf()`. `.toString('base64')` em Uint8Array
+retornava CSV de decimais (`"37,80,68,70,..."`) em vez de base64 real
+(`"JVBERi0xLj..."`). Cliente fazia `atob()` e quebrava com
+`"InvalidCharacterError: string not correctly encoded"`.
+
+**Fix**: 1 linha em `functions/index.js`:
+```js
+pdfBuf = Buffer.from(pdfBuf);  // força conversão Uint8Array → Buffer
+```
+
+**E2E pós-fix validado**:
+- Base64 começa com `JVBERi0xLjQKJdPr6eEK` ✅
+- Decoded → header `%PDF-1.4` ✅
+- Cold start ~10s, warm ~2.6s
+- PDF 27.4KB renderizado e disparado download via `downloadBlob`
+- Template `zFebJ1oCUiG7JjIbh81I` (12 placeholders) interpolou com dados
+  de teste correto
+
+**Lição (CLAUDE.md §12.b)**: `script.onload` / API change em libs UMD não é
+suficiente — preciso validar SHAPE do retorno também. Onde antes funcionava
+`Buffer.toString('base64')`, hoje precisa `Buffer.from(uint8).toString('base64')`.
+
+**Padrão registrado** pra futuros usos de Puppeteer 25+:
+```js
+const pdf = await page.pdf({...});       // Uint8Array
+const b64 = Buffer.from(pdf).toString('base64');  // base64 string puro
+```
+
+---
+
 ## [4.63.6+20260528-templates-render-html-to-pdf] — 2026-05-28
 
 Release **Sprint v4.63 (7/11)** — Render engine HTML→PDF via Puppeteer.

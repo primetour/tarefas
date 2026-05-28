@@ -1088,6 +1088,12 @@ export const renderTemplate = onCall({
     throw new HttpsError('internal', `Puppeteer falhou: ${e?.message || e}`);
   }
 
+  // v4.63.7 fix CRITICO: puppeteer-core 25+ retorna Uint8Array, NÃO Buffer.
+  // Sem Buffer.from() o .toString('base64') retornava CSV de decimais
+  // ("37,80,68,70,..." em vez de "JVBERi0xLj..." real base64). Cliente fazia
+  // atob() e quebrava com "string not correctly encoded". E2E v4.63.6 pegou.
+  pdfBuf = Buffer.from(pdfBuf);
+
   const sizeBytes = pdfBuf.length;
   if (sizeBytes > 9 * 1024 * 1024) {
     console.warn(`[renderTemplate] PDF grande ${sizeBytes} bytes pode estourar callable response (10MB).`);
