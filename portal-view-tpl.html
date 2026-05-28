@@ -71,8 +71,10 @@
   updateDoc(doc(db, 'portal_web_links', token), { views: increment(1) }).catch(() => {});
 
   // Sem webTemplate? Redireciona pro view canônico
+  // v4.63.30+ Check templateId em vez de fileUrl (drift fix — webTemplate.fileUrl
+  // não é mais gravado por motivos de segurança §16.j)
   const webTpl = data.webTemplate;
-  if (!webTpl || !webTpl.fileUrl) {
+  if (!webTpl || !webTpl.templateId) {
     console.warn('[portal-view-tpl] sem webTemplate metadata, redirecionando pra canônico');
     window.location.replace('./portal-view.html#' + token);
     throw new Error('redirect to canonical');

@@ -373,7 +373,12 @@ function showAreaModal(area, areas = []) {
   // tem area.modules.roteiros mas não area.modules.cotacoes, copia pra cotacoes.
   // Save grava SÓ em cotacoes (chave canônica). Legacy doc fica intacto até
   // próxima edição → safe deprecation. Reader em areaDefaults.js:122 já lê ambos.
-  if (mods.roteiros && !mods.cotacoes) mods.cotacoes = mods.roteiros;
+  // v4.63.30+ DEEP CLONE (audit fix #3): shallow copy fazia mods.cotacoes e
+  // mods.roteiros compartilharem ref; edits no form mutavam ambos → estado
+  // inconsistente em re-render do modal sem reload.
+  if (mods.roteiros && !mods.cotacoes) {
+    mods.cotacoes = JSON.parse(JSON.stringify(mods.roteiros));
+  }
   const fontOptions = (sel, cur) => sel.map(o =>
     `<option value="${esc(o.value)}" ${o.value === cur ? 'selected' : ''}>${esc(o.label)}</option>`
   ).join('');

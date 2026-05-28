@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 29,
-  build: '20260528-cotacoes-web-link-runtime',
+  patch: 30,
+  build: '20260528-cotacoes-web-audit-hotfix',
 };
 
 /** "1.2.0" */

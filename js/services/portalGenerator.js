@@ -2424,11 +2424,13 @@ async function generateWebLink({ allTips, segments, areaName, area, colors, form
       const { fetchTemplate } = await import('./templates.js');
       const _tpl = await fetchTemplate(_webTplId);
       if (_tpl && _tpl.status === 'active') {
+        // v4.63.30+ Drift fix: NÃO grava fileUrl (paridade com generateRoteiroWebLink).
+        // CF getTemplateHtml busca via templateId — anônimo editando fileUrl
+        // via PATCH no Firestore não consegue redirecionar pra outro lugar.
         _webTemplateMeta = {
           templateId:   _tpl.id,
           templateName: _tpl.name,
-          templateMode: _tpl.templateMode || 'full',  // default full
-          fileUrl:      _tpl.fileUrl,
+          templateMode: _tpl.templateMode || 'full',
         };
       } else if (_tpl) {
         console.warn(`[portalGenerator web] template ${_webTplId} status=${_tpl.status} (não-active) — ignorado`);

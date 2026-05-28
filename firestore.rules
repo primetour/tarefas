@@ -953,17 +953,17 @@ service cloud.firestore {
     match /roteiro_web_links/{token} {
       allow read:   if true;   // public — link holder can read
       allow create: if isAuth();
-      // Update público: só permite incrementar viewCount + atualizar lastViewedAt.
-      // Antes a regra checava apenas que roteiroId/createdBy não mudaram,
-      // mas isso permitia injetar/alterar QUALQUER outro campo. Agora forçamos
-      // que apenas viewCount e lastViewedAt podem ser modificados.
+      // v4.63.30+ Update público simplificado — só anônimo legítimo
+      // incrementando viewCount + lastViewedAt. Antes a rule checkava
+      // `roteiroId == roteiroId` mas v4.63.29+ schema novo não tem esse
+      // campo (era legacy `data.roteiroId`), forçando undefined==undefined
+      // que falha silenciosamente em Firestore rules → anônimo recebia 403
+      // ao tentar incrementar view legítima. Fix: apenas affectedKeys hasOnly
+      // (lição §16.j — lock list cobre 100% schema fields, sem dependência
+      // de field-equality em campos que podem não existir).
       allow update: if isAuth()
-                    || (
-                      request.resource.data.roteiroId == resource.data.roteiroId
-                      && request.resource.data.createdBy == resource.data.createdBy
-                      && request.resource.data.diff(resource.data).affectedKeys()
-                          .hasOnly(['viewCount', 'lastViewedAt'])
-                    );
+                    || request.resource.data.diff(resource.data).affectedKeys()
+                          .hasOnly(['viewCount', 'lastViewedAt']);
       allow delete: if isAuth() && isAdmin();
     }
 

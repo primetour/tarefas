@@ -453,22 +453,63 @@ function _cacheSetMulti(k, urls) {
  *
  * Tudo permanece no doc do Firestore — só não vai pra render externo.
  */
+/**
+ * v4.63.30+ Refactor pra ALLOWLIST (antes era denylist via delete).
+ *
+ * Lição da auditoria Cotações Web Link: schema livre + denylist = qualquer
+ * campo NOVO que consultor cria (ex: `obs_interna`, `commercialMargin`,
+ * `internalNotes`, `meta_admin`) vaza automaticamente pra URL pública.
+ *
+ * Allowlist é defensiva por design — campo novo é internal por default,
+ * só sai se for explicitamente adicionado a PUBLIC_FIELDS. Custo: ao
+ * adicionar feature pública nova, atualizar a lista.
+ *
+ * Backwards compat: a saída tem mesmo shape esperado pelos generators
+ * (PDF/DOCX/PPTX/Web). Campos não listados ficam removidos automaticamente.
+ */
+const PUBLIC_FIELDS = [
+  // Identificação básica
+  'id', 'title', 'name', 'status',
+  // Cliente (PII — vai pro template renderizar, mas auditado)
+  'cliente', 'client',
+  // Viagem
+  'travel', 'viagem',
+  // Itinerário
+  'days', 'dias', 'itinerary',
+  // Serviços operacionais (preço SEM custo interno)
+  'hotels', 'hoteis', 'flights', 'voos', 'services', 'servicos',
+  'transfers', 'experiencias', 'experiences', 'opcionais', 'optionals',
+  // Pricing público (perPerson/total — custo interno é stripado separado)
+  'pricing', 'valores',
+  // Includes/exclusões públicos
+  'includes', 'inclusos', 'excludes', 'exclusoes',
+  // Conteúdo textual
+  'briefing', 'notes', 'description', 'observations', 'observacoes',
+  // Imagens público (banco_imagens + Unsplash)
+  'images', 'imagens', 'imagesByCity', 'heroImage',
+  // Tags + categorização (visível ao cliente)
+  'tags', 'category', 'categoria',
+  // Período
+  'periodLabel', 'paxLabel',
+  // Áreas/destinos
+  'destinations', 'destinos', 'destinationsLinked',
+  // Metadata pública
+  'cancelPolicy', 'paymentPolicy', 'validity',
+];
+
 export function stripInternalFields(roteiro) {
   if (!roteiro || typeof roteiro !== 'object') return roteiro;
-  const out = JSON.parse(JSON.stringify(roteiro));
-  // Custo interno: zerar pra que mesmo se renderer ler, não exibe nada útil.
-  out.costPricing = { perPerson: null, perCouple: null, currency: 'USD', notes: '', customRows: [] };
-  // Internals operacionais
-  delete out.collaboratorIds;
-  delete out.workflowMode;
-  // 4.43.0+ Sprint 4 — tarefas vinculadas são internals (operacional)
-  delete out.linkedTaskIds;
-  delete out.tasksGeneratedAt;
-  // Metadata de IA
-  delete out.aiPrompt;
-  delete out.aiSources;
-  delete out.aiProvider;
-  delete out.aiModel;
+  const out = {};
+  for (const k of PUBLIC_FIELDS) {
+    if (roteiro[k] !== undefined) out[k] = roteiro[k];
+  }
+  // Custo interno zerado mesmo se algum dia voltar pra allowlist (defesa em profundidade)
+  if (out.pricing?.costInternal || out.pricing?.commission) {
+    out.pricing = { ...out.pricing };
+    delete out.pricing.costInternal;
+    delete out.pricing.commission;
+    delete out.pricing.margin;
+  }
   return out;
 }
 
@@ -1112,7 +1153,9 @@ async function generateRoteiroWebLink(roteiro, area) {
 
   // Resolve exports.web da Cotação (alias bidirectional cobre legacy)
   const _webExportTpl = resolveExportTemplate(area, 'cotacoes', 'web');
-  const _title = roteiro?.title || roteiro?.cliente?.nome || 'Cotação PRIMETOUR';
+  // v4.63.30+ Audit fix: title NUNCA cai pra cliente.nome — PII vaza pro doc.title
+  // (visível em browser tab title + slug + previewLink OG meta). Default genérico.
+  const _title = roteiro?.title || 'Cotação PRIMETOUR';
   const _clientName = roteiro?.cliente?.nome || roteiro?.client?.name || '';
   const _webFooterText = formatExportText(_webExportTpl.footerText || '', {
     areaName: area?.name || '', title: _title, clientName: _clientName,
@@ -1157,6 +1200,11 @@ async function generateRoteiroWebLink(roteiro, area) {
       // Schema compatível com roteiro-view.html (payload.data || payload.roteiro)
       data:      roteiro,
       area:      area || {},
+      // v4.63.30+ Paridade Portal (audit #13): expor fonts/editorial/modules
+      // pra template designer customizar fontes dinamicamente
+      fonts:     area?.fonts     || null,
+      editorial: area?.editorial || null,
+      modules:   area?.modules   || null,
       // v4.63.29+ Template Web Link metadata (null se sem template configurado)
       webTemplate: _webTemplateMeta,
       // Exports footer/header já resolvido (placeholders formatados)
@@ -1182,6 +1230,21 @@ async function generateRoteiroWebLink(roteiro, area) {
   const directUrl = _webTemplateMeta
     ? `${baseUrl}roteiro-view-tpl.html#${token}`
     : `${baseUrl}roteiro-view.html#${token}`;
+
+  // v4.63.30+ Audit log (audit #12) — fire-and-forget, não bloqueia
+  try {
+    const { auditLog } = await import('../auth/audit.js');
+    await auditLog('cotacoes.web.generated', 'roteiro_web_links', token, {
+      roteiroId:    roteiro?.id || null,
+      areaId:       area?.id || null,
+      areaName:     area?.name || null,
+      hasTemplate:  !!_webTemplateMeta,
+      templateId:   _webTemplateMeta?.templateId || null,
+      clientName:   _clientName.slice(0, 60),
+    });
+  } catch (e) {
+    console.warn('[generateRoteiroWebLink] audit log falhou:', e?.message);
+  }
 
   return { url: directUrl, directUrl, token };
 }
