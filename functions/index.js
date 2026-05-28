@@ -56,6 +56,18 @@ const GRAPH_CLIENT_SECRET = defineSecret('GRAPH_CLIENT_SECRET');
 const GRAPH_SENDER_EMAIL  = defineSecret('GRAPH_SENDER_EMAIL');
 const GRAPH_SENDER_ID     = defineSecret('GRAPH_SENDER_ID');  // 4.34.14+ Object ID do sender (UUID)
 
+// v4.63.13+ Security #2/#5 (audit pós-sprint v4.63): allowlist de origins
+// pra fileUrl/SSRF defense. R2 bucket público é a única origem aceita.
+// Validar ANTES de fetch em extractPlaceholders/renderTemplate/duplicateTemplate.
+const R2_PUBLIC_ORIGIN = 'https://pub-ad909dc0c977450a93ee5faa79c7374d.r2.dev/';
+function _validateR2FileUrl(url) {
+  if (typeof url !== 'string') return false;
+  if (!url.startsWith(R2_PUBLIC_ORIGIN)) return false;
+  // Bloquear path traversal (../) e query string suspeita
+  if (url.includes('..') || url.includes('@')) return false;
+  return true;
+}
+
 /* ─── Helpers ─────────────────────────────────────────────── */
 function requireAuth(request) {
   if (!request.auth) throw new HttpsError('unauthenticated', 'Login obrigatorio.');
@@ -965,6 +977,12 @@ export const extractPlaceholders = onDocumentCreated({
   console.log(`[extractPlaceholders] inicio templateId=${templateId} format=${tpl.format}`);
 
   try {
+    // v4.63.13+ Security #5: valida origem do fileUrl antes de fetch
+    // (defesa contra admin malicioso editando fileUrl no Firestore pra
+    // apontar pra interno/metadata server → SSRF via CF).
+    if (!_validateR2FileUrl(tpl.fileUrl)) {
+      throw new Error(`fileUrl inválido (origem não-R2): ${tpl.fileUrl?.slice(0,80)}`);
+    }
     const res = await fetch(tpl.fileUrl);
     if (!res.ok) throw new Error(`Fetch falhou (${res.status})`);
 
@@ -1045,6 +1063,12 @@ export const renderTemplate = onCall({
     throw new HttpsError('invalid-argument', `Format ${tpl.format} não suportado.`);
   }
 
+  // v4.63.13+ Security #5: valida origem do fileUrl (mesma defesa de
+  // extractPlaceholders contra fileUrl tampered → SSRF).
+  if (!_validateR2FileUrl(tpl.fileUrl)) {
+    throw new HttpsError('failed-precondition', `Template com fileUrl inválido (não-R2).`);
+  }
+
   // Baixar template do R2 (texto pra HTML, arrayBuffer pra DOCX/PPTX)
   const res = await fetch(tpl.fileUrl);
   if (!res.ok) throw new HttpsError('internal', `Fetch template falhou (${res.status}).`);
@@ -1078,6 +1102,30 @@ export const renderTemplate = onCall({
       });
       try {
         const page = await browser.newPage();
+        // v4.63.13+ Security #2 (audit pós-sprint): SSRF lockdown.
+        // Templates HTML são arbitrários (uploader com templates_manage).
+        // Sem intercepção, <iframe src="http://169.254.169.254/computeMetadata">
+        // ou <img src="http://internal-svc/"> rodam dentro do CF — vazam IP,
+        // tokens GCP metadata, expõem rede interna. Allowlist: data: URIs
+        // (embedded base64) + R2 origin + Google Fonts (uso comum em templates
+        // luxury). Tudo o mais é abortado. networkidle0 ainda funciona porque
+        // requests abortadas contam como "concluídas".
+        const ALLOWED_FETCH_ORIGINS = [
+          'https://pub-ad909dc0c977450a93ee5faa79c7374d.r2.dev',
+          'https://fonts.googleapis.com',
+          'https://fonts.gstatic.com',
+        ];
+        await page.setRequestInterception(true);
+        page.on('request', req => {
+          const url = req.url();
+          if (url.startsWith('data:') || url.startsWith('about:')) {
+            req.continue(); return;
+          }
+          const allowed = ALLOWED_FETCH_ORIGINS.some(o => url.startsWith(o + '/') || url === o);
+          if (allowed) { req.continue(); return; }
+          console.warn(`[renderTemplate SSRF block] ${req.resourceType()} ${url.slice(0,120)}`);
+          req.abort('blockedbyresponse');
+        });
         await page.setContent(rendered, { waitUntil: 'networkidle0', timeout: 60000 });
         outputBuf = await page.pdf({
           format: 'A4',
@@ -1213,6 +1261,11 @@ export const duplicateTemplate = onCall({
     throw new HttpsError('failed-precondition', 'Template já pertence a esse owner — não há o que duplicar.');
   }
 
+  // v4.63.13+ Security #5: valida origem do fileUrl original (defesa cross-CF
+  // — admin malicioso poderia editar src.fileUrl pra apontar pra interno).
+  if (!_validateR2FileUrl(src.fileUrl)) {
+    throw new HttpsError('failed-precondition', `Template original com fileUrl inválido (não-R2).`);
+  }
   // Baixar arquivo R2 original
   const fetchRes = await fetch(src.fileUrl);
   if (!fetchRes.ok) throw new HttpsError('internal', `Fetch original falhou (${fetchRes.status}).`);

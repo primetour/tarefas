@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 12,
-  build: '20260528-post-audit-safetynet-zumbis',
+  patch: 13,
+  build: '20260528-security-ssrf-lockdown',
 };
 
 /** "1.2.0" */
