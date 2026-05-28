@@ -1,6 +1,6 @@
 import { MOCK_FORMATOS, MOCK_TEMPLATES, MOCK_LAYOUTS } from './mock-data.js';
 import {
-  fetchDestinos, buildSlidesForDestino,
+  fetchDestinos, loadConteudoForDestino, buildSlidesForDestino,
   getBancoCuradoForDestino, getBancoCuradoCounts, getCategoriasParaDestino,
   getEstabelecimentosTipo, PICKER_CATEGORIAS,
 } from '../../services/artsByDestino.js';
@@ -30,7 +30,19 @@ const state = {
   searchQuery: '',
   formatos: new Set(['carrossel', 'story']),
   templateId: 'classico-teal',
-  slides: [],                            // cópia editável dos slides do destino
+
+  // ─── CONTEÚDO (Etapa 1 do refactor — independente de formato) ───
+  // ordemTopicos: ['capa', 'informacoes_gerais', 'atracoes', ...]
+  // conteudoPorTopico: { 'capa': {nome,titulo,descricao,label}, ... }
+  // fotosDisponiveis: [url, url, ...] (pool, IC pode atribuir manualmente depois)
+  // topicosSelecionados: Set — quais aparecerão nos slides
+  ordemTopicos: [],
+  conteudoPorTopico: {},
+  fotosDisponiveis: [],
+  topicosSelecionados: new Set(),
+  conteudoFonte: 'empty',                // 'empty' | 'portal-tip' | 'banco-curado'
+
+  slides: [],                            // CACHE derivado (não fonte de verdade) — populado por recomputeSlides()
   activeSlideIdx: 0,
   previewFormato: 'carrossel',
   fotoTab: 'curadas',
@@ -221,10 +233,22 @@ async function pickDestino(id) {
   }
   showLoader('Carregando destino...');
   try {
-    const slides = await buildSlidesForDestino(d);
+    // ─── NOVO (Etapa 1): carrega conteúdo agrupado por tópico (independente de formato) ───
+    const { ordemTopicos, conteudoPorTopico, fotosDisponiveis, fonte } = await loadConteudoForDestino(d);
+
     state.destinoId = id;
-    state.destino = d;                  // <- guarda destino completo (com _raw)
-    state.slides = JSON.parse(JSON.stringify(slides));
+    state.destino = d;
+    state.ordemTopicos = ordemTopicos;
+    state.conteudoPorTopico = conteudoPorTopico;
+    state.fotosDisponiveis = fotosDisponiveis;
+    state.conteudoFonte = fonte;
+    // Default inteligente: todos os tópicos disponíveis ficam marcados
+    // (próxima etapa terá UI pra IC desmarcar)
+    state.topicosSelecionados = new Set(ordemTopicos.filter(k => k !== 'capa'));
+
+    // Deriva slides a partir do conteúdo + formato atual (cache em state.slides)
+    recomputeSlides();
+
     state.activeSlideIdx = 0;
     state.generated = null;
     state.uniformScale = null;
@@ -238,6 +262,59 @@ async function pickDestino(id) {
     alert('Erro ao carregar destino: ' + err.message);
     console.error(err);
   }
+}
+
+// ─── derivarSlides: função pura. Slides = (conteudoPorTopico × topicosSelecionados × formato) ───
+// Importante: re-roda quando IC troca formato (re-encaixa) ou tópicos (re-monta).
+function derivarSlides(s = state) {
+  const layouts = ['foto-cima', 'lateral-esq', 'foto-cima', 'lateral-dir', 'foto-cima', 'lateral-esq', 'foto-cima'];
+  const fotos = s.fotosDisponiveis || [];
+  const foto = (idx) => fotos[idx % Math.max(fotos.length, 1)] || '';
+  const slides = [];
+  // Capa sempre primeiro
+  const capa = s.conteudoPorTopico?.capa;
+  if (capa) {
+    slides.push({
+      id: 'capa', layoutId: 'capa',
+      nome: capa.nome, titulo: capa.titulo, descricao: capa.descricao,
+      fotoUrl: foto(0),
+    });
+  }
+  // Tópicos selecionados (na ordem definida em ordemTopicos)
+  let idx = 1;
+  for (const topicoKey of s.ordemTopicos || []) {
+    if (topicoKey === 'capa') continue;
+    if (!s.topicosSelecionados?.has(topicoKey)) continue;
+    const c = s.conteudoPorTopico[topicoKey];
+    if (!c) continue;
+    slides.push({
+      id: topicoKey,
+      layoutId: layouts[(idx - 1) % layouts.length],
+      nome: c.nome, titulo: c.titulo, descricao: c.descricao,
+      fotoUrl: foto(idx),
+    });
+    idx++;
+    if (idx > 8) break;  // cap visual: 8 slides max por enquanto
+  }
+  // Fallback honesto: nenhum tópico com conteúdo
+  if (slides.length === 1 && s.conteudoFonte === 'empty') {
+    const nome = s.destino?.nome || '';
+    for (let i = 0; i < 7; i++) {
+      slides.push({
+        id: `empty-${i + 1}`,
+        layoutId: layouts[i],
+        nome: `Slide ${i + 2}`,
+        titulo: 'SEM CONTEÚDO CADASTRADO',
+        descricao: `Cadastre uma dica de ${nome} no Portal de Dicas para os slides serem preenchidos automaticamente com Atrações, Restaurantes, Bairros, etc.`,
+        fotoUrl: foto(i + 1),
+      });
+    }
+  }
+  return slides;
+}
+
+function recomputeSlides() {
+  state.slides = derivarSlides(state);
 }
 
 // ───── Editor canvas ─────
@@ -1633,11 +1710,19 @@ export async function renderArtsByDestino(_parentContainer, { onClose } = {}) {
   // Reset state pra abrir limpo
   state.view = 'welcome';
   state.destinoId = null;
+  state.destino = null;
+  state.ordemTopicos = [];
+  state.conteudoPorTopico = {};
+  state.fotosDisponiveis = [];
+  state.topicosSelecionados = new Set();
+  state.conteudoFonte = 'empty';
   state.slides = [];
   state.activeSlideIdx = 0;
   state.openSheet = null;
   state.generated = null;
   state.uniformScale = null;
+  state.slideOverrides = {};
+  state.selectedField = null;
 
   initWizard();   // async — não bloqueia o append
 }

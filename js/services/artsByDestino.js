@@ -214,44 +214,119 @@ function smartTruncate(text, max) {
   return slice + '…';
 }
 
-export async function buildSlidesForDestino(destino) {
+/**
+ * Retorna conteúdo do destino agrupado POR TÓPICO (independente de formato).
+ * O wizard derivará os slides a partir disso + topicosSelecionados + formato.
+ *
+ * Estrutura:
+ *   {
+ *     ordemTopicos: ['capa', 'informacoes_gerais', 'atracoes', ...],
+ *     conteudoPorTopico: {
+ *       'capa':               { nome, titulo, descricao, label },
+ *       'informacoes_gerais': { nome, titulo, descricao, label },
+ *       ...
+ *     },
+ *     fotosDisponiveis: [url, url, ...],   // pool pra atribuir aos slides
+ *     fonte: 'portal-tip' | 'empty',       // origem do conteúdo (futuro: 'banco-curado')
+ *   }
+ */
+export async function loadConteudoForDestino(destino) {
   const isSintetico = !!destino._sintetico;
   const imgs = isSintetico ? destino._fotos : getImagesForDestino(destino);
   const tipDestinoId = isSintetico ? destino._destinoReal?.id : destino.id;
   const nome = destino.nome;
-  const foto = (idx) => imgs[idx % Math.max(imgs.length, 1)]?.url || '';
 
-  // Usa tip já carregado no cache (sem fetchTip extra)
-  let highlights = [];
+  const fotosDisponiveis = imgs.map(i => i.url);
+
+  // Capa sempre presente, primeira posição
+  const conteudoPorTopico = {
+    capa: { nome, titulo: 'Tudo sobre', descricao: '', label: 'Capa' },
+  };
+  const ordemTopicos = ['capa'];
+
+  // Demais tópicos vêm do tip (extraídos por segment com conteúdo)
   const tip = tipDestinoId ? _tipsByDestId.get(tipDestinoId) : null;
+  let fonte = 'empty';
   if (tip) {
-    highlights = tipToHighlights(tip);
-    console.log('[artsByDestino] tip:', tipDestinoId, '| segmentos com conteudo:', highlights.length);
+    const highlights = tipToHighlightsByKey(tip);  // dict topicoKey → highlight
+    for (const segDef of _segmentsAll) {
+      if (!highlights[segDef.key]) continue;
+      conteudoPorTopico[segDef.key] = {
+        ...highlights[segDef.key],
+        label: segDef.label,
+        segmentMode: segDef.mode,
+      };
+      ordemTopicos.push(segDef.key);
+    }
+    if (ordemTopicos.length > 1) fonte = 'portal-tip';
+    console.log('[artsByDestino] loadConteudo:', tipDestinoId, '| tópicos:', ordemTopicos.length - 1);
   }
 
-  if (!highlights.length) {
-    // Empty state honesto: sem placeholders genéricos enganosos
-    highlights = Array.from({ length: 7 }, (_, i) => ({
-      nome: `Slide ${i + 2}`,
-      titulo: 'SEM CONTEÚDO CADASTRADO',
-      descricao: `Cadastre uma dica de ${nome} no Portal de Dicas para os slides serem preenchidos automaticamente com Atrações, Restaurantes, Bairros, etc.`,
-    }));
-  }
+  // Empty fallback: nenhum tópico além da capa
+  return { ordemTopicos, conteudoPorTopico, fotosDisponiveis, fonte };
+}
 
+// Variante de tipToHighlights que retorna dict por key (em vez de array ordenado)
+function tipToHighlightsByKey(tip) {
+  const out = {};
+  if (!tip?.segments) return out;
+  for (const segDef of _segmentsAll) {
+    const segData = tip.segments[segDef.key];
+    if (!segHasContent(segData)) continue;
+    const txt = segmentToHighlightText(segDef, segData);
+    const clean = stripHtml(txt);
+    if (!clean) continue;
+    out[segDef.key] = {
+      nome: segDef.label,
+      titulo: segDef.label.toUpperCase(),
+      descricao: smartTruncate(clean, 250),
+    };
+  }
+  return out;
+}
+
+// Compatibilidade — código velho que ainda chama buildSlidesForDestino.
+// Implementação mantida idêntica ao comportamento anterior.
+export async function buildSlidesForDestino(destino) {
+  const { ordemTopicos, conteudoPorTopico, fotosDisponiveis, fonte } = await loadConteudoForDestino(destino);
   const layouts = ['foto-cima', 'lateral-esq', 'foto-cima', 'lateral-dir', 'foto-cima', 'lateral-esq', 'foto-cima'];
-  const slides = [
-    { id: 'capa', layoutId: 'capa', nome, titulo: 'Tudo sobre', descricao: '', fotoUrl: foto(0) },
-  ];
-  highlights.slice(0, 7).forEach((h, i) => {
+  const foto = (idx) => fotosDisponiveis[idx % Math.max(fotosDisponiveis.length, 1)] || '';
+  const nome = destino.nome;
+
+  // Sem tip → fallback honesto (igual antes)
+  if (fonte === 'empty') {
+    const slides = [
+      { id: 'capa', layoutId: 'capa', nome, titulo: 'Tudo sobre', descricao: '', fotoUrl: foto(0) },
+    ];
+    for (let i = 0; i < 7; i++) {
+      slides.push({
+        id: `empty-${i + 1}`,
+        layoutId: layouts[i],
+        nome: `Slide ${i + 2}`,
+        titulo: 'SEM CONTEÚDO CADASTRADO',
+        descricao: `Cadastre uma dica de ${nome} no Portal de Dicas para os slides serem preenchidos automaticamente com Atrações, Restaurantes, Bairros, etc.`,
+        fotoUrl: foto(i + 1),
+      });
+    }
+    return slides;
+  }
+
+  // Com tip → monta a partir do conteúdo carregado (até 7 tópicos + capa)
+  const slides = [];
+  let idx = 0;
+  for (const topicoKey of ordemTopicos.slice(0, 8)) {
+    const c = conteudoPorTopico[topicoKey];
+    const layoutId = topicoKey === 'capa' ? 'capa' : layouts[idx - 1] || 'foto-cima';
     slides.push({
-      id: `h${i + 1}`,
-      layoutId: layouts[i],
-      nome: h.nome,
-      titulo: h.titulo,
-      descricao: h.descricao,
-      fotoUrl: foto(i + 1),
+      id: topicoKey,
+      layoutId,
+      nome: c.nome,
+      titulo: c.titulo,
+      descricao: c.descricao,
+      fotoUrl: foto(idx),
     });
-  });
+    idx++;
+  }
   return slides;
 }
 
