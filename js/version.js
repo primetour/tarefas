@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 3,
-  build: '20260528-templates-extract-placeholders',
+  patch: 4,
+  build: '20260528-templates-library-ui',
 };
 
 /** "1.2.0" */

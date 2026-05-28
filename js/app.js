@@ -603,6 +603,10 @@ function setupRouter() {
     'ga-performance':       async () => { await renderGaPerformance(content); },
     'portal-tips':          async () => { await renderPortalTips(content); },
     'portal-areas':         async () => { await renderPortalAreas(content); },
+    'templates-library':    async () => {
+      const { renderTemplatesLibrary } = await import('./pages/templatesLibrary.js?v=4.63.4');
+      await renderTemplatesLibrary(content);
+    },
     'portal-destinations':  async () => { await renderPortalDestinations(content); },
     'portal-images':        async () => { await renderPortalImages(content); },
     'portal-dashboard':     async () => { await renderPortalDashboard(content); },

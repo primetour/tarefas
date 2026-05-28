@@ -6,6 +6,55 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.4+20260528-templates-library-ui] — 2026-05-28
+
+Release **Sprint v4.63 (5/11)** — UI Biblioteca de Templates.
+
+Nova page `#templates-library` na sidebar (abaixo de "Templates de áreas").
+Lista templates uploaded com cards informativos, filtros e modal de upload
+inline.
+
+**Implementado**:
+- `js/pages/templatesLibrary.js` (NEW):
+  - Header padrão uiKit com botão "Subir template" (gated por
+    `templates_manage`)
+  - Filter bar uiKit com status pills (Ativos/Arquivados/Todos),
+    selects Módulo/Formato/Área, search por nome+placeholders, debounce 220ms
+  - Grid responsivo `auto-fill minmax(320px,1fr)`
+  - Cards: badges módulo+formato+status+default, nome, owner (🌐 Global
+    ou nome da área), tamanho, versão, preview de até 5 placeholders
+    + "+N" pra excedentes, mensagem de extração pendente/erro
+  - Ações: "Abrir arquivo" (target=_blank pro R2 público), "Arquivar"
+    (gated)
+  - Empty state amigável (0 templates / sem match nos filtros)
+  - Count "X de Y" + botão "Limpar filtros"
+  - Modal upload v1: nome, módulo, formato, área (global/específica),
+    file picker (.html/.htm/.docx/.pptx), valida via
+    `validateTemplateFile`, chama `uploadTemplateService`
+  - Cleanup com AbortController (CLAUDE.md §11.k)
+- `js/components/sidebar.js`: novo item "Biblioteca de Templates"
+  (perm portal_areas_view OR templates_manage)
+- `js/app.js`: rota `templates-library` com dynamic import
+
+**Padrão visual respeitado (CLAUDE.md §4)**:
+- uiKit `renderPageHeader` + `renderFilterBar`
+- Variáveis CSS (`--brand-blue`, `--brand-gold`, `--bg-card`, etc.)
+- Classes `.btn .btn-primary/.btn-secondary/.btn-ghost`
+
+**Pendências cobertas em próximas releases**:
+- Editor inline de metadata do template (renomear, mudar default) →
+  v4.63.5 vai trazer modal completo de upload + edit
+- Duplicação pra outra área → v4.63.9
+- Versionamento (subir nova versão) → v4.63.10
+- Atribuição automática a área no editor de áreas → v4.63.8
+- Re-extração manual de placeholders pra templates antigos → fora
+  do escopo da sprint atual, considerar em v4.63.x+
+
+**Próxima**: v4.63.5 — Modal de upload completo com drag-drop, preview
+de placeholders detectados pré-submit, validações avançadas.
+
+---
+
 ## [4.63.3+20260528-templates-extract-placeholders] — 2026-05-28
 
 Release **Sprint v4.63 (4/11)** — CF `extractPlaceholders` reativa.

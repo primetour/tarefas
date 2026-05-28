@@ -70,6 +70,8 @@ const NAV_GROUPS = [
       { route: 'portal-tips',      icon: 'portal-tips',      label: 'Portal de Dicas',        perm: 'portal_access'  },
       // 4.49.12+ Templates de áreas: tanto portal_areas_view quanto portal_areas_manage liberam ver
       { route: 'portal-areas',     icon: 'portal-areas',     label: 'Templates de áreas',     perm: 'portal_areas_view',   altPerm: 'portal_areas_manage' },
+      // v4.63.4+ Biblioteca de Templates uploaded (HTML/DOCX/PPTX) — qualquer view, manage via templates_manage
+      { route: 'templates-library', icon: 'portal-areas',    label: 'Biblioteca de Templates', perm: 'portal_areas_view',   altPerm: 'templates_manage' },
       // 4.49.12+ Banco de Imagens: perm granular nova com fallback legacy
       { route: 'portal-images',    icon: 'portal-images',    label: 'Banco de Imagens',       perm: 'portal_images_manage', altPerm: 'portal_manage' },
       // v4.50.4+ "Landing Pages" e "CMS / Site" removidos da sidebar (Renê 22/05) —
