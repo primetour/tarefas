@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 27,
-  build: '20260528-templates-edit-unarchive',
+  patch: 28,
+  build: '20260528-areas-exports-rename-cotacoes',
 };
 
 /** "1.2.0" */

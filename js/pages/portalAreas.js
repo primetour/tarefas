@@ -83,12 +83,15 @@ function exportsModuleBlock(key, label, current = {}) {
     { id: 'web',  label: 'Link web',      icon: '🌐' },
   ];
   // v4.62.51+ Fix audit pos-sprint: esconder formatos não-implementados por módulo.
+  // v4.63.28+ Rename roteiros → cotacoes (Renê: "nomenclatura correta em Roteiros
+  // não é Cotação?"). Reader em areaDefaults.js:122 já tem alias bidirectional,
+  // backward compat garantida. Web pra cotacoes virá em v4.63.29 (generator real).
   // - portal exporta 4 formatos (PDF/DOCX/PPTX/Web)
-  // - roteiros exporta 3 (PDF/DOCX/PPTX) — sem web link
+  // - cotacoes exporta 3 (PDF/DOCX/PPTX) — web em v4.63.29+ (runtime pendente)
   // - banco-roteiros exporta apenas PDF (reusa roteiroGenerator PDF via adapter)
   const SUPPORTED_FMTS = {
     portal:           ['pdf', 'docx', 'pptx', 'web'],
-    roteiros:         ['pdf', 'docx', 'pptx'],
+    cotacoes:         ['pdf', 'docx', 'pptx'],
     'banco-roteiros': ['pdf'],
   };
   const allowedIds = SUPPORTED_FMTS[key] || ['pdf', 'docx', 'pptx', 'web'];
@@ -365,6 +368,11 @@ function showAreaModal(area, areas = []) {
   const fonts = area?.fonts || {};
   const edit  = area?.editorial || {};
   const mods  = area?.modules || {};
+  // v4.63.28+ Migration on-read pra rename roteiros→cotacoes: se schema legado
+  // tem area.modules.roteiros mas não area.modules.cotacoes, copia pra cotacoes.
+  // Save grava SÓ em cotacoes (chave canônica). Legacy doc fica intacto até
+  // próxima edição → safe deprecation. Reader em areaDefaults.js:122 já lê ambos.
+  if (mods.roteiros && !mods.cotacoes) mods.cotacoes = mods.roteiros;
   const fontOptions = (sel, cur) => sel.map(o =>
     `<option value="${esc(o.value)}" ${o.value === cur ? 'selected' : ''}>${esc(o.label)}</option>`
   ).join('');
@@ -546,11 +554,11 @@ function showAreaModal(area, areas = []) {
       <!-- TAB: Por módulo -->
       <div class="area-tab-pane" data-pane="modules">
         <div style="background:var(--bg-soft,#F9FAFB);padding:12px 14px;border-left:3px solid var(--brand-gold,#D4A843);border-radius:4px;font-size:0.8125rem;color:var(--text-muted);margin-bottom:16px;line-height:1.5;">
-          <strong style="color:var(--text-primary);">Overrides opcionais.</strong> Use só quando um módulo específico precisar de identidade diferente da geral (ex: Portal de Dicas com Poppins, mas Roteiros com Cormorant pra tom mais editorial).
+          <strong style="color:var(--text-primary);">Overrides opcionais.</strong> Use só quando um módulo específico precisar de identidade diferente da geral (ex: Portal de Dicas com Poppins, mas Cotações com Cormorant pra tom mais editorial).
           Vazio = herda da Marca/Tipografia/Editorial acima.
         </div>
         ${moduleOverrideBlock('portal',   'Portal de Dicas', mods.portal)}
-        ${moduleOverrideBlock('roteiros', 'Roteiros de Viagem', mods.roteiros)}
+        ${moduleOverrideBlock('cotacoes', 'Cotações', mods.cotacoes)}
       </div>
 
       <!-- TAB: Exports (v4.62.43+ Fase E.2) -->
@@ -565,12 +573,12 @@ function showAreaModal(area, areas = []) {
         <!-- Sub-tabs por módulo -->
         <div id="exports-mod-tabs" style="display:flex;gap:0;border-bottom:1px solid var(--border-subtle);margin-bottom:14px;">
           <button class="exports-mod-tab area-tab area-tab-active" data-mod="portal"   type="button">📍 Portal de Dicas</button>
-          <button class="exports-mod-tab area-tab"                  data-mod="roteiros" type="button">✈ Roteiros</button>
+          <button class="exports-mod-tab area-tab"                  data-mod="cotacoes" type="button">✈ Cotações</button>
           <button class="exports-mod-tab area-tab"                  data-mod="banco-roteiros" type="button">📚 Banco de Roteiros</button>
         </div>
 
         ${exportsModuleBlock('portal',          'Portal de Dicas',    mods.portal)}
-        ${exportsModuleBlock('roteiros',        'Roteiros de Viagem', mods.roteiros)}
+        ${exportsModuleBlock('cotacoes',        'Cotações',           mods.cotacoes)}
         ${exportsModuleBlock('banco-roteiros',  'Banco de Roteiros',  mods['banco-roteiros'])}
       </div>
 
@@ -927,13 +935,17 @@ function showAreaModal(area, areas = []) {
         return Object.keys(out).length ? out : null;
       };
       const portalOv         = buildModuleOverride('portal');
-      const roteirosOv       = buildModuleOverride('roteiros');
+      // v4.63.28+ Rename roteiros→cotacoes — coleta dos selects renderizados com
+      // key='cotacoes'. Save grava SÓ em modules.cotacoes (canônico). Reader
+      // (areaDefaults.js:122) tem alias bidirectional pra retrocompat. Cleanup
+      // do `modules.roteiros` legacy é defensivo abaixo (cleanLegacyRoteiros).
+      const cotacoesOv       = buildModuleOverride('cotacoes');
       // v4.62.48+ Banco de Roteiros agora também aceita override de cor/fonte
       // (antes só portal/roteiros — banco-roteiros era zumbi em modules.X.colors/fonts).
       const bancoRoteirosOv  = buildModuleOverride('banco-roteiros');
       const modules = {};
       if (portalOv)         modules.portal           = portalOv;
-      if (roteirosOv)       modules.roteiros         = roteirosOv;
+      if (cotacoesOv)       modules.cotacoes         = cotacoesOv;
       if (bancoRoteirosOv)  modules['banco-roteiros']= bancoRoteirosOv;
 
       // v4.62.43+ Fase E.2: coleta exports.{pdf,docx,pptx,web} por módulo.
@@ -953,11 +965,20 @@ function showAreaModal(area, areas = []) {
         return Object.keys(exp).length ? exp : null;
       };
       const portalExp        = collectExports('portal');
-      const roteirosExp      = collectExports('roteiros');
+      // v4.63.28+ key canônica cotacoes (era roteiros). collectExports lê IDs
+      // que agora têm prefixo `area-exp-cotacoes-*` por causa do rename na UI.
+      const cotacoesExp      = collectExports('cotacoes');
       const bancoRoteirosExp = collectExports('banco-roteiros');
-      if (portalExp)        modules.portal           = { ...(modules.portal || {}),         exports: portalExp };
-      if (roteirosExp)      modules.roteiros         = { ...(modules.roteiros || {}),       exports: roteirosExp };
-      if (bancoRoteirosExp) modules['banco-roteiros']= { ...(modules['banco-roteiros'] || {}), exports: bancoRoteirosExp };
+      if (portalExp)        modules.portal           = { ...(modules.portal || {}),           exports: portalExp };
+      if (cotacoesExp)      modules.cotacoes         = { ...(modules.cotacoes || {}),         exports: cotacoesExp };
+      if (bancoRoteirosExp) modules['banco-roteiros']= { ...(modules['banco-roteiros'] || {}),exports: bancoRoteirosExp };
+
+      // v4.63.28+ Cleanup legacy: saveArea usa setDoc(..., {merge:true}) que faz
+      // shallow merge. Quando enviamos `modules: {portal, cotacoes, banco}`, o
+      // modules inteiro é substituído — `modules.roteiros` legacy desaparece
+      // automaticamente. Migration silenciosa: legacy persiste até user editar
+      // a área 1× (próxima edição já grava só cotacoes). Reader em
+      // areaDefaults.js:122 garante backward compat enquanto isso.
 
       // v4.62.40 Fase B.1: brand.useExternalName toggle (D7)
       const useExternalName = document.getElementById('area-use-external-name')?.checked !== false;
