@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 45,
-  build: '20260528-portal-mapa-interativo-audit-fixes',
+  patch: 46,
+  build: '20260528-portal-logos-areas-mapa-titulo',
 };
 
 /** "1.2.0" */

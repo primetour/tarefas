@@ -155,7 +155,7 @@ async function renderGenerateTab(container) {
         background:var(--bg-surface);font-weight:600;font-size:0.9375rem;list-style:none;
         border-bottom:1px solid var(--border-subtle);">
         <span style="font-size:1.125rem;">🗺</span>
-        <span>Onde temos dicas no mundo</span>
+        <span>Confira no mapa os destinos que já possuem nossas dicas</span>
         <span style="font-size:0.75rem;color:var(--text-muted);font-weight:400;margin-left:auto;">
           Clique nos pins pra ver detalhes · atualização em tempo real
         </span>
@@ -408,14 +408,7 @@ function renderAreaPicker(grid, areas, activeCategoryFilter) {
         </button>
       `;
     }).join('')}
-    ${standaloneAreas.map(a => `
-      <button class="portal-area-btn portal-area-cat" data-id="${a.id}" data-name="${esc(a.name)}">
-        <!-- Sempre exibir o nome — logo aqui ficava invisível quando era PNG
-             transparente sobre o fundo escuro do botão. -->
-        <span style="font-size:0.8125rem;font-weight:600;">${esc(a.name)}</span>
-        ${a.category ? `<span style="font-size:0.6875rem;color:var(--text-muted);">${esc(a.category)}</span>` : ''}
-      </button>
-    `).join('')}
+    ${standaloneAreas.map(a => renderAreaButton(a)).join('')}
   `;
 
   // Category click → drill down
@@ -436,11 +429,48 @@ function renderAreaPicker(grid, areas, activeCategoryFilter) {
 }
 
 function areaItemRow(a) {
-  // Bullet só decorativo, sem logo (logos transparentes ficavam invisíveis aqui).
-  // O nome é a fonte de verdade da identificação visual.
+  // v4.63.46+ Renê: mostrar logo quando disponível em vez do nome.
+  // Sub-area dentro de categoria — formato horizontal (logo pequeno + nome).
+  // Mantém nome ao lado como fallback/legenda.
+  const bgColor = a.colors?.secondary || '#1F2937';
+  const thumbHtml = a.logoUrl
+    ? `<span style="width:28px;height:28px;border-radius:4px;background:${esc(bgColor)};
+        display:flex;align-items:center;justify-content:center;flex-shrink:0;
+        padding:3px;overflow:hidden;">
+        <img src="${esc(a.logoUrl)}" alt="${esc(a.name)}"
+          style="max-width:100%;max-height:100%;object-fit:contain;display:block;"
+          onerror="this.style.display='none'">
+      </span>`
+    : `<span style="width:8px;height:8px;border-radius:50%;background:#475569;flex-shrink:0;"></span>`;
   return `<button class="portal-area-item" data-id="${a.id}" data-name="${esc(a.name)}">
-    <span style="width:8px;height:8px;border-radius:50%;background:#475569;flex-shrink:0;"></span>
+    ${thumbHtml}
     <span style="flex:1;text-align:left;font-size:0.875rem;">${esc(a.name)}</span>
+  </button>`;
+}
+
+// v4.63.46+ Renê: "fica melhor colocar os logos das áreas, ao invés do nome
+// delas (com exceção de ICs, que possuem várias)". Categorias (que agregam)
+// mantém texto; areas standalone com logoUrl mostram LOGO sobre cor secundária
+// da BU; sem logo → fallback texto.
+function renderAreaButton(a) {
+  if (a.logoUrl) {
+    const bgColor = a.colors?.secondary || '#1F2937';
+    return `<button class="portal-area-btn portal-area-cat" data-id="${a.id}" data-name="${esc(a.name)}"
+      title="${esc(a.name)}"
+      style="background:${esc(bgColor)};padding:12px 10px;display:flex;flex-direction:column;
+      align-items:center;justify-content:center;gap:4px;min-height:64px;">
+      <img src="${esc(a.logoUrl)}" alt="${esc(a.name)}"
+        style="max-width:80%;max-height:36px;object-fit:contain;display:block;
+        filter:drop-shadow(0 1px 2px rgba(0,0,0,0.3));"
+        onerror="this.style.display='none';this.nextElementSibling.style.color='#fff';">
+      <span style="font-size:0.6875rem;font-weight:500;color:rgba(255,255,255,0.6);
+        text-align:center;line-height:1.2;">${esc(a.name)}</span>
+    </button>`;
+  }
+  // Sem logo → fallback texto (comportamento anterior)
+  return `<button class="portal-area-btn portal-area-cat" data-id="${a.id}" data-name="${esc(a.name)}">
+    <span style="font-size:0.8125rem;font-weight:600;">${esc(a.name)}</span>
+    ${a.category ? `<span style="font-size:0.6875rem;color:var(--text-muted);">${esc(a.category)}</span>` : ''}
   </button>`;
 }
 
