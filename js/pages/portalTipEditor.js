@@ -854,15 +854,48 @@ function buildPlaceListPanel(seg, data) {
       </div>
       <!-- Items -->
       <div id="place-list-container" style="display:flex;flex-direction:column;gap:16px;">
-        ${items.map((item,i) => placeItemBlock(item, i, cats, seg.mode === 'agenda')).join('')}
+        ${items.map((item,i) => renderPlaceListEntry(item, i, cats, seg.mode === 'agenda')).join('')}
       </div>
       <!-- v4.63.37+ datalist único pra autocompletar tags em todos os items -->
       <datalist id="place-tag-datalist">
         ${_tipTagsList.map(t => `<option value="${esc(t)}">`).join('')}
       </datalist>
-      <button id="place-add-btn" class="btn btn-secondary btn-sm" style="margin-top:16px;">
-        + Adicionar item
-      </button>
+      <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap;">
+        <button id="place-add-btn" class="btn btn-secondary btn-sm">+ Adicionar item</button>
+        <!-- v4.63.39+ Subtítulo: separador inline pra agrupar items visualmente
+             (ex: "Almoço" antes dos restaurantes de almoço, "Jantar" antes dos de jantar) -->
+        <button id="place-add-subtitle" class="btn btn-ghost btn-sm" type="button"
+          style="border:1px dashed var(--border-subtle);">+ Subtítulo</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+// v4.63.39+ Roteia render entre item normal e subtítulo separador.
+// Items com type='subtitle' viram uma faixa fina com texto editável.
+function renderPlaceListEntry(item, i, cats, isAgenda) {
+  if (item && item.type === 'subtitle') return placeSubtitleBlock(item, i);
+  return placeItemBlock(item, i, cats, isAgenda);
+}
+
+function placeSubtitleBlock(item, i) {
+  return `<div class="place-subtitle" data-index="${i}"
+    style="display:flex;align-items:center;gap:10px;padding:10px 14px;
+    border:1px solid rgba(212,168,67,0.35);border-radius:var(--radius-sm);
+    background:rgba(212,168,67,0.06);">
+    <span style="color:var(--brand-gold,#D4A843);font-size:0.7rem;font-weight:700;
+      text-transform:uppercase;letter-spacing:.1em;flex-shrink:0;">▸ Subtítulo</span>
+    <input type="text" class="place-subtitle-text portal-field" data-index="${i}"
+      value="${esc(item.text || '')}" placeholder="Ex: Almoço · Jantar · Bar · etc."
+      style="flex:1;border:none;background:transparent;font-weight:600;font-size:0.9rem;
+      color:var(--text-primary);outline:none;padding:4px 0;">
+    <div style="display:flex;gap:4px;flex-shrink:0;">
+      <button class="place-sub-up" data-index="${i}" title="Mover pra cima"
+        style="border:none;background:none;cursor:pointer;color:var(--text-muted);padding:3px 6px;">↑</button>
+      <button class="place-sub-down" data-index="${i}" title="Mover pra baixo"
+        style="border:none;background:none;cursor:pointer;color:var(--text-muted);padding:3px 6px;">↓</button>
+      <button class="place-sub-remove" data-index="${i}" title="Remover"
+        style="border:none;background:none;cursor:pointer;color:#EF4444;padding:3px 6px;">✕</button>
     </div>
   </div>`;
 }
@@ -901,14 +934,16 @@ function buildAgendaPanel(seg, data) {
         </div>
       </div>
       <div id="place-list-container" style="display:flex;flex-direction:column;gap:16px;">
-        ${items.map((item,i) => placeItemBlock(item, i, cats, true)).join('')}
+        ${items.map((item,i) => renderPlaceListEntry(item, i, cats, true)).join('')}
       </div>
       <datalist id="place-tag-datalist">
         ${_tipTagsList.map(t => `<option value="${esc(t)}">`).join('')}
       </datalist>
-      <button id="place-add-btn" class="btn btn-secondary btn-sm" style="margin-top:16px;">
-        + Adicionar evento
-      </button>
+      <div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap;">
+        <button id="place-add-btn" class="btn btn-secondary btn-sm">+ Adicionar evento</button>
+        <button id="place-add-subtitle" class="btn btn-ghost btn-sm" type="button"
+          style="border:1px dashed var(--border-subtle);">+ Subtítulo</button>
+      </div>
     </div>
   </div>`;
 }
@@ -1044,6 +1079,17 @@ function bindPlaceList(key, isAgenda = false) {
     });
     renderSegmentPanel(key); markDirty();
   });
+  // v4.63.39+ Subtítulo: push de separador especial no items[] da seg
+  document.getElementById('place-add-subtitle')?.addEventListener('click', () => {
+    saveCurrentSegmentData();
+    segmentData[key].items.push({ type: 'subtitle', text: '' });
+    renderSegmentPanel(key); markDirty();
+    // foca no input do subtítulo recém-criado
+    setTimeout(() => {
+      const inputs = document.querySelectorAll('.place-subtitle-text');
+      inputs[inputs.length - 1]?.focus();
+    }, 30);
+  });
 
   // 4.49.13+ Botão "🏷 Categorias" no header — abre modal gerenciar
   document.querySelector('.btn-manage-cats')?.addEventListener('click', () =>
@@ -1107,7 +1153,11 @@ function bindPlaceList(key, isAgenda = false) {
 
     saveCurrentSegmentData();
     const items = segmentData[key].items;
-    if (btn.classList.contains('place-remove')) items.splice(idx, 1);
+    // v4.63.39+ Handlers de subtítulo (mesma lógica que items normais)
+    if (btn.classList.contains('place-sub-remove')) items.splice(idx, 1);
+    else if (btn.classList.contains('place-sub-up') && idx>0) [items[idx-1],items[idx]]=[items[idx],items[idx-1]];
+    else if (btn.classList.contains('place-sub-down') && idx<items.length-1) [items[idx],items[idx+1]]=[items[idx+1],items[idx]];
+    else if (btn.classList.contains('place-remove')) items.splice(idx, 1);
     else if (btn.classList.contains('place-move-up') && idx>0) [items[idx-1],items[idx]]=[items[idx],items[idx-1]];
     else if (btn.classList.contains('place-move-down') && idx<items.length-1) [items[idx],items[idx+1]]=[items[idx+1],items[idx]];
     renderSegmentPanel(key); markDirty();
@@ -1303,8 +1353,18 @@ function saveCurrentSegmentData() {
       data.periodoAgenda = inp('agenda-periodo');
       data.dica          = inp('agenda-dica');
     }
-    data.items = [...document.querySelectorAll('.place-item')].map(el => {
-      const idx = parseInt(el.dataset.index);
+    // v4.63.39+ Percorre o container em ORDEM DOM, preservando subtítulos
+    // intercalados com items. Cada filho direto é OU .place-item OU .place-subtitle.
+    const container = document.getElementById('place-list-container');
+    const childNodes = container ? [...container.children] : [];
+    data.items = childNodes.map(el => {
+      // Subtítulo
+      if (el.classList.contains('place-subtitle')) {
+        const text = el.querySelector('.place-subtitle-text')?.value?.trim() || '';
+        return { type: 'subtitle', text };
+      }
+      // Item normal
+      if (!el.classList.contains('place-item')) return null;
       // v4.63.37+ Coleta tags (chips dentro do .place-tags-wrap)
       const tagsWrap = el.querySelector('.place-tags-wrap');
       const tags = tagsWrap
@@ -1326,7 +1386,12 @@ function saveCurrentSegmentData() {
           periodoIndeterminado: el.querySelector('.place-indeterminado')?.checked || false,
         } : {}),
       };
-    }).filter(i => i.titulo);
+    }).filter(it => {
+      if (!it) return false;
+      // v4.63.39+ Subtítulo vazio é descartado; subtítulo com texto preserva
+      if (it.type === 'subtitle') return !!(it.text && it.text.length);
+      return it.titulo;
+    });
   }
 
   segmentData[activeSegKey] = data;

@@ -894,9 +894,35 @@ function renderPlaces(sd,data,imgs,isAgenda){
 
   // Cards UNIFORMES — sem destaque hero/bento, todos iguais (preferência do user).
   // Layout em grid responsivo, fácil de escanear e expandir.
-  const itemsHtml = items.length
-    ? `<div class="cards-grid">${items.map((item, i) => card(item, i, sd)).join('')}</div>`
-    : '';
+  // v4.63.39+ Subtítulos quebram o grid em sub-grupos. Render Strategy:
+  // percorre items, acumula items normais em buffer; quando hitting subtitle
+  // OU end, fecha buffer em <div class="cards-grid">, abre subtitle, recomeça.
+  let itemsHtml = '';
+  if (items.length) {
+    let buffer = [];
+    let bufferStartIdx = 0;
+    const flushBuffer = () => {
+      if (!buffer.length) return;
+      itemsHtml += `<div class="cards-grid">${buffer.map((it, j) => card(it, bufferStartIdx + j, sd)).join('')}</div>`;
+      buffer = [];
+    };
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      if (it && it.type === 'subtitle' && it.text) {
+        flushBuffer();
+        itemsHtml += `<div class="seg-subtitle" style="margin:20px 32px 12px;padding:8px 14px;
+          border-left:3px solid var(--portal-accent,var(--portal-primary,#D4A843));
+          background:linear-gradient(90deg,rgba(212,168,67,0.10),transparent);
+          font-weight:700;font-size:0.95rem;color:var(--portal-secondary,#1F2937);
+          letter-spacing:.02em;border-radius:2px;">${esc(it.text)}</div>`;
+        bufferStartIdx = i + 1;
+      } else if (it && it.type !== 'subtitle') {
+        if (!buffer.length) bufferStartIdx = i;
+        buffer.push(it);
+      }
+    }
+    flushBuffer();
+  }
 
   return `${segHead(sd)}${themeHtml}${agendaHtml}${itemsHtml}`;
 }

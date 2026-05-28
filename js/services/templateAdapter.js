@@ -313,13 +313,20 @@ export function portalToTemplateData({ allTips, area, segments, areaName, images
         const rawItems = Array.isArray(data.items) ? data.items : [];
         // v4.63.37+ Expor `tags` no shape do template — render HTML pode iterar
         // {{#each tags}} pra exibir chips. Renderer legado ignora silenciosamente.
-        out.items = rawItems.map(p => ({
-          name: p?.titulo || p?.name || p?.title || '',
-          desc: p?.descricao || p?.notes || p?.observation || p?.description || p?.address || '',
-          categoria: p?.categoria || '',
-          tags: Array.isArray(p?.tags) ? p.tags : [],
-          observacoes: p?.observacoes || '',
-        }));
+        // v4.63.39+ Subtítulos preservam type='subtitle' + text para template
+        // iterar e renderizar como heading. `name` aliasado pra `text` por compat.
+        out.items = rawItems.map(p => {
+          if (p?.type === 'subtitle') {
+            return { isSubtitle: true, type: 'subtitle', text: p.text || '', name: p.text || '' };
+          }
+          return {
+            name: p?.titulo || p?.name || p?.title || '',
+            desc: p?.descricao || p?.notes || p?.observation || p?.description || p?.address || '',
+            categoria: p?.categoria || '',
+            tags: Array.isArray(p?.tags) ? p.tags : [],
+            observacoes: p?.observacoes || '',
+          };
+        });
       }
       if (def.mode === 'agenda') {
         out.narrative = data.themeDesc || '';

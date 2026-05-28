@@ -593,8 +593,10 @@ function segHasContent(segDef, data) {
     return false;
   }
   // place_list (Atrações, Restaurantes, Compras…) e agenda
+  // v4.63.39+ Ignora subtitles (type='subtitle') na contagem de conteúdo —
+  // segment com SÓ subtitles vazios não conta como ter conteúdo.
   if (Array.isArray(data.items) && data.items.some(it =>
-    (it?.titulo || it?.title || it?.descricao || it?.description))) return true;
+    it?.type !== 'subtitle' && (it?.titulo || it?.title || it?.descricao || it?.description))) return true;
   if (typeof data.themeDesc === 'string' && data.themeDesc.trim()) return true;
   if (typeof data.periodoAgenda === 'string' && data.periodoAgenda.trim()) return true;
   return false;
@@ -957,25 +959,46 @@ async function generateDocx({ allTips, segments, areaName, area, colors, filenam
         if(data.themeDesc) children.push(new Paragraph({children:[new TextRun({font:_DOCX_FONT,text:data.themeDesc,size:18,italics:true,color:'474650'})],spacing:{after:160}}));
 
         // Dedupe + ordena por categoria pra agrupar (heading da categoria
-        // só uma vez por grupo, não em cada item)
+        // só uma vez por grupo, não em cada item).
+        // v4.63.39+ Subtítulos PRESERVAM ordem original (sem dedup nem sort)
+        // pra que o agrupamento que o consultor definiu seja respeitado.
         const seenItemTitles = new Set();
+        const hasSubtitles = (data.items || []).some(it => it?.type === 'subtitle');
         const uniqueItems = (data.items||[]).filter(it => {
+          if (it?.type === 'subtitle') return !!it.text;  // mantém subtitles com texto
           if (!it.titulo) return false;
           const k = it.titulo.trim().toLowerCase();
           if (seenItemTitles.has(k)) return false;
           seenItemTitles.add(k);
           return true;
         });
-        // Estável: ordena por (categoria, índice original)
+        // Estável: ordena por (categoria, índice original).
+        // SE houver subtitle, mantém ordem do consultor (sort iria misturar grupos).
         const indexed = uniqueItems.map((it,i)=>({it,i}));
-        indexed.sort((a,b)=>{
-          const ca=(a.it.categoria||'').toLowerCase();
-          const cb=(b.it.categoria||'').toLowerCase();
-          return ca.localeCompare(cb) || a.i - b.i;
-        });
+        if (!hasSubtitles) {
+          indexed.sort((a,b)=>{
+            const ca=(a.it.categoria||'').toLowerCase();
+            const cb=(b.it.categoria||'').toLowerCase();
+            return ca.localeCompare(cb) || a.i - b.i;
+          });
+        }
         let lastCategoria = null;
 
         for(const {it: item, i: itemIdx} of indexed){
+          // v4.63.39+ Subtítulo inline ANTES de qualquer pre-load — não tem
+          // imagem nem categoria, é só uma faixa de heading. Reseta cat tracker.
+          if (item?.type === 'subtitle') {
+            if (item.text) {
+              children.push(new Paragraph({
+                children: [new TextRun({ font:_DOCX_FONT, text:String(item.text).toUpperCase(), bold:true, size:18, color:gold, characterSpacing:200 })],
+                spacing: { before: 300, after: 120 },
+                border: { bottom: { style: BorderStyle.SINGLE, size: 8, color: gold } },
+              }));
+              lastCategoria = null;  // força reprint da categoria após subtitle
+            }
+            continue;
+          }
+
           // Image
           const imgUrl=pickImg(item,itemIdx,imgs,segDef.key);
           const imgData=await fetchImgData(imgUrl);
@@ -986,6 +1009,7 @@ async function generateDocx({ allTips, segments, areaName, area, colors, filenam
             children.push(new Paragraph({children:[new TextRun({font:_DOCX_FONT,text:cat.toUpperCase(),size:13,color:gold,bold:true,characterSpacing:200})],spacing:{before:240,after:20}}));
             lastCategoria = cat;
           }
+
           children.push(new Paragraph({children:[new TextRun({font:_DOCX_FONT,text:item.titulo,bold:true,size:22,color:navy})],spacing:{after:imgData?.arrayBuffer?80:60}}));
 
           // v4.63.37+ Tags inline (chips visuais em texto separado por · e em itálico colorido)
@@ -1567,6 +1591,19 @@ async function generatePDF({
         let lastCategoria = null;
         for (let itemIdx=0; itemIdx<(data.items||[]).length; itemIdx++) {
           const item = data.items[itemIdx];
+          // v4.63.39+ Subtítulo inline — renderiza como faixa dourada + reseta lastCategoria
+          if (item?.type === 'subtitle') {
+            if (!item.text) continue;
+            checkPage(12);
+            y += 2;
+            doc.setFillColor(aR, aG, aB);
+            doc.rect(MARGIN, y, CONTENT, 0.4, 'F');
+            doc.setFontSize(9); setF('bold'); doc.setTextColor(aR, aG, aB);
+            doc.text(cleanText(item.text).toUpperCase(), MARGIN, y + 4, { charSpace: 1.5 });
+            y += 8;
+            lastCategoria = null;  // força reprint da categoria depois do subtítulo
+            continue;
+          }
           if (!item.titulo) continue;
 
           const catNorm = cleanText(item.categoria || '').trim();

@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 38,
-  build: '20260528-portal-fix-unsplash-direct',
+  patch: 39,
+  build: '20260528-portal-subtitles-livres',
 };
 
 /** "1.2.0" */
