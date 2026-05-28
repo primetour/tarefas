@@ -716,7 +716,7 @@ function renderFlightsBlock() {
         <h3 class="svc-block-title">
           <span>✈</span><span>Voos</span>
           ${flights.length ? `<span class="svc-block-count">${flights.length} ${flights.length === 1 ? 'voo' : 'voos'}</span>` : ''}
-          ${hasFare ? `<span class="svc-block-count" style="background:rgba(212,168,67,0.12);color:var(--text-primary);">💵 Tarifa: ${_fmtBRL(fareDetails.totalFare, fareDetails.currency)}${fareDetails.mode === 'distribute' ? ' · distribuída' : fareDetails.mode === 'single' ? ' · 1 voo' : ' · só metadata'}</span>` : ''}
+          ${hasFare ? `<span class="svc-block-count" style="background:rgba(212,168,67,0.12);color:var(--text-primary);">💵 Tarifa: ${_fmtBRL(fareDetails.totalFare, fareDetails.currency)}${fareDetails.mode === 'single' ? ' · em 1 voo' : ' · total da cotação'}</span>` : ''}
         </h3>
         <div class="svc-block-actions">
           ${hasFare ? `
@@ -1842,6 +1842,15 @@ function _sumServicePrices() {
       add(o.priceChild, o.currency);
     });
   }
+  // v4.62.34: tarifa GDS salva como "total da cotação" (metadata) entra no total
+  // SÓ se nenhum voo individual tem preço (pra evitar dobrar). Quando mode=single,
+  // o preço já tá em flights[].price; quando mode=metadata, vem de pricing.airTotalFare.
+  const air = currentRoteiro.pricing?.airTotalFare;
+  const airCur = currentRoteiro.pricing?.airTotalCurrency;
+  if (air && isFinite(parseFloat(air))) {
+    const anyFlightPriced = (currentRoteiro.flights || []).some(f => parseFloat(f.price) > 0);
+    if (!anyFlightPriced) add(air, airCur);
+  }
   return byCurrency;
 }
 
@@ -2817,47 +2826,27 @@ function _openFareReviewModal() {
               <div style="font-size:1.1rem;font-weight:700;color:var(--brand-gold,#D4A843);margin-top:2px;">${fmt(total, cur)}</div>
             </div>
           </div>
-          ${(fareDetails.breakdown && fareDetails.breakdown.length) ? `
-            <div style="padding:12px 16px;border-top:1px solid var(--border-subtle,#e5e7eb);">
-              <div style="font-size:0.65rem;color:var(--text-muted);font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">
-                Breakdown taxas (${fareDetails.breakdown.length} ${fareDetails.breakdown.length === 1 ? 'código' : 'códigos'})
-              </div>
-              <div style="display:flex;flex-wrap:wrap;gap:6px;">
-                ${fareDetails.breakdown.map(b => `
-                  <span style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:var(--bg-surface);border:1px solid var(--border-subtle,#e5e7eb);border-radius:999px;font-size:0.72rem;font-family:monospace;">
-                    <strong style="color:var(--text-primary);">${b.code}</strong>
-                    <span style="color:var(--text-muted);">${fmt(b.value, cur)}</span>
-                  </span>
-                `).join('')}
-              </div>
-            </div>
-          ` : ''}
+          <!-- v4.62.34: breakdown removido (poluía UX). Salvo em pricing.airFareDetails.breakdown pra audit. -->
         </div>
 
         <div style="font-size:0.78rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">Como (re-)aplicar?</div>
         <div style="display:flex;flex-direction:column;gap:6px;">
-          <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border-subtle,#e5e7eb);border-radius:6px;cursor:${hasAnyFlights ? 'pointer' : 'not-allowed'};font-size:0.8125rem;${hasAnyFlights ? '' : 'opacity:0.5;'}">
-            <input type="radio" name="re-fare-rev-mode" value="distribute" ${currentMode === 'distribute' && hasAnyFlights ? 'checked' : ''} ${hasAnyFlights ? '' : 'disabled'} style="accent-color:var(--brand-gold,#D4A843);">
+          <!-- v4.62.34: "distribute" removido. Modos restantes: metadata (default), single, clear. -->
+          <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border-subtle,#e5e7eb);border-radius:6px;cursor:pointer;font-size:0.8125rem;">
+            <input type="radio" name="re-fare-rev-mode" value="metadata" ${currentMode === 'metadata' || currentMode === 'distribute' ? 'checked' : ''} style="accent-color:var(--brand-gold,#D4A843);">
             <div>
-              <div style="font-weight:600;color:var(--text-primary);">Distribuir entre os voos (${flights.length} ${flights.length === 1 ? 'voo' : 'voos'})</div>
-              <div style="font-size:0.72rem;color:var(--text-muted);">Total dividido proporcional entre todos os voos atuais.</div>
+              <div style="font-weight:600;color:var(--text-primary);">Salvar como total da cotação <span style="font-weight:400;color:var(--text-muted);font-size:0.72rem;">(recomendado)</span></div>
+              <div style="font-size:0.72rem;color:var(--text-muted);">Total fica no Resumo. Voos ficam sem preço individual.</div>
             </div>
           </label>
           <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border-subtle,#e5e7eb);border-radius:6px;cursor:${hasAnyFlights ? 'pointer' : 'not-allowed'};font-size:0.8125rem;${hasAnyFlights ? '' : 'opacity:0.5;'}">
             <input type="radio" name="re-fare-rev-mode" value="single" ${currentMode === 'single' && hasAnyFlights ? 'checked' : ''} ${hasAnyFlights ? '' : 'disabled'} style="accent-color:var(--brand-gold,#D4A843);">
             <div style="flex:1;">
-              <div style="font-weight:600;color:var(--text-primary);">Aplicar a UM voo específico</div>
-              <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;">Outros voos ficam com preço atual.</div>
+              <div style="font-weight:600;color:var(--text-primary);">Atribuir a um voo específico</div>
+              <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;">Pra mostrar o preço associado a um trecho principal (ex: voo de partida).</div>
               <select id="re-fare-rev-pick" class="re-select" style="font-size:0.78rem;width:100%;max-width:460px;" ${hasAnyFlights ? '' : 'disabled'}>
                 ${flights.map((f, i) => `<option value="${i}">${esc(f.airline || '?')} ${esc(f.flightNumber || '')} · ${esc(f.originCity || '?')} → ${esc(f.destinationCity || '?')}</option>`).join('')}
               </select>
-            </div>
-          </label>
-          <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border-subtle,#e5e7eb);border-radius:6px;cursor:pointer;font-size:0.8125rem;">
-            <input type="radio" name="re-fare-rev-mode" value="metadata" ${currentMode === 'metadata' ? 'checked' : ''} style="accent-color:var(--brand-gold,#D4A843);">
-            <div>
-              <div style="font-weight:600;color:var(--text-primary);">Salvar como total da cotação</div>
-              <div style="font-size:0.72rem;color:var(--text-muted);">Voos ficam SEM preço individual; total fica em pricing.airTotalFare.</div>
             </div>
           </label>
           <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px dashed rgba(239,68,68,0.3);border-radius:6px;cursor:pointer;font-size:0.8125rem;color:var(--color-danger,#EF4444);">
@@ -2914,20 +2903,8 @@ function _openFareReviewModal() {
     if (!currentRoteiro.pricing) currentRoteiro.pricing = {};
     currentRoteiro.pricing.airFareDetails = { ...fareDetails, mode, importedAt: new Date().toISOString() };
 
-    if (mode === 'distribute' && hasAnyFlights) {
-      const n = flights.length;
-      const perFlight = Math.round((total / n) * 100) / 100;
-      currentRoteiro.flights.forEach((f, i) => {
-        f.price = (i === n - 1)
-          ? Math.round((total - perFlight * (n - 1)) * 100) / 100
-          : perFlight;
-        f.currency = cur;
-      });
-      // Remove airTotalFare se tava no modo metadata antes
-      delete currentRoteiro.pricing.airTotalFare;
-      delete currentRoteiro.pricing.airTotalCurrency;
-      showToast(`${fmt(total, cur)} re-distribuído entre ${n} voo${n > 1 ? 's' : ''}.`, 'success');
-    } else if (mode === 'single' && hasAnyFlights) {
+    // v4.62.34: branch 'distribute' removida. Modos restantes: single + metadata.
+    if (mode === 'single' && hasAnyFlights) {
       const idx = parseInt(overlay.querySelector('#re-fare-rev-pick').value, 10);
       if (currentRoteiro.flights[idx]) {
         currentRoteiro.flights[idx].price = total;
@@ -3039,29 +3016,25 @@ async function _openAirGdsModal() {
     const totalCount = existing + incoming;
     const hasAnyFlights = totalCount > 0;
 
+    // v4.62.34: removida opção "Distribuir entre voos" — não fazia sentido aéreo
+    // (GDS quota UM total pro itinerário inteiro, dividir matematicamente é falso).
+    // Default = total da cotação (metadata). Opcional = voo único pra associar visual.
     fareModesDiv.innerHTML = `
-      <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border-subtle,#e5e7eb);border-radius:6px;cursor:${hasAnyFlights ? 'pointer' : 'not-allowed'};font-size:0.8125rem;${hasAnyFlights ? '' : 'opacity:0.5;'}">
-        <input type="radio" name="re-gds-fare-mode" value="distribute" ${hasAnyFlights ? 'checked' : 'disabled'} style="accent-color:var(--brand-gold,#D4A843);">
+      <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border-subtle,#e5e7eb);border-radius:6px;cursor:pointer;font-size:0.8125rem;">
+        <input type="radio" name="re-gds-fare-mode" value="metadata" checked style="accent-color:var(--brand-gold,#D4A843);">
         <div>
-          <div style="font-weight:600;color:var(--text-primary);">Distribuir entre os voos (${totalCount} ${totalCount === 1 ? 'voo' : 'voos'})</div>
-          <div style="font-size:0.72rem;color:var(--text-muted);">Total dividido proporcional. ${incoming > 0 ? `Inclui ${incoming} voo${incoming > 1 ? 's' : ''} recém-codificado${incoming > 1 ? 's' : ''}.` : ''}</div>
+          <div style="font-weight:600;color:var(--text-primary);">Salvar como total da cotação <span style="font-weight:400;color:var(--text-muted);font-size:0.72rem;">(recomendado)</span></div>
+          <div style="font-size:0.72rem;color:var(--text-muted);">Total fica no Resumo. Voos ficam sem preço por trecho (é o normal pra tarifa GDS).</div>
         </div>
       </label>
       <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border-subtle,#e5e7eb);border-radius:6px;cursor:${hasAnyFlights ? 'pointer' : 'not-allowed'};font-size:0.8125rem;${hasAnyFlights ? '' : 'opacity:0.5;'}">
         <input type="radio" name="re-gds-fare-mode" value="single" ${hasAnyFlights ? '' : 'disabled'} style="accent-color:var(--brand-gold,#D4A843);">
         <div style="flex:1;">
-          <div style="font-weight:600;color:var(--text-primary);">Aplicar a UM voo específico</div>
-          <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;">Outros voos não são alterados.</div>
+          <div style="font-weight:600;color:var(--text-primary);">Atribuir a um voo específico</div>
+          <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;">Pra mostrar o preço associado a um trecho principal (ex: voo de partida).</div>
           <select id="re-gds-flight-pick" class="re-select" style="font-size:0.78rem;width:100%;max-width:460px;" ${hasAnyFlights ? '' : 'disabled'}>
             ${allFlights.map(f => `<option value="${f.idx}">${esc(f.label)}</option>`).join('')}
           </select>
-        </div>
-      </label>
-      <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border-subtle,#e5e7eb);border-radius:6px;cursor:pointer;font-size:0.8125rem;">
-        <input type="radio" name="re-gds-fare-mode" value="metadata" ${hasAnyFlights ? '' : 'checked'} style="accent-color:var(--brand-gold,#D4A843);">
-        <div>
-          <div style="font-weight:600;color:var(--text-primary);">Salvar como total da cotação</div>
-          <div style="font-size:0.72rem;color:var(--text-muted);">Sem vincular a voo específico — usa em Valores/Preview. Breakdown preservado.</div>
         </div>
       </label>`;
   };
@@ -3117,20 +3090,8 @@ async function _openAirGdsModal() {
               <div style="font-size:1.1rem;font-weight:700;color:var(--brand-gold,#D4A843);margin-top:2px;">${fmt(parsedFare.totalFare, parsedFare.currency)}</div>
             </div>
           </div>
-          ${parsedFare.breakdown?.length ? `
-          <div style="padding:12px 16px;border-top:1px solid var(--border-subtle,#e5e7eb);">
-            <div style="font-size:0.65rem;color:var(--text-muted);font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">
-              Breakdown taxas (${parsedFare.breakdown.length} ${parsedFare.breakdown.length === 1 ? 'código' : 'códigos'})
-            </div>
-            <div style="display:flex;flex-wrap:wrap;gap:6px;">
-              ${parsedFare.breakdown.map(b => `
-                <span style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:var(--bg-surface);border:1px solid var(--border-subtle,#e5e7eb);border-radius:999px;font-size:0.72rem;font-family:monospace;">
-                  <strong style="color:var(--text-primary);">${b.code}</strong>
-                  <span style="color:var(--text-muted);">${fmt(b.value, parsedFare.currency)}</span>
-                </span>
-              `).join('')}
-            </div>
-          </div>` : ''}
+          <!-- v4.62.34: breakdown removido do preview (chips YQ/YR/BR/ZR/etc. poluíam.
+               Dados ainda salvos em pricing.airFareDetails.breakdown pra audit). -->
         </div>`;
       fareApply.style.display = 'block';
       renderFareModes();
@@ -3200,24 +3161,27 @@ async function _openAirGdsModal() {
     const hasFare    = !!parsedFare;
     if (!hasFlights && !hasFare) return;
 
-    // 1) Insere voos primeiro (se tiver) — assim o "distribute" da tarifa inclui os recém-inseridos
+    // 1) Insere voos primeiro (se tiver). v4.62.34: grava NOME literário (Dubai,
+    //    São Paulo) no campo principal — IATA fica em campos auxiliares pra audit.
+    //    Antes salvava IATA ("GRU/DXB") que ficava feio no card e no PDF cliente.
     if (hasFlights) {
       if (!currentRoteiro.flights) currentRoteiro.flights = [];
       parsedFlights.forEach(p => {
         currentRoteiro.flights.push({
           airline:         p.airline,
           flightNumber:    p.flightNumber,
-          originCity:      p.originIata,
-          destinationCity: p.destinationIata,
+          originCity:      p.originCity || p.originIata,           // nome > IATA
+          destinationCity: p.destinationCity || p.destinationIata, // nome > IATA
           departureDate:   p.departureDate,
           departureTime:   p.departureTime,
           arrivalDate:     p.arrivalDate,
           arrivalTime:     p.arrivalTime,
           price:           null,
           currency:        parsedFare?.currency || 'BRL',
-          airlineFull:     p.airline,
-          originFull:      p.originCity,
-          destinationFull: p.destinationCity,
+          // Auxiliares pra audit/export
+          airlineCode:     p.airlineCode,
+          originIata:      p.originIata,
+          destinationIata: p.destinationIata,
           gdsImported:     true,
         });
       });
@@ -3241,23 +3205,16 @@ async function _openAirGdsModal() {
         mode,
       };
 
-      if (mode === 'distribute' && (currentRoteiro.flights || []).length) {
-        const n = currentRoteiro.flights.length;
-        const perFlight = Math.round((total / n) * 100) / 100;
-        currentRoteiro.flights.forEach((f, i) => {
-          f.price = (i === n - 1)
-            ? Math.round((total - perFlight * (n - 1)) * 100) / 100
-            : perFlight;
-          f.currency = cur;
-        });
-      } else if (mode === 'single') {
+      // v4.62.34: só 2 modos restantes — 'single' (atribui a 1 voo) ou 'metadata'
+      // (default: salva total na cotação sem mexer em flights[].price)
+      if (mode === 'single') {
         const idx = parseInt(overlay.querySelector('#re-gds-flight-pick')?.value, 10);
         if (!isNaN(idx) && currentRoteiro.flights[idx]) {
           currentRoteiro.flights[idx].price = total;
           currentRoteiro.flights[idx].currency = cur;
         }
       } else {
-        // metadata only
+        // metadata (default)
         currentRoteiro.pricing.airTotalFare = total;
         currentRoteiro.pricing.airTotalCurrency = cur;
       }

@@ -132,9 +132,33 @@ export function formatAirline(iata, airlines) {
  *   - Busca 2 sequências de 4 dígitos consecutivos = saída + chegada
  *   - Se chegada < saída, assume overnight (+1 dia na chegada)
  */
+/**
+ * v4.62.34: blacklist de códigos que NUNCA são IATA de aeroporto.
+ * Cobre moedas + paxTypes + códigos de taxas GDS + commands. Evita que
+ * linhas de tarifa (ex: "1- USD3874.00 USD2499.20 XT USD6373.20 ADT") sejam
+ * confundidas com voos quando heurística de 2-letras+digitos aceita "USD" /
+ * "ADT" / "XT" como IATA.
+ */
+const NON_AIRPORT_CODES = new Set([
+  // Moedas ISO 4217 mais comuns em GDS
+  'USD','EUR','BRL','GBP','CHF','CAD','ARS','CLP','JPY','CNY','MXN','AUD','NZD','HKD','SGD','THB','INR','ZAR',
+  // Pax types IATA
+  'ADT','CHD','INF','CNN','YTH','SRC','STU','MIL','SEN','JNF',
+  // Códigos de taxa comuns (não-exaustivo — aparecem em pricing display)
+  'XT','YQ','YR','BR','ZR','SW','OI','TK','AY','US','UH','XF','XA','AA','XG','XY','SC','OY','OG','RA','RC',
+  // Commands / keywords GDS
+  'NCB','WPN','NUC','FOP','TOTAL','TARIFA','BASE','TAXAS','MAIS','PAX','BAG','SEG','OSI','SSR','APIS',
+]);
+
 function _parseOneLine(rawLine, airlines, airports) {
   let line = String(rawLine || '').toUpperCase().trim();
   if (!line) return null;
+
+  // v4.62.34: linha de pricing display GDS começa frequentemente com moeda
+  // colada em valor (ex: USD3874.00) — rejeita preventivamente.
+  if (/\b(USD|EUR|BRL|GBP|CHF|CAD|ARS|CLP|JPY|CNY|AUD|NZD|HKD|SGD|THB|INR|ZAR|MXN)\d/.test(line)) return null;
+  // Linhas que começam com "1-" ou similar e contém XT/TOTAL/TARIFA = pricing, não PNR
+  if (/^[\d.\-\s]+[A-Z]{3}\d+(\.\d+)?/.test(line)) return null;
 
   // Skip prefixo até primeira letra
   const firstLetter = line.search(/[A-Z]/);
@@ -144,6 +168,9 @@ function _parseOneLine(rawLine, airlines, airports) {
   // Código cia: 2 chars
   const airlineCode = line.slice(0, 2);
   if (!/^[A-Z0-9]{2}$/.test(airlineCode)) return null;
+  // v4.62.34: rejeita se "cia" é começo de palavra suspeita (USD, ADT, etc)
+  const first3 = line.slice(0, 3);
+  if (NON_AIRPORT_CODES.has(first3)) return null;
 
   // Número do voo: dígitos consecutivos após cia (até hit em char não-numérico após começar)
   let flightNumber = '';
@@ -167,6 +194,10 @@ function _parseOneLine(rawLine, airlines, airports) {
   const dateStr = dateMatch ? dateMatch[1] + dateMatch[2] : '';
   const isoDate = dateStr ? _parseGdsDate(dateStr) : '';
 
+  // v4.62.34: data é OBRIGATÓRIA. Linhas de tarifa/comando sem DDMMM viram lixo
+  // (5º "voo fake" reportado pelo Renê em "1- USD3874.00 USD2499.20 XT USD6373.20 ADT").
+  if (!isoDate) return null;
+
   // Extrair origem + destino: 2 sequências consecutivas de 3 letras
   // Busca depois da data (se houver) pra evitar pegar mês como código
   const restAfterDate = dateMatch ? rest.slice(dateMatch.index + 5) : rest;
@@ -184,6 +215,12 @@ function _parseOneLine(rawLine, airlines, airports) {
     }
   }
   if (!origin || !destination) return null;
+  // v4.62.34: rejeita IATAs que estão na blacklist (USD, ADT, XT, etc)
+  if (NON_AIRPORT_CODES.has(origin) || NON_AIRPORT_CODES.has(destination)) return null;
+  // v4.62.34: se dicionário de aeroportos carregado, AMBAS IATAs precisam existir nele
+  // (defesa final contra IATAs inventadas). Tolerante: se dict vazio (offline), aceita.
+  const dictReady = airports && Object.keys(airports).length > 100;
+  if (dictReady && (!airports[origin] || !airports[destination])) return null;
 
   // Horários: 2 sequências de exatamente 4 dígitos
   const timeMatches = restAfterDate.match(/(?:^|[^\d])(\d{4})(?=[^\d]|$)/g) || [];

@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 62,
-  patch: 33,
-  build: '20260527-roteiros-fix-confirm-duplicado-listeners',
+  patch: 34,
+  build: '20260527-gds-parser-fixes-iata-nome-sem-distribuir',
 };
 
 /** "1.2.0" */
