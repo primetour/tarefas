@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 7,
-  build: '20260528-templates-hotfix-puppeteer-buffer',
+  patch: 8,
+  build: '20260528-templates-render-docx-pptx',
 };
 
 /** "1.2.0" */

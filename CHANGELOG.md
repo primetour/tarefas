@@ -6,6 +6,50 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.8+20260528-templates-render-docx-pptx] — 2026-05-28
+
+Release **Sprint v4.63 (9/11)** — Render engine multi-formato.
+
+Estende CF `renderTemplate` pra suportar HTML/DOCX/PPTX no mesmo
+endpoint. Cliente recebe Blob com mime correto pra disparar download
+do tipo certo.
+
+**Implementado**:
+- `functions/index.js` CF `renderTemplate` agora branches:
+  - `html`: Puppeteer + Chromium → PDF A4 (já funcionava v4.63.7)
+  - `docx`: `pizzip` + `docxtemplater` → buffer DOCX. Delimitadores
+    Mustache `{{var}}` mantidos pra consistência com HTML.
+  - `pptx`: mesmo engine `docxtemplater` (funciona com PPTX porque o
+    formato interno é XML Office Open também). Substitui placeholders
+    `{{var}}` em `ppt/slides/*.xml`.
+  - Response unificada: `{fileBase64, mime, filename, sizeBytes}` +
+    backwards-compat `pdfBase64` quando format='html'
+  - `paragraphLoop:true` + `linebreaks:true` no Docxtemplater pra
+    suportar `\n` no data → quebras de linha reais
+- `js/services/templates.js` `renderTemplate()` helper:
+  - Lê `fileBase64` (novo) ou `pdfBase64` (legado v4.63.6-7)
+  - Cria Blob com mime do CF
+- `js/pages/templatesLibrary.js`:
+  - Botão "Testar" agora ativo pra DOCX/PPTX também (label adapta:
+    "Testar PDF" / "Testar DOCX" / "Testar PPTX")
+  - Modal de teste continua igual — só muda extensão final do arquivo
+
+**Erros de template visíveis**: docxtemplater retorna erros com
+`error.properties.errors[]` ricos (qual placeholder não bate, linha XML,
+contexto). CF formata isso pra `HttpsError invalid-argument` com até
+300 chars de detalhe.
+
+**Nova dep**: `docxtemplater@^3.x`. `pizzip` já estava (v4.63.3).
+
+**Performance**: DOCX/PPTX render ~500ms-1s (não precisa Chromium —
+puramente JS). PDF continua ~2-3s warm (Chromium).
+
+**Próxima**: v4.63.9 — atribuição de template à área no editor de
+áreas + duplicação pra outra área (CF `duplicateTemplate` que copia R2
+file + cria novo doc com `duplicatedFrom`).
+
+---
+
 ## [4.63.7+20260528-templates-hotfix-puppeteer-buffer] — 2026-05-28
 
 **HOTFIX CRÍTICO** descoberto em E2E imediatamente após deploy v4.63.6:

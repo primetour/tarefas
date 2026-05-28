@@ -1041,62 +1041,101 @@ export const renderTemplate = onCall({
     throw new HttpsError('failed-precondition', 'Template sem fileUrl.');
   }
 
-  // Por enquanto só HTML → PDF
-  if (tpl.format !== 'html') {
-    throw new HttpsError('unimplemented',
-      `Render pra ${tpl.format} não implementado em v4.63.6. Esperado em v4.63.7 (DOCX + PPTX).`);
+  if (!['html', 'docx', 'pptx'].includes(tpl.format)) {
+    throw new HttpsError('invalid-argument', `Format ${tpl.format} não suportado.`);
   }
 
-  // Baixar template do R2
+  // Baixar template do R2 (texto pra HTML, arrayBuffer pra DOCX/PPTX)
   const res = await fetch(tpl.fileUrl);
   if (!res.ok) throw new HttpsError('internal', `Fetch template falhou (${res.status}).`);
-  const htmlRaw = await res.text();
 
-  // Compilar + interpolar Handlebars
-  let rendered;
-  try {
-    const { default: Handlebars } = await import('handlebars');
-    const compiled = Handlebars.compile(htmlRaw, { noEscape: false });
-    rendered = compiled(data);
-  } catch (e) {
-    throw new HttpsError('invalid-argument', `Handlebars falhou: ${e?.message || e}`);
-  }
+  let outputBuf;
+  let outputMime;
+  let outputExt;
 
-  // Puppeteer + Chromium serverless
-  let pdfBuf;
-  try {
-    const { default: puppeteer } = await import('puppeteer-core');
-    const { default: chromium } = await import('@sparticuz/chromium');
-    const browser = await puppeteer.launch({
-      args: chromium.args,
-      executablePath: await chromium.executablePath(),
-      headless: true,
-      defaultViewport: { width: 1240, height: 1754 },
-    });
+  if (tpl.format === 'html') {
+    const htmlRaw = await res.text();
+
+    // Compilar + interpolar Handlebars
+    let rendered;
     try {
-      const page = await browser.newPage();
-      await page.setContent(rendered, { waitUntil: 'networkidle0', timeout: 60000 });
-      pdfBuf = await page.pdf({
-        format: 'A4',
-        printBackground: true,
-        margin: { top: '20mm', right: '15mm', bottom: '20mm', left: '15mm' },
-      });
-    } finally {
-      await browser.close();
+      const { default: Handlebars } = await import('handlebars');
+      const compiled = Handlebars.compile(htmlRaw, { noEscape: false });
+      rendered = compiled(data);
+    } catch (e) {
+      throw new HttpsError('invalid-argument', `Handlebars falhou: ${e?.message || e}`);
     }
-  } catch (e) {
-    throw new HttpsError('internal', `Puppeteer falhou: ${e?.message || e}`);
+
+    // Puppeteer + Chromium serverless → PDF
+    try {
+      const { default: puppeteer } = await import('puppeteer-core');
+      const { default: chromium } = await import('@sparticuz/chromium');
+      const browser = await puppeteer.launch({
+        args: chromium.args,
+        executablePath: await chromium.executablePath(),
+        headless: true,
+        defaultViewport: { width: 1240, height: 1754 },
+      });
+      try {
+        const page = await browser.newPage();
+        await page.setContent(rendered, { waitUntil: 'networkidle0', timeout: 60000 });
+        outputBuf = await page.pdf({
+          format: 'A4',
+          printBackground: true,
+          margin: { top: '20mm', right: '15mm', bottom: '20mm', left: '15mm' },
+        });
+      } finally {
+        await browser.close();
+      }
+    } catch (e) {
+      throw new HttpsError('internal', `Puppeteer falhou: ${e?.message || e}`);
+    }
+    // puppeteer-core 25+ retorna Uint8Array (v4.63.7 fix)
+    outputBuf = Buffer.from(outputBuf);
+    outputMime = 'application/pdf';
+    outputExt = 'pdf';
+
+  } else {
+    // v4.63.8+ DOCX/PPTX via docxtemplater. Ambos os formatos são ZIPs
+    // de XMLs internos — docxtemplater reusa o mesmo engine pra Mustache
+    // {{var}} dentro dos elementos de texto.
+    const buf = Buffer.from(await res.arrayBuffer());
+
+    let renderedBuf;
+    try {
+      const { default: PizZip } = await import('pizzip');
+      const { default: Docxtemplater } = await import('docxtemplater');
+
+      const zip = new PizZip(buf);
+      const doc = new Docxtemplater(zip, {
+        paragraphLoop: true,
+        linebreaks: true,
+        // Não escapar HTML — Office não interpreta
+        delimiters: { start: '{{', end: '}}' },
+      });
+
+      doc.render(data);
+      renderedBuf = doc.getZip().generate({ type: 'nodebuffer', compression: 'DEFLATE' });
+    } catch (e) {
+      // docxtemplater erros vêm com .properties cheios de info
+      const detail = e?.properties?.errors
+        ? e.properties.errors.map(er => er.properties?.explanation || er.message).join('; ').slice(0, 300)
+        : (e?.message || String(e));
+      throw new HttpsError('invalid-argument', `Render ${tpl.format} falhou: ${detail}`);
+    }
+    outputBuf = Buffer.from(renderedBuf);
+    if (tpl.format === 'docx') {
+      outputMime = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+      outputExt = 'docx';
+    } else {
+      outputMime = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+      outputExt = 'pptx';
+    }
   }
 
-  // v4.63.7 fix CRITICO: puppeteer-core 25+ retorna Uint8Array, NÃO Buffer.
-  // Sem Buffer.from() o .toString('base64') retornava CSV de decimais
-  // ("37,80,68,70,..." em vez de "JVBERi0xLj..." real base64). Cliente fazia
-  // atob() e quebrava com "string not correctly encoded". E2E v4.63.6 pegou.
-  pdfBuf = Buffer.from(pdfBuf);
-
-  const sizeBytes = pdfBuf.length;
+  const sizeBytes = outputBuf.length;
   if (sizeBytes > 9 * 1024 * 1024) {
-    console.warn(`[renderTemplate] PDF grande ${sizeBytes} bytes pode estourar callable response (10MB).`);
+    console.warn(`[renderTemplate] Output ${sizeBytes} bytes pode estourar callable response (10MB).`);
   }
 
   // Audit
@@ -1113,11 +1152,15 @@ export const renderTemplate = onCall({
   const safeName = (tpl.name || 'template').replace(/[^a-zA-Z0-9À-ſ\-_ ]/g, '').slice(0, 60).trim() || 'template';
 
   return {
-    pdfBase64: pdfBuf.toString('base64'),
-    filename: `${safeName}.pdf`,
+    // v4.63.8+ resposta unificada pra 3 formatos
+    fileBase64: outputBuf.toString('base64'),
+    mime: outputMime,
+    filename: `${safeName}.${outputExt}`,
     sizeBytes,
     templateId,
     templateName: tpl.name,
+    // Backwards compat (clientes antigos v4.63.6 esperam pdfBase64)
+    pdfBase64: tpl.format === 'html' ? outputBuf.toString('base64') : undefined,
   };
 });
 

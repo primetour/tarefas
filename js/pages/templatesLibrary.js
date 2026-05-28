@@ -125,10 +125,10 @@ function _renderCard(tpl, areas) {
           style="flex:1;text-align:center;text-decoration:none;font-size:0.75rem;min-width:90px;">
           🔗 Abrir
         </a>
-        ${tpl.format === 'html' && !isArchived ? `
+        ${!isArchived ? `
           <button class="btn btn-primary btn-sm tpl-action-render" data-id="${_esc(tpl.id)}"
-            style="font-size:0.75rem;flex:1;min-width:90px;" title="Renderizar com dados de teste + baixar PDF">
-            🧪 Testar PDF
+            style="font-size:0.75rem;flex:1;min-width:90px;" title="Renderizar com dados de teste + baixar arquivo">
+            🧪 Testar ${tpl.format === 'html' ? 'PDF' : tpl.format.toUpperCase()}
           </button>
         ` : ''}
         ${canManage && !isArchived ? `
