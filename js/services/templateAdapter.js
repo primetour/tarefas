@@ -335,11 +335,22 @@ export function portalToTemplateData({ allTips, area, segments, areaName, images
           html = html.replace(/__([^_]+?)__/g, '<u>$1</u>');
           // Italic _x_ (não em volta de underline)
           html = html.replace(/(^|[^_])_([^_]+?)_(?!_)/g, '$1<em>$2</em>');
-          // Link [texto](url) — url já escapada
+          // v4.63.42+ HIGH H3 (security): URL precisa ser escapada E validada.
+          // Bloquear javascript:, data:, vbscript: e qualquer protocolo não-https.
+          // URL escapada pra prevenir injection de atributos via aspas duplas.
           html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, txt, url) => {
-            if (url.startsWith('#')) return `<a href="#seg-${url.slice(1)}" data-internal-link="1">${txt}</a>`;
-            const safe = /^https?:\/\//i.test(url) ? url : `https://${url}`;
-            return `<a href="${safe}" target="_blank" rel="noopener noreferrer">${txt}</a>`;
+            const cleanUrl = String(url).trim();
+            if (cleanUrl.startsWith('#')) {
+              return `<a href="#seg-${_esc(cleanUrl.slice(1))}" data-internal-link="1">${txt}</a>`;
+            }
+            // Whitelist de protocolos seguros
+            const protoOk = /^https?:\/\//i.test(cleanUrl);
+            const safe = protoOk ? cleanUrl : `https://${cleanUrl.replace(/^[a-z]+:/i, '')}`;
+            // Rejeitar XSS via javascript:/data:/vbscript: (mesmo após `https://` prefix)
+            if (/^(javascript|data|vbscript):/i.test(safe.replace(/^https?:\/\//i, ''))) {
+              return txt;  // strip link, mantém texto
+            }
+            return `<a href="${_esc(safe)}" target="_blank" rel="noopener noreferrer">${txt}</a>`;
           });
           return html;
         };

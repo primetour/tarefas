@@ -144,8 +144,14 @@ export function richToHtml(input) {
       if (s.italic) html = `<em>${html}</em>`;
       if (s.underline) html = `<u>${html}</u>`;
       if (s.link) {
-        const safeUrl = /^https?:\/\//i.test(s.link) ? s.link : `https://${s.link}`;
-        html = `<a href="${_esc(safeUrl)}" target="_blank" rel="noopener noreferrer">${html}</a>`;
+        // v4.63.42+ HIGH H3: bloquear protocolos perigosos
+        const protoOk = /^https?:\/\//i.test(s.link);
+        const safeUrl = protoOk ? s.link : `https://${String(s.link).replace(/^[a-z]+:/i, '')}`;
+        if (/^(javascript|data|vbscript):/i.test(safeUrl.replace(/^https?:\/\//i, ''))) {
+          html = _esc(s.text);  // strip link, mantém texto
+        } else {
+          html = `<a href="${_esc(safeUrl)}" target="_blank" rel="noopener noreferrer">${html}</a>`;
+        }
       } else if (s.anchor) {
         // Âncora interna: scroll suave pro segmento
         html = `<a href="#seg-${_esc(s.anchor)}" data-internal-link="1">${html}</a>`;

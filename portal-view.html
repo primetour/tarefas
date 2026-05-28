@@ -166,7 +166,13 @@ function richToHtml(input){
     if(s.bold)h=`<strong>${h}</strong>`;
     if(s.italic)h=`<em>${h}</em>`;
     if(s.underline)h=`<u>${h}</u>`;
-    if(s.link){const u=/^https?:\/\//i.test(s.link)?s.link:`https://${s.link}`;h=`<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${h}</a>`;}
+    if(s.link){
+      // v4.63.42+ HIGH H3: bloquear javascript:/data:/vbscript:
+      const proto=/^https?:\/\//i.test(s.link);
+      const u=proto?s.link:`https://${String(s.link).replace(/^[a-z]+:/i,'')}`;
+      if(/^(javascript|data|vbscript):/i.test(u.replace(/^https?:\/\//i,''))) h=esc(s.text);
+      else h=`<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${h}</a>`;
+    }
     else if(s.anchor)h=`<a href="#seg-${esc(s.anchor)}" data-internal-link="1">${h}</a>`;
     return h;
   }).join('');
@@ -858,7 +864,10 @@ function renderSimple(sd,data,imgs){
 }
 
 function renderPlaces(sd,data,imgs,isAgenda){
-  const items=(data.items||[]).filter(i=>i.titulo);if(!items.length&&!data.themeDesc)return '';
+  // v4.63.42+ HIGH H1: subtítulos (type='subtitle') estavam sendo filtrados
+  // ANTES do bloco que detecta subtitle no loop → sumiam do Web. Agora mantém.
+  const items=(data.items||[]).filter(i=>i.titulo || (i?.type==='subtitle' && i.text));
+  if(!items.length&&!data.themeDesc)return '';
   const gallery=imgs.gallery||[];
   const gold=getComputedStyle(document.documentElement).getPropertyValue('--gold').trim();
   const navy=getComputedStyle(document.documentElement).getPropertyValue('--navy').trim();

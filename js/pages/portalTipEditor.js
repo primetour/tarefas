@@ -881,12 +881,101 @@ function renderPlaceListEntry(item, i, cats, isAgenda) {
   return placeItemBlock(item, i, cats, isAgenda);
 }
 
+// v4.63.42+ HIGH H5: remove tokens markdown órfãos (sem par fechando).
+// Evita que clicar B/I/U em campo vazio + sair sem digitar deixe `**` solto.
+function _stripUnpairedRichTokens(s) {
+  if (!s) return s;
+  let out = String(s);
+  // Conta ocorrências; se ímpar (sem par), remove a última.
+  const stripUnpaired = (text, token) => {
+    const escTok = token.replace(/[*]/g, '\\*');
+    const re = new RegExp(escTok, 'g');
+    const matches = text.match(re);
+    if (!matches || matches.length % 2 === 0) return text;
+    // Remove a ÚLTIMA ocorrência (mais provável de ser a órfã)
+    const lastIdx = text.lastIndexOf(token);
+    if (lastIdx === -1) return text;
+    return text.slice(0, lastIdx) + text.slice(lastIdx + token.length);
+  };
+  out = stripUnpaired(out, '**');
+  out = stripUnpaired(out, '__');
+  // Single underscore — mais complicado pq pode aparecer em emails. Pula.
+  // Brackets/parens em link malformado: se [...] sem (...) ou ](url sem ), strip.
+  out = out.replace(/\[([^\]]*)\]\([^)]*$/g, '$1');  // [x](url-truncado → x
+  return out;
+}
+
+// v4.63.42+ HIGH H4: modal pra link externo (substitui prompt() nativo).
+function openExternalLinkModal(field) {
+  const start = field.selectionStart, end = field.selectionEnd;
+  const sel = field.value.slice(start, end);
+  const overlay = document.createElement('div');
+  overlay.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:9999;
+    display:flex;align-items:center;justify-content:center;padding:20px;`;
+  overlay.innerHTML = `
+    <div class="card" style="max-width:440px;width:100%;padding:0;display:flex;flex-direction:column;">
+      <div style="padding:16px 22px 10px;border-bottom:1px solid var(--border-subtle);">
+        <h3 style="margin:0 0 4px;font-size:0.95rem;">🔗 Link externo</h3>
+        <div style="font-size:0.75rem;color:var(--text-muted);">
+          URL completa (ex: https://primetour.com.br)
+        </div>
+      </div>
+      <div style="padding:14px 22px;">
+        <input type="url" id="ext-link-url" class="portal-field" style="width:100%;margin-bottom:10px;"
+          placeholder="https://…" value="https://" autocomplete="off">
+        ${sel ? '' : `
+        <div style="margin-bottom:4px;font-size:0.75rem;color:var(--text-muted);">Texto do link (opcional)</div>
+        <input type="text" id="ext-link-text" class="portal-field" style="width:100%;"
+          placeholder="Ex: site oficial" value="">`}
+      </div>
+      <div style="padding:10px 22px;border-top:1px solid var(--border-subtle);display:flex;gap:8px;justify-content:flex-end;">
+        <button id="ext-link-cancel" class="btn btn-ghost btn-sm">Cancelar</button>
+        <button id="ext-link-ok" class="btn btn-primary btn-sm">Inserir link</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  const close = () => { overlay.remove(); document.removeEventListener('keydown', onKey); };
+  const onKey = (e) => {
+    if (e.key === 'Escape') close();
+    if (e.key === 'Enter' && e.target.id?.startsWith('ext-link')) overlay.querySelector('#ext-link-ok')?.click();
+  };
+  document.addEventListener('keydown', onKey);
+  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+  overlay.querySelector('#ext-link-cancel')?.addEventListener('click', close);
+
+  setTimeout(() => overlay.querySelector('#ext-link-url')?.focus(), 50);
+
+  overlay.querySelector('#ext-link-ok')?.addEventListener('click', () => {
+    const urlEl = overlay.querySelector('#ext-link-url');
+    const txtEl = overlay.querySelector('#ext-link-text');
+    const url = (urlEl?.value || '').trim();
+    if (!url || url === 'https://') { toast.error('Informe a URL.'); urlEl?.focus(); return; }
+    // Bloqueio defensivo de protocolos perigosos (renderer também filtra)
+    if (/^(javascript|data|vbscript):/i.test(url)) {
+      toast.error('Protocolo não permitido.');
+      return;
+    }
+    const safe = /^https?:\/\//i.test(url) ? url : `https://${url}`;
+    const text = sel || (txtEl?.value || '').trim() || 'link';
+    const before = field.value.slice(0, start);
+    const after = field.value.slice(end);
+    field.value = `${before}[${text}](${safe})${after}`;
+    field.focus();
+    const newStart = start + 1;
+    field.setSelectionRange(newStart, newStart + text.length);
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+    close();
+  });
+}
+
 // v4.63.41+ Modal de seleção de segmento pra link interno (âncora).
 // Lista segmentos da dica atual que TÊM conteúdo — clique insere
 // [textoSelecionadoOuLabel](#seg-XXX) no field-alvo.
+// v4.63.42+ HIGH H7: exclui currentSegmentKey (não faz sentido linkar pra si mesmo)
 function openInternalAnchorModal(field) {
-  // Filtra apenas segmentos com conteúdo (não vale linkar pra segmento vazio)
   const eligible = _allSegments.filter(s => {
+    if (s.key === activeSegKey) return false;  // HIGH H7
     const data = segmentData[s.key];
     if (!data) return false;
     if (s.mode === 'special_info') {
@@ -1289,21 +1378,9 @@ function bindPlaceList(key, isAgenda = false) {
     else if (action === 'italic')    wrapSelection(field, '_');
     else if (action === 'underline') wrapSelection(field, '__');
     else if (action === 'link') {
-      const url = prompt('URL do link (https://…):', 'https://');
-      if (url && url.trim() && url.trim() !== 'https://') {
-        const cleanUrl = url.trim();
-        // Se tem seleção, envolve; se não, insere placeholder
-        const start = field.selectionStart, end = field.selectionEnd;
-        const sel = field.value.slice(start, end);
-        const placeholder = sel || 'texto';
-        const before = field.value.slice(0, start);
-        const after = field.value.slice(end);
-        field.value = `${before}[${placeholder}](${cleanUrl})${after}`;
-        field.focus();
-        const newStart = start + 1; // após [
-        field.setSelectionRange(newStart, newStart + placeholder.length);
-        field.dispatchEvent(new Event('input', { bubbles: true }));
-      }
+      // v4.63.42+ HIGH H4: prompt() nativo viola CLAUDE.md §11.k.
+      // Modal estilizado replace.
+      openExternalLinkModal(field);
     }
     // v4.63.41+ Link interno (âncora) pra outro segmento da própria dica
     else if (action === 'anchor') {
@@ -1530,10 +1607,19 @@ function saveCurrentSegmentData() {
       };
     }).filter(it => {
       if (!it) return false;
-      // v4.63.39+ Subtítulo vazio é descartado; subtítulo com texto preserva
-      if (it.type === 'subtitle') return !!(it.text && it.text.length);
+      // v4.63.39+ Subtítulo vazio é descartado; subtítulo com texto preserva.
+      // v4.63.42+ HIGH H8: filtragem reforçada no SAVE canônico (não só no render).
+      if (it.type === 'subtitle') return !!(it.text && it.text.trim());
       return it.titulo;
     });
+    // v4.63.42+ HIGH H5: limpa tokens markdown não-emparelhados de
+    // descricao/observacoes em items. Tokens órfãos (`**` sem fechar) viram
+    // ruído visual no render.
+    for (const it of data.items) {
+      if (it.type === 'subtitle') continue;
+      if (it.descricao)  it.descricao  = _stripUnpairedRichTokens(it.descricao);
+      if (it.observacoes) it.observacoes = _stripUnpairedRichTokens(it.observacoes);
+    }
   }
 
   segmentData[activeSegKey] = data;

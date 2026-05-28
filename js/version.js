@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 41,
-  build: '20260528-portal-ancoras-internas',
+  patch: 42,
+  build: '20260528-portal-audit-hotfixes-high',
 };
 
 /** "1.2.0" */
