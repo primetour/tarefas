@@ -1,80 +1,130 @@
 /**
- * artsByDestino — service que adapta as coleções do Portal de Dicas
+ * artsByDestino — adapta as coleções do Portal de Dicas
  * (portal_destinations, portal_tips, portal_images) pro wizard de Artes por Destino.
  *
- * Etapa A (atual): só lista destinos via fetchDestinations().
- * Etapa B (próxima): puxar tips reais e fatiar em highlights.
- * Etapa C (próxima): banco curado real via fetchImagesPage.
+ * Estratégia de carregamento:
+ *   - 1 fetch global de portal_images (assetCategory: 'location') em fetchDestinos()
+ *   - cache local _imagesByLocation indexado por city+country
+ *   - todas as buscas posteriores (capa, slides, banco curado) usam o cache
+ *
+ * Etapa B (futura): plugar fetchTip + callLLM pra gerar highlights reais.
  */
 
 import { fetchDestinations, fetchTip, fetchImages } from './portal.js';
 
-const PIC = (seed, w = 1080, h = 1350) => `https://picsum.photos/seed/${seed}/${w}/${h}`;
+// Cache local — populado em fetchDestinos(), usado em fetchBancoCurado/buildSlides
+let _imagesByLocation = new Map();  // key = "city|country" → array de imagens
 
-/**
- * Lista todos os destinos do Portal de Dicas, formatados pro wizard.
- * Sem `slides` por enquanto (são gerados on-demand em buildSlidesForDestino).
- */
-export async function fetchDestinos() {
-  const docs = await fetchDestinations();
-  return docs.map(d => ({
-    id: d.id,
-    nome: d.city || d.country || '—',
-    subtitulo: [d.country, d.continent].filter(Boolean).join(' · ') || ' ',
-    capaUrl: d.coverImage || d.fotoCapa || '',
-    disponivel: true,
-    paletaFaixa: '#2BA9A7',
-    // Dados crus pra próximas etapas
-    _raw: d,
-  }));
+function keyFor(city, country) {
+  return `${(city || '').toLowerCase()}|${(country || '').toLowerCase()}`;
+}
+
+function getImagesForDestino(destino) {
+  const raw = destino._raw || destino;
+  return _imagesByLocation.get(keyFor(raw.city, raw.country)) || [];
 }
 
 /**
- * Constrói os 8 slides pro destino selecionado.
- * Etapa A: usa o nome do destino + placeholders. Avisa no console que falta plugar tips reais.
+ * Lista destinos do Portal de Dicas + carrega banco de imagens em paralelo.
+ * Adiciona `capaUrl` (1ª foto da cidade) em cada destino.
+ */
+export async function fetchDestinos() {
+  const [docs, allImgs] = await Promise.all([
+    fetchDestinations(),
+    fetchImages({ assetCategory: 'location' }),
+  ]);
+
+  // Indexa imagens por city+country
+  _imagesByLocation = new Map();
+  for (const img of allImgs) {
+    const k = keyFor(img.city, img.country);
+    if (!_imagesByLocation.has(k)) _imagesByLocation.set(k, []);
+    _imagesByLocation.get(k).push(img);
+  }
+
+  return docs.map(d => {
+    const imgs = _imagesByLocation.get(keyFor(d.city, d.country)) || [];
+    return {
+      id: d.id,
+      nome: d.city || d.country || '—',
+      subtitulo: [d.country, d.continent].filter(Boolean).join(' · ') || ' ',
+      capaUrl: imgs[0]?.url || '',
+      disponivel: true,
+      paletaFaixa: '#2BA9A7',
+      _raw: d,
+    };
+  });
+}
+
+/**
+ * Constrói 8 slides pro destino selecionado, usando fotos do banco curado real.
+ * Slides 2-8 ainda com placeholders de texto (etapa B trará tips reais).
  */
 export async function buildSlidesForDestino(destino) {
-  // TODO Etapa B: const tip = await fetchTip(destino.id); fatiar em 7 highlights via callLLM
-  console.info('[artsByDestino] TODO etapa B: puxar tip real de', destino.id);
-
+  const imgs = getImagesForDestino(destino);
   const nome = destino.nome;
-  const capaUrl = destino.capaUrl || PIC(`${destino.id}-cover`);
+  // Pra cada slide, escolhe foto do banco (cíclico se acabar)
+  const foto = (idx) => imgs[idx % Math.max(imgs.length, 1)]?.url || '';
+
+  // TODO Etapa B: const tip = await fetchTip(destino.id); fatiar em 7 highlights via callLLM
+  console.info('[artsByDestino] TODO etapa B: tip real de', destino.id, '— usando placeholders');
 
   return [
-    { id: 'capa',  layoutId: 'capa',        nome, titulo: 'Tudo sobre', descricao: '',
-      fotoUrl: capaUrl },
-    { id: 'intro', layoutId: 'foto-cima',   nome, titulo: 'VISÃO GERAL',
+    { id: 'capa',  layoutId: 'capa',         nome, titulo: 'Tudo sobre',  descricao: '',
+      fotoUrl: foto(0) },
+    { id: 'intro', layoutId: 'foto-cima',    nome, titulo: 'VISÃO GERAL',
       descricao: `Conheça os destaques de ${nome} para inspirar sua próxima viagem.`,
-      fotoUrl: PIC(`${destino.id}-1`) },
-    { id: 'h2', layoutId: 'lateral-esq',    nome: `${nome} 02`, titulo: 'PONTO ALTO 2',
-      descricao: 'Em breve: dica real puxada do Portal de Dicas.',
-      fotoUrl: PIC(`${destino.id}-2`) },
-    { id: 'h3', layoutId: 'foto-cima',      nome: `${nome} 03`, titulo: 'PONTO ALTO 3',
-      descricao: 'Em breve: dica real puxada do Portal de Dicas.',
-      fotoUrl: PIC(`${destino.id}-3`) },
-    { id: 'h4', layoutId: 'lateral-dir',    nome: `${nome} 04`, titulo: 'PONTO ALTO 4',
-      descricao: 'Em breve: dica real puxada do Portal de Dicas.',
-      fotoUrl: PIC(`${destino.id}-4`) },
-    { id: 'h5', layoutId: 'foto-cima',      nome: `${nome} 05`, titulo: 'PONTO ALTO 5',
-      descricao: 'Em breve: dica real puxada do Portal de Dicas.',
-      fotoUrl: PIC(`${destino.id}-5`) },
-    { id: 'h6', layoutId: 'lateral-esq',    nome: `${nome} 06`, titulo: 'PONTO ALTO 6',
-      descricao: 'Em breve: dica real puxada do Portal de Dicas.',
-      fotoUrl: PIC(`${destino.id}-6`) },
-    { id: 'h7', layoutId: 'foto-cima',      nome: `${nome} 07`, titulo: 'PONTO ALTO 7',
-      descricao: 'Em breve: dica real puxada do Portal de Dicas.',
-      fotoUrl: PIC(`${destino.id}-7`) },
+      fotoUrl: foto(1) },
+    { id: 'h2',    layoutId: 'lateral-esq',  nome: `${nome} 02`, titulo: 'PONTO ALTO 2',
+      descricao: 'Em breve: dica real do Portal de Dicas (etapa B).',
+      fotoUrl: foto(2) },
+    { id: 'h3',    layoutId: 'foto-cima',    nome: `${nome} 03`, titulo: 'PONTO ALTO 3',
+      descricao: 'Em breve: dica real do Portal de Dicas (etapa B).',
+      fotoUrl: foto(3) },
+    { id: 'h4',    layoutId: 'lateral-dir',  nome: `${nome} 04`, titulo: 'PONTO ALTO 4',
+      descricao: 'Em breve: dica real do Portal de Dicas (etapa B).',
+      fotoUrl: foto(4) },
+    { id: 'h5',    layoutId: 'foto-cima',    nome: `${nome} 05`, titulo: 'PONTO ALTO 5',
+      descricao: 'Em breve: dica real do Portal de Dicas (etapa B).',
+      fotoUrl: foto(5) },
+    { id: 'h6',    layoutId: 'lateral-esq',  nome: `${nome} 06`, titulo: 'PONTO ALTO 6',
+      descricao: 'Em breve: dica real do Portal de Dicas (etapa B).',
+      fotoUrl: foto(6) },
+    { id: 'h7',    layoutId: 'foto-cima',    nome: `${nome} 07`, titulo: 'PONTO ALTO 7',
+      descricao: 'Em breve: dica real do Portal de Dicas (etapa B).',
+      fotoUrl: foto(7) },
   ];
 }
 
 /**
- * Etapa C: banco curado real. Por enquanto, devolve placeholders Picsum.
+ * Banco curado pro picker de fotos (sheet Foto).
+ * Lê do cache populado em fetchDestinos() — sem ida extra ao Firestore.
  */
 export async function fetchBancoCurado(destinoId) {
-  console.info('[artsByDestino] TODO etapa C: usar fetchImagesPage real pra', destinoId);
-  return Array.from({ length: 16 }, (_, i) => ({
-    id: `${destinoId}-${i + 1}`,
-    url: PIC(`${destinoId}-banco-${i + 1}`, 600, 750),
-    nome: `Foto ${i + 1}`,
-  }));
+  // Como o cache é indexado por city+country e aqui só temos id, varremos
+  // pra achar (rápido em memória). Em produção poderíamos manter um destinos cache também.
+  for (const [, imgs] of _imagesByLocation) {
+    if (imgs.some(img => img.destinoId === destinoId)) {
+      return imgs.map(toBancoItem);
+    }
+  }
+  // Fallback: tenta usar o destino atual via raw lookup — passamos o destino completo
+  // (chamador atualizado pra passar destino, não só id, ou guardamos no state)
+  console.warn('[artsByDestino] fetchBancoCurado: destino não encontrado no cache:', destinoId);
+  return [];
+}
+
+/**
+ * Versão alternativa: recebe o destino completo (com _raw) pra pegar imgs do cache.
+ */
+export function getBancoCuradoForDestino(destino) {
+  return getImagesForDestino(destino).map(toBancoItem);
+}
+
+function toBancoItem(img) {
+  return {
+    id: img.id,
+    url: img.url,
+    nome: img.name || img.assetCategory || 'Foto',
+  };
 }

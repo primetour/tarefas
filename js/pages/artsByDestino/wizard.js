@@ -1,10 +1,11 @@
 import { MOCK_FORMATOS, MOCK_TEMPLATES, MOCK_LAYOUTS } from './mock-data.js';
-import { fetchDestinos, buildSlidesForDestino, fetchBancoCurado } from '../../services/artsByDestino.js';
+import { fetchDestinos, buildSlidesForDestino, getBancoCuradoForDestino } from '../../services/artsByDestino.js';
 
 // Cache local — populado em initWizard via fetchDestinos()
 let _destinos = [];
 const getDestinos = () => _destinos;
-const getBancoCurado = (destinoId) => fetchBancoCurado(destinoId);
+// Banco curado é síncrono agora (lê do cache populado em fetchDestinos)
+const getBancoCurado = () => getBancoCuradoForDestino(state.destino);
 
 // ───── State ─────
 const state = {
@@ -68,6 +69,7 @@ async function pickDestino(id) {
   try {
     const slides = await buildSlidesForDestino(d);
     state.destinoId = id;
+    state.destino = d;                  // <- guarda destino completo (com _raw)
     state.slides = JSON.parse(JSON.stringify(slides));
     state.activeSlideIdx = 0;
     state.generated = null;
@@ -600,19 +602,13 @@ function renderSheetFoto() {
   renderFotoTabPanel();
 }
 
-async function renderFotoTabPanel() {
+function renderFotoTabPanel() {
   const slide = state.slides[state.activeSlideIdx];
   const panel = $('#foto-tab-panel');
   if (state.fotoTab === 'curadas') {
-    panel.innerHTML = '<p style="color:var(--ink-soft);font-size:14px;text-align:center;padding:24px 0">Carregando banco curado...</p>';
-    let fotos = [];
-    try {
-      fotos = await getBancoCurado(state.destinoId);
-    } catch (err) {
-      console.error('[artsByDestino] erro ao buscar banco curado:', err);
-    }
+    const fotos = getBancoCurado();   // síncrono — lê do cache
     if (!fotos.length) {
-      panel.innerHTML = '<p style="color:var(--ink-soft);font-size:14px;text-align:center;padding:24px 0">Sem fotos curadas pra este destino ainda.</p>';
+      panel.innerHTML = '<p style="color:var(--ink-soft);font-size:14px;text-align:center;padding:24px 0">Sem fotos curadas no Banco de Imagens pra este destino ainda. Cadastre em <em>Serviços → Banco de Imagens</em>.</p>';
       return;
     }
     panel.innerHTML = `<div class="curadas-grid">${

@@ -508,30 +508,30 @@
 ─────────────────────────────────────────────── */
 
 /* ═══ LAYOUT 1 — CAPA ════════════════════════
-   Faixa parcial no canto inf esq, mais larga pra acomodar nomes longos.
-   Margens iguais à esquerda e à direita (5% da largura total cada).
+   Faixa parcial no canto inf esq. Altura aumentada pra acomodar nomes
+   longos (ex: "Grootbos Private Nature Reserve") sem sobrepor manuscrito.
 ═════════════════════════════════════════════ */
 .slide-render[data-layout="capa"] .slot-photo { inset: 0; }
 .slide-render[data-layout="capa"] .solid-primary {
   left: 0; bottom: 0;
-  width: 75%; height: 20%;
+  width: 78%; height: 26%;
 }
 .slide-render[data-layout="capa"] .text-hand {
   position: absolute;
   left: 5%;
-  right: 30%;          /* faixa vai até 75% → margem direita = 5% da largura */
-  bottom: calc(20% - 22px * var(--slide-scale));
-  font-size: calc(40px * var(--slide-scale));
+  right: 27%;
+  bottom: calc(26% - 16px * var(--slide-scale));
+  font-size: calc(34px * var(--slide-scale));
   text-shadow: 0 3px 12px rgba(0,0,0,0.25);
   padding-bottom: 0;
   line-height: 1;
 }
 .slide-render[data-layout="capa"] .text-titulo {
   position: absolute;
-  left: 5%; right: 30%;
-  bottom: 4.5%;
-  font-size: calc(54px * var(--slide-scale));
-  line-height: 1;
+  left: 5%; right: 27%;
+  bottom: 5%;
+  font-size: calc(44px * var(--slide-scale));
+  line-height: 1.05;
   letter-spacing: 0.02em;
 }
 
@@ -675,14 +675,55 @@
   font-size: calc(36px * var(--slide-scale));
 }
 
-/* Desktop (preview frame ou tela maior) — canvas maior */
-@media (min-width: 720px) {
-  .slide-render { width: min(58vw, 500px); --slide-scale: 1.3; }
-  .slide-render.story { width: min(32vw, 320px); --slide-scale: 1.05; }
+/* ─── Desktop (≥900px) ───
+   No mobile, canvas é grande (ocupa quase a tela toda).
+   No desktop, foi feito mobile-first, então quando a tela é grande o canvas
+   fica DESPROPORCIONALMENTE grande. Aqui limitamos pelo VH (altura disponível
+   após header + strip + toolbar = ~360px usáveis).
+   Mantém o mesmo design — só ajusta proporções. */
+@media (min-width: 900px) {
+  /* Canvas-stage com largura máxima e centralizado */
+  .canvas-stage {
+    max-width: 720px;
+    margin: 0 auto;
+    width: 100%;
+  }
+  /* Slide ajusta pela ALTURA disponível, não pela largura */
+  .slide-render {
+    width: auto;
+    height: min(62vh, 600px);
+    aspect-ratio: 4 / 5;
+    --slide-scale: 1.2;
+  }
+  .slide-render.story {
+    height: min(70vh, 700px);
+    aspect-ratio: 9 / 16;
+    width: auto;
+    --slide-scale: 1.0;
+  }
+  /* Strip e toolbar levemente maiores */
   .slide-strip-item { width: 64px; }
-  .tool-btn { font-size: 12px; padding: 8px 6px; }
+  .tool-btn { font-size: 12px; padding: 10px 8px; }
   .tool-lbl { font-size: 11px; }
   .tool-ico { font-size: 24px; }
+  /* Toolbar mais larga */
+  .editor-toolbar { padding: 8px 24px env(safe-area-inset-bottom); }
+  .tool-btn { max-width: 120px; }
+  /* Bottom sheets ficam centralizados (não fullwidth) */
+  .bottom-sheet {
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%) translateY(100%);
+    width: min(560px, 92vw);
+    border-radius: 20px 20px 0 0;
+  }
+  .bottom-sheet.show {
+    transform: translateX(-50%) translateY(0);
+  }
+  /* Setas mais visíveis */
+  .nav-arrow { width: 52px; height: 52px; font-size: 22px; }
+  .nav-prev { left: max(16px, calc((100% - 720px) / 2 + 16px)); }
+  .nav-next { right: max(16px, calc((100% - 720px) / 2 + 16px)); }
 }
 
 /* ─────────────────────────────────────────────
