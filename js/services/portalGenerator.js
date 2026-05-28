@@ -2384,6 +2384,44 @@ async function enrichGalleryWithAutoPhotos(imagesByDest, allTips, segments) {
   const tasks = [];
   const MAX_ITEMS = 80;
 
+  // v4.63.44+ HERO TASKS: destinos sem foto de capa (hero) recebem busca
+  // automática separada antes dos items dos segmentos. Renê reportou:
+  // "exportei Orlando (sem fotos no banco) e a foto de capa não apareceu".
+  // Causa raiz: resolveImages só populava hero a partir do banco_imagens.
+  // Quando banco vazio, hero=null. Sem foto de capa no PDF.
+  const heroTasks = [];
+  for (const { dest } of allTips) {
+    if (!dest?.id) continue;
+    const imgs = imagesByDest[dest.id];
+    if (!imgs || imgs.hero) continue;  // já tem hero — skip
+    const cityForHero = dest.city || dest.country || '';
+    if (!cityForHero) continue;
+    heroTasks.push({
+      destId: dest.id,
+      query: `${cityForHero} skyline landmark`,
+      queryFallback: cityForHero,
+    });
+  }
+  if (heroTasks.length) {
+    console.log(`[autoPhotos] Buscando ${heroTasks.length} hero(s) auto…`);
+    const heroResults = await Promise.allSettled(
+      heroTasks.map(t =>
+        fnPhoto({ query: t.query, count: 1 })
+          .then(r => ({ ...t, photo: r.data }))
+          .catch(() => fnPhoto({ query: t.queryFallback, count: 1 })
+            .then(r => ({ ...t, photo: r.data }))
+            .catch(() => ({ ...t, err: true })))
+      )
+    );
+    for (const res of heroResults) {
+      const v = res.value;
+      if (res.status !== 'fulfilled' || v.err || !v.photo) continue;
+      const url = v.photo.url || (Array.isArray(v.photo.urls) ? v.photo.urls[0] : null);
+      if (!url) continue;
+      imagesByDest[v.destId].hero = url;
+    }
+  }
+
   for (const { tip, dest } of allTips) {
     if (!dest?.id) continue;
     const imgs = imagesByDest[dest.id];

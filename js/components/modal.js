@@ -118,7 +118,14 @@ class ModalManager {
     // overlays "estrangeiros" tipo cc-modal-overlay do calendário de conteúdo).
     // Base z-index sobe 50 a cada nível pra garantir que o último aberto fica
     // por cima do anterior, mesmo se outro DOM overlay (não-global) já existe.
-    const baseZ = 1000;
+    //
+    // v4.63.44+ baseZ subido de 1000 → 3000. Renê reportou: "excluir link web
+    // gerado de dica não funciona — pelo que vi, o botão funciona, mas o popup
+    // de confirmação aparece atrás do popup que exibe os materiais gerados".
+    // Causa: portalTipsList modais usam style.cssText z-index:2000 (não passam
+    // pelo stack do modal.js). modal.confirm caía em 1100 < 2000. Fix:
+    // baseZ=3000 cobre todos os z-index manuais até 2999.
+    const baseZ = 3000;
     const stackedZ = baseZ + (this.stack.length * 50) + 100;
     backdrop.style.zIndex = String(stackedZ);
 

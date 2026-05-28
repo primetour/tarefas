@@ -153,7 +153,10 @@ async function renderGenerateTab(container) {
       <div>
         <div class="card" style="padding:24px;margin-bottom:16px;">
           <h3 style="font-size:0.875rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
-            color:var(--text-muted);margin:0 0 16px;">1 · Área</h3>
+            color:var(--text-muted);margin:0 0 4px;">1 · Escolha a área</h3>
+          <p style="font-size:0.75rem;color:var(--text-muted);margin:0 0 14px;">
+            Define a identidade visual aplicada ao material (logo, cores, fonte e templates).
+          </p>
           <div id="portal-areas-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
             <div class="skeleton" style="height:64px;border-radius:var(--radius-md);"></div>
             <div class="skeleton" style="height:64px;border-radius:var(--radius-md);"></div>
@@ -163,7 +166,10 @@ async function renderGenerateTab(container) {
 
         <div class="card" style="padding:24px;margin-bottom:16px;">
           <h3 style="font-size:0.875rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
-            color:var(--text-muted);margin:0 0 16px;">2 · Destino</h3>
+            color:var(--text-muted);margin:0 0 4px;">2 · Selecione o destino</h3>
+          <p style="font-size:0.75rem;color:var(--text-muted);margin:0 0 14px;">
+            Continente → país → cidade (opcional). Você pode combinar mais de um destino na mesma dica.
+          </p>
           <div style="display:flex;flex-direction:column;gap:10px;">
             <select class="filter-select" id="portal-continent" style="width:100%;">
               <option value="">Carregando continentes…</option>
@@ -188,7 +194,11 @@ async function renderGenerateTab(container) {
 
         <div class="card" style="padding:24px;">
           <h3 style="font-size:0.875rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
-            color:var(--text-muted);margin:0 0 16px;">3 · Segmentos</h3>
+            color:var(--text-muted);margin:0 0 4px;">3 · Segmentos disponíveis</h3>
+          <p style="font-size:0.75rem;color:var(--text-muted);margin:0 0 14px;">
+            Marque/desmarque o que vai aparecer no material. Use ▲▼ pra reordenar — a ordem aqui é
+            a mesma do PDF/Word/PPT/web.
+          </p>
           <div style="display:flex;justify-content:space-between;margin-bottom:10px;">
             <button class="btn btn-ghost btn-sm" id="portal-seg-all" style="font-size:0.75rem;">
               Todos
@@ -209,7 +219,10 @@ async function renderGenerateTab(container) {
       <div>
         <div class="card" style="padding:24px;margin-bottom:16px;">
           <h3 style="font-size:0.875rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
-            color:var(--text-muted);margin:0 0 16px;">Formato de saída</h3>
+            color:var(--text-muted);margin:0 0 4px;">4 · Formato do arquivo</h3>
+          <p style="font-size:0.75rem;color:var(--text-muted);margin:0 0 14px;">
+            PDF e Word pra envio direto; PowerPoint pra apresentação; Link web pra mobile (URL pública).
+          </p>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
             ${GENERATION_FORMATS.map(f => `
               <label style="display:flex;align-items:center;gap:8px;padding:10px 12px;
