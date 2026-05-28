@@ -802,9 +802,28 @@ export async function generateRoteiroPDF(roteiro, area = null) {
       const { renderTemplate, downloadBlob } = await import('./templates.js');
       const { roteiroToTemplateData, bancoToTemplateData } = await import('./templateAdapter.js');
       try { if (_progressId) toast.update(_progressId, 'Renderizando PDF (Puppeteer ~5-10s)…'); } catch {}
+      // v4.63.19+ Passa imagesByCity + customFooter/Header + hideCover pro
+      // template HTML seed "PRIMETOUR Cotações Default" reproduzir o jsPDF.
+      const _exportTpl = resolveExportTemplate(area, _refKey === 'cotacoes' ? 'roteiros' : _refKey, 'pdf');
+      let _imagesForTpl = { byCity: {}, byHotel: {}, heroUrl: null };
+      try { _imagesForTpl = await enrichRoteiroImages(roteiro); }
+      catch (e) { console.warn('[roteiroGenerator template] enrichImages falhou:', e?.message); }
+      const _imagesByCity = {};
+      try {
+        for (const [k, v] of Object.entries(_imagesForTpl?.byCity || {})) {
+          // Normaliza chave pra match com _normCity do adapter
+          _imagesByCity[String(k).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim()] = v;
+        }
+      } catch {}
+      const _adapterOpts = {
+        imagesByCity: _imagesByCity,
+        customFooterText: _exportTpl?.footerText || '',
+        customHeaderText: _exportTpl?.headerText || '',
+        hideCover: !!_exportTpl?.hideCover,
+      };
       const data = _refKey === 'banco-roteiros'
         ? bancoToTemplateData(roteiro, area)
-        : roteiroToTemplateData(roteiro, area);
+        : roteiroToTemplateData(roteiro, area, _adapterOpts);
       const result = await renderTemplate(_tplId, data);
       try { if (_progressId) toast.update(_progressId, 'Baixando arquivo…'); } catch {}
       downloadBlob(result.blob, result.filename);

@@ -66,11 +66,29 @@ function _resolveAreaName(area) {
  *     pricing: {currency, perCouple, perPerson, services:{...}, disclaimer},
  *     includes, excludes, optionals, payment, cancellation, importantInfo, embeddedTips, ... }
  */
-export function roteiroToTemplateData(roteiro, area) {
+export function roteiroToTemplateData(roteiro, area, opts = {}) {
   if (!roteiro) return {};
   const cur = roteiro.pricing?.currency || 'BRL';
   const destinations = (roteiro.travel?.destinations || [])
     .map(d => d.city || d.country).filter(Boolean);
+  // v4.63.19+ imagesByCity passado pelo generator pra hero per day
+  const imagesByCity = opts?.imagesByCity || {};
+  const _normCity = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+
+  // Pricing hasData: true se tem ao menos 1 campo numérico ou customRow
+  const _hasPricing = !!(
+    roteiro.pricing?.perCouple || roteiro.pricing?.perPerson
+    || (Array.isArray(roteiro.pricing?.customRows) && roteiro.pricing.customRows.length)
+  );
+
+  // Payment hasData
+  const _pay = roteiro.payment || {};
+  const _hasPay = !!(_pay.deposit || _pay.installments || _pay.deadline || _pay.notes);
+
+  // ImportantInfo hasData
+  const _ii = roteiro.importantInfo || {};
+  const _hasIi = !!(_ii.passport || _ii.visa || _ii.vaccines || _ii.climate || _ii.luggage || _ii.flights
+                   || (Array.isArray(_ii.customFields) && _ii.customFields.some(c => c?.label || c?.value)));
 
   return {
     titulo: roteiro.title || '',
@@ -79,9 +97,18 @@ export function roteiroToTemplateData(roteiro, area) {
       nome:        _resolveAreaName(area),
       logoUrl:     area?.logoUrl    || '',
       logoUrlAlt:  area?.logoUrlAlt || '',
-      corPrimary:  area?.colors?.primary   || '',
-      corSecondary: area?.colors?.secondary || '',
+      corPrimary:  area?.colors?.primary   || '#D4A843',
+      corSecondary: area?.colors?.secondary || '#0F172A',
+      corAccent:   area?.colors?.accent || area?.colors?.primary || '#D4A843',
     },
+
+    // v4.63.19+ Footer/Header/hideCover passed by generator via resolveExportTemplate
+    customFooterText: opts?.customFooterText || '',
+    customHeaderText: opts?.customHeaderText || '',
+    hideCover: !!opts?.hideCover,
+    contact: roteiro.contact || roteiro.client?.agentEmail || '',
+    hasIncExc: (Array.isArray(roteiro.includes) && roteiro.includes.length > 0)
+            || (Array.isArray(roteiro.excludes) && roteiro.excludes.length > 0),
 
     cliente: {
       nome:     roteiro.client?.name     || '',
@@ -108,6 +135,7 @@ export function roteiroToTemplateData(roteiro, area) {
       data:      _fmtDateBr(d.date),
       cidade:    d.city || '',
       narrativa: d.narrative || '',
+      heroUrl:   imagesByCity[_normCity(d.city)] || '',
       atividades: (d.activities || []).map(a => ({
         hora:      a.time || '',
         descricao: a.description || '',
@@ -143,7 +171,12 @@ export function roteiroToTemplateData(roteiro, area) {
       totalCasal:  _formatCurrency(roteiro.pricing?.perCouple, cur),
       porPessoa:   _formatCurrency(roteiro.pricing?.perPerson, cur),
       disclaimer:  roteiro.pricing?.disclaimer || '',
-      // Numérico bruto pra templates que querem fazer cálculo próprio
+      validUntil:  _fmtDateBr(roteiro.pricing?.validUntil),
+      customRows:  Array.isArray(roteiro.pricing?.customRows) ? roteiro.pricing.customRows.map(r => ({
+        label: r?.label || '',
+        value: r?.value != null ? _formatCurrency(r.value, r?.currency || cur) : '',
+      })) : [],
+      hasData:     _hasPricing,
       _raw: {
         perCouple: roteiro.pricing?.perCouple || 0,
         perPerson: roteiro.pricing?.perPerson || 0,
@@ -160,9 +193,9 @@ export function roteiroToTemplateData(roteiro, area) {
       observacoes:  o.notes || '',
     })),
 
-    pagamento: roteiro.payment || {},
-    cancelamento: roteiro.cancellation || [],
-    informacoes: roteiro.importantInfo || {},
+    pagamento: { ..._pay, hasData: _hasPay },
+    cancelamento: Array.isArray(roteiro.cancellation) ? roteiro.cancellation : [],
+    informacoes: { ..._ii, hasData: _hasIi },
 
     today: _today(),
   };

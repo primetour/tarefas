@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 17,
-  build: '20260528-portal-default-template-seed',
+  patch: 19,
+  build: '20260528-cotacoes-default-template-seed',
 };
 
 /** "1.2.0" */

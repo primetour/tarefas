@@ -1,0 +1,703 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>{{titulo}} — {{area.nome}}</title>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary: {{area.corPrimary}};
+      --secondary: {{area.corSecondary}};
+      --accent: {{area.corAccent}};
+      --gold: #D4A843;
+      --text-dark: #1F2937;
+      --text-muted: #6B7280;
+      --text-light: rgba(255,255,255,0.85);
+      --border-light: #E5E7EB;
+      --bg-alt-row: #F5F5F5;
+      --bg-callout: #FAF6EC;
+      --check-color: #228B22;
+      --x-color: #C83C3C;
+    }
+    @page { size: A4; margin: 0; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Poppins', -apple-system, sans-serif;
+      color: var(--text-dark);
+      line-height: 1.55;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    /* ─── COVER ────────────────────────────────────────────── */
+    .cover {
+      width: 210mm; height: 297mm;
+      background: var(--secondary);
+      color: #fff;
+      padding: 28mm 16mm;
+      display: flex; flex-direction: column;
+      page-break-after: always;
+      position: relative;
+    }
+    .cover-line-top, .cover-line-bottom {
+      position: absolute; left: 16mm; right: 16mm; height: 0.6mm;
+      background: rgba(255,255,255,0.9);
+    }
+    .cover-line-top { top: 40mm; }
+    .cover-line-bottom { top: 237mm; }
+    .cover-logo {
+      max-width: 130mm; max-height: 55mm;
+      margin: 25mm auto 18mm;
+      display: block; object-fit: contain;
+    }
+    .cover-brand-name {
+      font-size: 22pt; font-weight: 700; text-align: center;
+      letter-spacing: 4px; margin: 35mm 0 18mm;
+    }
+    .cover-destinos {
+      font-size: 18pt; font-weight: 700; text-transform: uppercase;
+      text-align: center; letter-spacing: 3px;
+      margin: 0 0 6mm;
+    }
+    .cover-subtitle {
+      font-size: 13pt; font-weight: 700; text-align: center;
+      letter-spacing: 4px; margin: 0 0 8mm;
+    }
+    .cover-separator {
+      width: 30mm; height: 0.4mm; background: #fff; margin: 6mm auto;
+    }
+    .cover-badge {
+      border: 1px solid rgba(255,255,255,0.9);
+      padding: 4mm 16mm; display: inline-block;
+      font-size: 11pt; font-weight: 400;
+      margin: 5mm auto 5mm; align-self: center;
+      letter-spacing: 2px;
+    }
+    .cover-dates {
+      font-size: 10pt; text-align: center;
+      color: rgba(255,255,255,0.95);
+      margin: 4mm 0;
+    }
+    .cover-client {
+      margin-top: auto; padding-top: 24mm; text-align: center;
+    }
+    .cover-client-name {
+      font-size: 11pt; font-weight: 700;
+    }
+    .cover-client-pax {
+      font-size: 10pt; color: rgba(255,255,255,0.85);
+      margin-top: 2mm;
+    }
+    .cover-title {
+      font-size: 9pt; font-style: italic;
+      color: rgba(255,255,255,0.75);
+      text-align: center; margin-top: 4mm;
+    }
+
+    /* ─── SECTION HEADERS (barra + título) ─────────────────── */
+    .section {
+      padding: 12mm 16mm 6mm;
+    }
+    .section-title-bar {
+      display: flex; align-items: center; gap: 4mm;
+      margin-bottom: 5mm;
+    }
+    .section-bar {
+      width: 6mm; height: 4mm; background: var(--primary);
+    }
+    .section-title {
+      font-size: 12pt; font-weight: 700;
+      letter-spacing: 3px; text-transform: uppercase;
+      color: var(--secondary);
+    }
+    .section-line {
+      border-bottom: 0.3mm solid var(--border-light);
+      margin: 1mm 0 5mm;
+    }
+
+    /* ─── DIAS (DAY-BY-DAY) ────────────────────────────────── */
+    .day {
+      margin: 6mm 0;
+      page-break-inside: avoid;
+    }
+    .day-header {
+      display: flex; align-items: center; gap: 4mm;
+      margin-bottom: 3mm;
+    }
+    .day-num {
+      width: 10mm; height: 10mm; border-radius: 50%;
+      background: var(--primary); color: #fff;
+      display: flex; align-items: center; justify-content: center;
+      font-weight: 700; font-size: 10pt; flex-shrink: 0;
+    }
+    .day-title {
+      font-size: 11pt; font-weight: 700; color: var(--secondary);
+    }
+    .day-date {
+      font-size: 9pt; color: #888; margin-left: 2mm;
+    }
+    .day-city {
+      font-size: 10pt; font-weight: 700;
+      color: var(--accent);
+      text-transform: uppercase; letter-spacing: 1.5px;
+      margin: 2mm 0 3mm 14mm;
+    }
+    .day-image {
+      width: calc(100% - 14mm);
+      height: 28mm; margin-left: 14mm;
+      object-fit: cover;
+      border: 0.3mm solid var(--border-light);
+      margin-bottom: 3mm;
+    }
+    .day-narrative {
+      font-size: 10pt; color: #3D3D3D;
+      margin: 2mm 0 3mm 14mm;
+      line-height: 1.7;
+    }
+    .day-activity {
+      display: flex; gap: 4mm; margin-left: 14mm;
+      padding: 1.5mm 0;
+      font-size: 9pt;
+    }
+    .activity-time {
+      font-weight: 700; color: var(--primary);
+      flex-shrink: 0; width: 14mm;
+    }
+    .activity-desc {
+      color: #3D3D3D; flex: 1;
+    }
+    .day-overnight {
+      font-size: 9pt; font-style: italic;
+      color: var(--primary);
+      margin: 3mm 0 0 14mm;
+    }
+    .day-separator {
+      border-top: 0.2mm solid var(--border-light);
+      margin: 4mm 0 4mm 14mm;
+    }
+
+    /* ─── TABELAS (Voos, Hotéis, Opcionais) ────────────────── */
+    table.gdt {
+      width: 100%; border-collapse: collapse;
+      font-size: 8pt; margin: 3mm 0;
+    }
+    table.gdt thead th {
+      background: var(--secondary); color: #fff;
+      padding: 3mm 2.5mm; text-align: left;
+      font-weight: 700; letter-spacing: 0.5px;
+    }
+    table.gdt thead th.center { text-align: center; }
+    table.gdt tbody td {
+      padding: 2.5mm 2.5mm;
+      color: #3D3D3D;
+      border-bottom: 0.2mm solid var(--border-light);
+    }
+    table.gdt tbody tr:nth-child(odd) td {
+      background: var(--bg-alt-row);
+    }
+    table.gdt tbody td.center { text-align: center; }
+
+    /* ─── HOTEL GALLERY (até 4 thumbs) ─────────────────────── */
+    .hotel-gallery {
+      display: flex; gap: 3mm;
+      margin: 3mm 0 5mm;
+    }
+    .hotel-thumb {
+      flex: 1; max-width: calc(25% - 3mm);
+      page-break-inside: avoid;
+    }
+    .hotel-thumb img {
+      width: 100%; height: 32mm;
+      object-fit: cover; display: block;
+    }
+    .hotel-thumb-name {
+      font-size: 7pt; font-weight: 700;
+      color: #555; margin-top: 1.5mm;
+      text-align: center;
+    }
+
+    /* ─── PREÇOS ───────────────────────────────────────────── */
+    .pricing-table {
+      width: 100%;
+      border-top: 0.5mm solid var(--primary);
+      margin-top: 4mm;
+    }
+    .pricing-row {
+      display: flex; align-items: center;
+      padding: 3mm 0;
+      border-bottom: 0.2mm dotted var(--border-light);
+      font-size: 10pt;
+    }
+    .pricing-label {
+      flex: 1; font-weight: 700; color: var(--secondary);
+    }
+    .pricing-value {
+      font-weight: 600; color: var(--text-dark);
+      text-align: right; min-width: 40mm;
+    }
+    .pricing-row.subtotal {
+      border-bottom: 0.4mm solid var(--primary);
+      margin: 2mm 0;
+      font-size: 11pt;
+    }
+    .pricing-row.total {
+      border-bottom: 0.6mm solid var(--secondary);
+      margin: 3mm 0;
+      font-size: 12pt;
+      font-weight: 700;
+    }
+    .pricing-validity {
+      margin-top: 5mm; font-size: 9pt;
+      color: #666;
+    }
+    .pricing-disclaimer {
+      margin-top: 4mm;
+      font-size: 8pt; font-style: italic;
+      color: #888; line-height: 1.6;
+    }
+
+    /* ─── INCLUI / EXCLUI ──────────────────────────────────── */
+    .inc-exc-block {
+      margin: 3mm 0;
+    }
+    .inc-exc-item {
+      display: flex; align-items: flex-start; gap: 3mm;
+      padding: 1.5mm 0; font-size: 10pt;
+      color: #3D3D3D;
+    }
+    .icon-check {
+      color: var(--check-color);
+      font-weight: 700; flex-shrink: 0;
+      width: 4mm;
+    }
+    .icon-x {
+      color: var(--x-color);
+      font-weight: 700; flex-shrink: 0;
+      width: 4mm;
+    }
+
+    /* ─── PAYMENT / IMPORTANTINFO ──────────────────────────── */
+    .kv-block {
+      margin: 3mm 0;
+    }
+    .kv-row {
+      display: flex; gap: 4mm;
+      padding: 2mm 0;
+      font-size: 10pt;
+      page-break-inside: avoid;
+    }
+    .kv-label {
+      flex-shrink: 0; min-width: 38mm;
+      font-weight: 700; color: var(--secondary);
+    }
+    .kv-value {
+      color: #3D3D3D; flex: 1;
+      line-height: 1.6;
+    }
+    .info-sublabel {
+      font-size: 8pt; font-weight: 700; color: var(--primary);
+      text-transform: uppercase; letter-spacing: 1px;
+      margin: 4mm 0 1.5mm;
+    }
+    .info-content {
+      font-size: 10pt; color: #3D3D3D;
+      line-height: 1.7;
+    }
+
+    /* ─── FOOTER / HEADER fixos ────────────────────────────── */
+    .footer-area {
+      position: running(footer);
+      text-align: center; font-size: 7pt; color: #999;
+      padding: 0 16mm 4mm;
+    }
+    @page {
+      @bottom-center { content: element(footer); }
+      margin-bottom: 16mm;
+    }
+    .footer-area .footer-line {
+      border-top: 0.3mm solid #ddd;
+      padding-top: 2mm;
+    }
+    .footer-area .footer-custom {
+      font-size: 6pt; color: #aaa;
+      margin-top: 1mm;
+    }
+    .header-area {
+      position: running(header);
+      text-align: right; font-size: 6pt; color: #aaa;
+      padding: 4mm 16mm 0;
+    }
+    @page {
+      @top-right { content: element(header); }
+      margin-top: 14mm;
+    }
+
+    /* ─── CLOSING PAGE ─────────────────────────────────────── */
+    .closing {
+      width: 210mm; height: 297mm;
+      background: var(--secondary);
+      color: #fff;
+      position: relative;
+      page-break-before: always;
+      padding: 60mm 16mm;
+      text-align: center;
+    }
+    .closing-line {
+      position: absolute; left: 16mm; right: 16mm; height: 0.5mm;
+      background: rgba(255,255,255,0.9);
+    }
+    .closing-line-top { top: 142mm; }
+    .closing-line-bottom { top: 182mm; }
+    .closing-logo {
+      max-width: 100mm; max-height: 40mm;
+      margin: 90mm auto 20mm; display: block;
+      object-fit: contain;
+    }
+    .closing-msg {
+      font-size: 14pt; font-style: italic;
+      color: #fff; margin: 5mm 0;
+    }
+    .closing-tagline {
+      font-size: 10pt; color: rgba(255,255,255,0.9);
+      margin: 3mm 0;
+    }
+    .closing-contact {
+      font-size: 9pt; color: rgba(255,255,255,0.85);
+      margin-top: 20mm;
+    }
+
+    .section + .section { padding-top: 4mm; }
+  </style>
+</head>
+<body>
+
+{{!-- HEADER + FOOTER running --}}
+{{#if customHeaderText}}<div class="header-area">{{customHeaderText}}</div>{{/if}}
+<div class="footer-area">
+  <div class="footer-line">{{area.nome}} · {{today}}</div>
+  {{#if customFooterText}}<div class="footer-custom">{{customFooterText}}</div>{{/if}}
+</div>
+
+{{!-- COVER --}}
+{{#unless hideCover}}
+<section class="cover">
+  <div class="cover-line-top"></div>
+  {{#if area.logoUrl}}
+    <img src="{{area.logoUrl}}" alt="{{area.nome}}" class="cover-logo">
+  {{else}}
+    <div class="cover-brand-name">{{area.nome}}</div>
+  {{/if}}
+  <div class="cover-destinos">{{viagem.destinos}}</div>
+  <div class="cover-subtitle">ROTEIRO DE VIAGEM</div>
+  <div class="cover-separator"></div>
+  {{#if viagem.noites}}
+    <div class="cover-badge">{{viagem.noites}} NOITE{{#unless (eq viagem.noites 1)}}S{{/unless}}</div>
+  {{/if}}
+  <div class="cover-dates">{{viagem.dataInicio}} a {{viagem.dataFim}}</div>
+  <div class="cover-client">
+    {{#if cliente.nome}}
+      <div class="cover-client-name">Preparado para {{cliente.nome}}</div>
+      <div class="cover-client-pax">
+        {{cliente.adults}} adulto{{#unless (eq cliente.adults 1)}}s{{/unless}}{{#if cliente.children}} + {{cliente.children}} criança{{#unless (eq cliente.children 1)}}s{{/unless}}{{/if}}
+      </div>
+    {{/if}}
+    {{#if titulo}}<div class="cover-title">{{titulo}}</div>{{/if}}
+  </div>
+  <div class="cover-line-bottom"></div>
+</section>
+{{/unless}}
+
+{{!-- DIA A DIA --}}
+{{#if dias.length}}
+<section class="section">
+  <div class="section-title-bar">
+    <div class="section-bar"></div>
+    <div class="section-title">Roteiro Dia a Dia</div>
+  </div>
+  <div class="section-line"></div>
+
+  {{#each dias}}
+  <div class="day">
+    <div class="day-header">
+      <div class="day-num">{{numero}}</div>
+      <div>
+        <span class="day-title">Dia {{numero}}</span>
+        {{#if data}}<span class="day-date">· {{data}}</span>{{/if}}
+      </div>
+    </div>
+    {{#if cidade}}<div class="day-city">{{cidade}}</div>{{/if}}
+    {{#if heroUrl}}<img src="{{heroUrl}}" class="day-image" alt="{{cidade}}">{{/if}}
+    {{#if narrativa}}<div class="day-narrative">{{narrativa}}</div>{{/if}}
+    {{#each atividades}}
+      <div class="day-activity">
+        {{#if hora}}<div class="activity-time">{{hora}}</div>{{/if}}
+        <div class="activity-desc">{{descricao}}</div>
+      </div>
+    {{/each}}
+    {{#if pernoite}}<div class="day-overnight">Pernoite: {{pernoite}}</div>{{/if}}
+    {{#unless @last}}<div class="day-separator"></div>{{/unless}}
+  </div>
+  {{/each}}
+</section>
+{{/if}}
+
+{{!-- AÉREO --}}
+{{#if voos.length}}
+<section class="section">
+  <div class="section-title-bar">
+    <div class="section-bar"></div>
+    <div class="section-title">Aéreo</div>
+  </div>
+  <div class="section-line"></div>
+  <table class="gdt">
+    <thead>
+      <tr>
+        <th class="center">Cia</th>
+        <th class="center">Voo</th>
+        <th>Rota</th>
+        <th class="center">Partida</th>
+        <th class="center">Chegada</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each voos}}
+      <tr>
+        <td class="center">{{cia}}</td>
+        <td class="center">{{numero}}</td>
+        <td>{{rota}}</td>
+        <td class="center">{{dataPartida}}{{#if horaPartida}}<br>{{horaPartida}}{{/if}}</td>
+        <td class="center">{{dataChegada}}{{#if horaChegada}}<br>{{horaChegada}}{{/if}}</td>
+      </tr>
+      {{/each}}
+    </tbody>
+  </table>
+</section>
+{{/if}}
+
+{{!-- HOSPEDAGEM --}}
+{{#if hoteis.length}}
+<section class="section">
+  <div class="section-title-bar">
+    <div class="section-bar"></div>
+    <div class="section-title">Hospedagem</div>
+  </div>
+  <div class="section-line"></div>
+  <table class="gdt">
+    <thead>
+      <tr>
+        <th>Cidade</th>
+        <th>Hotel</th>
+        <th>Quarto</th>
+        <th>Regime</th>
+        <th class="center">Check-in</th>
+        <th class="center">Check-out</th>
+        <th class="center">Noites</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each hoteis}}
+      <tr>
+        <td>{{cidade}}</td>
+        <td>{{nome}}</td>
+        <td>{{quarto}}</td>
+        <td>{{regime}}</td>
+        <td class="center">{{checkIn}}</td>
+        <td class="center">{{checkOut}}</td>
+        <td class="center">{{noites}}</td>
+      </tr>
+      {{/each}}
+    </tbody>
+  </table>
+</section>
+{{/if}}
+
+{{!-- VALORES --}}
+{{#if precos.hasData}}
+<section class="section">
+  <div class="section-title-bar">
+    <div class="section-bar"></div>
+    <div class="section-title">Valores</div>
+  </div>
+  <div class="section-line"></div>
+  <div class="pricing-table">
+    {{#if precos.totalCasal}}
+      <div class="pricing-row">
+        <div class="pricing-label">Por casal</div>
+        <div class="pricing-value">{{precos.totalCasal}}</div>
+      </div>
+    {{/if}}
+    {{#if precos.porPessoa}}
+      <div class="pricing-row">
+        <div class="pricing-label">Por pessoa</div>
+        <div class="pricing-value">{{precos.porPessoa}}</div>
+      </div>
+    {{/if}}
+    {{#each precos.customRows}}
+      <div class="pricing-row">
+        <div class="pricing-label">{{label}}</div>
+        <div class="pricing-value">{{value}}</div>
+      </div>
+    {{/each}}
+  </div>
+  {{#if precos.disclaimer}}<div class="pricing-disclaimer">{{precos.disclaimer}}</div>{{/if}}
+</section>
+{{/if}}
+
+{{!-- OPCIONAIS --}}
+{{#if opcionais.length}}
+<section class="section">
+  <div class="section-title-bar">
+    <div class="section-bar"></div>
+    <div class="section-title">Serviços Opcionais</div>
+  </div>
+  <div class="section-line"></div>
+  <table class="gdt">
+    <thead>
+      <tr>
+        <th>Serviço</th>
+        <th class="center">Preço Adulto</th>
+        <th class="center">Preço Criança</th>
+        <th>Observações</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each opcionais}}
+      <tr>
+        <td>{{servico}}</td>
+        <td class="center">{{precoAdulto}}</td>
+        <td class="center">{{precoCrianca}}</td>
+        <td>{{observacoes}}</td>
+      </tr>
+      {{/each}}
+    </tbody>
+  </table>
+</section>
+{{/if}}
+
+{{!-- INCLUI / EXCLUI --}}
+{{#if hasIncExc}}
+<section class="section">
+  {{#if inclui.length}}
+    <div class="section-title-bar">
+      <div class="section-bar"></div>
+      <div class="section-title">O que inclui</div>
+    </div>
+    <div class="section-line"></div>
+    <div class="inc-exc-block">
+      {{#each inclui}}
+        <div class="inc-exc-item">
+          <span class="icon-check">✓</span>
+          <span>{{this}}</span>
+        </div>
+      {{/each}}
+    </div>
+  {{/if}}
+  {{#if naoInclui.length}}
+    <div class="section-title-bar" style="margin-top: 6mm;">
+      <div class="section-bar"></div>
+      <div class="section-title">O que não inclui</div>
+    </div>
+    <div class="section-line"></div>
+    <div class="inc-exc-block">
+      {{#each naoInclui}}
+        <div class="inc-exc-item">
+          <span class="icon-x">✗</span>
+          <span>{{this}}</span>
+        </div>
+      {{/each}}
+    </div>
+  {{/if}}
+</section>
+{{/if}}
+
+{{!-- PAGAMENTO --}}
+{{#if pagamento.hasData}}
+<section class="section">
+  <div class="section-title-bar">
+    <div class="section-bar"></div>
+    <div class="section-title">Condições de Pagamento</div>
+  </div>
+  <div class="section-line"></div>
+  <div class="kv-block">
+    {{#if pagamento.deposit}}<div class="kv-row"><div class="kv-label">Sinal / Depósito</div><div class="kv-value">{{pagamento.deposit}}</div></div>{{/if}}
+    {{#if pagamento.installments}}<div class="kv-row"><div class="kv-label">Parcelamento</div><div class="kv-value">{{pagamento.installments}}</div></div>{{/if}}
+    {{#if pagamento.deadline}}<div class="kv-row"><div class="kv-label">Prazo</div><div class="kv-value">{{pagamento.deadline}}</div></div>{{/if}}
+    {{#if pagamento.notes}}<div class="kv-row"><div class="kv-label">Observações</div><div class="kv-value">{{pagamento.notes}}</div></div>{{/if}}
+  </div>
+</section>
+{{/if}}
+
+{{!-- CANCELAMENTO --}}
+{{#if cancelamento.length}}
+<section class="section">
+  <div class="section-title-bar">
+    <div class="section-bar"></div>
+    <div class="section-title">Política de Cancelamento</div>
+  </div>
+  <div class="section-line"></div>
+  <div class="kv-block">
+    {{#each cancelamento}}
+      <div class="kv-row">
+        <div class="kv-label">{{period}}</div>
+        <div class="kv-value">{{penalty}}</div>
+      </div>
+    {{/each}}
+  </div>
+</section>
+{{/if}}
+
+{{!-- INFORMAÇÕES IMPORTANTES --}}
+{{#if informacoes.hasData}}
+<section class="section">
+  <div class="section-title-bar">
+    <div class="section-bar"></div>
+    <div class="section-title">Informações Importantes</div>
+  </div>
+  <div class="section-line"></div>
+  {{#if informacoes.passport}}
+    <div class="info-sublabel">Passaporte</div>
+    <div class="info-content">{{informacoes.passport}}</div>
+  {{/if}}
+  {{#if informacoes.visa}}
+    <div class="info-sublabel">Visto</div>
+    <div class="info-content">{{informacoes.visa}}</div>
+  {{/if}}
+  {{#if informacoes.vaccines}}
+    <div class="info-sublabel">Vacinas</div>
+    <div class="info-content">{{informacoes.vaccines}}</div>
+  {{/if}}
+  {{#if informacoes.climate}}
+    <div class="info-sublabel">Clima</div>
+    <div class="info-content">{{informacoes.climate}}</div>
+  {{/if}}
+  {{#if informacoes.luggage}}
+    <div class="info-sublabel">Bagagem</div>
+    <div class="info-content">{{informacoes.luggage}}</div>
+  {{/if}}
+  {{#if informacoes.flights}}
+    <div class="info-sublabel">Voos</div>
+    <div class="info-content">{{informacoes.flights}}</div>
+  {{/if}}
+  {{#each informacoes.customFields}}
+    {{#if label}}
+      <div class="info-sublabel">{{label}}</div>
+      <div class="info-content">{{value}}</div>
+    {{/if}}
+  {{/each}}
+</section>
+{{/if}}
+
+{{!-- CLOSING --}}
+{{#unless hideCover}}
+<section class="closing">
+  <div class="closing-line closing-line-top"></div>
+  {{#if area.logoUrl}}<img src="{{area.logoUrl}}" alt="" class="closing-logo">{{/if}}
+  <div class="closing-msg">Boa viagem!</div>
+  <div class="closing-tagline">Experiências exclusivas de viagem</div>
+  {{#if contact}}<div class="closing-contact">{{contact}}</div>{{/if}}
+  <div class="closing-line closing-line-bottom"></div>
+</section>
+{{/unless}}
+
+</body>
+</html>
