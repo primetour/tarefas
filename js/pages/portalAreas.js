@@ -701,12 +701,11 @@ function showAreaModal(area, areas = []) {
       }));
 
       // SUPPORTED_FMTS: mesma lógica do exportsModuleBlock — só formatos que generators usam
-      // v4.63.12+ Fix Zumbi #1 (audit pós-sprint): key canônica é 'cotacoes'
-      // (rename v4.62.50). Antes 'roteiros' caía pro fallback [html,docx,pptx]
-      // por acidente — funcionava mas era latente.
+      // v4.63.12+ Fix Zumbi #1: key canônica é 'cotacoes' (rename v4.62.50).
+      // v4.63.22+ 'web' adicionado pra Portal (e Cotações futuro). Banco mantém só HTML.
       const SUPPORTED_FMTS_TPL = {
-        portal:           ['html', 'docx', 'pptx'],
-        cotacoes:         ['html', 'docx', 'pptx'],
+        portal:           ['html', 'web', 'docx', 'pptx'],
+        cotacoes:         ['html', 'web', 'docx', 'pptx'],
         'banco-roteiros': ['html'],
       };
 

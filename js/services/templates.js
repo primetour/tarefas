@@ -68,17 +68,33 @@ export const TEMPLATE_MODULES = [
   { id: 'banco-roteiros', label: 'Banco de Roteiros', icon: '📚' },
 ];
 
-/** Formatos suportados pra upload. HTML serve PDF+Web. */
+/** Formatos suportados pra upload. v4.63.22+ Web separado de HTML (PDF). */
 export const TEMPLATE_FORMATS = [
-  { id: 'html', label: 'HTML',  ext: ['html', 'htm'], maxMB: 5,  exports: ['pdf', 'web'],
+  { id: 'html', label: 'HTML → PDF',  ext: ['html', 'htm'], maxMB: 5,  exports: ['pdf'],
     mime: 'text/html',
-    desc: 'Mesmo arquivo gera PDF (Puppeteer) E Web link.' },
+    desc: 'Template HTML renderizado em PDF via Puppeteer (cotações/portal/banco).' },
+  // v4.63.22+ Web Link formato distinto. Diferenças vs html (PDF):
+  // - Servido como HTML interativo no browser (sem @page A4, sem print:exact)
+  // - Pode incluir <script> + libs externas (Leaflet, Alpine, etc. — SSRF allowlist expandido)
+  // - 2 modos via `templateMode` no doc: 'full' (substitui portal-view.html) | 'slots' (injeta partes)
+  // - Não é renderizado server-side; servido direto do R2 OU via portal-view-tpl.html proxy
+  { id: 'web', label: 'Web Link', ext: ['html', 'htm'], maxMB: 8, exports: ['web'],
+    mime: 'text/html',
+    desc: 'Template HTML interativo pra Web Link público (cliente abre no browser). Suporta JS + libs externas. 2 modos: full (substitui página) ou slots (header/footer/CSS).' },
   { id: 'docx', label: 'Word',  ext: ['docx'],        maxMB: 10, exports: ['docx'],
     mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     desc: 'Template Word com placeholders {{cliente.nome}}.' },
   { id: 'pptx', label: 'PowerPoint', ext: ['pptx'],   maxMB: 15, exports: ['pptx'],
     mime: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
     desc: 'Template PowerPoint com placeholders {{cliente.nome}}.' },
+];
+
+/** v4.63.22+ Modos de template Web Link. */
+export const WEB_TEMPLATE_MODES = [
+  { id: 'full',  label: 'Substituição total',
+    desc: 'Template HTML completo substitui portal-view.html / roteiro-view.html. JS interativo (mapa, carrousel, search) precisa ser RE-IMPLEMENTADO no template. Máxima customização.' },
+  { id: 'slots', label: 'Slots customizáveis',
+    desc: 'portal-view.html canônico mantém tudo (Leaflet, search). Template injeta só PARTES: header HTML, footer HTML, CSS vars extras, fonte custom. Conservador, mais seguro.' },
 ];
 
 /** Map por id pra lookup O(1). */
@@ -226,6 +242,19 @@ export const PLACEHOLDERS_SPEC = {
     { key: 'destinos.[i].segmentos.[j].narrative', type: 'string', category: 'segmentos', required: 'optional', example: 'Os melhores bistros…', desc: 'themeDesc' },
     { key: 'destinos.[i].segmentos.[j].items', type: 'array',  category: 'segmentos', required: 'optional', example: '[{name,desc}]', desc: 'Lista' },
     { key: 'destinos.[i].segmentos.[j].info',  type: 'object', category: 'segmentos', required: 'optional', example: '{descricao,…}', desc: 'Info gerais (só se mode=special_info)' },
+    // v4.63.22+ Web Link exclusive (formato 'web', não html→PDF)
+    { key: 'webUrl',            type: 'url',     category: 'web', required: 'always',   example: 'https://primetour.github.io/tarefas/portal-view.html#token', desc: 'URL canônica do web link (compartilhar)' },
+    { key: 'previewUrl',        type: 'url',     category: 'web', required: 'common',   example: 'https://…cloudfunctions.net/previewLink?t=token',          desc: 'URL com OG meta dinâmico pra WhatsApp/social' },
+    { key: 'token',             type: 'string',  category: 'web', required: 'always',   example: 'joao-maria-paris-2026',                                    desc: 'Token único do link' },
+    { key: 'webExports.headerText', type: 'string', category: 'web', required: 'optional', example: 'CONFIDENCIAL',                                          desc: 'Faixa superior custom (Áreas → Exports → Web)' },
+    { key: 'webExports.footerText', type: 'string', category: 'web', required: 'optional', example: 'PRIMETOUR Lazer · …',                                   desc: 'Texto rodapé custom' },
+    { key: 'createdBy.name',    type: 'string',  category: 'web', required: 'common',   example: 'Renê Castro',                                              desc: 'Nome do consultor que gerou' },
+    { key: 'createdBy.email',   type: 'string',  category: 'web', required: 'optional', example: 'rene@…',                                                   desc: 'Email do consultor' },
+    { key: 'createdAt',         type: 'date',    category: 'web', required: 'always',   example: 'Firestore Timestamp',                                      desc: 'Data de criação (servidor)' },
+    { key: 'views',             type: 'number',  category: 'web', required: 'computed', example: '47',                                                       desc: 'Views acumuladas (incrementado por portal-view)' },
+    { key: 'PRIMETOUR.onDestinoClick', type: 'function', category: 'web', required: 'hooks', example: 'fn(destId) { … }',                                    desc: 'JS hook: chamado quando user clica num destino' },
+    { key: 'PRIMETOUR.onSegmentFilter', type: 'function', category: 'web', required: 'hooks', example: 'fn(segmentKey) { … }',                               desc: 'JS hook: filtro de segmento aplicado' },
+    { key: 'PRIMETOUR.onMapPinClick', type: 'function', category: 'web', required: 'hooks', example: 'fn(placeId, latlng) { … }',                            desc: 'JS hook: clique em pin do mapa Leaflet' },
   ],
   'banco-roteiros': [
     { key: 'today',                type: 'date',    category: 'root',     required: 'always',   example: '28/05/2026',                    desc: '' },
@@ -261,6 +290,7 @@ export const PLACEHOLDER_CATEGORIES = {
   informacoes:  { label: 'Informações',         icon: 'ℹ️', order: 13 },
   destinos:     { label: 'Destinos',            icon: '🌍', order: 14 },
   segmentos:    { label: 'Segmentos',           icon: '🧩', order: 15 },
+  web:          { label: 'Web Link (exclusive)', icon: '🌐', order: 16 },
 };
 
 /* ─── Helpers internos ──────────────────────────────────────────────── */

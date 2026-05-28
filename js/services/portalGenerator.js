@@ -2413,6 +2413,33 @@ async function generateWebLink({ allTips, segments, areaName, area, colors, form
   const _webFooterText = formatExportText(_webExportTpl.footerText || '', { areaName, title: 'Portal de Dicas' });
   const _webHeaderText = formatExportText(_webExportTpl.headerText || '', { areaName, title: 'Portal de Dicas' });
 
+  // v4.63.22+ Detecta template uploaded pra Web Link (formato 'web').
+  // Se setado, grava templateId + templateMode no doc; portal-view.html
+  // (ou portal-view-tpl.html v4.63.23+) lê e renderiza Handlebars conforme
+  // o mode ('full' substitui página, 'slots' injeta partes).
+  let _webTemplateMeta = null;
+  const _webTplId = area?.templateRefs?.portal?.web;
+  if (_webTplId) {
+    try {
+      const { fetchTemplate } = await import('./templates.js');
+      const _tpl = await fetchTemplate(_webTplId);
+      if (_tpl && _tpl.status === 'active') {
+        _webTemplateMeta = {
+          templateId:   _tpl.id,
+          templateName: _tpl.name,
+          templateMode: _tpl.templateMode || 'full',  // default full
+          fileUrl:      _tpl.fileUrl,
+        };
+      } else if (_tpl) {
+        console.warn(`[portalGenerator web] template ${_webTplId} status=${_tpl.status} (não-active) — ignorado`);
+      } else {
+        console.warn(`[portalGenerator web] template ${_webTplId} não encontrado — ignorado`);
+      }
+    } catch (e) {
+      console.warn('[portalGenerator web] fetchTemplate falhou:', e?.message);
+    }
+  }
+
   try {
     await setDoc(ref, {
       token,
@@ -2424,6 +2451,8 @@ async function generateWebLink({ allTips, segments, areaName, area, colors, form
       areaLogoUrl:    area?.logoUrl    || null,
       areaLogoUrlAlt: area?.logoUrlAlt || null,
       colors,
+      // v4.63.22+ Template Web Link metadata (null se sem template configurado)
+      webTemplate: _webTemplateMeta,
       // v4.62.39 (Fase A.1 — fix D1): persiste fonts/editorial/modules pra
       // portal-view.html ler. Antes: UI salvava em portal_areas.fonts mas
       // generator omitia aqui → portal-view fallback Poppins/defaults.

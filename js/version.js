@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 21,
-  build: '20260528-audit-fixes-h1-h2-h3',
+  patch: 22,
+  build: '20260528-web-template-foundation',
 };
 
 /** "1.2.0" */

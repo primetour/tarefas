@@ -23,6 +23,7 @@
 11. [Patterns visuais legados (replicar nos seus templates)](#11-patterns-visuais-legados-replicar-nos-seus-templates)
 12. [Checklist final antes de subir](#12-checklist-final-antes-de-subir)
 13. [Anti-padrões — NÃO fazer](#13-anti-padrões--não-fazer)
+14. [Templates de Web Link (v4.63.22+)](#14-templates-de-web-link-v46322)
 
 ---
 
@@ -735,4 +736,120 @@ Pra ficar **irretocável** seguindo o padrão PRIMETOUR luxury travel:
 
 ---
 
-**Última atualização**: 2026-05-28 v4.63.20.
+**Última atualização**: 2026-05-28 v4.63.22.
+
+---
+
+## 14. Templates de Web Link (v4.63.22+)
+
+Web Link é o **4º formato** do sistema (depois de HTML→PDF, DOCX, PPTX). Diferenças críticas:
+
+| Aspecto | HTML→PDF (PDF) | Web Link |
+|---|---|---|
+| Render engine | Puppeteer server-side (CF) | Browser do cliente (zero server-side render) |
+| Output | Arquivo `.pdf` download | URL pública compartilhável |
+| CSS | `@page A4`, `print-color-adjust:exact` | Viewport responsivo, hover/click |
+| Fontes | Apenas SSRF allowlist (Google Fonts) | **Livre** — qualquer CDN |
+| `<script>` | NÃO (Puppeteer roda 1 vez, output é estático) | **SIM** — Leaflet, Alpine, custom JS |
+| Tamanho | Limitado a ~5MB output | Limitado a 8MB upload |
+| Servido por | Download blob | R2 direto OU portal-view-tpl.html (proxy) |
+
+### 14.1 Os 2 modos: `full` vs `slots`
+
+O documento do template no Firestore tem campo opcional `templateMode`:
+
+**`full`** (default): Substituição total.
+- Template HTML completo substitui `portal-view.html` ou `roteiro-view.html`.
+- Designer escreve TUDO: layout, navegação, mapa Leaflet, carrousel, search.
+- Recebe os dados via Handlebars + JS hooks (`window.PRIMETOUR.*`).
+- Máxima customização, mas **perde features prontas** (mapa, carrousel padrão).
+
+**`slots`** (v4.63.23+): Slots customizáveis.
+- `portal-view.html` canônico continua renderizando layout principal.
+- Template injeta apenas PARTES:
+  - `customHeaderHtml` (faixa superior)
+  - `customFooterHtml` (rodapé)
+  - `customCss` (overrides de estilo)
+  - `customMetaOg` (meta OG pra crawlers WhatsApp/social)
+- Conservador, ideal pra branding diferente sem reescrever sistema.
+
+### 14.2 SSRF / segurança no Web Link
+
+**Diferença crítica** vs PDF: Web Link **NÃO passa por Puppeteer server-side**. O template é servido como HTML estático e **o browser do CLIENTE** que executa.
+
+Implicações:
+- ✅ Sem SSRF allowlist (servidor não fetch externamente quando serve HTML)
+- ✅ Designer pode usar QUALQUER CDN (unpkg, jsdelivr, cdnjs, Leaflet CDN, FontAwesome, etc.)
+- ✅ `<script type="module">`, async/await, fetch API — tudo funciona
+- ⚠ **Mas**: como executa no browser do cliente, **XSS via dado mal-saneado** vira preocupação. Use `{{var}}` (escape automático Handlebars), evite `{{{var}}}` (raw, sem escape).
+- ⚠ **Admin malicioso pode incluir scripts pra exfiltrar dados do cliente** (cookies do domínio primetour.github.io, etc.). Permission `templates_manage` deve ser restrita a master + curadores.
+
+### 14.3 Variáveis Web-exclusive
+
+Além de todos os placeholders dos formatos Cotações/Portal/Banco, Web Link tem:
+
+| Path | Tipo | Required | Descrição |
+|---|---|---|---|
+| `webUrl` | string | sempre | URL canônica do link público |
+| `previewUrl` | string | comum | URL com OG meta dinâmico (WhatsApp/social crawlers) |
+| `token` | string | sempre | Token único do link |
+| `webExports.headerText` | string | opcional | Faixa superior custom (Áreas → Exports → Web) |
+| `webExports.footerText` | string | opcional | Texto rodapé custom |
+| `createdBy.name` | string | comum | Nome do consultor que gerou |
+| `createdBy.email` | string | opcional | Email do consultor |
+| `createdAt` | date | sempre | Timestamp servidor |
+| `views` | number | computed | Views acumuladas (incrementado por portal-view) |
+
+### 14.4 JS Hooks (v4.63.22+)
+
+Pra templates de modo `full` que QUEREM features do sistema (mapa, carrousel) sem reimplementar:
+
+```html
+<script>
+  window.PRIMETOUR = window.PRIMETOUR || {};
+
+  // Handler customizado pra clique em destino do menu
+  window.PRIMETOUR.onDestinoClick = (destId) => {
+    console.log('User clicou em', destId);
+    // Sua logic aqui — scroll, modal, analytics, etc.
+  };
+
+  // Filtro de segmento aplicado
+  window.PRIMETOUR.onSegmentFilter = (segmentKey) => {
+    // Customize qual conteúdo aparece quando user filtra
+  };
+
+  // Click em pin do mapa Leaflet
+  window.PRIMETOUR.onMapPinClick = (placeId, latlng) => {
+    // Abrir popup custom, navegar pra outro slide, etc.
+  };
+</script>
+```
+
+Esses hooks ficam **disponíveis quando portal-view.html canônico está no path** (modo `slots`). Em modo `full`, designer implementa tudo do zero — hooks são opcionais.
+
+### 14.5 Como criar um template Web Link
+
+1. **Criar arquivo `.html`** com:
+   - `<!DOCTYPE html>` + `<html lang="pt-BR">` + UTF-8
+   - `<title>{{titulo}}</title>` (vai aparecer na aba do navegador)
+   - Meta OG opcionais: `<meta property="og:image" content="...">` (pra WhatsApp)
+   - CSS responsivo (`@media (max-width: 768px) { … }`)
+   - Imports de fontes/libs SEM restrição (qualquer CDN)
+   - Placeholders Handlebars
+2. **Decidir o `templateMode`**:
+   - `full`: você escreve TUDO. Mais trabalho mas total controle.
+   - `slots`: você injeta só pedaços. Mais rápido, sistema continua funcionando.
+3. **Upload via Biblioteca de Templates** → formato "Web Link"
+4. **Atribuir à área** → Editor de Áreas → tab Templates → coluna "Web Link"
+5. **Gerar Web Link** pelo Portal (ou Cotações futuro) → URL gerada usa seu template
+
+### 14.6 Limitações conhecidas v4.63.22
+
+- **Cotações** ainda não suporta web template (só Portal) — vem em v4.63.23+
+- **Modo `slots`** ainda não está implementado em runtime — só schema. Modo `full` é o único funcional nesta release.
+- Renderização Handlebars do template ocorre em `portal-view-tpl.html` (NEW v4.63.23) — esta release foundation **grava metadata, ainda não renderiza com template**. Aguarde v4.63.23+ pra cliente abrir URL e ver template ativo.
+- Audit log `templates.render` (server-side) não dispara pra Web (o render é client-side).
+- Compliance/LGPD: dados expostos via URL pública. Reveja antes de atribuir templates customizados em áreas com clientes sensíveis.
+
+---
