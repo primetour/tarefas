@@ -785,6 +785,42 @@ function addSeparator(doc, y, primary) {
  */
 export async function generateRoteiroPDF(roteiro, area = null) {
   if (!roteiro) throw new Error('Roteiro não encontrado. Salve o roteiro antes de exportar.');
+
+  // v4.63.11+ Se a área tem template HTML configurado pra cotações, usa
+  // renderTemplate (Puppeteer) em vez do pipeline jsPDF. Fallback graceful:
+  // qualquer falha cai pro pipeline antigo (zero risco de breakage).
+  const _moduleKeyForRefs = roteiro._exportModuleKey || 'cotacoes';
+  const _refKey = _moduleKeyForRefs === 'roteiros' ? 'cotacoes' : _moduleKeyForRefs;
+  const _tplId = area?.templateRefs?.[_refKey]?.html
+              || area?.templateRefs?.roteiros?.html;  // alias retrocompat
+  if (_tplId) {
+    try {
+      const { renderTemplate, downloadBlob } = await import('./templates.js');
+      const { roteiroToTemplateData, bancoToTemplateData } = await import('./templateAdapter.js');
+      const data = _refKey === 'banco-roteiros'
+        ? bancoToTemplateData(roteiro, area)
+        : roteiroToTemplateData(roteiro, area);
+      const result = await renderTemplate(_tplId, data);
+      downloadBlob(result.blob, result.filename);
+      try {
+        if (roteiro.id) {
+          await logGeneration({
+            roteiroId: roteiro.id,
+            format: 'pdf',
+            areaId: area?.id || roteiro.areaId || '',
+            destinations: roteiro.travel?.destinations?.map(d => d.city || d.country) || [],
+            via: 'template',
+            templateId: _tplId,
+          });
+        }
+      } catch {}
+      return { filename: result.filename };
+    } catch (e) {
+      console.warn('[roteiroGenerator] template falhou, fallback jsPDF:', e?.message || e);
+      // Fallback graceful: pipeline antigo abaixo continua
+    }
+  }
+
   await loadJsPDF();
 
   const { jsPDF } = window.jspdf;
@@ -2126,6 +2162,24 @@ function buildClosingPage(doc, roteiro, buName, primary, secondary, logoCoverPng
  * Generate travel itinerary as PowerPoint presentation
  */
 export async function generateRoteiroPPTX(roteiro, area = null) {
+  // v4.63.11+ template PPTX uploaded vence pipeline pptxgenjs
+  const _moduleKeyForRefs = roteiro._exportModuleKey || 'cotacoes';
+  const _refKey = _moduleKeyForRefs === 'roteiros' ? 'cotacoes' : _moduleKeyForRefs;
+  const _tplId = area?.templateRefs?.[_refKey]?.pptx
+              || area?.templateRefs?.roteiros?.pptx;
+  if (_tplId) {
+    try {
+      const { renderTemplate, downloadBlob } = await import('./templates.js');
+      const { roteiroToTemplateData, bancoToTemplateData } = await import('./templateAdapter.js');
+      const data = _refKey === 'banco-roteiros' ? bancoToTemplateData(roteiro, area) : roteiroToTemplateData(roteiro, area);
+      const result = await renderTemplate(_tplId, data);
+      downloadBlob(result.blob, result.filename);
+      try { await logGeneration({ roteiroId: roteiro.id, format: 'pptx', areaId: area?.id || roteiro.areaId || '', destinations: (roteiro.travel?.destinations || []).map(d => d.city || d.country), via: 'template', templateId: _tplId }); } catch {}
+      return { filename: result.filename };
+    } catch (e) {
+      console.warn('[roteiroGenerator] template PPTX falhou, fallback pptxgenjs:', e?.message || e);
+    }
+  }
   await loadPptxGenJS();
 
   // v4.62.39+ Fase A.3: cores via SSOT (areaDefaults.js)
@@ -2692,6 +2746,24 @@ export async function generateRoteiroPPTX(roteiro, area = null) {
      - Closing
 */
 export async function generateRoteiroDOCX(roteiro, area = null) {
+  // v4.63.11+ template DOCX uploaded vence pipeline docx.js
+  const _moduleKeyForRefs = roteiro._exportModuleKey || 'cotacoes';
+  const _refKey = _moduleKeyForRefs === 'roteiros' ? 'cotacoes' : _moduleKeyForRefs;
+  const _tplId = area?.templateRefs?.[_refKey]?.docx
+              || area?.templateRefs?.roteiros?.docx;
+  if (_tplId) {
+    try {
+      const { renderTemplate, downloadBlob } = await import('./templates.js');
+      const { roteiroToTemplateData, bancoToTemplateData } = await import('./templateAdapter.js');
+      const data = _refKey === 'banco-roteiros' ? bancoToTemplateData(roteiro, area) : roteiroToTemplateData(roteiro, area);
+      const result = await renderTemplate(_tplId, data);
+      downloadBlob(result.blob, result.filename);
+      try { await logGeneration({ roteiroId: roteiro.id, format: 'docx', areaId: area?.id || roteiro.areaId || '', destinations: (roteiro.travel?.destinations || []).map(d => d.city || d.country), via: 'template', templateId: _tplId }); } catch {}
+      return { filename: result.filename };
+    } catch (e) {
+      console.warn('[roteiroGenerator] template DOCX falhou, fallback docx.js:', e?.message || e);
+    }
+  }
   await loadDocx();
   const D = window.docx;
   const {

@@ -452,6 +452,27 @@ export async function generateTip({ tip, area, dest, segments, format, extraTips
     }
   }
 
+  // v4.63.11+ Se área tem template configurado pra este formato, usa
+  // renderTemplate em vez do pipeline jsPDF/docx/pptxgenjs. Fallback graceful
+  // em qualquer falha. Web continua sempre via generateWebLink (templates
+  // de Web não fazem sentido — portal-view.html é a "view" canônica).
+  if (format !== 'web') {
+    const _tplFmtKey = format === 'pdf' ? 'html' : format;  // PDF é renderizado a partir de HTML
+    const _tplId = area?.templateRefs?.portal?.[_tplFmtKey];
+    if (_tplId) {
+      try {
+        const { renderTemplate, downloadBlob } = await import('./templates.js');
+        const { portalToTemplateData } = await import('./templateAdapter.js');
+        const data = portalToTemplateData({ allTips, area, segments, areaName });
+        const result = await renderTemplate(_tplId, data);
+        downloadBlob(result.blob, result.filename);
+        return { filename: result.filename };
+      } catch (e) {
+        console.warn(`[portalGenerator] template ${format} falhou, fallback pipeline:`, e?.message || e);
+      }
+    }
+  }
+
   switch (format) {
     case 'docx': return generateDocx({ allTips, segments, areaName, area, colors, filename, imagesByDest });
     case 'pdf':  return generatePDF({ allTips, segments, areaName, area, colors, filename, imagesByDest });

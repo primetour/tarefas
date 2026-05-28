@@ -205,5 +205,7 @@ export async function generateRoteiroBankPDF(bankDoc, area = null) {
   // a resolver template via 'banco-roteiros' em vez de 'roteiros'. Sem
   // isso, Banco lia templates de Cotações silenciosamente.
   shape._exportModuleKey = 'banco-roteiros';
+  // v4.63.11+ template uploaded vence pipeline jsPDF. roteiroGenerator
+  // já checa templateRefs['banco-roteiros'].html via _exportModuleKey acima.
   return generateRoteiroPDF(shape, area);
 }

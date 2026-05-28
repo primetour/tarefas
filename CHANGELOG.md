@@ -6,6 +6,72 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.11+20260528-templates-generators-honor-refs] — 2026-05-28
+
+Release **Sprint v4.63 (12/12) — ENCERRA A SPRINT** — Generators honram
+templateRefs. Pipeline ponta-a-ponta funcional: usuário sobe template,
+atribui à área, e ao gerar PDF/DOCX/PPTX o sistema USA o template
+uploaded em vez do layout codado.
+
+**Implementado**:
+- `js/services/templateAdapter.js` (NEW) — adapter centralizado:
+  - `roteiroToTemplateData(roteiro, area)` — cotações shape → Handlebars
+  - `portalToTemplateData({allTips, area, segments, areaName})` — portal
+  - `bancoToTemplateData(bankDoc, area)` — banco-roteiros
+  - `resolveTemplateRef(area, module, format)` — helper de lookup
+  - Mantém sincronia com `PLACEHOLDERS_SPEC` em templates.js
+  - Helpers locais: `_fmtDateBr` (CLAUDE.md §12.a sem timezone),
+    `_today`, `_formatCurrency`, `_resolveAreaName` (honra
+    `brand.useExternalName`)
+- `js/services/roteiroGenerator.js` — 3 branches:
+  - `generateRoteiroPDF`: checa `area.templateRefs[cotacoes].html` →
+    `renderTemplate` → `downloadBlob` (com `logGeneration via:'template'`)
+  - `generateRoteiroDOCX`: idem `.docx`
+  - `generateRoteiroPPTX`: idem `.pptx`
+  - Cada um respeita `roteiro._exportModuleKey` (banco-roteiros usa
+    chave própria via §12.f mecanismo)
+  - Fallback graceful: qualquer erro → console.warn + pipeline antigo
+- `js/services/portalGenerator.js`:
+  - Função `generateMaterial` ganha branch antes do switch: se
+    `area.templateRefs.portal[fmt]` setado, usa renderTemplate;
+    senão segue pro `case 'pdf'|'docx'|'pptx'|'web'` original
+  - `format='pdf'` mapeia pra template `html` (PDF é renderizado a
+    partir de HTML via Puppeteer)
+  - `format='web'` continua sempre via `generateWebLink` (portal-view.html
+    é a view canônica do Web — não faz sentido template HTML pra ele)
+- `js/services/roteiroBankGenerator.js`:
+  - Comentário documentando que `_exportModuleKey='banco-roteiros'` já
+    redireciona pra `area.templateRefs['banco-roteiros'].html` via
+    roteiroGenerator path
+
+**Princípio de design — fallback graceful obrigatório**:
+Todo branch `try { ... renderTemplate(...) ... } catch (e) { console.warn(...); }` é
+seguido pelo pipeline antigo. Garante:
+- Zero risco de exports quebrarem se template tiver bug
+- Migração progressiva: áreas sem template configurado seguem código
+- Template ruim não derruba time inteiro — só log + fallback
+
+**Auditoria pós-sprint a verificar (próxima sessão)**:
+- Web link com template HTML é caso especial — atualmente sempre vai
+  pro generateWebLink. Pode fazer sentido honrar template HTML pra Web
+  no futuro (servir template renderizado em portal-view.html ou similar).
+- Imagens externas em templates HTML precisam URL absoluta — adapter
+  resolve algumas (logoUrl), mas user pode usar URLs externas que
+  precisam estar em CSP.
+- Performance: render via template adiciona ~3-10s vs jsPDF (~1-2s).
+  Pra batch grande considerar cache de PDF gerado.
+
+**Sprint v4.63.x ENCERRADA**:
+- 12 releases · ~19h dev · ~R$ 2.860 (com AI assist 0.5)
+- Pipeline ponta-a-ponta: upload → extract → atribuir → renderizar
+- 4 CFs novas: uploadTemplate, extractPlaceholders (trigger), renderTemplate, duplicateTemplate
+- 1 page nova: Biblioteca de Templates
+- 1 tab nova: Templates no editor de áreas
+- 4 generators atualizados (roteiro × 3 + portal × 3 + banco)
+- Adapter centralizado pra consistência
+
+---
+
 ## [4.63.10+20260528-templates-area-refs-tab] — 2026-05-28
 
 Release **Sprint v4.63 (11/11)** — Atribuição template→área no editor.

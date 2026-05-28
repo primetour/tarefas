@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 10,
-  build: '20260528-templates-area-refs-tab',
+  patch: 11,
+  build: '20260528-templates-generators-honor-refs',
 };
 
 /** "1.2.0" */
