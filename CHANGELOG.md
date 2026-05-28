@@ -6,6 +6,57 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.62.32+20260527-editor-revisar-tarifa-redistribuir] — 2026-05-27
+
+Release **EDITOR — REVISAR/REDISTRIBUIR TARIFA**:
+
+> *"a revisao dos voos e opcoes envolvendo as tarifas só aparece na primeira
+> vez que vc insere o codigo... se eu errei e quero redistribuir a questao
+> das tarifas, nao consigo. cada voo que eu insiro ou corrijo ele tem que me
+> mostrar o modal de revisao"* — Renê
+
+**Problema**: após codificar tarifa GDS (`_openAirGdsModal`), os radios
+"distribuir / voo único / só metadata" só apareciam UMA vez. Pra mudar o
+modo de aplicação, único caminho era colar o texto GDS de novo. Friction
++ perdia dados se mexesse nos voos depois.
+
+**Solução**:
+- **Badge no header de Voos** mostrando tarifa salva + modo: ex.
+  `💵 Tarifa: US$ 6.373,20 · distribuída`
+- **Botão `💵 Revisar tarifa`** aparece ao lado de "Codificar do GDS"
+  SE `pricing.airFareDetails` existe. Hoje invisível (só aparece após 1ª
+  codificação) — não polui UI quando vazia.
+- **Botão Codificar muda label** pra `✈ Codificar nova` quando já tem
+  tarifa (sinaliza que substituirá a salva).
+- **Modal `_openFareReviewModal`** novo:
+  - Display read-only da tarifa salva (base/taxas/total + breakdown chips)
+  - 4 radios: **distribuir** entre os voos atuais (re-rateio), aplicar a
+    **um voo específico**, salvar como **metadata** total, ou **limpar**
+    (remove `airFareDetails` sem mexer no preço dos voos)
+  - Pré-marca o modo CURRENT pra user entender o que está aplicado agora
+  - Link `📋 Colar nova tarifa GDS` fecha esse modal e abre
+    `_openAirGdsModal` pleno
+- **Distribuição idempotente**: cada apply recalcula proporção pelo total
+  ÷ N voos atuais (último voo absorve cent drift). Se user adicionou/
+  removeu voos depois, "Revisar tarifa → distribuir" re-rateia certinho.
+- Schema preservado: `pricing.airFareDetails.mode` registra modo usado
+  + `importedAt` atualiza a cada re-apply pra rastreio.
+
+**Cenário "errei e quero refazer"**:
+1. Codifiquei tarifa US$ 6.373 pra 2 voos → cada voo ficou US$ 3.186,60.
+2. Vi que era pra 3 voos. Adicionei + voo manual.
+3. Click `💵 Revisar tarifa` → modal abre com modo "distribute" marcado.
+4. Click "Aplicar" → recalcula pra 3 voos = US$ 2.124,40 cada.
+5. Toast: "US$ 6.373,20 re-distribuído entre 3 voos."
+
+**Cenário "mudei de ideia, é só metadata"**:
+1. Tava distribuído entre 2 voos.
+2. Revisar tarifa → escolho "Salvar como total da cotação" → Aplicar.
+3. Voos ficam com preço atual (não zero), mas `pricing.airTotalFare =
+   6373.20` registrado pra Valores/Preview tratarem.
+
+---
+
 ## [4.62.31+20260527-editor-servicos-form-unico-cards] — 2026-05-27
 
 Release **EDITOR — SERVIÇOS REFEITO** (form único + cards) — pedido do Renê:

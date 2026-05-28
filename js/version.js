@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 62,
-  patch: 31,
-  build: '20260527-editor-servicos-form-unico-cards',
+  patch: 32,
+  build: '20260527-editor-revisar-tarifa-redistribuir',
 };
 
 /** "1.2.0" */

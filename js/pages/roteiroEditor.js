@@ -705,17 +705,30 @@ function _servicosStyles() {
 /* ── BLOCO VOOS ─────────────────────────────────────────────── */
 function renderFlightsBlock() {
   const flights = currentRoteiro.flights || [];
+  // v4.62.32: botão "Revisar tarifa" aparece SE há airFareDetails salvo
+  // (modo + breakdown da última codificação GDS). Permite re-aplicar com
+  // modo diferente sem precisar colar texto de novo.
+  const fareDetails = currentRoteiro.pricing?.airFareDetails;
+  const hasFare = fareDetails && fareDetails.totalFare != null;
   return `
     <div class="svc-block">
       <div class="svc-block-header">
         <h3 class="svc-block-title">
           <span>✈</span><span>Voos</span>
           ${flights.length ? `<span class="svc-block-count">${flights.length} ${flights.length === 1 ? 'voo' : 'voos'}</span>` : ''}
+          ${hasFare ? `<span class="svc-block-count" style="background:rgba(212,168,67,0.12);color:var(--text-primary);">💵 Tarifa: ${_fmtBRL(fareDetails.totalFare, fareDetails.currency)}${fareDetails.mode === 'distribute' ? ' · distribuída' : fareDetails.mode === 'single' ? ' · 1 voo' : ' · só metadata'}</span>` : ''}
         </h3>
         <div class="svc-block-actions">
+          ${hasFare ? `
+            <button class="btn btn-secondary btn-sm" data-action="fare-review"
+              style="font-size:0.8125rem;display:inline-flex;align-items:center;gap:6px;"
+              title="Re-distribuir, mudar pra voo único, ou só metadata. Usa dados da última codificação.">
+              💵 Revisar tarifa
+            </button>
+          ` : ''}
           <button class="btn btn-secondary btn-sm" data-action="air-gds"
             style="font-size:0.8125rem;display:inline-flex;align-items:center;gap:6px;">
-            ✈ Codificar do GDS
+            ✈ ${hasFare ? 'Codificar nova' : 'Codificar do GDS'}
           </button>
           <button class="btn btn-secondary btn-sm" data-action="add-flight"
             style="font-size:0.8125rem;">+ Adicionar voo</button>
@@ -2748,6 +2761,193 @@ Atividades: 3 a 6 cronologicamente ordenadas. Use tipo apropriado.`;
  * Single textarea + preview dual + 1 apply button = 1 caminho canônico.
  * Substitui _openPnrDecodeModal (v4.62.26) e _openFareDecodeModal (v4.62.28).
  */
+
+/**
+ * v4.62.32: modal "Revisar tarifa" — reabre os radios de aplicação
+ * (distribuir / voo único / metadata) usando o pricing.airFareDetails JÁ
+ * salvo (última codificação GDS). Permite re-aplicar com modo diferente
+ * sem precisar colar o texto GDS de novo.
+ *
+ * Mostra também a tarifa atual (base/taxas/total/breakdown) em read-only
+ * + link "Colar nova tarifa" que abre o _openAirGdsModal pleno.
+ */
+function _openFareReviewModal() {
+  const fareDetails = currentRoteiro.pricing?.airFareDetails;
+  if (!fareDetails || fareDetails.totalFare == null) {
+    showToast('Sem tarifa salva. Use "Codificar do GDS" primeiro.', 'error');
+    return;
+  }
+  const flights = currentRoteiro.flights || [];
+  const cur = fareDetails.currency || 'BRL';
+  const total = fareDetails.totalFare;
+  const fmt = (v, c) => {
+    if (v == null || !isFinite(v)) return '—';
+    try { return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: c || 'BRL' }).format(v); }
+    catch { return `${c || ''} ${Number(v).toFixed(2)}`; }
+  };
+  const currentMode = fareDetails.mode || 'distribute';
+  const hasAnyFlights = flights.length > 0;
+
+  const overlay = document.createElement('div');
+  overlay.className = 're-img-modal-overlay';
+  overlay.innerHTML = `
+    <div class="re-img-modal" style="max-width:720px;max-height:88vh;display:flex;flex-direction:column;">
+      <div class="re-img-modal-header">
+        <div class="re-img-modal-title">💵 Revisar tarifa</div>
+        <button class="re-img-modal-close" type="button">&times;</button>
+      </div>
+      <div class="re-img-modal-body" style="overflow:auto;">
+        <p style="font-size:0.8125rem;color:var(--text-muted);margin:0 0 12px;line-height:1.5;">
+          Tarifa codificada anteriormente. Escolha como (re-)aplicar nos voos.
+          O modo atual está marcado.
+        </p>
+
+        <div style="border:1px solid var(--border-subtle,#e5e7eb);border-radius:8px;overflow:hidden;margin-bottom:18px;">
+          <div style="background:rgba(212,168,67,0.06);padding:14px 16px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+            <div>
+              <div style="font-size:0.65rem;color:var(--text-muted);font-weight:700;text-transform:uppercase;letter-spacing:.06em;">Tarifa base</div>
+              <div style="font-size:1.1rem;font-weight:700;color:var(--text-primary);margin-top:2px;">${fmt(fareDetails.baseFare, cur)}</div>
+            </div>
+            <div>
+              <div style="font-size:0.65rem;color:var(--text-muted);font-weight:700;text-transform:uppercase;letter-spacing:.06em;">Taxas/Impostos</div>
+              <div style="font-size:1.1rem;font-weight:700;color:var(--text-primary);margin-top:2px;">${fmt(fareDetails.taxesTotal, cur)}</div>
+            </div>
+            <div>
+              <div style="font-size:0.65rem;color:var(--text-muted);font-weight:700;text-transform:uppercase;letter-spacing:.06em;">Total ${fareDetails.paxType ? '· ' + fareDetails.paxType : ''}</div>
+              <div style="font-size:1.1rem;font-weight:700;color:var(--brand-gold,#D4A843);margin-top:2px;">${fmt(total, cur)}</div>
+            </div>
+          </div>
+          ${(fareDetails.breakdown && fareDetails.breakdown.length) ? `
+            <div style="padding:12px 16px;border-top:1px solid var(--border-subtle,#e5e7eb);">
+              <div style="font-size:0.65rem;color:var(--text-muted);font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px;">
+                Breakdown taxas (${fareDetails.breakdown.length} ${fareDetails.breakdown.length === 1 ? 'código' : 'códigos'})
+              </div>
+              <div style="display:flex;flex-wrap:wrap;gap:6px;">
+                ${fareDetails.breakdown.map(b => `
+                  <span style="display:inline-flex;align-items:center;gap:4px;padding:4px 10px;background:var(--bg-surface);border:1px solid var(--border-subtle,#e5e7eb);border-radius:999px;font-size:0.72rem;font-family:monospace;">
+                    <strong style="color:var(--text-primary);">${b.code}</strong>
+                    <span style="color:var(--text-muted);">${fmt(b.value, cur)}</span>
+                  </span>
+                `).join('')}
+              </div>
+            </div>
+          ` : ''}
+        </div>
+
+        <div style="font-size:0.78rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;">Como (re-)aplicar?</div>
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border-subtle,#e5e7eb);border-radius:6px;cursor:${hasAnyFlights ? 'pointer' : 'not-allowed'};font-size:0.8125rem;${hasAnyFlights ? '' : 'opacity:0.5;'}">
+            <input type="radio" name="re-fare-rev-mode" value="distribute" ${currentMode === 'distribute' && hasAnyFlights ? 'checked' : ''} ${hasAnyFlights ? '' : 'disabled'} style="accent-color:var(--brand-gold,#D4A843);">
+            <div>
+              <div style="font-weight:600;color:var(--text-primary);">Distribuir entre os voos (${flights.length} ${flights.length === 1 ? 'voo' : 'voos'})</div>
+              <div style="font-size:0.72rem;color:var(--text-muted);">Total dividido proporcional entre todos os voos atuais.</div>
+            </div>
+          </label>
+          <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border-subtle,#e5e7eb);border-radius:6px;cursor:${hasAnyFlights ? 'pointer' : 'not-allowed'};font-size:0.8125rem;${hasAnyFlights ? '' : 'opacity:0.5;'}">
+            <input type="radio" name="re-fare-rev-mode" value="single" ${currentMode === 'single' && hasAnyFlights ? 'checked' : ''} ${hasAnyFlights ? '' : 'disabled'} style="accent-color:var(--brand-gold,#D4A843);">
+            <div style="flex:1;">
+              <div style="font-weight:600;color:var(--text-primary);">Aplicar a UM voo específico</div>
+              <div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:6px;">Outros voos ficam com preço atual.</div>
+              <select id="re-fare-rev-pick" class="re-select" style="font-size:0.78rem;width:100%;max-width:460px;" ${hasAnyFlights ? '' : 'disabled'}>
+                ${flights.map((f, i) => `<option value="${i}">${esc(f.airline || '?')} ${esc(f.flightNumber || '')} · ${esc(f.originCity || '?')} → ${esc(f.destinationCity || '?')}</option>`).join('')}
+              </select>
+            </div>
+          </label>
+          <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--border-subtle,#e5e7eb);border-radius:6px;cursor:pointer;font-size:0.8125rem;">
+            <input type="radio" name="re-fare-rev-mode" value="metadata" ${currentMode === 'metadata' ? 'checked' : ''} style="accent-color:var(--brand-gold,#D4A843);">
+            <div>
+              <div style="font-weight:600;color:var(--text-primary);">Salvar como total da cotação</div>
+              <div style="font-size:0.72rem;color:var(--text-muted);">Voos ficam SEM preço individual; total fica em pricing.airTotalFare.</div>
+            </div>
+          </label>
+          <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px dashed rgba(239,68,68,0.3);border-radius:6px;cursor:pointer;font-size:0.8125rem;color:var(--color-danger,#EF4444);">
+            <input type="radio" name="re-fare-rev-mode" value="clear" style="accent-color:var(--color-danger,#EF4444);">
+            <div>
+              <div style="font-weight:600;">Limpar tarifa salva</div>
+              <div style="font-size:0.72rem;opacity:0.85;">Remove pricing.airFareDetails (não altera preço dos voos).</div>
+            </div>
+          </label>
+        </div>
+
+        <div style="margin-top:18px;padding-top:14px;border-top:1px solid var(--border-subtle,#e5e7eb);">
+          <button class="btn btn-ghost btn-sm" type="button" data-paste-new
+            style="font-size:0.78rem;display:inline-flex;align-items:center;gap:6px;">
+            📋 Colar nova tarifa GDS (substitui a salva)
+          </button>
+        </div>
+      </div>
+      <div style="padding:14px 20px;border-top:1px solid var(--border-subtle,#e5e7eb);display:flex;justify-content:flex-end;gap:8px;">
+        <button class="btn btn-ghost btn-sm" type="button" data-cancel style="font-size:0.8125rem;">Cancelar</button>
+        <button class="btn btn-primary btn-sm" type="button" data-apply style="font-size:0.8125rem;">Aplicar →</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+  overlay.querySelector('.re-img-modal-close').addEventListener('click', close);
+  overlay.querySelector('[data-cancel]').addEventListener('click', close);
+
+  // Link "Colar nova tarifa" → fecha esse modal + abre _openAirGdsModal
+  overlay.querySelector('[data-paste-new]').addEventListener('click', () => {
+    close();
+    _openAirGdsModal();
+  });
+
+  overlay.querySelector('[data-apply]').addEventListener('click', () => {
+    const mode = overlay.querySelector('input[name="re-fare-rev-mode"]:checked')?.value || 'distribute';
+
+    if (mode === 'clear') {
+      // Limpa só os metadados — não toca em flights[].price
+      if (currentRoteiro.pricing) {
+        delete currentRoteiro.pricing.airFareDetails;
+        delete currentRoteiro.pricing.airTotalFare;
+        delete currentRoteiro.pricing.airTotalCurrency;
+      }
+      rerenderCurrentSection();
+      markDirty();
+      close();
+      showToast('Tarifa salva removida. Preços dos voos preservados.', 'success');
+      return;
+    }
+
+    // Atualiza modo salvo
+    if (!currentRoteiro.pricing) currentRoteiro.pricing = {};
+    currentRoteiro.pricing.airFareDetails = { ...fareDetails, mode, importedAt: new Date().toISOString() };
+
+    if (mode === 'distribute' && hasAnyFlights) {
+      const n = flights.length;
+      const perFlight = Math.round((total / n) * 100) / 100;
+      currentRoteiro.flights.forEach((f, i) => {
+        f.price = (i === n - 1)
+          ? Math.round((total - perFlight * (n - 1)) * 100) / 100
+          : perFlight;
+        f.currency = cur;
+      });
+      // Remove airTotalFare se tava no modo metadata antes
+      delete currentRoteiro.pricing.airTotalFare;
+      delete currentRoteiro.pricing.airTotalCurrency;
+      showToast(`${fmt(total, cur)} re-distribuído entre ${n} voo${n > 1 ? 's' : ''}.`, 'success');
+    } else if (mode === 'single' && hasAnyFlights) {
+      const idx = parseInt(overlay.querySelector('#re-fare-rev-pick').value, 10);
+      if (currentRoteiro.flights[idx]) {
+        currentRoteiro.flights[idx].price = total;
+        currentRoteiro.flights[idx].currency = cur;
+      }
+      delete currentRoteiro.pricing.airTotalFare;
+      delete currentRoteiro.pricing.airTotalCurrency;
+      showToast(`${fmt(total, cur)} aplicado ao voo selecionado.`, 'success');
+    } else {
+      // metadata
+      currentRoteiro.pricing.airTotalFare = total;
+      currentRoteiro.pricing.airTotalCurrency = cur;
+      showToast(`Total ${fmt(total, cur)} salvo como total da cotação.`, 'success');
+    }
+    rerenderCurrentSection();
+    markDirty();
+    close();
+  });
+}
+
 async function _openAirGdsModal() {
   const overlay = document.createElement('div');
   overlay.className = 're-img-modal-overlay';
@@ -4904,6 +5104,13 @@ async function handleEditorClick(e) {
     case 'air-gds':
       currentRoteiro = collectFormData();
       _openAirGdsModal();
+      break;
+
+    /* v4.62.32: handler "Revisar tarifa" — reabre radios distribuir/voo único/metadata
+       usando pricing.airFareDetails salvo (sem precisar colar texto GDS de novo) */
+    case 'fare-review':
+      currentRoteiro = collectFormData();
+      _openFareReviewModal();
       break;
 
     /* v4.62.27: handler do botão "Codificar reserva hotel" (HHL/HTL Amadeus/Sabre/Galileo) */
