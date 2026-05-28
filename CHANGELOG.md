@@ -6,6 +6,69 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.62.31+20260527-editor-servicos-form-unico-cards] — 2026-05-27
+
+Release **EDITOR — SERVIÇOS REFEITO** (form único + cards) — pedido do Renê:
+
+> *"eu nao pedi pra juntar as abas voos e hotéis, valores e opcionais em um
+> form só??? agora que estamos codificando a tarifa de áreo e hotel ficou
+> uma coisa estranha tudo isso... revise tudo isso. aproveite e olhe pra
+> layout... esta quebrando na pagina (lateralmente), com colunas com campos
+> pequenos, preenchimento com visibilidade ruim... precisa refazer"*
+
+**Problemas reconhecidos**:
+1. Sub-tabs internas (Aéreo+Hotéis / Valores / Opcionais) violavam o pedido
+   original de "form único" da v4.62.19. Eu interpretei errado.
+2. Tabelas 10-11 colunas estouravam lateralmente — inputs de 90px ilegíveis
+   (preço, horário, idade), labels só no `<th>` distantes do input.
+3. Pós-v4.62.24 (preço inline) ficou ainda mais largo, agravando overflow.
+
+**Solução (v4.62.31)**:
+- **Form único em scroll vertical**. 4 blocos sequenciais sem cliques:
+  1. ✈ Voos — header com [Codificar do GDS] + [+ Adicionar]
+  2. 🏨 Hotéis — header com [Codificar reserva] + [+ Adicionar]
+  3. ⭐ Opcionais — header com [+ Adicionar]
+  4. 💰 Resumo & exibição — moeda, validade, modo, disclaimer, notas, total
+- **Card-based layout** substituindo tabelas:
+  - Cada item = 1 card com padding 14×16, border subtle, hover gold leve
+  - Labels EM CIMA do input (não em `<th>` distante)
+  - Grid CSS responsivo: `auto-fit minmax(160px, 1fr)` — quebra natural sem overflow
+  - Inputs largura natural com `width:100%; min-width:0` no svc-field
+  - Datas/horas: 4 fields em 1 row que quebra em 2+2 em containers estreitos
+  - Preço+Moeda+delete numa row dedicada com grid template fixo
+- **Empty state acolhedor** em cada bloco (em vez de "Nenhum X" em `<td colspan="N">`).
+- **Total único no rodapé** do resumo (não fica repetido em cada sub-bloco).
+- **Warn legado**: se a cotação tem `pricing.services.{aereo|hoteis|...}[]`
+  populado (criada em versão antiga) mas voos/hotéis/opcionais vazios, mostra
+  banner laranja pedindo pra re-cadastrar nos blocos novos.
+
+**Estado removido**:
+- `_servicosActiveSubtab` module-scope eliminado (Serviços não tem state).
+- Handler de click `.re-servicos-subtab` virou comentário no `handleEditorClick`.
+- Reset no `destroyRoteiroEditor` removido.
+
+**Estado preservado**:
+- `renderHoteisSection`, `renderValoresSection`, `renderOpcionaisSection`
+  ficam intactas pra `case 2/3/4` (hidden no SIDEBAR_ORDER mas seguem
+  funcionais — defesa contra navegação direta por URL ou import legado).
+- `_recalcServiceTotalsInPlace` atualizado pra suportar AMBOS layouts
+  (novo `.svc-totals` no resumo + legado `#re-svc-totals` como fallback).
+- Schema 100% inalterado: `flights[]`, `hotels[]`, `optionals[]`,
+  `pricing.{currency,validUntil,disclaimer}`, `pricing.services.{notesGeral,
+  displayMode}` — mesma collectFormData (data-flight/data-hotel/data-opt/
+  data-field/data-svc-field).
+
+**CSS injetado inline** via `<style data-svc-css="v4.62.31">` no topo da
+section. Variáveis do design system (--brand-gold, --border-subtle,
+--bg-surface, --text-*). Sem edição em css/app.css.
+
+**Princípio CLAUDE.md §10 aplicado**: quando Renê apontou layout quebrado +
+tabs erradas, auditei o COMPONENTE INTEIRO (todos os 3 sub-tabs antigos +
+header + footer + empty states + responsive). Refeitos juntos pra o user
+não ter que voltar 3 vezes.
+
+---
+
 ## [4.62.30+20260527-editor-cliente-salesforce-opportunity-id] — 2026-05-27
 
 Release **EDITOR — CAMPO OPORTUNIDADE SALESFORCE** (passo 1 de 2):

@@ -566,46 +566,470 @@ function renderSectionContent(index) {
 }
 
 /**
- * v4.62.19 Fase D: aba "Serviços" consolida Aéreo/Hotéis (2), Valores (3) e
- * Opcionais (4) em sub-tabs internos. Cada sub-tab delega pro renderer
- * existente — schema preservado, só agrupa visualmente. Estado da sub-tab
- * ativa fica em _servicosActiveSubtab module-scope (default 'aereo').
+ * v4.62.31: refator completo da aba "Serviços" — form ÚNICO em scroll
+ * (sem sub-tabs internas). 4 blocos sequenciais:
+ *   1. Voos (cards, não tabela) + botão "Codificar do GDS"
+ *   2. Hotéis (cards) + botão "Codificar reserva"
+ *   3. Opcionais (cards)
+ *   4. Resumo: moeda default, validade, modo exibição, disclaimer, notas,
+ *      footer com total por moeda (voos+hotéis+opcionais)
+ *
+ * Card layout substitui tabela 10-11 colunas. Cada item ocupa altura
+ * própria com label EM CIMA do input + grid responsivo — fim do overflow
+ * lateral e dos campos de 90px ilegíveis.
+ *
+ * Schema preservado: flights[]/hotels[]/optionals[]/pricing.* iguais.
+ * As renders legacy renderHoteisSection/renderValoresSection/renderOpcionaisSection
+ * ficam intactas (case 2/3/4 estão hidden no SIDEBAR_ORDER, mas seguem
+ * funcionais pra compat).
  */
-let _servicosActiveSubtab = 'aereo';
-
 function renderServicosSection() {
-  const subs = [
-    { id: 'aereo',     label: 'Aéreo e Hotéis', icon: '✈' },
-    { id: 'valores',   label: 'Valores',         icon: '💰' },
-    { id: 'opcionais', label: 'Opcionais',       icon: '⭐' },
-  ];
-  const active = _servicosActiveSubtab;
-  const body = active === 'valores'  ? renderValoresSection()
-             : active === 'opcionais' ? renderOpcionaisSection()
-             : renderHoteisSection();
-
   return `
-    <div class="re-section-title">Serviços</div>
-    <p style="font-size:0.8125rem;color:var(--text-muted);margin:-4px 0 14px;line-height:1.5;">
-      Aéreo, hotéis, valores e opcionais agora num só lugar — alterne nas abas abaixo.
+    ${_servicosStyles()}
+    <h2 class="re-section-title">Serviços</h2>
+    <p class="re-briefing-intro" style="margin-bottom:18px;">
+      Voos, hotéis, opcionais e resumo financeiro num só lugar. Cada item tem preço inline.
     </p>
 
-    <div class="re-servicos-subtabs" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:18px;
-      border-bottom:1px solid var(--border-subtle,#e5e7eb);padding-bottom:0;">
-      ${subs.map(s => `
-        <button class="re-servicos-subtab" data-subtab="${s.id}"
-          style="padding:8px 16px;background:transparent;border:none;border-bottom:2px solid ${active === s.id ? 'var(--brand-gold,#D4A843)' : 'transparent'};
-          color:${active === s.id ? 'var(--text-primary)' : 'var(--text-muted)'};
-          font-size:0.8125rem;font-weight:${active === s.id ? '600' : '500'};
-          cursor:pointer;font-family:inherit;transition:all 0.12s;display:inline-flex;align-items:center;gap:6px;">
-          <span>${s.icon}</span><span>${esc(s.label)}</span>
-        </button>
-      `).join('')}
-    </div>
+    ${renderFlightsBlock()}
+    ${renderHotelsBlock()}
+    ${renderOptionalsBlock()}
+    ${renderPricingResumeBlock()}
+  `;
+}
 
-    <div id="re-servicos-body">
-      ${body}
+/* CSS dos cards do Serviços. Injetado inline na primeira render — evita
+ * mexer em css/app.css. Usa variáveis do design system (--brand-gold,
+ * --border-subtle, --bg-surface, --text-*). */
+function _servicosStyles() {
+  return `
+    <style data-svc-css="v4.62.31">
+      .svc-block { margin-bottom: 36px; }
+      .svc-block-header {
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 12px; flex-wrap: wrap; margin-bottom: 12px;
+        padding-bottom: 8px; border-bottom: 1px solid var(--border-subtle, #e5e7eb);
+      }
+      .svc-block-title {
+        font-size: 1.0625rem; font-weight: 600; color: var(--text-primary);
+        margin: 0; display: inline-flex; align-items: center; gap: 8px;
+      }
+      .svc-block-count {
+        font-size: 0.72rem; color: var(--text-muted); font-weight: 500;
+        background: var(--bg-surface); padding: 2px 8px; border-radius: 999px;
+      }
+      .svc-block-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+      .svc-cards { display: flex; flex-direction: column; gap: 10px; }
+      .svc-card {
+        background: var(--bg-card, #fff);
+        border: 1px solid var(--border-subtle, #e5e7eb);
+        border-radius: 8px;
+        padding: 14px 16px;
+        display: flex; flex-direction: column; gap: 10px;
+        transition: border-color .12s, box-shadow .12s;
+      }
+      .svc-card:hover { border-color: rgba(212,168,67,0.4); }
+      .svc-card-row {
+        display: grid; gap: 12px;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      }
+      .svc-card-row.svc-row-2 { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+      .svc-card-row.svc-row-price {
+        grid-template-columns: minmax(140px, 200px) minmax(100px, 130px) 1fr auto;
+        align-items: end;
+      }
+      .svc-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+      .svc-field-label {
+        font-size: 0.7rem; color: var(--text-muted); font-weight: 600;
+        text-transform: uppercase; letter-spacing: .04em;
+      }
+      .svc-field-input,
+      .svc-field-select {
+        width: 100%; box-sizing: border-box;
+        padding: 8px 10px;
+        font-size: 0.875rem;
+        border: 1px solid var(--border-subtle, #e5e7eb);
+        border-radius: 6px;
+        background: var(--bg-input, #fff);
+        color: var(--text-primary);
+        font-family: inherit;
+        transition: border-color .12s, box-shadow .12s;
+      }
+      .svc-field-input:focus,
+      .svc-field-select:focus {
+        outline: none;
+        border-color: var(--brand-gold, #D4A843);
+        box-shadow: 0 0 0 2px rgba(212,168,67,0.15);
+      }
+      .svc-field-input[readonly] { background: var(--bg-surface); opacity: .75; }
+      .svc-card-delete {
+        background: transparent; border: 1px solid var(--border-subtle, #e5e7eb);
+        color: var(--text-muted); width: 32px; height: 32px;
+        border-radius: 6px; cursor: pointer; align-self: end;
+        display: inline-flex; align-items: center; justify-content: center;
+        transition: all .12s;
+      }
+      .svc-card-delete:hover {
+        color: var(--color-danger, #EF4444);
+        border-color: rgba(239,68,68,0.4); background: rgba(239,68,68,0.04);
+      }
+      .svc-empty {
+        text-align: center; padding: 24px 16px;
+        color: var(--text-muted); font-size: 0.875rem;
+        background: var(--bg-surface); border: 1px dashed var(--border-subtle, #e5e7eb);
+        border-radius: 8px;
+      }
+      .svc-totals {
+        margin-top: 8px; padding: 16px 18px; border-radius: 10px;
+        background: rgba(212,168,67,0.06);
+        border: 1px solid rgba(212,168,67,0.3);
+        display: flex; gap: 24px; flex-wrap: wrap; align-items: baseline;
+      }
+      .svc-totals-label {
+        font-size: 0.72rem; font-weight: 700; color: var(--text-muted);
+        text-transform: uppercase; letter-spacing: .06em;
+      }
+      .svc-totals-value {
+        font-size: 1.125rem; font-weight: 700; color: var(--text-primary);
+      }
+      .svc-totals-sep { color: var(--text-muted); }
+      .svc-legacy-warn {
+        margin: 10px 0; padding: 12px 14px; border-radius: 6px;
+        background: rgba(245,158,11,0.08); border-left: 3px solid #F59E0B;
+        font-size: 0.8125rem; color: var(--text-secondary); line-height: 1.5;
+      }
+    </style>
+  `;
+}
+
+/* ── BLOCO VOOS ─────────────────────────────────────────────── */
+function renderFlightsBlock() {
+  const flights = currentRoteiro.flights || [];
+  return `
+    <div class="svc-block">
+      <div class="svc-block-header">
+        <h3 class="svc-block-title">
+          <span>✈</span><span>Voos</span>
+          ${flights.length ? `<span class="svc-block-count">${flights.length} ${flights.length === 1 ? 'voo' : 'voos'}</span>` : ''}
+        </h3>
+        <div class="svc-block-actions">
+          <button class="btn btn-secondary btn-sm" data-action="air-gds"
+            style="font-size:0.8125rem;display:inline-flex;align-items:center;gap:6px;">
+            ✈ Codificar do GDS
+          </button>
+          <button class="btn btn-secondary btn-sm" data-action="add-flight"
+            style="font-size:0.8125rem;">+ Adicionar voo</button>
+        </div>
+      </div>
+      <div class="svc-cards" id="re-flights-body">
+        ${flights.length
+          ? flights.map((f, i) => _renderFlightCard(f, i)).join('')
+          : `<div class="svc-empty">Nenhum voo cadastrado. Cole uma tarifa GDS ou clique "+ Adicionar voo".</div>`}
+      </div>
     </div>
+  `;
+}
+
+function _renderFlightCard(f, i) {
+  return `
+    <div class="svc-card" data-flight-idx="${i}">
+      <div class="svc-card-row svc-row-2">
+        <div class="svc-field">
+          <span class="svc-field-label">Cia Aérea</span>
+          <input class="svc-field-input" data-flight="airline" value="${esc(f.airline || '')}" placeholder="Ex: LATAM" />
+        </div>
+        <div class="svc-field">
+          <span class="svc-field-label">Voo</span>
+          <input class="svc-field-input" data-flight="flightNumber" value="${esc(f.flightNumber || '')}" placeholder="Ex: LA8064" />
+        </div>
+      </div>
+      <div class="svc-card-row svc-row-2">
+        <div class="svc-field">
+          <span class="svc-field-label">Origem</span>
+          <input class="svc-field-input" data-flight="originCity" value="${esc(f.originCity || '')}" placeholder="Cidade ou IATA" />
+        </div>
+        <div class="svc-field">
+          <span class="svc-field-label">Destino</span>
+          <input class="svc-field-input" data-flight="destinationCity" value="${esc(f.destinationCity || '')}" placeholder="Cidade ou IATA" />
+        </div>
+      </div>
+      <div class="svc-card-row">
+        <div class="svc-field">
+          <span class="svc-field-label">Data saída</span>
+          <input class="svc-field-input" data-flight="departureDate" type="date" value="${f.departureDate || ''}" />
+        </div>
+        <div class="svc-field">
+          <span class="svc-field-label">Hora saída</span>
+          <input class="svc-field-input" data-flight="departureTime" type="time" value="${f.departureTime || ''}" />
+        </div>
+        <div class="svc-field">
+          <span class="svc-field-label">Data chegada</span>
+          <input class="svc-field-input" data-flight="arrivalDate" type="date" value="${f.arrivalDate || ''}" />
+        </div>
+        <div class="svc-field">
+          <span class="svc-field-label">Hora chegada</span>
+          <input class="svc-field-input" data-flight="arrivalTime" type="time" value="${f.arrivalTime || ''}" />
+        </div>
+      </div>
+      <div class="svc-card-row svc-row-price">
+        <div class="svc-field">
+          <span class="svc-field-label">Preço</span>
+          <input class="svc-field-input" data-flight="price" type="number" step="0.01" min="0" value="${f.price ?? ''}" placeholder="0.00" />
+        </div>
+        <div class="svc-field">
+          <span class="svc-field-label">Moeda</span>
+          ${_currencySelectCard('data-flight="currency"', f.currency || 'BRL')}
+        </div>
+        <div></div>
+        <button class="svc-card-delete" data-action="remove-flight" data-idx="${i}" title="Remover voo">✕</button>
+      </div>
+    </div>
+  `;
+}
+
+/* ── BLOCO HOTÉIS ───────────────────────────────────────────── */
+function renderHotelsBlock() {
+  const hotels = currentRoteiro.hotels || [];
+  return `
+    <div class="svc-block">
+      <div class="svc-block-header">
+        <h3 class="svc-block-title">
+          <span>🏨</span><span>Hotéis</span>
+          ${hotels.length ? `<span class="svc-block-count">${hotels.length} ${hotels.length === 1 ? 'hotel' : 'hotéis'}</span>` : ''}
+        </h3>
+        <div class="svc-block-actions">
+          <button class="btn btn-secondary btn-sm" data-action="hotel-decode"
+            style="font-size:0.8125rem;display:inline-flex;align-items:center;gap:6px;">
+            🏨 Codificar reserva
+          </button>
+          <button class="btn btn-secondary btn-sm" data-action="add-hotel"
+            style="font-size:0.8125rem;">+ Adicionar hotel</button>
+        </div>
+      </div>
+      <div class="svc-cards" id="re-hotels-body">
+        ${hotels.length
+          ? hotels.map((h, i) => _renderHotelCard(h, i)).join('')
+          : `<div class="svc-empty">Nenhum hotel cadastrado. Cole reserva GDS ou clique "+ Adicionar hotel".</div>`}
+      </div>
+    </div>
+  `;
+}
+
+function _renderHotelCard(h, i) {
+  const nights = (h.checkIn && h.checkOut) ? diffDays(h.checkIn, h.checkOut) : (h.nights || '');
+  return `
+    <div class="svc-card" data-hotel-idx="${i}">
+      <div class="svc-card-row svc-row-2">
+        <div class="svc-field">
+          <span class="svc-field-label">Nome do hotel</span>
+          <input class="svc-field-input" data-hotel="hotelName" value="${esc(h.hotelName || '')}" placeholder="Ex: Belmond Copacabana Palace" />
+        </div>
+        <div class="svc-field">
+          <span class="svc-field-label">Cidade</span>
+          <input class="svc-field-input" data-hotel="city" value="${esc(h.city || '')}" placeholder="Cidade" />
+        </div>
+      </div>
+      <div class="svc-card-row svc-row-2">
+        <div class="svc-field">
+          <span class="svc-field-label">Categoria do quarto</span>
+          <input class="svc-field-input" data-hotel="roomType" value="${esc(h.roomType || '')}" placeholder="Ex: Deluxe Ocean View" />
+        </div>
+        <div class="svc-field">
+          <span class="svc-field-label">Regime</span>
+          <input class="svc-field-input" data-hotel="regime" value="${esc(h.regime || '')}" placeholder="Ex: Café da manhã" />
+        </div>
+      </div>
+      <div class="svc-card-row">
+        <div class="svc-field">
+          <span class="svc-field-label">Check-in</span>
+          <input class="svc-field-input" data-hotel="checkIn" type="date" value="${h.checkIn || ''}" />
+        </div>
+        <div class="svc-field">
+          <span class="svc-field-label">Check-out</span>
+          <input class="svc-field-input" data-hotel="checkOut" type="date" value="${h.checkOut || ''}" />
+        </div>
+        <div class="svc-field">
+          <span class="svc-field-label">Noites</span>
+          <input class="svc-field-input" data-hotel="nights" type="number" value="${nights}" readonly />
+        </div>
+      </div>
+      <div class="svc-card-row svc-row-price">
+        <div class="svc-field">
+          <span class="svc-field-label">Preço</span>
+          <input class="svc-field-input" data-hotel="price" type="number" step="0.01" min="0" value="${h.price ?? ''}" placeholder="0.00" />
+        </div>
+        <div class="svc-field">
+          <span class="svc-field-label">Moeda</span>
+          ${_currencySelectCard('data-hotel="currency"', h.currency || 'BRL')}
+        </div>
+        <div></div>
+        <button class="svc-card-delete" data-action="remove-hotel" data-idx="${i}" title="Remover hotel">✕</button>
+      </div>
+    </div>
+  `;
+}
+
+/* ── BLOCO OPCIONAIS ────────────────────────────────────────── */
+function renderOptionalsBlock() {
+  const opts = currentRoteiro.optionals || [];
+  return `
+    <div class="svc-block">
+      <div class="svc-block-header">
+        <h3 class="svc-block-title">
+          <span>⭐</span><span>Opcionais</span>
+          ${opts.length ? `<span class="svc-block-count">${opts.length} ${opts.length === 1 ? 'item' : 'itens'}</span>` : ''}
+        </h3>
+        <div class="svc-block-actions">
+          <button class="btn btn-secondary btn-sm" data-action="add-opt"
+            style="font-size:0.8125rem;">+ Adicionar opcional</button>
+        </div>
+      </div>
+      <div class="svc-cards" id="re-optionals-body">
+        ${opts.length
+          ? opts.map((o, i) => _renderOptionalCard(o, i)).join('')
+          : `<div class="svc-empty">Sem opcionais. Use pra passeios, transfers, experiências adicionais que o cliente decide se adiciona.</div>`}
+      </div>
+    </div>
+  `;
+}
+
+function _renderOptionalCard(o, i) {
+  return `
+    <div class="svc-card" data-opt-idx="${i}">
+      <div class="svc-card-row">
+        <div class="svc-field" style="grid-column: 1 / -1;">
+          <span class="svc-field-label">Serviço</span>
+          <input class="svc-field-input" data-opt="service" value="${esc(o.service || '')}" placeholder="Ex: Tour privativo de meio dia em Lisboa" />
+        </div>
+      </div>
+      <div class="svc-card-row">
+        <div class="svc-field">
+          <span class="svc-field-label">Preço adulto</span>
+          <input class="svc-field-input" data-opt="priceAdult" type="number" step="0.01" min="0" value="${o.priceAdult || ''}" placeholder="0.00" />
+        </div>
+        <div class="svc-field">
+          <span class="svc-field-label">Preço criança</span>
+          <input class="svc-field-input" data-opt="priceChild" type="number" step="0.01" min="0" value="${o.priceChild || ''}" placeholder="0.00" />
+        </div>
+        <div class="svc-field">
+          <span class="svc-field-label">Moeda</span>
+          ${_currencySelectCard('data-opt="currency"', o.currency || 'BRL')}
+        </div>
+      </div>
+      <div class="svc-card-row svc-row-price">
+        <div class="svc-field" style="grid-column: 1 / span 3;">
+          <span class="svc-field-label">Observações</span>
+          <input class="svc-field-input" data-opt="notes" value="${esc(o.notes || '')}" placeholder="Notas internas ou descrição extra" />
+        </div>
+        <button class="svc-card-delete" data-action="remove-opt" data-idx="${i}" title="Remover opcional">✕</button>
+      </div>
+    </div>
+  `;
+}
+
+/* ── BLOCO RESUMO ───────────────────────────────────────────── */
+function renderPricingResumeBlock() {
+  const p = currentRoteiro.pricing || {};
+  const s = p.services || {};
+  const currency = p.currency || 'BRL';
+  const displayMode = s.displayMode === 'grouped' ? 'grouped' : 'total';
+
+  // Soma dos itens inline (voos+hotéis+opcionais) por moeda
+  const totals = _sumServicePrices();
+  const totalEntries = Object.entries(totals);
+
+  // Warn legado: se doc antigo tinha pricing.services.{aereo|hoteis|...}[] com itens
+  // mas nenhum voo/hotel/opcional inline, sinaliza.
+  const legacyKeys = ['aereo', 'hoteis', 'traslados', 'experiencias', 'servicosAdicionais'];
+  const legacyCount = legacyKeys.reduce((sum, k) => sum + ((s[k] || []).length), 0);
+  const hasInline = (currentRoteiro.flights?.length || 0) + (currentRoteiro.hotels?.length || 0) + (currentRoteiro.optionals?.length || 0) > 0;
+  const showLegacyWarn = legacyCount > 0 && !hasInline;
+
+  return `
+    <div class="svc-block">
+      <div class="svc-block-header">
+        <h3 class="svc-block-title">
+          <span>💰</span><span>Resumo &amp; exibição</span>
+        </h3>
+      </div>
+
+      ${showLegacyWarn ? `
+        <div class="svc-legacy-warn">
+          <strong>Atenção</strong> — esta cotação foi criada em versão antiga e tem ${legacyCount}
+          item${legacyCount > 1 ? 's' : ''} em <em>Valores legados</em> (Aéreo/Hotéis/Traslados/Experiências/Serviços).
+          Re-cadastre nos blocos acima (Voos, Hotéis, Opcionais) pra aparecer no novo layout e nos exports.
+        </div>
+      ` : ''}
+
+      <div class="svc-cards">
+        <div class="svc-card">
+          <div class="svc-card-row">
+            <div class="svc-field">
+              <span class="svc-field-label">Moeda padrão</span>
+              <select class="svc-field-select" data-field="pricing.currency">
+                <option value="BRL" ${currency==='BRL'?'selected':''}>BRL — Real</option>
+                <option value="USD" ${currency==='USD'?'selected':''}>USD — Dólar</option>
+                <option value="EUR" ${currency==='EUR'?'selected':''}>EUR — Euro</option>
+                <option value="GBP" ${currency==='GBP'?'selected':''}>GBP — Libra</option>
+                <option value="CHF" ${currency==='CHF'?'selected':''}>CHF — Franco suíço</option>
+              </select>
+            </div>
+            <div class="svc-field">
+              <span class="svc-field-label">Validade da proposta</span>
+              <input class="svc-field-input" type="date" data-field="pricing.validUntil" value="${p.validUntil || ''}" />
+            </div>
+            <div class="svc-field" style="grid-column: span 2;">
+              <span class="svc-field-label">Como o cliente vê os valores</span>
+              <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+                <label class="re-pill-radio ${displayMode==='total' ? 'active' : ''}">
+                  <input type="radio" name="pricing-display-mode" value="total" ${displayMode==='total'?'checked':''} data-svc-field="displayMode" />
+                  <span>Total único</span>
+                </label>
+                <label class="re-pill-radio ${displayMode==='grouped' ? 'active' : ''}">
+                  <input type="radio" name="pricing-display-mode" value="grouped" ${displayMode==='grouped'?'checked':''} data-svc-field="displayMode" />
+                  <span>Subtotais por categoria</span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div class="svc-card-row svc-row-2">
+            <div class="svc-field">
+              <span class="svc-field-label">Disclaimer (aparece no PDF/link público)</span>
+              <textarea class="svc-field-input" data-field="pricing.disclaimer" rows="2" style="resize:vertical;min-height:60px;">${esc(p.disclaimer || '')}</textarea>
+            </div>
+            <div class="svc-field">
+              <span class="svc-field-label">Notas internas (não vai pro cliente)</span>
+              <textarea class="svc-field-input" data-svc-field="notesGeral" rows="2" style="resize:vertical;min-height:60px;" placeholder="Anotações operacionais sobre precificação...">${esc(s.notesGeral || '')}</textarea>
+            </div>
+          </div>
+        </div>
+
+        ${totalEntries.length ? `
+          <div class="svc-totals">
+            <span class="svc-totals-label">Total dos serviços</span>
+            ${totalEntries.map(([cur, sum], idx) => `
+              ${idx > 0 ? '<span class="svc-totals-sep">·</span>' : ''}
+              <span class="svc-totals-value">${_fmtBRL(sum, cur)}</span>
+            `).join('')}
+          </div>
+        ` : `
+          <div class="svc-empty" style="text-align:left;padding:14px 16px;">
+            Cadastre voos, hotéis ou opcionais com preço pra ver o total consolidado por moeda.
+          </div>
+        `}
+      </div>
+    </div>
+  `;
+}
+
+/* Select de moeda com classe svc-field-select pra herdar o styling do card */
+function _currencySelectCard(attrs, current) {
+  const opts = ['BRL', 'USD', 'EUR', 'GBP', 'CHF', 'CAD', 'ARS', 'CLP'];
+  return `
+    <select class="svc-field-select" ${attrs}>
+      ${opts.map(c => `<option value="${c}" ${current === c ? 'selected' : ''}>${c}</option>`).join('')}
+    </select>
   `;
 }
 
@@ -1409,11 +1833,35 @@ function _sumServicePrices() {
 }
 
 /**
- * v4.62.25: atualiza só o bloco #re-svc-totals com totais frescos do DOM,
- * sem re-renderizar a section inteira (preserva foco no input que user digita).
- * CLAUDE.md §11.g. Cria o bloco se não existir + remove se totais zerados.
+ * v4.62.25+v4.62.31: atualiza só o bloco de totais com valores frescos do
+ * DOM, sem re-renderizar a section inteira (preserva foco no input que user
+ * digita — CLAUDE.md §11.g). Suporta o layout NOVO (.svc-totals dentro do
+ * resumo) e o LEGADO (#re-svc-totals, das pages 2/3/4 hidden no SIDEBAR_ORDER).
  */
 function _recalcServiceTotalsInPlace() {
+  const totals = _sumServicePrices();
+  const entries = Object.entries(totals);
+
+  // NOVO layout (v4.62.31): substitui INNER do .svc-totals dentro do resumo
+  const newEl = document.querySelector('.svc-totals');
+  if (newEl) {
+    if (!entries.length) {
+      newEl.outerHTML = `<div class="svc-empty" style="text-align:left;padding:14px 16px;">
+        Cadastre voos, hotéis ou opcionais com preço pra ver o total consolidado por moeda.
+      </div>`;
+      return;
+    }
+    newEl.innerHTML = `
+      <span class="svc-totals-label">Total dos serviços</span>
+      ${entries.map(([cur, sum], idx) => `
+        ${idx > 0 ? '<span class="svc-totals-sep">·</span>' : ''}
+        <span class="svc-totals-value">${_fmtBRL(sum, cur)}</span>
+      `).join('')}
+    `;
+    return;
+  }
+
+  // FALLBACK pra páginas legacy que ainda usam #re-svc-totals
   const el = document.getElementById('re-svc-totals');
   const tpl = _renderServiceTotals();
   if (!tpl) {
@@ -1426,10 +1874,7 @@ function _recalcServiceTotalsInPlace() {
   if (el) {
     el.replaceWith(fresh);
   } else {
-    // Bloco ainda não foi criado (primeiro preço) — anexa ao fim do conteúdo
-    // da seção atual de Serviços.
-    document.getElementById('re-servicos-body')?.appendChild(fresh) ||
-      document.getElementById('re-content-area')?.appendChild(fresh);
+    document.getElementById('re-content-area')?.appendChild(fresh);
   }
 }
 function _renderServiceTotals() {
@@ -4298,16 +4743,8 @@ function generateDaysFromTravel() {
 /* ─── Event delegation handler ────────────────────────────── */
 // 4.43.0+ Sprint 4 — async porque alguns handlers (generate-tasks) usam await.
 async function handleEditorClick(e) {
-  // v4.62.19 Fase D: sub-tabs internas da aba Serviços. Capturado ANTES do
-  // resto pra interceptar antes do [data-action] filter.
-  const subtabBtn = e.target.closest('.re-servicos-subtab');
-  if (subtabBtn) {
-    e.preventDefault();
-    currentRoteiro = collectFormData();
-    _servicosActiveSubtab = subtabBtn.dataset.subtab || 'aereo';
-    rerenderCurrentSection();
-    return;
-  }
+  // v4.62.31: sub-tabs removidas — Serviços virou form único. Handler aqui
+  // intencionalmente vazio nesse ponto (era listener das sub-tabs).
 
   const target = e.target.closest('[data-action]');
   if (!target) {
@@ -6423,10 +6860,7 @@ export function destroyRoteiroEditor() {
   currentRoteiro = null;
   isDirty = false;
   allDestinations = [];
-  // v4.62.23: reset state module-scope pra não contaminar próxima cotação.
-  // _bankImagesCache fica (pode reutilizar entre cotações) mas sub-tab Serviços
-  // volta pro default 'aereo'.
-  _servicosActiveSubtab = 'aereo';
+  // v4.62.31: sub-tab state removida (Serviços virou form único, sem state).
   allAreas = [];
   activeSection = 0;
 }

@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 62,
-  patch: 30,
-  build: '20260527-editor-cliente-salesforce-opportunity-id',
+  patch: 31,
+  build: '20260527-editor-servicos-form-unico-cards',
 };
 
 /** "1.2.0" */
