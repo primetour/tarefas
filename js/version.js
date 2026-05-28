@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 19,
-  build: '20260528-cotacoes-default-template-seed',
+  patch: 20,
+  build: '20260528-templates-manual-banco-seed',
 };
 
 /** "1.2.0" */

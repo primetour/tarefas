@@ -22,7 +22,7 @@ import {
   renderTemplate as renderTemplateService, downloadBlob,
   duplicateTemplate as duplicateTemplateService,
   validateTemplateFile, formatFileSize,
-  TEMPLATE_MODULES, TEMPLATE_FORMATS, MODULE_MAP, FORMAT_MAP, PLACEHOLDERS_SPEC,
+  TEMPLATE_MODULES, TEMPLATE_FORMATS, MODULE_MAP, FORMAT_MAP, PLACEHOLDERS_SPEC, PLACEHOLDER_CATEGORIES,
 } from '../services/templates.js';
 import { fetchAreas } from '../services/portal.js';
 
@@ -210,6 +210,9 @@ export async function renderTemplatesLibrary(container) {
       action: 'upload-template',
       icon: '+',
     } : null,
+    secondary: [
+      { label: '📖 Manual', action: 'open-manual', title: 'Dicionário de placeholders + guia de autoria' },
+    ],
   });
 
   container.innerHTML = `
@@ -243,8 +246,8 @@ export async function renderTemplatesLibrary(container) {
   const headerEl = container.querySelector('.uikit-page-header');
   if (headerEl) {
     headerEl.addEventListener('click', (e) => {
-      const btn = e.target.closest('[data-action="upload-template"]');
-      if (btn) _openUploadModal(container);
+      if (e.target.closest('[data-action="upload-template"]')) _openUploadModal(container);
+      if (e.target.closest('[data-action="open-manual"]')) _openManualModal();
     }, { signal });
   }
 
@@ -1076,6 +1079,158 @@ function _openUploadModal(container) {
       if (hintEl) hintEl.textContent = '';
     }
   });
+}
+
+/* ─── Manual de Templates modal (v4.63.20+) ─────────────────────────── */
+
+const GUIDE_URL = 'https://github.com/primetour/tarefas/blob/main/docs/TEMPLATES-AUTHORING-GUIDE.md';
+
+function _openManualModal() {
+  // Modal full-width com tabs por módulo + categorias + tabela placeholders
+  const wrap = document.createElement('div');
+  wrap.className = 'tpl-modal-overlay';
+  wrap.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:9999;display:flex;align-items:center;justify-content:center;';
+  wrap.innerHTML = `
+    <div style="background:#fff;border-radius:12px;max-width:1100px;width:96%;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,0.25);">
+      <div style="padding:18px 24px;border-bottom:1px solid var(--border-subtle);display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
+        <div>
+          <h2 style="margin:0;font-size:1.125rem;font-weight:700;color:var(--text-primary);">📖 Manual de Templates</h2>
+          <p style="margin:3px 0 0;font-size:0.75rem;color:var(--text-secondary);">Dicionário de placeholders + orientações HTML/CSS/DOCX/PPTX pra construir templates customizados</p>
+        </div>
+        <button class="btn btn-ghost btn-sm" id="man-close" style="font-size:1.1rem;">✕</button>
+      </div>
+
+      <div style="padding:12px 24px;border-bottom:1px solid var(--border-subtle);display:flex;gap:12px;flex-wrap:wrap;align-items:center;flex-shrink:0;background:var(--bg-surface,#FAFAF7);">
+        <span style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;">Módulo:</span>
+        <div id="man-tabs" style="display:flex;gap:6px;flex-wrap:wrap;">
+          ${TEMPLATE_MODULES.map(m => `<button class="btn btn-sm man-tab" data-mod="${_esc(m.id)}" style="padding:4px 10px;font-size:0.75rem;">${m.icon} ${_esc(m.label)}</button>`).join('')}
+        </div>
+        <a href="${GUIDE_URL}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm" style="margin-left:auto;font-size:0.7rem;">↗ Guia completo no GitHub</a>
+      </div>
+
+      <div id="man-content" style="overflow-y:auto;padding:18px 24px;flex:1;">
+        <p style="font-size:0.8125rem;color:var(--text-secondary);">Carregando…</p>
+      </div>
+
+      <div style="padding:12px 24px;border-top:1px solid var(--border-subtle);display:flex;justify-content:space-between;align-items:center;flex-shrink:0;background:var(--bg-surface,#FAFAF7);">
+        <span style="font-size:0.7rem;color:var(--text-muted);">
+          💡 Use estes paths EXATAMENTE no seu template (case-sensitive).
+        </span>
+        <button class="btn btn-secondary btn-sm" id="man-close-bottom">Fechar</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(wrap);
+
+  const close = () => wrap.remove();
+  wrap.querySelector('#man-close').onclick = close;
+  wrap.querySelector('#man-close-bottom').onclick = close;
+  wrap.addEventListener('click', (e) => { if (e.target === wrap) close(); });
+  document.addEventListener('keydown', function escH(e) {
+    if (e.key === 'Escape') { close(); document.removeEventListener('keydown', escH); }
+  });
+
+  // Tabs por módulo
+  const _renderModule = (modId) => {
+    wrap.querySelectorAll('.man-tab').forEach(b => {
+      const active = b.dataset.mod === modId;
+      b.style.background = active ? 'var(--brand-gold,#D4A843)' : '';
+      b.style.color = active ? '#0A1628' : '';
+      b.style.fontWeight = active ? '700' : '';
+    });
+    const spec = PLACEHOLDERS_SPEC[modId] || [];
+    if (!spec.length) {
+      wrap.querySelector('#man-content').innerHTML = '<p style="color:var(--text-muted);">Sem placeholders documentados.</p>';
+      return;
+    }
+    // Group by category
+    const byCat = {};
+    spec.forEach(p => {
+      const c = p.category || 'root';
+      if (!byCat[c]) byCat[c] = [];
+      byCat[c].push(p);
+    });
+    const cats = Object.keys(byCat).sort((a, b) =>
+      (PLACEHOLDER_CATEGORIES[a]?.order || 99) - (PLACEHOLDER_CATEGORIES[b]?.order || 99)
+    );
+
+    const reqBadge = (r) => {
+      const colorMap = { always: '#10B981', common: '#3B82F6', optional: '#9CA3AF', computed: '#8B5CF6' };
+      const labelMap = { always: 'Sempre', common: 'Comum', optional: 'Opcional', computed: 'Calculado' };
+      const c = colorMap[r] || '#9CA3AF';
+      return `<span style="background:${c}1a;color:${c};font-size:0.65rem;padding:1px 6px;border-radius:8px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;">${labelMap[r] || r}</span>`;
+    };
+    const typeBadge = (t) => {
+      const c = { string:'#64748B', number:'#0EA5E9', bool:'#A855F7', array:'#F59E0B', object:'#EC4899', url:'#10B981', date:'#06B6D4' }[t] || '#64748B';
+      return `<span style="background:${c}1a;color:${c};font-size:0.65rem;padding:1px 6px;border-radius:8px;font-family:monospace;font-weight:600;">${t}</span>`;
+    };
+
+    const html = cats.map(c => {
+      const meta = PLACEHOLDER_CATEGORIES[c] || { label: c, icon: '📌' };
+      const items = byCat[c];
+      return `
+        <section style="margin-bottom:24px;">
+          <h3 style="margin:0 0 10px;font-size:0.875rem;font-weight:700;color:var(--text-primary);padding:6px 10px;background:var(--bg-callout,#FAF6EC);border-left:3px solid var(--brand-gold,#D4A843);">
+            ${meta.icon} ${_esc(meta.label)} <span style="color:var(--text-muted);font-weight:400;">· ${items.length} ${items.length === 1 ? 'placeholder' : 'placeholders'}</span>
+          </h3>
+          <table style="width:100%;border-collapse:collapse;font-size:0.75rem;">
+            <thead>
+              <tr style="background:var(--bg-surface,#FAFAF7);">
+                <th style="text-align:left;padding:8px;border-bottom:1px solid var(--border-subtle);width:35%;">Path</th>
+                <th style="text-align:left;padding:8px;border-bottom:1px solid var(--border-subtle);width:10%;">Tipo</th>
+                <th style="text-align:left;padding:8px;border-bottom:1px solid var(--border-subtle);width:10%;">Required</th>
+                <th style="text-align:left;padding:8px;border-bottom:1px solid var(--border-subtle);width:20%;">Exemplo</th>
+                <th style="text-align:left;padding:8px;border-bottom:1px solid var(--border-subtle);width:25%;">Descrição</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${items.map(p => `
+                <tr style="border-bottom:1px solid var(--border-subtle);">
+                  <td style="padding:8px;">
+                    <code style="background:var(--bg-surface,#FAFAF7);color:var(--brand-gold,#D4A843);padding:2px 6px;border-radius:3px;font-size:0.7rem;font-weight:600;cursor:pointer;" title="Click pra copiar" data-copy="{{${_esc(p.key)}}}">{{${_esc(p.key)}}}</code>
+                  </td>
+                  <td style="padding:8px;">${typeBadge(p.type || 'string')}</td>
+                  <td style="padding:8px;">${reqBadge(p.required || 'optional')}</td>
+                  <td style="padding:8px;font-family:monospace;font-size:0.7rem;color:var(--text-secondary);">${_esc(String(p.example || '—')).slice(0, 60)}</td>
+                  <td style="padding:8px;color:var(--text-secondary);">${_esc(p.desc || '')}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        </section>
+      `;
+    }).join('');
+
+    wrap.querySelector('#man-content').innerHTML = `
+      <div style="background:var(--bg-callout,#FAF6EC);border-left:3px solid var(--brand-gold,#D4A843);padding:10px 14px;margin-bottom:18px;border-radius:0 6px 6px 0;">
+        <p style="margin:0;font-size:0.75rem;color:var(--text-secondary);line-height:1.6;">
+          <strong>Como usar:</strong> Cada <code>path</code> abaixo está disponível no seu template como variável Handlebars
+          (HTML) ou Mustache (DOCX/PPTX). Click no path pra copiar com chaves duplas <code>{{path}}</code>.
+          Para detalhes finos (cores brand, fontes Poppins, SSRF allowlist, page-breaks, exemplos completos):
+          <a href="${GUIDE_URL}" target="_blank" rel="noopener" style="color:var(--brand-gold,#D4A843);font-weight:600;">↗ guia completo</a>.
+        </p>
+      </div>
+      ${html}
+    `;
+
+    // Click-to-copy
+    wrap.querySelectorAll('code[data-copy]').forEach(c => {
+      c.addEventListener('click', () => {
+        const v = c.dataset.copy;
+        try {
+          navigator.clipboard.writeText(v);
+          toast.success(`Copiado: ${v}`);
+        } catch {}
+      });
+    });
+  };
+
+  wrap.querySelectorAll('.man-tab').forEach(b => {
+    b.addEventListener('click', () => _renderModule(b.dataset.mod));
+  });
+
+  // Inicia com cotações
+  _renderModule('cotacoes');
 }
 
 /* ─── Cleanup (CLAUDE.md §11.j SPA cleanup) ─────────────────────────── */

@@ -89,51 +89,178 @@ export const MODULE_MAP = Object.fromEntries(TEMPLATE_MODULES.map(m => [m.id, m]
 export const MAX_FILE_SIZE_BYTES = 15 * 1024 * 1024; // 15 MB
 
 /**
- * Schema de placeholders disponíveis por módulo. Documento mestre pra que
- * designer/comercial sabe quais variáveis pode usar no template.
- * Atualiza este map quando adapter shapeForTemplate ganhar campos novos.
+ * v4.63.20+ Schema de placeholders ENRIQUECIDO por módulo.
+ *
+ * Cada entry: { key, type, category, required, example, desc }
+ *   - type: 'string' | 'number' | 'bool' | 'array' | 'object' | 'url' | 'date'
+ *   - category: agrupa pra UI dicionário (cliente/viagem/branding/etc.)
+ *   - required: 'always' (sempre presente) | 'common' (geralmente) | 'optional'
+ *   - example: valor real de exemplo pra dar contexto
+ *   - desc: descrição curta
+ *
+ * Documento mestre pra autor de template (HTML/DOCX/PPTX). Atualize quando
+ * adapter `roteiroToTemplateData`/`portalToTemplateData`/`bancoToTemplateData`
+ * ganhar campos. Manual completo: docs/TEMPLATES-AUTHORING-GUIDE.md
  */
 export const PLACEHOLDERS_SPEC = {
   cotacoes: [
-    { key: 'cliente.nome',         desc: 'Nome do cliente' },
-    { key: 'cliente.adults',       desc: 'Número de adultos' },
-    { key: 'cliente.children',     desc: 'Número de crianças' },
-    { key: 'viagem.dataInicio',    desc: 'Data início (DD/MM/YYYY)' },
-    { key: 'viagem.dataFim',       desc: 'Data fim (DD/MM/YYYY)' },
-    { key: 'viagem.noites',        desc: 'Número de noites' },
-    { key: 'viagem.destinos',      desc: 'Lista de destinos (string concat)' },
-    { key: 'area.nome',            desc: 'Nome da área/BU (ex: "BTG Partners")' },
-    { key: 'area.logoUrl',         desc: 'URL do logo da BU' },
-    { key: 'dias',                 desc: 'Array de dias do roteiro (loop {{#each dias}})' },
-    { key: 'dias.[i].numero',      desc: 'Número do dia' },
-    { key: 'dias.[i].cidade',      desc: 'Cidade do dia' },
-    { key: 'dias.[i].narrativa',   desc: 'Narrativa do dia' },
-    { key: 'dias.[i].atividades',  desc: 'Array de atividades (loop)' },
-    { key: 'hoteis',               desc: 'Array de hotéis' },
-    { key: 'voos',                 desc: 'Array de voos' },
-    { key: 'precos.totalCasal',    desc: 'Total por casal formatado (R$ X.XXX)' },
-    { key: 'precos.porPessoa',     desc: 'Total por pessoa' },
-    { key: 'precos.moeda',         desc: 'Sigla moeda (BRL/USD/EUR)' },
-    { key: 'inclui',               desc: 'Lista do que inclui' },
-    { key: 'naoInclui',            desc: 'Lista do que não inclui' },
-    { key: 'today',                desc: 'Data de hoje (DD/MM/YYYY)' },
+    // — Root —
+    { key: 'titulo',               type: 'string',  category: 'root',     required: 'optional', example: 'Lua de mel — Itália',           desc: 'Título da cotação' },
+    { key: 'today',                type: 'date',    category: 'root',     required: 'always',   example: '28/05/2026',                    desc: 'Data de hoje DD/MM/YYYY' },
+    { key: 'contact',              type: 'string',  category: 'root',     required: 'optional', example: 'cotacoes@primetour.com.br',     desc: 'Contato pro rodapé/closing' },
+    { key: 'customFooterText',     type: 'string',  category: 'root',     required: 'optional', example: 'PRIMETOUR Lazer · …',           desc: 'Texto rodapé (Áreas → Exports config)' },
+    { key: 'customHeaderText',     type: 'string',  category: 'root',     required: 'optional', example: 'CONFIDENCIAL',                  desc: 'Texto canto sup. direito' },
+    { key: 'hideCover',            type: 'bool',    category: 'root',     required: 'optional', example: 'false',                         desc: 'Pular capa + closing page' },
+    { key: 'hasIncExc',            type: 'bool',    category: 'root',     required: 'computed', example: 'true',                          desc: 'Flag visibilidade Inclui/Exclui' },
+    // — Branding —
+    { key: 'area.nome',            type: 'string',  category: 'branding', required: 'always',   example: 'Lazer',                          desc: 'Nome da área (respeita useExternalName)' },
+    { key: 'area.logoUrl',         type: 'url',     category: 'branding', required: 'common',   example: 'https://pub-…r2.dev/logos/lazer.webp', desc: 'Logo principal (R2)' },
+    { key: 'area.logoUrlAlt',      type: 'url',     category: 'branding', required: 'optional', example: 'https://pub-…r2.dev/logos/lazer-alt.webp', desc: 'Logo alt (fundo claro)' },
+    { key: 'area.corPrimary',      type: 'string',  category: 'branding', required: 'always',   example: '#D4A843',                        desc: 'Cor gold/brand principal' },
+    { key: 'area.corSecondary',    type: 'string',  category: 'branding', required: 'always',   example: '#0F172A',                        desc: 'Cor navy escura (fundo capa)' },
+    { key: 'area.corAccent',       type: 'string',  category: 'branding', required: 'always',   example: '#D4A843',                        desc: 'Cor accent (titles)' },
+    // — Cliente —
+    { key: 'cliente.nome',         type: 'string',  category: 'cliente',  required: 'common',   example: 'João e Maria Silva',             desc: 'Nome do cliente' },
+    { key: 'cliente.adults',       type: 'number',  category: 'cliente',  required: 'common',   example: '2',                              desc: 'Número de adultos' },
+    { key: 'cliente.children',     type: 'number',  category: 'cliente',  required: 'optional', example: '0',                              desc: 'Número de crianças' },
+    { key: 'cliente.email',        type: 'string',  category: 'cliente',  required: 'optional', example: 'joao@…',                         desc: 'Email' },
+    { key: 'cliente.telefone',     type: 'string',  category: 'cliente',  required: 'optional', example: '+55 11 …',                       desc: 'Phone' },
+    { key: 'cliente.adultsLabel',  type: 'string',  category: 'cliente',  required: 'computed', example: '2 adultos',                      desc: 'Label "N adulto(s)" (sem eq helper)' },
+    { key: 'cliente.childrenLabel',type: 'string',  category: 'cliente',  required: 'computed', example: '1 criança',                      desc: 'Label "N criança(s)"' },
+    { key: 'cliente.paxLabel',     type: 'string',  category: 'cliente',  required: 'computed', example: '2 adultos + 1 criança',          desc: 'Label combinado' },
+    // — Viagem —
+    { key: 'viagem.dataInicio',    type: 'date',    category: 'viagem',   required: 'common',   example: '01/10/2026',                     desc: 'Data início DD/MM/YYYY (sem timezone shift)' },
+    { key: 'viagem.dataFim',       type: 'date',    category: 'viagem',   required: 'common',   example: '12/10/2026',                     desc: 'Data fim' },
+    { key: 'viagem.noites',        type: 'number',  category: 'viagem',   required: 'common',   example: '11',                             desc: 'Número de noites' },
+    { key: 'viagem.noitesLabel',   type: 'string',  category: 'viagem',   required: 'computed', example: '11 NOITES',                      desc: 'Label uppercase' },
+    { key: 'viagem.destinos',      type: 'string',  category: 'viagem',   required: 'common',   example: 'Roma · Florença · Veneza',       desc: 'Joined " · "' },
+    { key: 'viagem.destinosLista', type: 'array',   category: 'viagem',   required: 'optional', example: '[{cidade,pais}]',                desc: 'Array detalhado' },
+    // — Dias (loop) —
+    { key: 'dias',                 type: 'array',   category: 'dias',     required: 'common',   example: '[{numero,cidade,…}]',            desc: 'Array de dias (loop {{#each dias}})' },
+    { key: 'dias.[i].numero',      type: 'number',  category: 'dias',     required: 'common',   example: '1',                              desc: 'Dia (1, 2, 3…)' },
+    { key: 'dias.[i].data',        type: 'date',    category: 'dias',     required: 'optional', example: '01/10/2026',                     desc: 'Data do dia' },
+    { key: 'dias.[i].cidade',      type: 'string',  category: 'dias',     required: 'common',   example: 'Roma',                           desc: 'Cidade' },
+    { key: 'dias.[i].narrativa',   type: 'string',  category: 'dias',     required: 'common',   example: 'Chegada em Roma…',               desc: 'Texto descritivo' },
+    { key: 'dias.[i].heroUrl',     type: 'url',     category: 'dias',     required: 'optional', example: 'https://pub-…r2.dev/images/roma.webp', desc: 'Hero image (banco_imagens)' },
+    { key: 'dias.[i].atividades',  type: 'array',   category: 'dias',     required: 'optional', example: '[{hora,descricao}]',             desc: 'Atividades planejadas' },
+    { key: 'dias.[i].pernoite',    type: 'string',  category: 'dias',     required: 'optional', example: 'Roma',                           desc: 'Cidade pernoite' },
+    // — Hotéis —
+    { key: 'hoteis',               type: 'array',   category: 'hoteis',   required: 'optional', example: '[{…}]',                          desc: 'Array hotéis (loop)' },
+    { key: 'hoteis.[i].cidade',    type: 'string',  category: 'hoteis',   required: 'common',   example: 'Roma',                           desc: '' },
+    { key: 'hoteis.[i].nome',      type: 'string',  category: 'hoteis',   required: 'common',   example: 'Hotel de Russie',                desc: '' },
+    { key: 'hoteis.[i].quarto',    type: 'string',  category: 'hoteis',   required: 'optional', example: 'Junior Suite',                   desc: 'Tipo de quarto' },
+    { key: 'hoteis.[i].regime',    type: 'string',  category: 'hoteis',   required: 'optional', example: 'Café da manhã',                  desc: 'Plano' },
+    { key: 'hoteis.[i].noites',    type: 'number',  category: 'hoteis',   required: 'common',   example: '3',                              desc: '' },
+    { key: 'hoteis.[i].checkIn',   type: 'date',    category: 'hoteis',   required: 'optional', example: '01/10/2026',                     desc: '' },
+    { key: 'hoteis.[i].checkOut',  type: 'date',    category: 'hoteis',   required: 'optional', example: '04/10/2026',                     desc: '' },
+    // — Voos —
+    { key: 'voos',                 type: 'array',   category: 'voos',     required: 'optional', example: '[{…}]',                          desc: 'Array voos' },
+    { key: 'voos.[i].cia',         type: 'string',  category: 'voos',     required: 'common',   example: 'LATAM',                          desc: 'Airline' },
+    { key: 'voos.[i].numero',      type: 'string',  category: 'voos',     required: 'common',   example: 'LA8084',                         desc: 'Número' },
+    { key: 'voos.[i].rota',        type: 'string',  category: 'voos',     required: 'computed', example: 'GRU → FCO',                      desc: 'Origin → Dest formatado' },
+    { key: 'voos.[i].dataPartida', type: 'date',    category: 'voos',     required: 'common',   example: '30/09/2026',                     desc: '' },
+    { key: 'voos.[i].horaPartida', type: 'string',  category: 'voos',     required: 'optional', example: '20:45',                          desc: '' },
+    { key: 'voos.[i].dataChegada', type: 'date',    category: 'voos',     required: 'common',   example: '01/10/2026',                     desc: '' },
+    { key: 'voos.[i].horaChegada', type: 'string',  category: 'voos',     required: 'optional', example: '14:30',                          desc: '' },
+    { key: 'voos.[i].classe',      type: 'string',  category: 'voos',     required: 'optional', example: 'Business',                       desc: '' },
+    // — Preços —
+    { key: 'precos.hasData',       type: 'bool',    category: 'precos',   required: 'computed', example: 'true',                           desc: 'Flag visibilidade' },
+    { key: 'precos.moeda',         type: 'string',  category: 'precos',   required: 'common',   example: 'BRL',                            desc: 'ISO 4217' },
+    { key: 'precos.totalCasal',    type: 'string',  category: 'precos',   required: 'optional', example: 'R$ 124.500,00',                  desc: 'Por casal formatado' },
+    { key: 'precos.porPessoa',     type: 'string',  category: 'precos',   required: 'optional', example: 'R$ 62.250,00',                   desc: 'Por pessoa formatado' },
+    { key: 'precos.customRows',    type: 'array',   category: 'precos',   required: 'optional', example: '[{label,value}]',                desc: 'Linhas extras' },
+    { key: 'precos.validUntil',    type: 'date',    category: 'precos',   required: 'optional', example: '15/06/2026',                     desc: 'Validade da cotação' },
+    { key: 'precos.disclaimer',    type: 'string',  category: 'precos',   required: 'optional', example: 'Valores sujeitos…',              desc: 'Disclaimer' },
+    // — Inclui/Exclui/Opcionais —
+    { key: 'inclui',               type: 'array',   category: 'inclui',   required: 'optional', example: '["Hospedagem"]',                 desc: 'Strings inclui' },
+    { key: 'naoInclui',            type: 'array',   category: 'inclui',   required: 'optional', example: '["Gorjetas"]',                   desc: 'Strings exclui' },
+    { key: 'opcionais',            type: 'array',   category: 'opcionais',required: 'optional', example: '[{servico,…}]',                  desc: 'Array opcionais' },
+    { key: 'opcionais.[i].servico',type: 'string',  category: 'opcionais',required: 'common',   example: 'Aulas culinária',                desc: '' },
+    { key: 'opcionais.[i].precoAdulto',  type: 'string', category: 'opcionais', required: 'common', example: 'R$ 850,00', desc: '' },
+    { key: 'opcionais.[i].precoCrianca', type: 'string', category: 'opcionais', required: 'common', example: '—',         desc: '' },
+    { key: 'opcionais.[i].observacoes',  type: 'string', category: 'opcionais', required: 'optional', example: 'Inclui mercado', desc: '' },
+    // — Pagamento/Cancelamento/Info —
+    { key: 'pagamento.hasData',    type: 'bool',    category: 'pagamento',required: 'computed', example: 'true',                           desc: 'Flag visibilidade' },
+    { key: 'pagamento.deposit',    type: 'string',  category: 'pagamento',required: 'optional', example: 'R$ 25.000',                      desc: 'Sinal/entrada' },
+    { key: 'pagamento.installments', type:'string', category: 'pagamento',required: 'optional', example: 'Saldo em 6× cartão',             desc: 'Parcelamento' },
+    { key: 'pagamento.deadline',   type: 'string',  category: 'pagamento',required: 'optional', example: '45 dias antes',                  desc: 'Prazo' },
+    { key: 'pagamento.notes',      type: 'string',  category: 'pagamento',required: 'optional', example: '…',                              desc: 'Observações' },
+    { key: 'cancelamento',         type: 'array',   category: 'cancelamento', required: 'optional', example: '[{period,penalty}]',         desc: 'Períodos × penalidades' },
+    { key: 'cancelamento.[i].period', type: 'string', category: 'cancelamento', required: 'common', example: 'Até 60 dias antes', desc: '' },
+    { key: 'cancelamento.[i].penalty', type: 'string', category: 'cancelamento', required: 'common', example: 'Multa 10%', desc: '' },
+    { key: 'informacoes.hasData',  type: 'bool',    category: 'informacoes', required: 'computed', example: 'true',                       desc: 'Flag visibilidade' },
+    { key: 'informacoes.passport', type: 'string',  category: 'informacoes', required: 'optional', example: 'Validade 6 meses+',           desc: 'Passaporte' },
+    { key: 'informacoes.visa',     type: 'string',  category: 'informacoes', required: 'optional', example: 'Não necessário',              desc: 'Vistos' },
+    { key: 'informacoes.vaccines', type: 'string',  category: 'informacoes', required: 'optional', example: 'Nenhuma obrigatória',         desc: 'Vacinas' },
+    { key: 'informacoes.climate',  type: 'string',  category: 'informacoes', required: 'optional', example: 'Outono 15-22°C',              desc: 'Clima' },
+    { key: 'informacoes.luggage',  type: 'string',  category: 'informacoes', required: 'optional', example: '2×32kg + mão 8kg',            desc: 'Bagagem' },
+    { key: 'informacoes.flights',  type: 'string',  category: 'informacoes', required: 'optional', example: 'Confirmar 72h antes',         desc: 'Voos info' },
+    { key: 'informacoes.customFields', type: 'array', category: 'informacoes', required: 'optional', example: '[{label,value}]',         desc: 'Fields custom' },
   ],
   portal: [
-    { key: 'area.nome',            desc: 'Nome da área' },
-    { key: 'destinos',             desc: 'Array de destinos com tips' },
-    { key: 'destinos.[i].cidade',  desc: 'Cidade do destino' },
-    { key: 'destinos.[i].pais',    desc: 'País do destino' },
-    { key: 'destinos.[i].tips',    desc: 'Array de tips do destino' },
-    { key: 'segments',             desc: 'Array de segmentos ativos (gastronomia, hotéis, etc.)' },
-    { key: 'today',                desc: 'Data de hoje' },
+    // — Root —
+    { key: 'today',                type: 'date',    category: 'root',     required: 'always',   example: '28/05/2026',                    desc: '' },
+    { key: 'customFooterText',     type: 'string',  category: 'root',     required: 'optional', example: '…',                             desc: '' },
+    { key: 'customHeaderText',     type: 'string',  category: 'root',     required: 'optional', example: '…',                             desc: '' },
+    { key: 'hideCover',            type: 'bool',    category: 'root',     required: 'optional', example: 'false',                         desc: '' },
+    { key: 'segments',             type: 'array',   category: 'root',     required: 'optional', example: '[]',                            desc: 'Segments custom da área (avançado)' },
+    // — Branding —
+    { key: 'area.nome',            type: 'string',  category: 'branding', required: 'always',   example: 'Lazer',                         desc: '' },
+    { key: 'area.logoUrl',         type: 'url',     category: 'branding', required: 'common',   example: '…',                             desc: 'Logo R2' },
+    { key: 'area.logoUrlAlt',      type: 'url',     category: 'branding', required: 'optional', example: '…',                             desc: 'Logo alt' },
+    { key: 'area.corPrimary',      type: 'string',  category: 'branding', required: 'always',   example: '#D4A843',                       desc: '' },
+    { key: 'area.corSecondary',    type: 'string',  category: 'branding', required: 'always',   example: '#0F172A',                       desc: '' },
+    // — Destinos —
+    { key: 'destinos',             type: 'array',   category: 'destinos', required: 'common',   example: '[{…}]',                         desc: 'Destinos agrupados (N tips na mesma cidade = 1 destino)' },
+    { key: 'destinos.[i].id',      type: 'string',  category: 'destinos', required: 'common',   example: 'paris',                         desc: 'ID do dest' },
+    { key: 'destinos.[i].cidade',  type: 'string',  category: 'destinos', required: 'common',   example: 'Paris',                         desc: '' },
+    { key: 'destinos.[i].pais',    type: 'string',  category: 'destinos', required: 'optional', example: 'França',                        desc: '' },
+    { key: 'destinos.[i].label',   type: 'string',  category: 'destinos', required: 'computed', example: 'Paris, França',                 desc: 'Joined' },
+    { key: 'destinos.[i].heroUrl', type: 'url',     category: 'destinos', required: 'optional', example: '…r2.dev/paris-hero.webp',       desc: 'Hero image (banco_imagens)' },
+    { key: 'destinos.[i].tips',    type: 'array',   category: 'destinos', required: 'optional', example: '[{…}]',                         desc: 'Tips raw (avançado)' },
+    { key: 'destinos.[i].segmentos', type: 'array', category: 'destinos', required: 'common',   example: '[{key,label,mode,…}]',          desc: 'Segmentos shaped (use pra loop)' },
+    // — Segments (sub-shape) —
+    { key: 'destinos.[i].segmentos.[j].key',   type: 'string', category: 'segmentos', required: 'common', example: 'restaurantes', desc: 'Slug' },
+    { key: 'destinos.[i].segmentos.[j].label', type: 'string', category: 'segmentos', required: 'common', example: 'Restaurantes', desc: '' },
+    { key: 'destinos.[i].segmentos.[j].mode',  type: 'string', category: 'segmentos', required: 'common', example: 'place_list',   desc: 'special_info | simple_list | place_list | agenda' },
+    { key: 'destinos.[i].segmentos.[j].narrative', type: 'string', category: 'segmentos', required: 'optional', example: 'Os melhores bistros…', desc: 'themeDesc' },
+    { key: 'destinos.[i].segmentos.[j].items', type: 'array',  category: 'segmentos', required: 'optional', example: '[{name,desc}]', desc: 'Lista' },
+    { key: 'destinos.[i].segmentos.[j].info',  type: 'object', category: 'segmentos', required: 'optional', example: '{descricao,…}', desc: 'Info gerais (só se mode=special_info)' },
   ],
   'banco-roteiros': [
-    { key: 'titulo',               desc: 'Título do roteiro' },
-    { key: 'destinos',             desc: 'Destinos do roteiro' },
-    { key: 'noites',               desc: 'Noites' },
-    { key: 'dias',                 desc: 'Array de dias' },
-    { key: 'area.nome',            desc: 'Nome da BU' },
+    { key: 'today',                type: 'date',    category: 'root',     required: 'always',   example: '28/05/2026',                    desc: '' },
+    { key: 'titulo',               type: 'string',  category: 'root',     required: 'common',   example: 'China Classic Collection',     desc: 'Título do roteiro modelo' },
+    { key: 'area.nome',            type: 'string',  category: 'branding', required: 'always',   example: 'PRIMETOUR',                     desc: '' },
+    { key: 'area.logoUrl',         type: 'url',     category: 'branding', required: 'optional', example: '…',                             desc: '' },
+    { key: 'viagem.noites',        type: 'number',  category: 'viagem',   required: 'common',   example: '14',                            desc: '' },
+    { key: 'viagem.destinos',      type: 'string',  category: 'viagem',   required: 'common',   example: 'Pequim · Xangai · Hong Kong',  desc: 'Joined' },
+    { key: 'dias',                 type: 'array',   category: 'dias',     required: 'common',   example: '[{numero,cidade,narrativa}]',  desc: 'Loop' },
+    { key: 'dias.[i].numero',      type: 'number',  category: 'dias',     required: 'common',   example: '1',                             desc: '' },
+    { key: 'dias.[i].cidade',      type: 'string',  category: 'dias',     required: 'common',   example: 'Pequim',                        desc: '' },
+    { key: 'dias.[i].narrativa',   type: 'string',  category: 'dias',     required: 'common',   example: '…',                             desc: '' },
+    { key: 'hoteis',               type: 'array',   category: 'hoteis',   required: 'optional', example: '[{cidade,nome,regime,noites}]', desc: 'Flatten de categories[].hotels[]' },
+    { key: 'inclui',               type: 'array',   category: 'inclui',   required: 'optional', example: '["Hospedagem"]',                desc: '' },
+    { key: 'naoInclui',            type: 'array',   category: 'inclui',   required: 'optional', example: '["Gorjetas"]',                  desc: '' },
   ],
+};
+
+/** v4.63.20+ Categorias com label/icon pra UI dicionário */
+export const PLACEHOLDER_CATEGORIES = {
+  root:         { label: 'Raiz',                icon: '📌', order: 1 },
+  branding:     { label: 'Branding da área',    icon: '🎨', order: 2 },
+  cliente:      { label: 'Cliente',             icon: '👤', order: 3 },
+  viagem:       { label: 'Viagem',              icon: '✈️', order: 4 },
+  dias:         { label: 'Dia a dia',           icon: '📅', order: 5 },
+  voos:         { label: 'Aéreo',               icon: '✈️', order: 6 },
+  hoteis:       { label: 'Hospedagem',          icon: '🏨', order: 7 },
+  precos:       { label: 'Valores',             icon: '💰', order: 8 },
+  inclui:       { label: 'Inclui / Exclui',     icon: '✅', order: 9 },
+  opcionais:    { label: 'Opcionais',           icon: '➕', order: 10 },
+  pagamento:    { label: 'Pagamento',           icon: '💳', order: 11 },
+  cancelamento: { label: 'Cancelamento',        icon: '❌', order: 12 },
+  informacoes:  { label: 'Informações',         icon: 'ℹ️', order: 13 },
+  destinos:     { label: 'Destinos',            icon: '🌍', order: 14 },
+  segmentos:    { label: 'Segmentos',           icon: '🧩', order: 15 },
 };
 
 /* ─── Helpers internos ──────────────────────────────────────────────── */
