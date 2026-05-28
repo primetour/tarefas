@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 42,
-  build: '20260528-portal-audit-hotfixes-high',
+  patch: 43,
+  build: '20260528-portal-audit-leakage-pptx',
 };
 
 /** "1.2.0" */

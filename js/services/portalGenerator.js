@@ -2193,30 +2193,41 @@ async function generatePptx({ allTips, segments, areaName, area, colors, filenam
         }
 
       } else {
-        // place_list: dedupe + ordena por categoria + pagina (4 itens/slide)
+        // place_list: dedupe + ordena por categoria + pagina (4 itens/slide).
+        // v4.63.43+ HIGH H2: subtitles incluídos no filter + ordenação ignorada
+        // se há subtitles (preserva ordem do consultor).
         const seenT2 = new Set();
         const allItems = (data.items||[]).filter(it => {
+          if (it?.type === 'subtitle') return !!(it.text && it.text.trim());
           if (!it.titulo) return false;
           const k = it.titulo.trim().toLowerCase();
           if (seenT2.has(k)) return false;
           seenT2.add(k); return true;
         });
+        const _pptxHasSubtitles = allItems.some(it => it?.type === 'subtitle');
         const indexed = allItems.map((it,i)=>({it,origIdx:i}));
-        indexed.sort((a,b)=>{
-          const ca=(a.it.categoria||'').toLowerCase();
-          const cb=(b.it.categoria||'').toLowerCase();
-          return ca.localeCompare(cb) || a.origIdx - b.origIdx;
-        });
+        if (!_pptxHasSubtitles) {
+          indexed.sort((a,b)=>{
+            const ca=(a.it.categoria||'').toLowerCase();
+            const cb=(b.it.categoria||'').toLowerCase();
+            return ca.localeCompare(cb) || a.origIdx - b.origIdx;
+          });
+        }
 
+        // v4.63.43+ HIGH H2: subtitles em PPTX ainda não têm render visual
+        // (layout posicionado complexo). Filtramos pra não quebrar o slot grid.
+        // Pra próxima iteração: renderizar subtitle como banner full-width
+        // entre páginas (quebra na transição).
+        const indexedNoSubs = indexed.filter(({ it }) => it?.type !== 'subtitle');
         const PER_PAGE = 4;
-        const totalPages = Math.max(1, Math.ceil(indexed.length / PER_PAGE));
+        const totalPages = Math.max(1, Math.ceil(indexedNoSubs.length / PER_PAGE));
 
         for (let pg = 0; pg < totalPages; pg++) {
           const pageSlide = pg === 0 ? slide : buildSegmentSlide(
             segDef.label.toUpperCase(),
             `${label}  ·  pág. ${pg+1}/${totalPages}`,
           );
-          const pageItems = indexed.slice(pg*PER_PAGE, (pg+1)*PER_PAGE);
+          const pageItems = indexedNoSubs.slice(pg*PER_PAGE, (pg+1)*PER_PAGE);
 
           // Themedesc só na primeira página
           if (pg === 0 && data.themeDesc) {

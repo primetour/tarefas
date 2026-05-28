@@ -13,6 +13,8 @@ import {
   SEGMENTS, GENERATION_FORMATS,
 } from '../services/portal.js';
 import { generateTip } from '../services/portalGenerator.js';
+// v4.63.43+ HIGH H6: preview de card mostra texto plain (markdown stripped).
+import { richToPlain } from '../services/richText.js';
 
 const esc = s => String(s||'').replace(/[&<>"']/g, c =>
   ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -1597,14 +1599,14 @@ function renderSegPreview(tip, segKey) {
           ${item.categoria ? `<div style="font-size:0.6875rem;color:var(--brand-gold);text-transform:uppercase;
             letter-spacing:.07em;margin-bottom:4px;">${esc(item.categoria)}</div>` : ''}
           <div style="font-weight:700;font-size:0.9375rem;margin-bottom:6px;">${esc(item.titulo)}</div>
-          ${item.descricao ? `<div style="font-size:0.875rem;color:var(--text-muted);margin-bottom:8px;line-height:1.5;">${esc(item.descricao)}</div>` : ''}
+          ${item.descricao ? `<div style="font-size:0.875rem;color:var(--text-muted);margin-bottom:8px;line-height:1.5;">${esc(richToPlain(item.descricao))}</div>` : ''}
           <div style="display:flex;flex-wrap:wrap;gap:10px;font-size:0.8125rem;color:var(--text-muted);">
             ${item.endereco ? `<span>📍 ${esc(item.endereco)}</span>` : ''}
             ${item.telefone ? `<span>📞 ${esc(item.telefone)}</span>` : ''}
             ${item.site     ? `<a href="${esc(item.site)}" target="_blank" rel="noopener noreferrer" style="color:var(--brand-gold);text-decoration:none;">🌐 Site</a>` : ''}
             ${item.periodo  ? `<span>📅 ${esc(item.periodo)}</span>` : ''}
           </div>
-          ${item.observacoes ? `<div style="margin-top:6px;font-size:0.8125rem;color:var(--text-muted);font-style:italic;">💡 ${esc(item.observacoes)}</div>` : ''}
+          ${item.observacoes ? `<div style="margin-top:6px;font-size:0.8125rem;color:var(--text-muted);font-style:italic;">💡 ${esc(richToPlain(item.observacoes))}</div>` : ''}
         </div>`).join('')}
     </div>
   `;
