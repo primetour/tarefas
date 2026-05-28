@@ -288,6 +288,7 @@ async function loadAreas() {
     const hasLogoAlt = !!a.logoUrlAlt;
     const primary    = a.colors?.primary || '';
     const secondary  = a.colors?.secondary || '';
+    const accent     = a.colors?.accent || '';  // v4.63.34+
 
     // Banner com gradient das cores da BU (preview visual)
     const banner = (primary || secondary)
@@ -321,10 +322,11 @@ async function loadAreas() {
               Logo alternativo ${hasLogoAlt ? 'OK' : 'pendente'}
             </span>
           </div>
-          ${primary || secondary ? `
-            <div style="display:flex;gap:14px;margin-top:4px;">
+          ${primary || secondary || accent ? `
+            <div style="display:flex;gap:14px;margin-top:4px;flex-wrap:wrap;">
               ${colorSwatch(primary, 'primary')}
               ${colorSwatch(secondary, 'secondary')}
+              ${colorSwatch(accent, 'accent')}
             </div>` : `
             <div style="font-size:0.7rem;color:var(--text-muted);font-style:italic;">
               Sem paleta de cores configurada
@@ -480,7 +482,22 @@ function showAreaModal(area, areas = []) {
             ${colorPickerWithHex('secondary', 'Cor secundária', area?.colors?.secondary || '#1F2937')}
             ${colorPickerWithHex('accent',    'Cor de destaque', area?.colors?.accent  || '#D4A843')}
           </div>
-          <div class="hint"><strong>Primária:</strong> links, badges, detalhes. <strong>Secundária:</strong> fundos escuros (capa do PDF, textos). <strong>Destaque:</strong> títulos de seção, separadores, overlines — substitui o dourado padrão.</div>
+          <!-- v4.63.34+ hints granulares por cor (Renê: "se nao sei onde ela vai aparecer, fica difícil") -->
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:8px;font-size:0.7rem;line-height:1.45;color:var(--text-muted);">
+            <div style="padding:8px 10px;background:var(--bg-soft,#F9FAFB);border-radius:4px;border-left:3px solid ${esc(area?.colors?.primary || '#475569')};">
+              <strong style="color:var(--text-primary);display:block;margin-bottom:2px;">PRIMÁRIA</strong>
+              Cor do brand: badges, pílulas de status, ícones, links e bordas de destaque na UI.
+            </div>
+            <div style="padding:8px 10px;background:var(--bg-soft,#F9FAFB);border-radius:4px;border-left:3px solid ${esc(area?.colors?.secondary || '#1F2937')};">
+              <strong style="color:var(--text-primary);display:block;margin-bottom:2px;">SECUNDÁRIA</strong>
+              Fundo escuro: capa do PDF (atrás do logo), página de seção (BAIRROS/HOTÉIS), header do link web.
+              <span style="color:#C2410C;display:block;margin-top:3px;"><strong>⚠ Evite branco/claro</strong> — vai esconder os títulos.</span>
+            </div>
+            <div style="padding:8px 10px;background:var(--bg-soft,#F9FAFB);border-radius:4px;border-left:3px solid ${esc(area?.colors?.accent || '#D4A843')};">
+              <strong style="color:var(--text-primary);display:block;margin-bottom:2px;">DESTAQUE</strong>
+              Detalhes elegantes: títulos de seção ("Descrição"/"Dica"), separadores, overlines, bullets. Substitui o dourado padrão.
+            </div>
+          </div>
         </div>
         <div class="area-field">
           <label>Descrição (opcional)</label>

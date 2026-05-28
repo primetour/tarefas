@@ -517,6 +517,21 @@ export async function generateTip({ tip, area, dest, segments, format, extraTips
     }
   }
 
+  // v4.63.34+ Bug fix: enrichGalleryWithAutoPhotos antes ROUVAVA SÓ
+  // em generateWebLink (linha ~2431). PDFs/DOCX/PPTX caíam direto no
+  // pickImg conservador (só match exato placeName) → sem fotos.
+  // Renê reportou Centurion PDF: "o sistema fala que vai definir
+  // automaticamente as fotos para os segmentos, mas nenhuma foto aparece".
+  // Move pra ANTES do switch — TODOS os formatos ganham auto-photos.
+  // Skip pro web (generateWebLink já chama internamente — não duplicar).
+  if (format !== 'web') {
+    try {
+      await enrichGalleryWithAutoPhotos(imagesByDest, allTips, segments);
+    } catch (e) {
+      console.warn('[portalGenerator] enrichGallery falhou (nao-blocker):', e?.message || e);
+    }
+  }
+
   switch (format) {
     case 'docx': return generateDocx({ allTips, segments, areaName, area, colors, filename, imagesByDest });
     case 'pdf':  return generatePDF({ allTips, segments, areaName, area, colors, filename, imagesByDest });

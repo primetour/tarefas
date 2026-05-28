@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 33,
-  build: '20260528-colors-accent-configuravel',
+  patch: 34,
+  build: '20260528-portal-auto-photos-accent-card-bankguard-fix',
 };
 
 /** "1.2.0" */
