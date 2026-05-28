@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 62,
-  patch: 50,
-  build: '20260528-hotfix-auditlog-dup-decl',
+  patch: 51,
+  build: '20260528-fix-zumbis-audit-banco-roteiros-template',
 };
 
 /** "1.2.0" */

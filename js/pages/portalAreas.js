@@ -82,9 +82,20 @@ function exportsModuleBlock(key, label, current = {}) {
     { id: 'pptx', label: 'PowerPoint',    icon: '📊' },
     { id: 'web',  label: 'Link web',      icon: '🌐' },
   ];
+  // v4.62.51+ Fix audit pos-sprint: esconder formatos não-implementados por módulo.
+  // - portal exporta 4 formatos (PDF/DOCX/PPTX/Web)
+  // - roteiros exporta 3 (PDF/DOCX/PPTX) — sem web link
+  // - banco-roteiros exporta apenas PDF (reusa roteiroGenerator PDF via adapter)
+  const SUPPORTED_FMTS = {
+    portal:           ['pdf', 'docx', 'pptx', 'web'],
+    roteiros:         ['pdf', 'docx', 'pptx'],
+    'banco-roteiros': ['pdf'],
+  };
+  const allowedIds = SUPPORTED_FMTS[key] || ['pdf', 'docx', 'pptx', 'web'];
+  const fmtsFiltered = fmts.filter(f => allowedIds.includes(f.id));
   return `
     <div class="exports-mod-pane ${key === 'portal' ? 'active' : ''}" data-exports-mod="${esc(key)}" style="display:${key === 'portal' ? 'block' : 'none'};">
-      ${fmts.map(fmt => {
+      ${fmtsFiltered.map(fmt => {
         const f = exp[fmt.id] || {};
         return `
         <details style="margin-bottom:10px;border:1px solid var(--border);border-radius:6px;">

@@ -6,6 +6,38 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.62.51+20260528-fix-zumbis-audit-banco-roteiros-template] — 2026-05-28
+
+**Fix dos zumbis encontrados na auditoria final pós-sprint** (Agent
+delegado v4.62.49 → audit completo v4.62.39-49).
+
+**HIGH Zumbi #2 — banco-roteiros.pdf não usava seu próprio template**:
+- `generateRoteiroBankPDF` chamava `generateRoteiroPDF(shape, area)`,
+  que hardcoda `resolveExportTemplate(area, 'roteiros', 'pdf')`.
+- Template gravado em `area.modules['banco-roteiros'].exports.pdf` era
+  ignorado silenciosamente — PDF do Banco lia footer/header de Cotações.
+- Fix:
+  - `roteiroBankGenerator.js`: shape ganha `_exportModuleKey: 'banco-roteiros'`
+  - `roteiroGenerator.js`: 3 callsites (PDF + DOCX + PPTX) leem
+    `roteiro._exportModuleKey || 'roteiros'`
+- Agora templates específicos do Banco são honrados em PDF.
+
+**Zumbis #1, #3, #4 — formatos não-implementados aparecem na UI**:
+- UI permitia gravar templates web pra roteiros + docx/pptx/web pra
+  banco-roteiros. Backend nunca usava.
+- Fix: novo `SUPPORTED_FMTS` map em `portalAreas.js` filtra formatos
+  por módulo:
+  - portal: PDF + DOCX + PPTX + Web (4)
+  - roteiros: PDF + DOCX + PPTX (3) — sem web link
+  - banco-roteiros: apenas PDF (1) — único formato implementado
+- UI agora só mostra accordions pros formatos que o módulo realmente
+  exporta. Evita vapor data + frustração.
+
+**Estado final (pós v4.62.51)**: ZERO zumbis em exports. 100% paridade
+UI↔backend confirmada.
+
+---
+
 ## [4.62.50+20260528-hotfix-auditlog-dup-decl] — 2026-05-28
 
 **HOTFIX CRÍTICO** descoberto em E2E via Chrome MCP (CLAUDE.md §1

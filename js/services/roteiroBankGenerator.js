@@ -201,5 +201,9 @@ export async function generateRoteiroBankPDF(bankDoc, area = null) {
     .replace(/\s+/g, '-')
     .slice(0, 60);
   shape._exportFilename = `Banco-${cleanTitle}.pdf`;
+  // v4.62.51+ Fix HIGH Zumbi #2 (audit pos-sprint): força roteiroGenerator
+  // a resolver template via 'banco-roteiros' em vez de 'roteiros'. Sem
+  // isso, Banco lia templates de Cotações silenciosamente.
+  shape._exportModuleKey = 'banco-roteiros';
   return generateRoteiroPDF(shape, area);
 }

@@ -849,7 +849,10 @@ export async function generateRoteiroPDF(roteiro, area = null) {
 
   /* ─── PAGE 1: COVER ──────────────────────────────────────── */
   // v4.62.46+ hideCover: se ligado pelo template, pula a capa.
-  const _exportTplEarly = resolveExportTemplate(area, 'roteiros', 'pdf');
+  // v4.62.51+ honra roteiro._exportModuleKey (banco-roteiros, etc) — fix
+  // HIGH zumbi descoberto em audit final.
+  const _moduleKey = roteiro._exportModuleKey || 'roteiros';
+  const _exportTplEarly = resolveExportTemplate(area, _moduleKey, 'pdf');
   if (!_exportTplEarly.hideCover) {
     await buildCoverPage(doc, roteiro, buName, primary, secondary, images.heroUrl, logoCoverPng);
   }
@@ -917,7 +920,7 @@ export async function generateRoteiroPDF(roteiro, area = null) {
   /* ─── FOOTERS (retroactive) ──────────────────────────────── */
   // v4.62.43+ Fase E.3: footerText custom da área (Áreas → Exports → PDF)
   // v4.62.46+ headerText também plugado (era zumbi até v4.62.45)
-  const _exportTpl = resolveExportTemplate(area, 'roteiros', 'pdf');
+  const _exportTpl = resolveExportTemplate(area, _moduleKey, 'pdf'); // v4.62.51+ honra _moduleKey
   const _ctx = {
     areaName: buName,
     clientName: roteiro.client?.name || '',
@@ -2149,7 +2152,8 @@ export async function generateRoteiroPPTX(roteiro, area = null) {
   // v4.62.46+ Fase E pós-audit: slide master com footerText/headerText custom
   // + hideCover. Pattern espelhado do portalGenerator.js (v4.62.45). Todos os
   // slides criados depois herdam footer/header automaticamente via wrap addSlide.
-  const _pptxExportTpl = resolveExportTemplate(area, 'roteiros', 'pptx');
+  const _pptxModuleKey = roteiro._exportModuleKey || 'roteiros';
+  const _pptxExportTpl = resolveExportTemplate(area, _pptxModuleKey, 'pptx');
   const _pptxCtx = {
     areaName: buName,
     clientName: roteiro.client?.name || '',
@@ -2776,7 +2780,8 @@ export async function generateRoteiroDOCX(roteiro, area = null) {
   const children = [];
 
   // v4.62.46+ hideCover (resolve cedo p/ pular capa inteira se template pediu)
-  const _docxExportTplEarly = resolveExportTemplate(area, 'roteiros', 'docx');
+  const _docxModuleKey = roteiro._exportModuleKey || 'roteiros';
+  const _docxExportTplEarly = resolveExportTemplate(area, _docxModuleKey, 'docx');
 
   /* ── Capa ─────────────────────────────────────────────── */
   if (!_docxExportTplEarly.hideCover) {
