@@ -512,16 +512,75 @@ function wireCanvasSelection() {
   });
 }
 
+let _moveable = null;   // instância do Moveable.js
+
 function selectElement(field) {
   state.selectedField = field;
   $$('#canvas-preview .slot-text').forEach(x => x.classList.toggle('is-selected', x.dataset.field === field));
   showFloatingToolbar(field);
+  attachMoveable(field);
 }
 
 function deselectElement() {
   state.selectedField = null;
   $$('#canvas-preview .slot-text').forEach(x => x.classList.remove('is-selected'));
   hideFloatingToolbar();
+  detachMoveable();
+}
+
+// Cria/atualiza Moveable.js no elemento selecionado — habilita DRAG.
+// (Resize entra na Fase 3 — moveable já suporta, só ativar option.)
+function attachMoveable(field) {
+  if (!window.Moveable) return;
+  detachMoveable();
+  const el = $(`#canvas-preview .slot-text[data-field="${field}"]`);
+  if (!el) return;
+
+  // Garante position absolute pra poder mover (a maioria já é, no .slot-text-block usamos flex)
+  // Aplicamos via override de transform pra não quebrar layout original quando resetar.
+  const idx = state.activeSlideIdx;
+  const ov = state.slideOverrides[idx]?.[field] || {};
+  if (ov.dx != null) el.style.transform = `translate(${ov.dx}px, ${ov.dy || 0}px)`;
+
+  _moveable = new window.Moveable(document.body, {
+    target: el,
+    draggable: true,
+    origin: false,
+    edge: false,
+    throttleDrag: 0,
+    keepRatio: false,
+    container: $('#canvas-preview .slide-render'),  // limita movimento ao slide
+    snappable: true,
+    snapThreshold: 5,
+    elementSnapDirections: { top: true, bottom: true, left: true, right: true, center: true, middle: true },
+  });
+
+  let startX = ov.dx || 0;
+  let startY = ov.dy || 0;
+
+  _moveable.on('dragStart', (e) => {
+    startX = ov.dx || 0;
+    startY = ov.dy || 0;
+    e.set([startX, startY]);
+  });
+  _moveable.on('drag', (e) => {
+    el.style.transform = `translate(${e.beforeTranslate[0]}px, ${e.beforeTranslate[1]}px)`;
+  });
+  _moveable.on('dragEnd', (e) => {
+    const [dx, dy] = e.lastEvent ? e.lastEvent.beforeTranslate : [startX, startY];
+    setOverride(field, { dx, dy });
+    // Reposiciona toolbar (texto pode ter saído de baixo dela)
+    showFloatingToolbar(field);
+    // Reattach pra Moveable recalcular pos
+    requestAnimationFrame(() => attachMoveable(field));
+  });
+}
+
+function detachMoveable() {
+  if (_moveable) {
+    try { _moveable.destroy(); } catch {}
+    _moveable = null;
+  }
 }
 
 function showFloatingToolbar(field) {
@@ -591,6 +650,12 @@ function applyOverridesToSlideScaled(slideNode, slideIdx, scale = 1) {
     if (props.align)    el.style.textAlign = props.align;
     if (props.weight)   el.style.fontWeight = props.weight;
     if (props.style)    el.style.fontStyle = props.style;
+    // Drag/move: translate em px no preview, escalado no export
+    if (props.dx != null || props.dy != null) {
+      const dx = (props.dx || 0) * scale;
+      const dy = (props.dy || 0) * scale;
+      el.style.transform = `translate(${dx}px, ${dy}px)`;
+    }
   }
 }
 
@@ -1331,6 +1396,7 @@ async function loadDeps() {
   await Promise.all([
     window.html2canvas ? Promise.resolve() : loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js'),
     window.JSZip       ? Promise.resolve() : loadScriptOnce('https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js'),
+    window.Moveable    ? Promise.resolve() : loadScriptOnce('https://cdn.jsdelivr.net/npm/moveable@0.53.0/dist/moveable.min.js'),
   ]);
 }
 
