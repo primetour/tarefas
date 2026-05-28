@@ -499,13 +499,15 @@ export async function generateTip({ tip, area, dest, segments, format, extraTips
           toast.warning(`Template ${format.toUpperCase()} falhou (${e?.message?.slice(0,80) || 'erro desconhecido'}). Gerando com padrão do sistema. Verifique no Editor de Áreas → Templates.`);
         } catch {}
         try {
-          const { logAction } = await import('../auth/audit.js');
-          await logAction('templates.fallback', {
-            module: 'portal', format, templateId: _tplId,
+          // v4.63.21+ Fix H1 (audit pós-sprint): era `logAction` (undefined export).
+          // Signature real: auditLog(action, entity, entityId, details).
+          const { auditLog } = await import('../auth/audit.js');
+          await auditLog('templates.fallback', 'templates', _tplId, {
+            module: 'portal', format,
             areaId: area?.id || '',
             reason: String(e?.message || e).slice(0, 200),
           });
-        } catch {}
+        } catch (auditErr) { console.warn('[portalGenerator] auditLog fallback falhou:', auditErr?.message); }
       }
     }
   }

@@ -691,7 +691,11 @@ function showAreaModal(area, areas = []) {
           if (id && !all.some(t => t.id === id)) refIds.push(id);
         }
       }
-      await Promise.all(refIds.map(async id => {
+      // v4.63.21+ Fix M4 (audit pós-sprint): dedupe — mesmo orphan ID pode
+      // aparecer em N cells (portal/html + portal/docx) → evita N reads
+      // desnecessários do Firestore.
+      const _uniqRefIds = [...new Set(refIds)];
+      await Promise.all(_uniqRefIds.map(async id => {
         try { const t = await fetchTemplate(id); if (t) orphanFetched.set(id, t); }
         catch {}
       }));

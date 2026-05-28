@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 20,
-  build: '20260528-templates-manual-banco-seed',
+  patch: 21,
+  build: '20260528-audit-fixes-h1-h2-h3',
 };
 
 /** "1.2.0" */

@@ -778,6 +778,38 @@ function addSeparator(doc, y, primary) {
    ═══════════════════════════════════════════════════════════════ */
 
 /**
+ * v4.63.21+ Helper compartilhado pelos 3 template branches (PDF/PPTX/DOCX).
+ * Resolve _imagesByCity normalizado + customFooter/Header + hideCover
+ * via `resolveExportTemplate`. Antes, só PDF passava esses opts — DOCX/PPTX
+ * geravam template sem hero por dia, sem rodapé custom e sem hideCover
+ * funcional (achado H3 audit pós-sessão).
+ *
+ * @param {object} roteiro
+ * @param {object} area
+ * @param {string} refKey - 'cotacoes' | 'banco-roteiros'
+ * @param {string} format - 'pdf' | 'docx' | 'pptx'
+ * @returns {Promise<object>} opts pra roteiroToTemplateData(roteiro, area, opts)
+ */
+async function _buildAdapterOpts(roteiro, area, refKey, format) {
+  const _exportTpl = resolveExportTemplate(area, refKey === 'cotacoes' ? 'roteiros' : refKey, format);
+  let _imagesForTpl = { byCity: {}, byHotel: {}, heroUrl: null };
+  try { _imagesForTpl = await enrichRoteiroImages(roteiro); }
+  catch (e) { console.warn('[roteiroGenerator template] enrichImages falhou:', e?.message); }
+  const _imagesByCity = {};
+  try {
+    for (const [k, v] of Object.entries(_imagesForTpl?.byCity || {})) {
+      _imagesByCity[String(k).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim()] = v;
+    }
+  } catch {}
+  return {
+    imagesByCity: _imagesByCity,
+    customFooterText: _exportTpl?.footerText || '',
+    customHeaderText: _exportTpl?.headerText || '',
+    hideCover: !!_exportTpl?.hideCover,
+  };
+}
+
+/**
  * Generate a complete travel itinerary PDF
  * @param {object} roteiro - Full roteiro object
  * @param {object} area - { name, colors: { primary, secondary, accent } }
@@ -804,23 +836,9 @@ export async function generateRoteiroPDF(roteiro, area = null) {
       try { if (_progressId) toast.update(_progressId, 'Renderizando PDF (Puppeteer ~5-10s)…'); } catch {}
       // v4.63.19+ Passa imagesByCity + customFooter/Header + hideCover pro
       // template HTML seed "PRIMETOUR Cotações Default" reproduzir o jsPDF.
-      const _exportTpl = resolveExportTemplate(area, _refKey === 'cotacoes' ? 'roteiros' : _refKey, 'pdf');
-      let _imagesForTpl = { byCity: {}, byHotel: {}, heroUrl: null };
-      try { _imagesForTpl = await enrichRoteiroImages(roteiro); }
-      catch (e) { console.warn('[roteiroGenerator template] enrichImages falhou:', e?.message); }
-      const _imagesByCity = {};
-      try {
-        for (const [k, v] of Object.entries(_imagesForTpl?.byCity || {})) {
-          // Normaliza chave pra match com _normCity do adapter
-          _imagesByCity[String(k).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim()] = v;
-        }
-      } catch {}
-      const _adapterOpts = {
-        imagesByCity: _imagesByCity,
-        customFooterText: _exportTpl?.footerText || '',
-        customHeaderText: _exportTpl?.headerText || '',
-        hideCover: !!_exportTpl?.hideCover,
-      };
+      // v4.63.21+ Fix H3 (audit): extraído pra _buildAdapterOpts helper,
+      // reutilizado em PPTX/DOCX que antes não tinham essa lógica.
+      const _adapterOpts = await _buildAdapterOpts(roteiro, area, _refKey, 'pdf');
       const data = _refKey === 'banco-roteiros'
         ? bancoToTemplateData(roteiro, area)
         : roteiroToTemplateData(roteiro, area, _adapterOpts);
@@ -851,13 +869,14 @@ export async function generateRoteiroPDF(roteiro, area = null) {
         toast.warning(`Template configurado falhou (${e?.message?.slice(0,80) || 'erro desconhecido'}). Gerando com padrão do sistema. Verifique no Editor de Áreas → Templates.`);
       } catch {}
       try {
-        const { logAction } = await import('../auth/audit.js');
-        await logAction('templates.fallback', {
-          module: _refKey, format: 'pdf', templateId: _tplId,
+        // v4.63.21+ Fix H1 (audit pós-sprint): logAction não existe; use auditLog.
+        const { auditLog } = await import('../auth/audit.js');
+        await auditLog('templates.fallback', 'templates', _tplId, {
+          module: _refKey, format: 'pdf',
           areaId: area?.id || roteiro.areaId || '',
           reason: String(e?.message || e).slice(0, 200),
         });
-      } catch {}
+      } catch (auditErr) { console.warn('[roteiroGenerator pdf] auditLog falhou:', auditErr?.message); }
       // Pipeline antigo abaixo continua (zero risco de breakage)
     }
   }
@@ -2216,7 +2235,9 @@ export async function generateRoteiroPPTX(roteiro, area = null) {
       const { renderTemplate, downloadBlob } = await import('./templates.js');
       const { roteiroToTemplateData, bancoToTemplateData } = await import('./templateAdapter.js');
       try { if (_progressId) toast.update(_progressId, 'Renderizando PPTX (docxtemplater ~3s)…'); } catch {}
-      const data = _refKey === 'banco-roteiros' ? bancoToTemplateData(roteiro, area) : roteiroToTemplateData(roteiro, area);
+      // v4.63.21+ Fix H3 (audit pós-sessão): passa _adapterOpts (era só PDF)
+      const _adapterOpts = await _buildAdapterOpts(roteiro, area, _refKey, 'pptx');
+      const data = _refKey === 'banco-roteiros' ? bancoToTemplateData(roteiro, area) : roteiroToTemplateData(roteiro, area, _adapterOpts);
       const result = await renderTemplate(_tplId, data);
       try { if (_progressId) toast.update(_progressId, 'Baixando arquivo…'); } catch {}
       downloadBlob(result.blob, result.filename);
@@ -2229,9 +2250,10 @@ export async function generateRoteiroPPTX(roteiro, area = null) {
       console.warn('[roteiroGenerator] template PPTX falhou, fallback pptxgenjs:', e?.message || e);
       try { toast.warning(`Template PPTX falhou (${e?.message?.slice(0,80) || 'erro'}). Gerando com padrão do sistema.`); } catch {}
       try {
-        const { logAction } = await import('../auth/audit.js');
-        await logAction('templates.fallback', { module: _refKey, format: 'pptx', templateId: _tplId, areaId: area?.id || roteiro.areaId || '', reason: String(e?.message || e).slice(0, 200) });
-      } catch {}
+        // v4.63.21+ Fix H1: auditLog (não logAction)
+        const { auditLog } = await import('../auth/audit.js');
+        await auditLog('templates.fallback', 'templates', _tplId, { module: _refKey, format: 'pptx', areaId: area?.id || roteiro.areaId || '', reason: String(e?.message || e).slice(0, 200) });
+      } catch (auditErr) { console.warn('[roteiroGenerator pptx] auditLog falhou:', auditErr?.message); }
     }
   }
   await loadPptxGenJS();
@@ -2813,7 +2835,9 @@ export async function generateRoteiroDOCX(roteiro, area = null) {
       const { renderTemplate, downloadBlob } = await import('./templates.js');
       const { roteiroToTemplateData, bancoToTemplateData } = await import('./templateAdapter.js');
       try { if (_progressId) toast.update(_progressId, 'Renderizando DOCX (docxtemplater ~3s)…'); } catch {}
-      const data = _refKey === 'banco-roteiros' ? bancoToTemplateData(roteiro, area) : roteiroToTemplateData(roteiro, area);
+      // v4.63.21+ Fix H3: passa _adapterOpts (paridade DOCX com PDF)
+      const _adapterOpts = await _buildAdapterOpts(roteiro, area, _refKey, 'docx');
+      const data = _refKey === 'banco-roteiros' ? bancoToTemplateData(roteiro, area) : roteiroToTemplateData(roteiro, area, _adapterOpts);
       const result = await renderTemplate(_tplId, data);
       try { if (_progressId) toast.update(_progressId, 'Baixando arquivo…'); } catch {}
       downloadBlob(result.blob, result.filename);
@@ -2826,9 +2850,10 @@ export async function generateRoteiroDOCX(roteiro, area = null) {
       console.warn('[roteiroGenerator] template DOCX falhou, fallback docx.js:', e?.message || e);
       try { toast.warning(`Template DOCX falhou (${e?.message?.slice(0,80) || 'erro'}). Gerando com padrão do sistema.`); } catch {}
       try {
-        const { logAction } = await import('../auth/audit.js');
-        await logAction('templates.fallback', { module: _refKey, format: 'docx', templateId: _tplId, areaId: area?.id || roteiro.areaId || '', reason: String(e?.message || e).slice(0, 200) });
-      } catch {}
+        // v4.63.21+ Fix H1: auditLog (não logAction)
+        const { auditLog } = await import('../auth/audit.js');
+        await auditLog('templates.fallback', 'templates', _tplId, { module: _refKey, format: 'docx', areaId: area?.id || roteiro.areaId || '', reason: String(e?.message || e).slice(0, 200) });
+      } catch (auditErr) { console.warn('[roteiroGenerator docx] auditLog falhou:', auditErr?.message); }
     }
   }
   await loadDocx();

@@ -1122,13 +1122,19 @@ function _openManualModal() {
   `;
   document.body.appendChild(wrap);
 
-  const close = () => wrap.remove();
+  // v4.63.21+ Fix M5 (audit pós-sprint): keydown handler precisa SAIR do
+  // document mesmo quando user fecha via click (✕, fora, botão Fechar).
+  // Antes, listener só era removido quando user pressionava Esc → memory
+  // leak + zombie listener capturando eventos pós-close.
+  const escH = (e) => { if (e.key === 'Escape') close(); };
+  const close = () => {
+    document.removeEventListener('keydown', escH);
+    wrap.remove();
+  };
   wrap.querySelector('#man-close').onclick = close;
   wrap.querySelector('#man-close-bottom').onclick = close;
   wrap.addEventListener('click', (e) => { if (e.target === wrap) close(); });
-  document.addEventListener('keydown', function escH(e) {
-    if (e.key === 'Escape') { close(); document.removeEventListener('keydown', escH); }
-  });
+  document.addEventListener('keydown', escH);
 
   // Tabs por módulo
   const _renderModule = (modId) => {

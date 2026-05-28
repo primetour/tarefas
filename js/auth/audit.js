@@ -162,6 +162,9 @@ export const ACTION_LABELS = {
   // — comentário em updateTemplate prometia createNewVersion() mas função
   // nunca existiu. Versionamento real fica pra release futura (v4.64+).
   'templates.fallback':      'Template configurado falhou → pipeline antigo (v4.63.12+)',
+  // v4.63.21+ M3 audit pós-sprint: faltavam (CF renderTemplate grava server-side)
+  'templates.render':        'Template renderizado (HTML→PDF / DOCX / PPTX)',
+  'templates.seed':          'Template seed default criado/atualizado pelo sistema',
   // Banco de Imagens
   'portal_images.upload':    'Imagem enviada ao banco',
   'portal_images.update':    'Metadados de imagem atualizados',

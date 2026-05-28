@@ -86,10 +86,13 @@ class ToastManager {
     }, 300);
   }
 
-  success(message, title)  { return this.show('success', message, title); }
-  error(message, title)    { return this.show('error',   message, title); }
-  warning(message, title)  { return this.show('warning', message, title); }
-  info(message, title)     { return this.show('info',    message, title); }
+  // v4.63.21+ Fix H2 (audit pós-sprint): aceitar duration (4º arg).
+  // Antes ignorava 3º arg silenciosamente → progress toast (90_000ms) sumia
+  // em 4s e o `update` posterior virava no-op porque _progressId stale.
+  success(message, title, duration)  { return this.show('success', message, title, duration); }
+  error(message, title, duration)    { return this.show('error',   message, title, duration); }
+  warning(message, title, duration)  { return this.show('warning', message, title, duration); }
+  info(message, title, duration)     { return this.show('info',    message, title, duration); }
 
   /**
    * v4.63.14+ Atualiza mensagem de toast existente sem recriar — usado em
