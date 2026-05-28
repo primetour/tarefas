@@ -42,6 +42,8 @@ const state = {
   // fontSize em PX no preview atual (escalado no export).
   slideOverrides: {},
   selectedField: null,                   // 'hand' | 'titulo' | 'desc' | null
+  // Altura do retângulo (.solid-primary) por (formato, layout) — padronizada entre slides do grupo
+  _solidHeights: null,                   // { story: { 'lateral-esq': 0.42, ... } }
 };
 
 // Fontes disponíveis no editor Canva-style (carregadas via Google Fonts no HTML)
@@ -355,6 +357,42 @@ async function prefitAllSlides() {
         });
       }
 
+      // Aplica uniformScale em cada node ANTES de medir alturas dos blocks
+      for (const lid in byLayout) {
+        const scales = next[formato][lid];
+        byLayout[lid].forEach(({ node }) => {
+          Object.entries(scales).forEach(([cat, factor]) => {
+            node.querySelectorAll(`.${cat}`).forEach(el => {
+              const baseFs = parseFloat(getComputedStyle(el).fontSize);
+              el.style.fontSize = (baseFs * factor) + 'px';
+            });
+          });
+        });
+      }
+
+      // Mede altura natural do .slot-text-block (após uniform aplicado) e pega
+      // o MAIOR de cada (formato, layout). Vai virar --solid-h no render.
+      // Salva em PERCENTUAL da altura do slide pra escalar entre preview/export.
+      await new Promise(r => requestAnimationFrame(r));
+      for (const lid in byLayout) {
+        let maxRatio = 0;
+        byLayout[lid].forEach(({ node }) => {
+          const block = node.querySelector('.slot-text-block');
+          if (!block) return;
+          const slideH = node.getBoundingClientRect().height || 1;
+          // scrollHeight = altura natural do conteúdo. Soma padding generoso (12%).
+          const blockH = block.scrollHeight;
+          const ratio = (blockH / slideH) + 0.12;   // +12% padding total (cima+baixo)
+          if (ratio > maxRatio) maxRatio = ratio;
+        });
+        if (maxRatio > 0) {
+          // Mínimo 30% (não vira faixa minúscula); máximo 60% (não cobre demais)
+          const finalH = Math.max(0.30, Math.min(0.60, maxRatio));
+          state._solidHeights ??= { carrossel: {}, story: {} };
+          state._solidHeights[formato][lid] = finalH;
+        }
+      }
+
       allNodes.forEach(n => bay.removeChild(n));
     }
     state.uniformScale = next;
@@ -395,6 +433,7 @@ function renderCanvas() {
   if (slideNode) {
     requestAnimationFrame(() => {
       fitSlideContent(slideNode);
+      applySolidHeight(slideNode);
       applyOverridesToSlide(slideNode, state.activeSlideIdx);
     });
   }
@@ -725,6 +764,18 @@ function clearOverride(field) {
 
 function applyOverridesToSlide(slideNode, slideIdx) {
   applyOverridesToSlideScaled(slideNode, slideIdx, 1);
+}
+
+// Aplica altura padronizada do retângulo (calculada em prefitAllSlides).
+// Setado como CSS var --solid-h no slide-render (em %).
+function applySolidHeight(slideNode) {
+  const formato = slideNode.classList.contains('story') ? 'story' : 'carrossel';
+  const rawLayout = slideNode.getAttribute('data-layout') || 'foto-cima';
+  const layoutId = effectiveLayout(rawLayout, formato);
+  const ratio = state._solidHeights?.[formato]?.[layoutId];
+  if (ratio) {
+    slideNode.style.setProperty('--solid-h', (ratio * 100).toFixed(2) + '%');
+  }
 }
 
 function applyOverridesToSlideScaled(slideNode, slideIdx, scale = 1) {
@@ -1187,6 +1238,7 @@ async function generateAllImages() {
     await Promise.all(items.map(it => waitForImages(it.node)));
     await new Promise(r => requestAnimationFrame(r));
     items.forEach(it => fitSlideContent(it.node));
+    items.forEach(it => applySolidHeight(it.node));
 
     // Aplica overrides Canva-style escalados pro tamanho do export (1080px)
     const previewSlide = $('#canvas-preview .slide-render');
