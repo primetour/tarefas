@@ -317,6 +317,9 @@ export function portalToTemplateData({ allTips, area, segments, areaName, images
       logoUrlAlt:  area?.logoUrlAlt || '',
       corPrimary:  area?.colors?.primary   || '#D4A843',
       corSecondary: area?.colors?.secondary || '#0F172A',
+      // v4.63.33+ accent (3ª cor): substitui hardcoded `#D4A843` em templates HTML.
+      // Fallback chain: accent → primary → gold PRIMETOUR.
+      corAccent:   area?.colors?.accent || area?.colors?.primary || '#D4A843',
     },
     destinos: Array.from(byDest.values()),
     segments: Array.isArray(segments) ? segments : [],
@@ -357,6 +360,11 @@ export function bancoToTemplateData(bankDoc, area) {
       nome:        _resolveAreaName(area),
       logoUrl:     area?.logoUrl    || '',
       logoUrlAlt:  area?.logoUrlAlt || '',
+      // v4.63.33+ paleta completa (primary + secondary + accent) — pra templates
+      // do banco poderem usar as cores configuradas em vez de hardcoded.
+      corPrimary:  area?.colors?.primary    || '#D4A843',
+      corSecondary: area?.colors?.secondary || '#0F172A',
+      corAccent:   area?.colors?.accent     || area?.colors?.primary || '#D4A843',
     },
 
     viagem: {

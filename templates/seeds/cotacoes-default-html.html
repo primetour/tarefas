@@ -9,7 +9,8 @@
       --primary: {{area.corPrimary}};
       --secondary: {{area.corSecondary}};
       --accent: {{area.corAccent}};
-      --gold: #D4A843;
+      /* v4.63.33+ --gold alias do --accent (compat com refs legados) */
+      --gold: {{area.corAccent}};
       --text-dark: #1F2937;
       --text-muted: #6B7280;
       --text-light: rgba(255,255,255,0.85);

@@ -33,6 +33,11 @@
 export const DEFAULT_COLORS = {
   primary:   '#475569',  // slate-600 — tom institucional padrão
   secondary: '#1F2937',  // gray-800 — texto/headers escuros
+  // v4.63.33+ accent é a 3ª cor — usada em títulos de seção, separadores,
+  // overlines, links. Antes ficava hardcoded em `#D4A843` (gold PRIMETOUR)
+  // nos templates HTML — agora configurável por área. Cada BU pode ter sua
+  // identidade própria (Centurion bronze, BTG azul-petróleo, etc.).
+  accent:    '#D4A843',  // gold PRIMETOUR — fallback default
 };
 
 /* ═══ FONTS ════════════════════════════════════════════════════════════

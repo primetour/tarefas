@@ -22,6 +22,9 @@ export function getPortalColors(area) {
   return {
     primary:   area?.colors?.primary   || area?.primary   || DEFAULT_COLORS.primary,
     secondary: area?.colors?.secondary || area?.secondary || DEFAULT_COLORS.secondary,
+    // v4.63.33+ accent (3ª cor) — antes hardcoded `#D4A843` em templates HTML.
+    // Fallback: accent → primary → DEFAULT_COLORS.accent (#D4A843).
+    accent:    area?.colors?.accent    || area?.accent    || DEFAULT_COLORS.accent,
   };
 }
 
@@ -35,9 +38,11 @@ export function applyPortalTheme(area) {
   const root = document.documentElement;
   root.style.setProperty('--portal-primary',   c.primary);
   root.style.setProperty('--portal-secondary', c.secondary);
+  root.style.setProperty('--portal-accent',    c.accent);
   // RGB para usos com alpha: rgba(var(--portal-primary-rgb), .5)
   root.style.setProperty('--portal-primary-rgb',   hexToRgbStr(c.primary));
   root.style.setProperty('--portal-secondary-rgb', hexToRgbStr(c.secondary));
+  root.style.setProperty('--portal-accent-rgb',    hexToRgbStr(c.accent));
 }
 
 function hexToRgbStr(hex) {

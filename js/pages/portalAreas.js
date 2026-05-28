@@ -475,11 +475,12 @@ function showAreaModal(area, areas = []) {
         })}
         <div class="area-field">
           <label>Paleta de cores</label>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
             ${colorPickerWithHex('primary',   'Cor primária',   area?.colors?.primary   || '#475569')}
             ${colorPickerWithHex('secondary', 'Cor secundária', area?.colors?.secondary || '#1F2937')}
+            ${colorPickerWithHex('accent',    'Cor de destaque', area?.colors?.accent  || '#D4A843')}
           </div>
-          <div class="hint">Cor primária aparece em links, badges e detalhes. Secundária em fundos escuros e textos de destaque.</div>
+          <div class="hint"><strong>Primária:</strong> links, badges, detalhes. <strong>Secundária:</strong> fundos escuros (capa do PDF, textos). <strong>Destaque:</strong> títulos de seção, separadores, overlines — substitui o dourado padrão.</div>
         </div>
         <div class="area-field">
           <label>Descrição (opcional)</label>
@@ -904,6 +905,7 @@ function showAreaModal(area, areas = []) {
   };
   wireColor('primary');
   wireColor('secondary');
+  wireColor('accent');  // v4.63.33+ 3ª cor
 
   const close = () => { modal.style.display = 'none'; modal.innerHTML = ''; };
   document.getElementById('area-modal-close')?.addEventListener('click', close);
@@ -1020,6 +1022,9 @@ function showAreaModal(area, areas = []) {
         colors: {
           primary:   document.getElementById('area-color-primary')?.value,
           secondary: document.getElementById('area-color-secondary')?.value,
+          // v4.63.33+ 3ª cor configurável: accent (substitui hardcoded #D4A843
+          // em templates HTML). Default = gold PRIMETOUR.
+          accent:    document.getElementById('area-color-accent')?.value || '#D4A843',
         },
         // 4.48.0+ NEW
         fonts:     { headline, body, accentScale },

@@ -6,6 +6,66 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.33+20260528-colors-accent-configuravel] — 2026-05-28
+
+**Cor de destaque (accent) configurável por área.**
+
+Antes: schema `portal_areas.colors` tinha só `primary + secondary`. Templates
+HTML hardcodavam `#D4A843` (gold PRIMETOUR) como cor de destaque (overlines,
+separadores, títulos de seção). Áreas que queriam outra identidade de destaque
+(Centurion bronze, BTG azul-petróleo, etc.) tinham que aceitar o dourado.
+
+Agora:
+
+- **Schema**: `portal_areas.colors.accent` é 3ª cor configurável. Default
+  `#D4A843` (compatibilidade). Reader em `areaDefaults.js` cai pra
+  `colors.primary` se accent não existir (compat com áreas pré-v4.63.33).
+- **UI Marca tab**: 3 color pickers agora (primária + secundária + destaque)
+  com hints explicativos. `wireColor('accent')` sincroniza hex picker.
+- **Templates HTML**: `--gold` agora interpola `{{area.corAccent}}` em vez
+  do hardcoded `#D4A843`. 4 templates seed atualizados (portal-default,
+  portal-web, cotacoes, cotacoes-web, banco-roteiros).
+- **Adapter**: `portalToTemplateData`, `roteiroToTemplateData` e
+  `bancoToTemplateData` exportam `area.corAccent` com fallback
+  `accent → primary → '#D4A843'`.
+- **Generators**: portalGenerator.js (PDF/DOCX/PPTX) e roteiroGenerator.js
+  recebem `accent` via `colors.accent` e usam em `gold` var legada (var
+  rename evita refactor de 30+ usages no PDF).
+- **Backfill**: `functions/backfill-area-colors-accent.cjs` aplicado em
+  produção (7 áreas atualizadas com `accent = primary` como migração
+  defensiva — UI pré-popula color picker no próximo edit em vez de mostrar
+  default chocante).
+
+Resolve queixa Renê: *"em template, o sistema me pergunta as cores pra usar,
+mas quando vejo o pdf, tem um amarelo no arquivo... se tem mais de uma cor pra
+trabalhar, isso tem que estar na biblioteca de template, configurável"*.
+
+---
+
+## [4.63.32+20260528-portal-pdf-centurion-luma-fix] — 2026-05-28
+
+**Hotfix crítico — luma threshold em PDF.**
+
+Renê reportou em 2 PDFs Nova York (Centurion area):
+- Capa em branco / TOC "SUMÁRIO" sem cabeçalho / capa de seção "BAIRROS" invisível
+- Cada bairro sem título (BROOKLYN HEIGHTS, CHINATOWN, etc.)
+- Representação Brasileira labels invisíveis
+
+Causa raiz única: Centurion configurou `colors.secondary = #ffffff` (branco).
+jsPDF foi desenhado assumindo navy escuro como secondary (tinta pra títulos
+sobre fundo claro + fundo pra capa sobre logo branca). Branco quebra ambos.
+
+Fix em `js/services/portalGenerator.js:1009-1018`: helper `_luma(hex)`
+checa brightness. Se `> 0.85` (perto de branco), força `#0A1628` (navy
+escuro) com warn no console. Salva PDF em qualquer área configurada com
+secondary inválido.
+
+Próximo: Centurion deve revisar `colors.secondary` pra navy adequado
+(ex: `#1a1a1a` carbon ou `#0F172A` slate-900). Defensive fix protege
+enquanto.
+
+---
+
 ## [4.63.26+20260528-templates-ux-audit-fixes] — 2026-05-28
 
 **Auditoria UX Templates** (Agent paralelo + Admin SDK) achou 7+ gaps HIGH

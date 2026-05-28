@@ -15,7 +15,8 @@
     :root {
       --primary: {{area.corPrimary}};
       --secondary: {{area.corSecondary}};
-      --gold: #D4A843;
+      /* v4.63.33+ --gold ← accent configurável por área */
+      --gold: {{area.corAccent}};
       --text-dark: #1F2937;
       --text-muted: #6B7280;
       --bg-light: #FAFAF7;

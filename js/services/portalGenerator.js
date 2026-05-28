@@ -424,7 +424,12 @@ export async function generateTip({ tip, area, dest, segments, format, extraTips
   const areaName = resolveExternalBrandName(area);
   // v4.62.39+ Fase A.3: cores via SSOT (resolve overrides por módulo + global)
   const _tpl = resolveAreaDefaults(area, 'portal');
-  const colors = { primary: _tpl.colors.primary, secondary: _tpl.colors.secondary };
+  // v4.63.33+ accent é 3ª cor configurável. Fallback: accent → primary.
+  const colors = {
+    primary: _tpl.colors.primary,
+    secondary: _tpl.colors.secondary,
+    accent: _tpl.colors.accent || _tpl.colors.primary,
+  };
   const filename = buildFilename(allTips, format);
 
   const imagesByDest = {};
@@ -718,8 +723,11 @@ async function generateDocx({ allTips, segments, areaName, area, colors, filenam
   const _DOCX_FONT = _DOCX_TPL.fonts.body || 'Poppins';
 
   // Vars mantêm os nomes legados (gold/navy) por compatibilidade com o
-  // restante do generator, mas defaults agora são cinzas neutros — sem dourado.
-  const gold = (colors.primary   || PORTAL_DEFAULT_COLORS.primary).replace('#','');
+  // restante do generator. v4.63.33+ `gold` agora prioriza colors.accent
+  // (a 3ª cor configurável). Antes era hardcoded em primary, que confundia
+  // áreas com primary escuro (texto invisível) ou áreas que queriam um tom
+  // de destaque diferente do primary.
+  const gold = (colors.accent || colors.primary || PORTAL_DEFAULT_COLORS.primary).replace('#','');
   const navy = (colors.secondary || PORTAL_DEFAULT_COLORS.secondary).replace('#','');
   const children = [];
   const date = new Date().toLocaleDateString('pt-BR',{year:'numeric',month:'long',day:'numeric'});
@@ -1019,6 +1027,11 @@ async function generatePDF({
   let y=MARGIN;
   const pR=hexToR(primary),pG=hexToG(primary),pB=hexToB(primary);
   const sR=hexToR(second), sG=hexToG(second), sB=hexToB(second);
+  // v4.63.33+ accent (3ª cor) — usado em separadores, overlines, marcadores
+  // de destaque. Fallback: accent → primary (compat com áreas pré-v4.63.33
+  // que só tinham primary+secondary).
+  const accent = colors.accent || primary;
+  const aR=hexToR(accent), aG=hexToG(accent), aB=hexToB(accent);
 
   // Pré-carrega logo + dimensões reais (pra aspect-ratio)
   const loadLogoMeta = async (url) => {

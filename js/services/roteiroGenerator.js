@@ -3097,7 +3097,8 @@ export async function generateRoteiroDOCX(roteiro, area = null) {
   const primaryHex   = _tpl.colors.primary.replace('#', '');
   const secondaryHex = _tpl.colors.secondary.replace('#', '');
   const mutedHex     = '6B7280';
-  const accentHex    = primaryHex;
+  // v4.63.33+ accent é 3ª cor configurável por área. Fallback: accent → primary.
+  const accentHex    = (_tpl.colors.accent || _tpl.colors.primary).replace('#', '');
   // v4.62.40 Fase B (D7): brand respeita toggle
   const buName       = resolveExternalBrandName(area);
   // v4.62.41 Fase C: fonte dinâmica via SSOT — antes 'Calibri' hardcoded.
