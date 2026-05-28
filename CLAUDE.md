@@ -2005,3 +2005,55 @@ if (body.length > MAX_BYTES) {  // double-check (server pode mentir content-leng
 ```
 
 Para arquivos binários (PDF/imagens), trocar `.text()` por `.arrayBuffer()` + check `byteLength`.
+
+### m) Alias bidirectional + migration on-read na UI form (rename schema sem big-bang) (v4.63.28-29)
+
+**Cenário** (descoberto auditoria UX Renê v4.63.28): rename canônico `roteiros → cotacoes` foi feito em v4.62.50 nos lugares óbvios (Sidebar, page title, serviços). Mas a UI **tab Exports de portalAreas** continuou mostrando `Roteiros` + IDs `area-exp-roteiros-*` por meses, mesmo o reader em `areaDefaults.js` tendo alias bidirectional. UI ficou drift do schema canônico mas funcionando por causa do alias — bug invisível.
+
+**Receita de 3 camadas pra rename seguro de schema, sem big-bang**:
+
+1. **Reader alias bidirectional** (transição inicial, escreve em qualquer chave):
+```js
+// areaDefaults.js — antes em v4.62.49
+export function resolveExportTemplate(area, moduleKey, format) {
+  const aliasKey = moduleKey === 'cotacoes' ? 'roteiros' : (moduleKey === 'roteiros' ? 'cotacoes' : null);
+  const fmtPrimary = area?.modules?.[moduleKey]?.exports?.[format];
+  const fmtAlias   = aliasKey ? area?.modules?.[aliasKey]?.exports?.[format] : null;
+  return { ...(DEFAULT_EXPORTS[format] || {}), ...(fmtPrimary || fmtAlias || {}) };
+}
+```
+
+2. **UI form: migration on-read** (carrega valor legacy se chave canônica vazia):
+```js
+// portalAreas.js — v4.63.28
+const mods = area?.modules || {};
+if (mods.roteiros && !mods.cotacoes) mods.cotacoes = mods.roteiros;
+// renderiza form com mods.cotacoes — pre-populated
+```
+
+3. **Save grava SÓ chave canônica** + cleanup automático via shallow merge:
+```js
+// portalAreas.js linha 956 — v4.63.28
+const cotacoesExp = collectExports('cotacoes');
+if (cotacoesExp) modules.cotacoes = { ...(modules.cotacoes || {}), exports: cotacoesExp };
+// NÃO inclui modules.roteiros — saveArea usa setDoc(merge:true) shallow,
+// que substitui `modules` inteiro. modules.roteiros legacy desaparece.
+```
+
+**Sequência completa de eventos pra uma área legacy**:
+- T0: Área tem `modules.roteiros.exports.{...}` (schema legacy)
+- T0: Renderers (PDF/DOCX) leem via alias — funciona
+- T1: User abre modal de edição da área. Migration on-read pre-popula form com valores de `modules.roteiros`
+- T2: User salva (mesmo sem mudar nada). Save grava `modules.cotacoes.{...}` apenas
+- T2: `modules.roteiros` legacy some via shallow merge automático
+- T3: Próxima leitura: alias bidirectional ainda funciona (não precisa renderer mudar)
+- T4 (deprecation futura): renderer reduz pra ler só chave canônica, alias deletado
+
+**Princípio mestre**: rename de chave schema pode ser **gradual + invisível ao user** com 3 camadas (reader alias + UI on-read + save canônico). Big-bang com migration script é necessário SÓ se houver:
+- Volume alto (milhões de docs)
+- Renderers performance-críticos (alias custa lookup duplo)
+- Chave em índice composto (índice precisa ser refeito)
+
+Pra caso típico (dezenas/centenas de docs, alias barato), receita acima é zero-risk + zero-downtime.
+
+**Anti-padrão correlato**: rename só nos lugares óbvios (page title, sidebar) e deixar IDs/labels da UI form em drift. Reader funciona por causa de alias → bug invisível por meses. User percebe drift mas sistema "funciona" → confusão UX. Checklist mental ao renomear schema: **TODAS as 3 camadas (reader, UI form, save) devem migrar juntas, mesmo que renderer não mude**.
