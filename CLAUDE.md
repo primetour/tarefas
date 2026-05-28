@@ -1904,3 +1904,28 @@ destinos: Array.from(byDest.values())
 Caso v4.62.51: Sprint Templates Áreas Audit 1 entregou 8 zumbis. Apliquei fixes em v4.62.50 (rename canônico cotacoes). Audit 2 (após rename) achou +4 zumbis residuais nos arquivos tocados, virando v4.62.51 hotfix. Sem Audit 2, esses 4 ficariam latentes por meses.
 
 **Quando aplicar**: refactor que toca nomes/aliases/schemas em N pontos. Custo: 1 prompt + ~3 min. Benefício: pega 100% dos drifts.
+
+### i) ⚠ ARMADILHA: Bucket pub-r2.dev NÃO tem CORS — fetch cross-origin do browser falha (v4.63.23→24)
+
+**Sintoma** (descoberto E2E v4.63.23): `portal-view-tpl.html` fazia `fetch(template.fileUrl)` (URL `https://pub-XXX.r2.dev/templates/.../web-default.html`). curl direto retornava 200 + HTML. Mas `fetch` em browser falhava com `TypeError: Failed to fetch` — bucket público R2 (dev URL) NÃO envia `Access-Control-Allow-Origin`, e Cloudflare R2 não permite configurar headers em dev URLs.
+
+**Tentativa errada inicial**: tentar habilitar CORS no R2 (impossível em `pub-…r2.dev`). Tentativa secundária: usar worker `primetour-images.rene-castro.workers.dev` (tem CORS mas exige `X-Upload-Token`, não pode ir client).
+
+**Fix definitivo (v4.63.24)**: nova CF `getTemplateHtml` (`onRequest`, `cors:true`, cache 5min CDN) atuando como proxy:
+- GET `?tplId=XXX`
+- Valida regex tplId (anti-injection)
+- Busca `templates/{tplId}`, exige `status=active`
+- Re-valida `fileUrl` com `_validateR2FileUrl` (anti-SSRF — mesmo helper §16.a)
+- Fetch R2 server-side (sem barreira CORS)
+- Retorna HTML com `Access-Control-Allow-Origin: *` + `Cache-Control: public, max-age=300, s-maxage=300`
+
+**Princípio mestre — auditoria preventiva pra próximas integrações**: qualquer URL pública `pub-XXX.r2.dev`, `s3.amazonaws.com/...`, ou similar lida pelo browser via `fetch` precisa OU:
+1. **CORS habilitado no bucket** (configurável em R2 custom domain / S3 bucket policy, NÃO em URLs dev)
+2. **Proxy server-side** (CF / worker autenticado / endpoint próprio) que re-emite com `Allow-Origin`
+
+**Sinais que pegariam mais cedo**:
+- ❌ `node --check`, `curl` direto, syntax check — passam todos (não simulam browser CORS).
+- ✅ Chrome MCP com origin real (GH Pages) — único que pega.
+- ✅ Headers `vary: Origin` / `access-control-*` no response — checar via curl `-I -H "Origin: ..."`.
+
+**Anti-padrão correlato**: assumir que "URL pública = qualquer um lê" sem confirmar CORS. Buckets públicos servem GETs anônimos, mas browsers cross-origin precisam dos headers. Tested in curl ≠ tested in browser.
