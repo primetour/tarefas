@@ -649,6 +649,14 @@ async function generateDocx({ allTips, segments, areaName, area, colors, filenam
     ExternalHyperlink, BorderStyle, Table, TableRow, TableCell,
     WidthType, PageBreak, ImageRun } = window.docx;
 
+  // v4.62.41 Fase C: fonte dinâmica derivada de area.fonts (SSOT).
+  // Antes: 'Poppins' hardcoded em 30+ TextRun. Agora Word respeita escolha
+  // de tipografia da BU (Cormorant Garamond, Playfair, etc.). Renderização
+  // depende da fonte instalada no SO do cliente — Word substitui graciosamente
+  // se ausente (comportamento padrão).
+  const _DOCX_TPL = resolveAreaDefaults(area, 'portal');
+  const _DOCX_FONT = _DOCX_TPL.fonts.body || 'Poppins';
+
   // Vars mantêm os nomes legados (gold/navy) por compatibilidade com o
   // restante do generator, mas defaults agora são cinzas neutros — sem dourado.
   const gold = (colors.primary   || PORTAL_DEFAULT_COLORS.primary).replace('#','');
@@ -671,11 +679,11 @@ async function generateDocx({ allTips, segments, areaName, area, colors, filenam
       }));
     } catch(e) { console.warn('DOCX cover logo skip:', e.message); }
   }
-  children.push(new Paragraph({children:[new TextRun({font:'Poppins',text:areaName.toUpperCase(),bold:true,size:52,color:gold,characterSpacing:200})],alignment:AlignmentType.CENTER,spacing:{before:coverLogoData?.arrayBuffer?0:2400,after:160}}));
-  children.push(new Paragraph({children:[new TextRun({font:'Poppins',text:'PORTAL DE DICAS',size:18,color:'888888',characterSpacing:300})],alignment:AlignmentType.CENTER,spacing:{after:600}}));
-  for(const{dest}of allTips) children.push(new Paragraph({children:[new TextRun({font:'Poppins',text:destLabel(dest),bold:true,size:28,color:navy})],alignment:AlignmentType.CENTER,spacing:{after:120}}));
-  children.push(new Paragraph({children:[new TextRun({font:'Poppins',text:'─────────────────────────',color:gold,size:16})],alignment:AlignmentType.CENTER,spacing:{before:400,after:200}}));
-  children.push(new Paragraph({children:[new TextRun({font:'Poppins',text:date,size:16,color:'AAAAAA'})],alignment:AlignmentType.CENTER}));
+  children.push(new Paragraph({children:[new TextRun({font:_DOCX_FONT,text:areaName.toUpperCase(),bold:true,size:52,color:gold,characterSpacing:200})],alignment:AlignmentType.CENTER,spacing:{before:coverLogoData?.arrayBuffer?0:2400,after:160}}));
+  children.push(new Paragraph({children:[new TextRun({font:_DOCX_FONT,text:'PORTAL DE DICAS',size:18,color:'888888',characterSpacing:300})],alignment:AlignmentType.CENTER,spacing:{after:600}}));
+  for(const{dest}of allTips) children.push(new Paragraph({children:[new TextRun({font:_DOCX_FONT,text:destLabel(dest),bold:true,size:28,color:navy})],alignment:AlignmentType.CENTER,spacing:{after:120}}));
+  children.push(new Paragraph({children:[new TextRun({font:_DOCX_FONT,text:'─────────────────────────',color:gold,size:16})],alignment:AlignmentType.CENTER,spacing:{before:400,after:200}}));
+  children.push(new Paragraph({children:[new TextRun({font:_DOCX_FONT,text:date,size:16,color:'AAAAAA'})],alignment:AlignmentType.CENTER}));
   children.push(new Paragraph({children:[new PageBreak()]}));
 
   for(const{tip,dest}of allTips){
@@ -694,13 +702,13 @@ async function generateDocx({ allTips, segments, areaName, area, colors, filenam
       } catch(e) { console.warn('Hero image skip:', e.message); }
     }
 
-    children.push(new Paragraph({children:[new TextRun({font:'Poppins',text:label.toUpperCase(),bold:true,size:32,color:navy,characterSpacing:120})],spacing:{before:heroData?.arrayBuffer?100:400,after:80},border:{bottom:{style:BorderStyle.SINGLE,size:12,color:gold}}}));
+    children.push(new Paragraph({children:[new TextRun({font:_DOCX_FONT,text:label.toUpperCase(),bold:true,size:32,color:navy,characterSpacing:120})],spacing:{before:heroData?.arrayBuffer?100:400,after:80},border:{bottom:{style:BorderStyle.SINGLE,size:12,color:gold}}}));
     children.push(new Paragraph({spacing:{after:200}}));
 
     const content=buildContent(tip,segments);
     for(const{segDef,data}of content){
       // Heading do segmento — respiro generoso antes (separa do bloco anterior)
-      children.push(new Paragraph({children:[new TextRun({font:'Poppins',text:segDef.label.toUpperCase(),bold:true,size:16,color:gold,characterSpacing:250})],spacing:{before:600,after:120},border:{left:{style:BorderStyle.SINGLE,size:18,color:gold}},indent:{left:120}}));
+      children.push(new Paragraph({children:[new TextRun({font:_DOCX_FONT,text:segDef.label.toUpperCase(),bold:true,size:16,color:gold,characterSpacing:250})],spacing:{before:600,after:120},border:{left:{style:BorderStyle.SINGLE,size:18,color:gold}},indent:{left:120}}));
       children.push(new Paragraph({spacing:{after:200}}));
 
       if(segDef.mode==='special_info'){
@@ -712,22 +720,22 @@ async function generateDocx({ allTips, segments, areaName, area, colors, filenam
         // ── DESCRIÇÃO em parágrafo (largura total) ──
         if (descClean) {
           children.push(new Paragraph({
-            children:[new TextRun({font:'Poppins',text:'DESCRIÇÃO',size:13,bold:true,color:gold,characterSpacing:200})],
+            children:[new TextRun({font:_DOCX_FONT,text:'DESCRIÇÃO',size:13,bold:true,color:gold,characterSpacing:200})],
             spacing:{before:120,after:120},
           }));
           children.push(new Paragraph({
-            children:[new TextRun({font:'Poppins',text:descClean,size:20,color:'474650'})],
+            children:[new TextRun({font:_DOCX_FONT,text:descClean,size:20,color:'474650'})],
             spacing:{after:400, line:320},
           }));
         }
         // ── DICA em callout (texto destacado) ──
         if (inf.dica) {
           children.push(new Paragraph({
-            children:[new TextRun({font:'Poppins',text:'DICA DO CONCIERGE',size:13,bold:true,color:gold,characterSpacing:200})],
+            children:[new TextRun({font:_DOCX_FONT,text:'DICA DO CONCIERGE',size:13,bold:true,color:gold,characterSpacing:200})],
             spacing:{before:300,after:120},
           }));
           children.push(new Paragraph({
-            children:[new TextRun({font:'Poppins',text:inf.dica,size:20,italics:true,color:'474650'})],
+            children:[new TextRun({font:_DOCX_FONT,text:inf.dica,size:20,italics:true,color:'474650'})],
             spacing:{after:400, line:320},
             indent:{left:200},
           }));
@@ -744,14 +752,14 @@ async function generateDocx({ allTips, segments, areaName, area, colors, filenam
         ].filter(([,v])=>v);
         if (dataRows.length) {
           children.push(new Paragraph({
-            children:[new TextRun({font:'Poppins',text:'DADOS BÁSICOS',size:13,bold:true,color:gold,characterSpacing:200})],
+            children:[new TextRun({font:_DOCX_FONT,text:'DADOS BÁSICOS',size:13,bold:true,color:gold,characterSpacing:200})],
             spacing:{before:300,after:160},
           }));
           for (const [label, value] of dataRows) {
             children.push(new Paragraph({
               children:[
-                new TextRun({font:'Poppins',text:label+': ',size:20,bold:true,color:navy}),
-                new TextRun({font:'Poppins',text:String(value),size:20,color:'474650'}),
+                new TextRun({font:_DOCX_FONT,text:label+': ',size:20,bold:true,color:navy}),
+                new TextRun({font:_DOCX_FONT,text:String(value),size:20,color:'474650'}),
               ],
               spacing:{after:120},
             }));
@@ -766,11 +774,11 @@ async function generateDocx({ allTips, segments, areaName, area, colors, filenam
         const minArr = climate?.min || monthsArr.map((_,i)=>cli[`min_${i}`] ?? null);
         const hasClimate = maxArr.some(v=>v!=null) || minArr.some(v=>v!=null);
         if (hasClimate) {
-          children.push(new Paragraph({children:[new TextRun({font:'Poppins',text:'CLIMA',size:13,bold:true,color:gold,characterSpacing:200})],spacing:{before:400,after:160}}));
+          children.push(new Paragraph({children:[new TextRun({font:_DOCX_FONT,text:'CLIMA',size:13,bold:true,color:gold,characterSpacing:200})],spacing:{before:400,after:160}}));
           const climaCell = (txt, bold=false) => new TableCell({
             width:{size:660,type:WidthType.DXA},
             borders:{top:{style:BorderStyle.SINGLE,size:2,color:'EEEEEE'},bottom:{style:BorderStyle.SINGLE,size:2,color:'EEEEEE'},left:{style:BorderStyle.SINGLE,size:2,color:'EEEEEE'},right:{style:BorderStyle.SINGLE,size:2,color:'EEEEEE'}},
-            children:[new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({font:'Poppins',text:String(txt),size:14,bold,color:bold?gold:'474650'})]})],
+            children:[new Paragraph({alignment:AlignmentType.CENTER,children:[new TextRun({font:_DOCX_FONT,text:String(txt),size:14,bold,color:bold?gold:'474650'})]})],
           });
           const headerRow = new TableRow({children:[climaCell('°C',true), ...monthsArr.map(m=>climaCell(m,true))]});
           const maxRow    = new TableRow({children:[climaCell('Máx ↑',true), ...maxArr.map(v=>climaCell(v??'—'))]});
@@ -780,10 +788,10 @@ async function generateDocx({ allTips, segments, areaName, area, colors, filenam
         }
         const rep=inf.representacao||{};
         if(rep.nome){
-          children.push(new Paragraph({children:[new TextRun({font:'Poppins',text:'REPRESENTAÇÃO BRASILEIRA',size:13,bold:true,color:gold,characterSpacing:200})],spacing:{before:400,after:160}}));
+          children.push(new Paragraph({children:[new TextRun({font:_DOCX_FONT,text:'REPRESENTAÇÃO BRASILEIRA',size:13,bold:true,color:gold,characterSpacing:200})],spacing:{before:400,after:160}}));
           for(const[l,v]of[['Nome',rep.nome],['Endereço',rep.endereco],['Telefone',rep.telefone],['Site',rep.link]].filter(([,v])=>v)){
-            if(l==='Site') children.push(new Paragraph({children:[new TextRun({font:'Poppins',text:`${l}: `,bold:true,size:18,color:navy}),new ExternalHyperlink({link:normalizeUrl(v),children:[new TextRun({font:'Poppins',text:normalizeUrl(v),size:18,style:'Hyperlink',color:gold})]})],spacing:{after:120}}));
-            else children.push(new Paragraph({children:[new TextRun({font:'Poppins',text:`${l}: `,bold:true,size:18,color:navy}),new TextRun({font:'Poppins',text:v,size:18,color:'474650'})],spacing:{after:120}}));
+            if(l==='Site') children.push(new Paragraph({children:[new TextRun({font:_DOCX_FONT,text:`${l}: `,bold:true,size:18,color:navy}),new ExternalHyperlink({link:normalizeUrl(v),children:[new TextRun({font:_DOCX_FONT,text:normalizeUrl(v),size:18,style:'Hyperlink',color:gold})]})],spacing:{after:120}}));
+            else children.push(new Paragraph({children:[new TextRun({font:_DOCX_FONT,text:`${l}: `,bold:true,size:18,color:navy}),new TextRun({font:_DOCX_FONT,text:v,size:18,color:'474650'})],spacing:{after:120}}));
           }
         }
       } else if(segDef.mode==='simple_list'){
@@ -798,11 +806,11 @@ async function generateDocx({ allTips, segments, areaName, area, colors, filenam
           return true;
         });
         for(const item of uniqueItems){
-          children.push(new Paragraph({children:[new TextRun({font:'Poppins',text:item.title,bold:true,size:22,color:navy})],spacing:{before:360,after:120}}));
-          if(item.description) children.push(new Paragraph({children:[new TextRun({font:'Poppins',text:item.description,size:20,color:'474650'})],spacing:{after:240, line:320}}));
+          children.push(new Paragraph({children:[new TextRun({font:_DOCX_FONT,text:item.title,bold:true,size:22,color:navy})],spacing:{before:360,after:120}}));
+          if(item.description) children.push(new Paragraph({children:[new TextRun({font:_DOCX_FONT,text:item.description,size:20,color:'474650'})],spacing:{after:240, line:320}}));
         }
       } else {
-        if(data.themeDesc) children.push(new Paragraph({children:[new TextRun({font:'Poppins',text:data.themeDesc,size:18,italics:true,color:'474650'})],spacing:{after:160}}));
+        if(data.themeDesc) children.push(new Paragraph({children:[new TextRun({font:_DOCX_FONT,text:data.themeDesc,size:18,italics:true,color:'474650'})],spacing:{after:160}}));
 
         // Dedupe + ordena por categoria pra agrupar (heading da categoria
         // só uma vez por grupo, não em cada item)
@@ -831,10 +839,10 @@ async function generateDocx({ allTips, segments, areaName, area, colors, filenam
           // Categoria heading SÓ quando muda (agrupa)
           const cat = (item.categoria||'').trim();
           if(cat && cat !== lastCategoria){
-            children.push(new Paragraph({children:[new TextRun({font:'Poppins',text:cat.toUpperCase(),size:13,color:gold,bold:true,characterSpacing:200})],spacing:{before:240,after:20}}));
+            children.push(new Paragraph({children:[new TextRun({font:_DOCX_FONT,text:cat.toUpperCase(),size:13,color:gold,bold:true,characterSpacing:200})],spacing:{before:240,after:20}}));
             lastCategoria = cat;
           }
-          children.push(new Paragraph({children:[new TextRun({font:'Poppins',text:item.titulo,bold:true,size:22,color:navy})],spacing:{after:imgData?.arrayBuffer?80:60}}));
+          children.push(new Paragraph({children:[new TextRun({font:_DOCX_FONT,text:item.titulo,bold:true,size:22,color:navy})],spacing:{after:imgData?.arrayBuffer?80:60}}));
 
           if(imgData?.arrayBuffer){
             try {
@@ -845,11 +853,11 @@ async function generateDocx({ allTips, segments, areaName, area, colors, filenam
             } catch(e) { console.warn('Item image skip:', e.message); }
           }
 
-          if(item.descricao) children.push(new Paragraph({children:[new TextRun({font:'Poppins',text:item.descricao,size:18,color:'474650'})],spacing:{after:80}}));
+          if(item.descricao) children.push(new Paragraph({children:[new TextRun({font:_DOCX_FONT,text:item.descricao,size:18,color:'474650'})],spacing:{after:80}}));
           const det=[item.endereco&&`📍 ${item.endereco}`,item.telefone&&`📞 ${item.telefone}`].filter(Boolean);
-          if(det.length) children.push(new Paragraph({children:[new TextRun({font:'Poppins',text:det.join('   '),size:16,color:'888888'})],spacing:{after:60}}));
-          if(hasValidSite(item)) children.push(new Paragraph({children:[new TextRun({font:'Poppins',text:'🌐 ',size:16}),new ExternalHyperlink({link:normalizeUrl(item.site),children:[new TextRun({font:'Poppins',text:normalizeUrl(item.site),size:18,style:'Hyperlink',color:gold})]})],spacing:{after:60}}));
-          if(item.observacoes) children.push(new Paragraph({children:[new TextRun({font:'Poppins',text:`💡 ${item.observacoes}`,size:16,italics:true,color:'AAAAAA'})],spacing:{after:80}}));
+          if(det.length) children.push(new Paragraph({children:[new TextRun({font:_DOCX_FONT,text:det.join('   '),size:16,color:'888888'})],spacing:{after:60}}));
+          if(hasValidSite(item)) children.push(new Paragraph({children:[new TextRun({font:_DOCX_FONT,text:'🌐 ',size:16}),new ExternalHyperlink({link:normalizeUrl(item.site),children:[new TextRun({font:_DOCX_FONT,text:normalizeUrl(item.site),size:18,style:'Hyperlink',color:gold})]})],spacing:{after:60}}));
+          if(item.observacoes) children.push(new Paragraph({children:[new TextRun({font:_DOCX_FONT,text:`💡 ${item.observacoes}`,size:16,italics:true,color:'AAAAAA'})],spacing:{after:80}}));
           children.push(new Paragraph({border:{bottom:{style:BorderStyle.SINGLE,size:2,color:'EEEEEE'}},spacing:{after:80}}));
         }
       }
@@ -1508,9 +1516,12 @@ async function generatePptx({ allTips, segments, areaName, area, colors, filenam
   const date=new Date().toLocaleDateString('pt-BR',{year:'numeric',month:'long'});
   pptx.layout='LAYOUT_WIDE'; pptx.author='PRIMETOUR Portal de Dicas';
 
-  // Fonte padrão Poppins (com fallback Arial). Helpers garantem que
-  // toda chamada de addText use a fonte correta sem precisar repetir.
-  const FONT = 'Poppins';
+  // v4.62.41 Fase C: fonte dinâmica via SSOT (area.fonts.body).
+  // Antes: 'Poppins' hardcoded. Agora PowerPoint usa fonte da BU
+  // (Cormorant Garamond/Playfair/Inter/etc.) — fallback Arial preserva
+  // legibilidade se SO do cliente não tem a fonte instalada.
+  const _PPTX_TPL = resolveAreaDefaults(area, 'portal');
+  const FONT = _PPTX_TPL.fonts.body || 'Poppins';
   const FONT_FALLBACK = 'Arial';
   const F = (extra={}) => ({ fontFace: `${FONT}, ${FONT_FALLBACK}, sans-serif`, ...extra });
 

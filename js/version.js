@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 62,
-  patch: 40,
-  build: '20260528-areas-templates-fase-b-toggle-name-banco-area',
+  patch: 41,
+  build: '20260528-areas-templates-fase-c-fontes-docx-pptx',
 };
 
 /** "1.2.0" */

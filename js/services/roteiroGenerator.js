@@ -2095,11 +2095,18 @@ export async function generateRoteiroPPTX(roteiro, area = null) {
   const secondary = _tpl.colors.secondary.replace('#', '');
   // v4.62.40 Fase B (D7): brand name respeita toggle (era hardcoded)
   const buName = resolveExternalBrandName(area);
+  // v4.62.41 Fase C: fonte default do PPTX agora segue area.fonts (era Arial
+  // default do PptxGenJS). Helper F() wraps addText pra aplicar fontFace
+  // sem repetir em cada chamada. Fallback gracioso se SO sem a fonte.
+  const _PPTX_FONT = _tpl.fonts.body || 'Poppins';
 
   const pptx = new PptxGenJS();
   pptx.layout = 'LAYOUT_16x9';
   pptx.author = buName;
   pptx.title = roteiro.title || 'Roteiro de Viagem';
+  // Default fontFace pra todos os addText subsequentes (PptxGenJS API).
+  // Pode ser overridden por chamada se precisar.
+  try { pptx.theme = { ...pptx.theme, bodyFontFace: _PPTX_FONT, headFontFace: _PPTX_FONT }; } catch {}
 
   const W = 10, H = 5.625;
 
@@ -2650,10 +2657,14 @@ export async function generateRoteiroDOCX(roteiro, area = null) {
   const accentHex    = primaryHex;
   // v4.62.40 Fase B (D7): brand respeita toggle
   const buName       = resolveExternalBrandName(area);
+  // v4.62.41 Fase C: fonte dinâmica via SSOT — antes 'Calibri' hardcoded.
+  // Word respeita escolha de tipografia da BU; fallback gracioso se cliente
+  // não tem a fonte instalada (Word substitui automático).
+  const _DOCX_FONT   = _tpl.fonts.body || 'Calibri';
   const today        = new Date().toLocaleDateString('pt-BR', { year: 'numeric', month: 'long', day: 'numeric' });
 
   // Helpers locais — wrappers do docx API pra reduzir ruído visual
-  const tr  = (text, opts = {}) => new TextRun({ font: 'Calibri', text: String(text || ''), ...opts });
+  const tr  = (text, opts = {}) => new TextRun({ font: _DOCX_FONT, text: String(text || ''), ...opts });
   const p   = (children, opts = {}) => new Paragraph({ children, ...opts });
   const hdr = (text, level = HeadingLevel.HEADING_1) => new Paragraph({
     children: [tr(text.toUpperCase(), { bold: true, size: 28, color: secondaryHex, characterSpacing: 50 })],
