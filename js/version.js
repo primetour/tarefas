@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 62,
-  patch: 47,
-  build: '20260528-web-link-exports-audit-logs',
+  patch: 48,
+  build: '20260528-ux-exports-counter-copy-all-banco-override',
 };
 
 /** "1.2.0" */

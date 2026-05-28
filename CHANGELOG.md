@@ -6,6 +6,29 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.62.48+20260528-ux-exports-counter-copy-all-banco-override] — 2026-05-28
+
+Release **Fase E pós-audit Templates Áreas (parte 4/6)** — polish UX da
+aba Exports + extensão de `buildModuleOverride` pra Banco de Roteiros.
+
+**UX Exports (CLAUDE.md §11.b/§10 — atenção ao todo)**:
+- `maxlength="300"` em footers, `maxlength="200"` em headers (defensivo —
+  prática Word/PowerPoint = ≤2 linhas).
+- Counter visual `N/M` ao lado do label, vermelho quando > 90% do limite.
+- Botão "⎘ Copiar pra todos os formatos" embaixo de footer + header
+  (copia pro PDF + DOCX + PPTX + Web os demais 3 formatos, feedback
+  inline "✓ Copiado em N").
+- Esconder toggle "Esconder capa" no formato Web (NO-OP em HTML) +
+  info inline explicativa.
+
+**buildModuleOverride extension**:
+- Antes: só `portal` + `roteiros` recebiam override de cor/fonte.
+  `banco-roteiros` era zumbi em `modules.X.colors/fonts`.
+- Agora: collect tb pra `banco-roteiros` (alinhado com Exports tab que
+  já tinha sub-tab pra ele).
+
+---
+
 ## [4.62.47+20260528-web-link-exports-audit-logs] — 2026-05-28
 
 Release **Fase E pós-audit Templates Áreas (parte 3/6)** — encerra os 14

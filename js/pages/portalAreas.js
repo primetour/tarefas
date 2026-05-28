@@ -94,28 +94,52 @@ function exportsModuleBlock(key, label, current = {}) {
           </summary>
           <div style="padding:14px;border-top:1px solid var(--border-subtle);">
             <div class="area-field">
-              <label style="font-size:0.75rem;color:var(--text-muted);">Texto do rodapé</label>
-              <textarea id="area-exp-${key}-${fmt.id}-footer"
+              <label style="font-size:0.75rem;color:var(--text-muted);display:flex;justify-content:space-between;align-items:center;">
+                <span>Texto do rodapé</span>
+                <!-- v4.62.48+ counter visual + maxlength defensivo -->
+                <span class="area-exp-counter" data-target="area-exp-${key}-${fmt.id}-footer" data-max="300" style="font-size:0.65rem;color:var(--text-muted);font-variant-numeric:tabular-nums;"></span>
+              </label>
+              <textarea id="area-exp-${key}-${fmt.id}-footer" maxlength="300"
                 style="width:100%;min-height:60px;padding:8px 10px;border:1px solid var(--border-subtle);border-radius:4px;font-family:inherit;font-size:0.8125rem;resize:vertical;"
                 placeholder="Ex: ${esc('{areaName} · CNPJ 00.000.000/0001-00 · contato@primetour.com.br')}">${esc(f.footerText || '')}</textarea>
-              <div style="font-size:0.65rem;color:var(--text-muted);margin-top:3px;">
-                Placeholders: <code>{areaName}</code> · <code>{today}</code> · <code>{clientName}</code> · <code>{title}</code>
+              <div style="font-size:0.65rem;color:var(--text-muted);margin-top:3px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span>Placeholders: <code>{areaName}</code> · <code>{today}</code> · <code>{clientName}</code> · <code>{title}</code></span>
+                <!-- v4.62.48+ botão "copiar pra todos os formatos" pro footer -->
+                <button type="button" class="area-exp-copy-all" data-src-key="${esc(key)}" data-src-fmt="${esc(fmt.id)}" data-src-field="footer"
+                  style="background:none;border:1px solid var(--border-subtle);color:var(--text-secondary);padding:2px 8px;border-radius:3px;cursor:pointer;font-size:0.65rem;">
+                  ⎘ Copiar pra todos os formatos
+                </button>
               </div>
             </div>
             <div class="area-field">
-              <label style="font-size:0.75rem;color:var(--text-muted);">Texto adicional no cabeçalho (opcional)</label>
-              <input type="text" id="area-exp-${key}-${fmt.id}-header"
+              <label style="font-size:0.75rem;color:var(--text-muted);display:flex;justify-content:space-between;align-items:center;">
+                <span>Texto adicional no cabeçalho (opcional)</span>
+                <span class="area-exp-counter" data-target="area-exp-${key}-${fmt.id}-header" data-max="200" style="font-size:0.65rem;color:var(--text-muted);font-variant-numeric:tabular-nums;"></span>
+              </label>
+              <input type="text" id="area-exp-${key}-${fmt.id}-header" maxlength="200"
                 value="${esc(f.headerText || '')}"
                 style="width:100%;padding:8px 10px;border:1px solid var(--border-subtle);border-radius:4px;font-family:inherit;font-size:0.8125rem;"
                 placeholder="Ex: Cotação preparada por {areaName}">
+              <div style="font-size:0.65rem;color:var(--text-muted);margin-top:3px;text-align:right;">
+                <button type="button" class="area-exp-copy-all" data-src-key="${esc(key)}" data-src-fmt="${esc(fmt.id)}" data-src-field="header"
+                  style="background:none;border:1px solid var(--border-subtle);color:var(--text-secondary);padding:2px 8px;border-radius:3px;cursor:pointer;font-size:0.65rem;">
+                  ⎘ Copiar pra todos os formatos
+                </button>
+              </div>
             </div>
+            ${fmt.id === 'web' ? `
+            <!-- v4.62.48+ Web: hideCover é NO-OP (não existe slide de capa em HTML).
+                 Mantém schema-compat mas esconde do UI pra não confundir. -->
+            <div class="area-field" style="font-size:0.7rem;color:var(--text-muted);font-style:italic;">
+              ℹ Formato Web não tem capa separada — opção "esconder capa" não se aplica.
+            </div>` : `
             <div class="area-field" style="display:flex;align-items:center;gap:8px;">
               <input type="checkbox" id="area-exp-${key}-${fmt.id}-hidecover" ${f.hideCover ? 'checked' : ''}
                 style="width:14px;height:14px;cursor:pointer;accent-color:var(--brand-gold,#D4A843);">
               <label for="area-exp-${key}-${fmt.id}-hidecover" style="font-size:0.8125rem;color:var(--text-primary);font-weight:500;margin:0;cursor:pointer;">
                 Esconder capa <span style="font-weight:400;color:var(--text-muted);font-size:0.72rem;">(export compacto sem capa)</span>
               </label>
-            </div>
+            </div>`}
           </div>
         </details>`;
       }).join('')}
@@ -575,6 +599,47 @@ function showAreaModal(area, areas = []) {
     });
   });
 
+  // v4.62.48+ counters dos textareas/inputs de exports (live + maxlength)
+  const _updExpCounter = (counter) => {
+    const el = document.getElementById(counter.dataset.target);
+    if (!el) return;
+    const max = +counter.dataset.max || 0;
+    const cur = (el.value || '').length;
+    counter.textContent = `${cur}/${max}`;
+    counter.style.color = cur > max * 0.9 ? 'var(--color-danger,#EF4444)' : 'var(--text-muted)';
+  };
+  modal.querySelectorAll('.area-exp-counter').forEach(c => {
+    _updExpCounter(c);
+    const el = document.getElementById(c.dataset.target);
+    if (el) el.addEventListener('input', () => _updExpCounter(c));
+  });
+
+  // v4.62.48+ "copiar pra todos os formatos" (footer/header em PDF+DOCX+PPTX+Web)
+  modal.querySelectorAll('.area-exp-copy-all').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      const k     = btn.dataset.srcKey;
+      const fmt   = btn.dataset.srcFmt;
+      const field = btn.dataset.srcField; // 'footer' | 'header'
+      const srcEl = document.getElementById(`area-exp-${k}-${fmt}-${field}`);
+      if (!srcEl) return;
+      const val = srcEl.value || '';
+      const fmts = ['pdf', 'docx', 'pptx', 'web'];
+      let count = 0;
+      fmts.forEach(f => {
+        if (f === fmt) return; // skip origem
+        const tgt = document.getElementById(`area-exp-${k}-${f}-${field}`);
+        if (tgt) { tgt.value = val; count++; tgt.dispatchEvent(new Event('input', { bubbles: true })); }
+      });
+      btn.textContent = `✓ Copiado em ${count}`;
+      btn.style.borderColor = 'var(--brand-gold,#D4A843)';
+      setTimeout(() => {
+        btn.textContent = '⎘ Copiar pra todos os formatos';
+        btn.style.borderColor = '';
+      }, 1800);
+    });
+  });
+
   // Live preview de fontes na aba Tipografia
   const updateFontPreview = () => {
     const h = document.getElementById('area-font-headline')?.value || 'Poppins';
@@ -730,11 +795,15 @@ function showAreaModal(area, areas = []) {
         }
         return Object.keys(out).length ? out : null;
       };
-      const portalOv   = buildModuleOverride('portal');
-      const roteirosOv = buildModuleOverride('roteiros');
+      const portalOv         = buildModuleOverride('portal');
+      const roteirosOv       = buildModuleOverride('roteiros');
+      // v4.62.48+ Banco de Roteiros agora também aceita override de cor/fonte
+      // (antes só portal/roteiros — banco-roteiros era zumbi em modules.X.colors/fonts).
+      const bancoRoteirosOv  = buildModuleOverride('banco-roteiros');
       const modules = {};
-      if (portalOv)   modules.portal   = portalOv;
-      if (roteirosOv) modules.roteiros = roteirosOv;
+      if (portalOv)         modules.portal           = portalOv;
+      if (roteirosOv)       modules.roteiros         = roteirosOv;
+      if (bancoRoteirosOv)  modules['banco-roteiros']= bancoRoteirosOv;
 
       // v4.62.43+ Fase E.2: coleta exports.{pdf,docx,pptx,web} por módulo.
       // Salva só campos não-vazios (mantém schema enxuto).
