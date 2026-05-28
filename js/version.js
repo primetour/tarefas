@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 62,
-  patch: 42,
-  build: '20260528-areas-templates-fase-d-voice-ia',
+  patch: 43,
+  build: '20260528-areas-templates-fase-e-ui-exports-tab',
 };
 
 /** "1.2.0" */

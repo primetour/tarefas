@@ -82,22 +82,66 @@ export const DEFAULT_BRAND = {
   useExternalName:  true,   // se false → usa area.name como branding externo
 };
 
-/* ═══ EXPORTS por formato (futuro Fase E — UI de templates) ═══════════
+/* ═══ EXPORTS por formato (Fase E — v4.62.43) ═════════════════════════
  *
- * Cada formato terá overrides próprios:
- *   pdf:  { coverStyle, footerText, headerLogoPosition, pageMargins, includesSections }
- *   docx: { fontHeadlineOverride, fontBodyOverride }
- *   pptx: { layoutWidth, slideAspect }
- *   web:  { footerText, ctaButtonLabel }
+ * Templates editáveis por formato e por módulo. Cada formato tem overrides
+ * próprios. Persistidos em area.modules[moduleKey].exports[format] e
+ * acessados via resolveExportTemplate(area, moduleKey, format).
  *
- * Placeholder vazio por enquanto — Fase E preenche e cria UI.
+ * Campos suportados (todos opcionais — fallback pros defaults daqui):
+ *   footerText   string  — texto rodapé. Suporta {placeholders}: {areaName},
+ *                          {today}, {clientName}, {title}. Multi-linha (\n).
+ *   headerText   string  — texto adicional no header (small print).
+ *   hideCover    boolean — desliga a capa do PDF/PPTX (export compacto).
+ *   coverStyle   string  — 'fullbleed' | 'centered' | 'minimal' (futuro)
+ *   pageMargins  number  — margens em mm (PDF — futuro)
+ *
+ * Defaults vazios = generator usa o que sempre usou (texto hardcoded
+ * antigo). Backward-compat 100%.
  */
 export const DEFAULT_EXPORTS = {
-  pdf:  {},
-  docx: {},
-  pptx: {},
-  web:  {},
+  pdf:  { footerText: '', headerText: '', hideCover: false },
+  docx: { footerText: '', headerText: '', hideCover: false },
+  pptx: { footerText: '', headerText: '', hideCover: false },
+  web:  { footerText: '', headerText: '', hideCover: false },
 };
+
+/**
+ * Resolve overrides do template de export pra um (area, módulo, formato).
+ *
+ * Ordem de precedência (mais específico vence):
+ *   1. area.modules[moduleKey].exports[format].field
+ *   2. DEFAULT_EXPORTS[format].field
+ *
+ * Suporta placeholders no footerText/headerText via formatExportText().
+ *
+ * Use sempre antes de renderizar rodapé/header — generators NÃO devem
+ * acessar area.modules diretamente, pra evitar drift.
+ */
+export function resolveExportTemplate(area, moduleKey, format) {
+  const fmt = (area?.modules?.[moduleKey]?.exports?.[format]) || {};
+  return {
+    ...(DEFAULT_EXPORTS[format] || {}),
+    ...fmt,
+  };
+}
+
+/**
+ * Substitui placeholders {areaName}, {today}, {clientName}, {title} no texto.
+ * Aceita Date object ou string ISO em today; default = data de hoje.
+ * Retorna '' se text vazio.
+ */
+export function formatExportText(text, ctx = {}) {
+  if (!text) return '';
+  const today = ctx.today instanceof Date
+    ? ctx.today.toLocaleDateString('pt-BR', { year:'numeric', month:'long', day:'numeric' })
+    : (ctx.today || new Date().toLocaleDateString('pt-BR', { year:'numeric', month:'long', day:'numeric' }));
+  return String(text)
+    .replace(/\{areaName\}/g,   ctx.areaName   || '')
+    .replace(/\{today\}/g,      today)
+    .replace(/\{clientName\}/g, ctx.clientName || '')
+    .replace(/\{title\}/g,      ctx.title      || '');
+}
 
 /* ═══════════════════════════════════════════════════════════════════════
  * Helper: deep-merge defaults com overrides da área (e do módulo).

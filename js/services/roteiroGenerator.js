@@ -11,7 +11,7 @@ import { recordGeneration as logGeneration } from './roteiros.js';
 // v4.62.39+ Fase A.3: SSOT de defaults pra colors/fonts/editorial/brand.
 // Resolve D6 (defaults invertidos PDF/PPTX vs DOCX), D7 (brand toggle),
 // E1/E2/E4 (60+ literais hardcoded).
-import { resolveAreaDefaults, resolveExternalBrandName, DEFAULT_COLORS } from './areaDefaults.js';
+import { resolveAreaDefaults, resolveExternalBrandName, resolveExportTemplate, formatExportText, DEFAULT_COLORS } from './areaDefaults.js';
 // Reuso de helpers do gerador do Portal de Dicas — fontes, composite logo,
 // cover crop e sanitizer (mesmo padrão visual e tratamento de imagens).
 import {
@@ -720,7 +720,7 @@ function addSectionTitle(doc, y, title, primary, secondary) {
 /** Footer minimalista: logo opcional + paginação. SEM data, SEM nome da BU
  *  (são infos internas/técnicas que poluem documento de cliente).
  */
-function addFooter(doc, areaName, pageNum, totalPages, primary, logoFooter = null) {
+function addFooter(doc, areaName, pageNum, totalPages, primary, logoFooter = null, customFooterText = '') {
   // Linha separadora discreta
   doc.setDrawColor(220, 220, 220);
   doc.setLineWidth(0.2);
@@ -733,6 +733,20 @@ function addFooter(doc, areaName, pageNum, totalPages, primary, logoFooter = nul
     try {
       doc.addImage(logoFooter.dataUrl, 'PNG', lx, ly, lw, lh, undefined, 'NONE');
     } catch (e) { /* silencioso */ }
+  }
+
+  // v4.62.43+ Fase E.3: customFooterText vem de area.modules.X.exports.pdf.footerText
+  // (configurado na UI Áreas → tab Exports). Aparece à ESQUERDA, multi-line ok.
+  if (customFooterText) {
+    doc.setFontSize(7);
+    doc.setFont('Poppins', 'normal');
+    doc.setTextColor(120, 120, 120);
+    const lines = String(customFooterText).split('\n').slice(0, 3); // máx 3 linhas
+    let y = PAGE_H - 11;
+    for (const line of lines) {
+      doc.text(line, MARGIN, y, { align: 'left' });
+      y += 3;
+    }
   }
 
   // Apenas paginação, no canto direito, discreta
@@ -889,10 +903,17 @@ export async function generateRoteiroPDF(roteiro, area = null) {
   buildClosingPage(doc, roteiro, buName, primary, secondary, logoCoverPng);
 
   /* ─── FOOTERS (retroactive) ──────────────────────────────── */
+  // v4.62.43+ Fase E.3: footerText custom da área (Áreas → Exports → PDF)
+  const _exportTpl = resolveExportTemplate(area, 'roteiros', 'pdf');
+  const _customFooter = formatExportText(_exportTpl.footerText || '', {
+    areaName: buName,
+    clientName: roteiro.client?.name || '',
+    title: roteiro.title || '',
+  });
   const totalPages = doc.internal.getNumberOfPages();
   for (let i = 2; i <= totalPages - 1; i++) {
     doc.setPage(i);
-    addFooter(doc, buName, i - 1, totalPages - 2, primary, logoFooter);
+    addFooter(doc, buName, i - 1, totalPages - 2, primary, logoFooter, _customFooter);
   }
 
   /* ─── SAVE & LOG ─────────────────────────────────────────── */

@@ -73,6 +73,56 @@ function moduleOverrideBlock(key, label, current = {}) {
   `;
 }
 
+/* ─── v4.62.43+ Fase E.2: bloco de exports por módulo × formato ─── */
+function exportsModuleBlock(key, label, current = {}) {
+  const exp = (current && current.exports) || {};
+  const fmts = [
+    { id: 'pdf',  label: 'PDF',           icon: '📄' },
+    { id: 'docx', label: 'Word (DOCX)',   icon: '📝' },
+    { id: 'pptx', label: 'PowerPoint',    icon: '📊' },
+    { id: 'web',  label: 'Link web',      icon: '🌐' },
+  ];
+  return `
+    <div class="exports-mod-pane ${key === 'portal' ? 'active' : ''}" data-exports-mod="${esc(key)}" style="display:${key === 'portal' ? 'block' : 'none'};">
+      ${fmts.map(fmt => {
+        const f = exp[fmt.id] || {};
+        return `
+        <details style="margin-bottom:10px;border:1px solid var(--border);border-radius:6px;">
+          <summary style="padding:10px 14px;cursor:pointer;font-weight:600;font-size:0.8125rem;background:var(--bg-soft,#F9FAFB);">
+            <span style="margin-right:6px;">${fmt.icon}</span>${esc(fmt.label)}
+            ${(f.footerText || f.headerText || f.hideCover) ? '<span style="font-size:0.65rem;color:var(--brand-gold);font-weight:500;margin-left:8px;">· customizado</span>' : ''}
+          </summary>
+          <div style="padding:14px;border-top:1px solid var(--border-subtle);">
+            <div class="area-field">
+              <label style="font-size:0.75rem;color:var(--text-muted);">Texto do rodapé</label>
+              <textarea id="area-exp-${key}-${fmt.id}-footer"
+                style="width:100%;min-height:60px;padding:8px 10px;border:1px solid var(--border-subtle);border-radius:4px;font-family:inherit;font-size:0.8125rem;resize:vertical;"
+                placeholder="Ex: ${esc('{areaName} · CNPJ 00.000.000/0001-00 · contato@primetour.com.br')}">${esc(f.footerText || '')}</textarea>
+              <div style="font-size:0.65rem;color:var(--text-muted);margin-top:3px;">
+                Placeholders: <code>{areaName}</code> · <code>{today}</code> · <code>{clientName}</code> · <code>{title}</code>
+              </div>
+            </div>
+            <div class="area-field">
+              <label style="font-size:0.75rem;color:var(--text-muted);">Texto adicional no cabeçalho (opcional)</label>
+              <input type="text" id="area-exp-${key}-${fmt.id}-header"
+                value="${esc(f.headerText || '')}"
+                style="width:100%;padding:8px 10px;border:1px solid var(--border-subtle);border-radius:4px;font-family:inherit;font-size:0.8125rem;"
+                placeholder="Ex: Cotação preparada por {areaName}">
+            </div>
+            <div class="area-field" style="display:flex;align-items:center;gap:8px;">
+              <input type="checkbox" id="area-exp-${key}-${fmt.id}-hidecover" ${f.hideCover ? 'checked' : ''}
+                style="width:14px;height:14px;cursor:pointer;accent-color:var(--brand-gold,#D4A843);">
+              <label for="area-exp-${key}-${fmt.id}-hidecover" style="font-size:0.8125rem;color:var(--text-primary);font-weight:500;margin:0;cursor:pointer;">
+                Esconder capa <span style="font-weight:400;color:var(--text-muted);font-size:0.72rem;">(export compacto sem capa)</span>
+              </label>
+            </div>
+          </div>
+        </details>`;
+      }).join('')}
+    </div>
+  `;
+}
+
 /* ─── Helpers do modal ──────────────────────────────────────── */
 // Bloco de upload de logo (slot: 'main' | 'alt')
 function logoBlock({ slot, label, hint, previewBg, currentUrl }) {
@@ -299,6 +349,7 @@ function showAreaModal(area, areas = []) {
         <button class="area-tab"                  data-tab="tipografia" type="button">🔤 Tipografia</button>
         <button class="area-tab"                  data-tab="editorial"  type="button">📝 Editorial</button>
         <button class="area-tab"                  data-tab="modules"    type="button">⚙ Por módulo</button>
+        <button class="area-tab"                  data-tab="exports"    type="button">📤 Exports</button>
       </div>
       <style>
         .area-tab {
@@ -466,6 +517,27 @@ function showAreaModal(area, areas = []) {
         ${moduleOverrideBlock('roteiros', 'Roteiros de Viagem', mods.roteiros)}
       </div>
 
+      <!-- TAB: Exports (v4.62.43+ Fase E.2) -->
+      <div class="area-tab-pane" data-pane="exports">
+        <div style="background:var(--bg-soft,#F9FAFB);padding:12px 14px;border-left:3px solid var(--brand-gold,#D4A843);border-radius:4px;font-size:0.8125rem;color:var(--text-muted);margin-bottom:16px;line-height:1.5;">
+          <strong style="color:var(--text-primary);">Customizações por módulo × formato.</strong>
+          Cada bloco abaixo configura como o módulo exporta no formato selecionado (rodapé, cabeçalho, capa).
+          Placeholders suportados em rodapé/cabeçalho: <code>{areaName}</code> · <code>{today}</code> · <code>{clientName}</code> · <code>{title}</code>.
+          Vazio = usa o padrão hardcoded do generator (comportamento antigo).
+        </div>
+
+        <!-- Sub-tabs por módulo -->
+        <div id="exports-mod-tabs" style="display:flex;gap:0;border-bottom:1px solid var(--border-subtle);margin-bottom:14px;">
+          <button class="exports-mod-tab area-tab area-tab-active" data-mod="portal"   type="button">📍 Portal de Dicas</button>
+          <button class="exports-mod-tab area-tab"                  data-mod="roteiros" type="button">✈ Roteiros</button>
+          <button class="exports-mod-tab area-tab"                  data-mod="banco-roteiros" type="button">📚 Banco de Roteiros</button>
+        </div>
+
+        ${exportsModuleBlock('portal',          'Portal de Dicas',    mods.portal)}
+        ${exportsModuleBlock('roteiros',        'Roteiros de Viagem', mods.roteiros)}
+        ${exportsModuleBlock('banco-roteiros',  'Banco de Roteiros',  mods['banco-roteiros'])}
+      </div>
+
       <!-- Footer fixo -->
       <div style="display:flex;gap:8px;padding:16px 28px;border-top:1px solid var(--border-subtle);background:var(--bg-card);">
         <button class="btn btn-secondary" id="area-modal-cancel" style="flex:1;">Cancelar</button>
@@ -476,14 +548,30 @@ function showAreaModal(area, areas = []) {
     </div>
   `;
 
-  // Tab switcher
-  modal.querySelectorAll('.area-tab').forEach(btn => {
+  // Tab switcher TOP-LEVEL — só pegar tabs com data-tab (Marca/Tipografia/etc)
+  // Sub-tabs de exports usam data-mod (.exports-mod-tab) — switcher separado abaixo.
+  modal.querySelectorAll('.area-tab[data-tab]').forEach(btn => {
     btn.addEventListener('click', (e) => {
       e.preventDefault();
       const tab = btn.dataset.tab;
-      modal.querySelectorAll('.area-tab').forEach(b => b.classList.toggle('area-tab-active', b === btn));
+      modal.querySelectorAll('.area-tab[data-tab]').forEach(b => b.classList.toggle('area-tab-active', b === btn));
       modal.querySelectorAll('.area-tab-pane').forEach(p =>
         p.classList.toggle('active', p.dataset.pane === tab));
+    });
+  });
+
+  // v4.62.43+ Fase E.2: sub-tab switcher dentro da aba Exports
+  // (Portal de Dicas / Roteiros / Banco de Roteiros)
+  modal.querySelectorAll('.exports-mod-tab').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      const mod = btn.dataset.mod;
+      modal.querySelectorAll('.exports-mod-tab').forEach(b => b.classList.toggle('area-tab-active', b === btn));
+      modal.querySelectorAll('.exports-mod-pane').forEach(p => {
+        const isActive = p.dataset.exportsMod === mod;
+        p.classList.toggle('active', isActive);
+        p.style.display = isActive ? 'block' : 'none';
+      });
     });
   });
 
@@ -647,6 +735,29 @@ function showAreaModal(area, areas = []) {
       const modules = {};
       if (portalOv)   modules.portal   = portalOv;
       if (roteirosOv) modules.roteiros = roteirosOv;
+
+      // v4.62.43+ Fase E.2: coleta exports.{pdf,docx,pptx,web} por módulo.
+      // Salva só campos não-vazios (mantém schema enxuto).
+      const collectExports = (modKey) => {
+        const exp = {};
+        for (const fmt of ['pdf', 'docx', 'pptx', 'web']) {
+          const footer    = document.getElementById(`area-exp-${modKey}-${fmt}-footer`)?.value?.trim()    || '';
+          const header    = document.getElementById(`area-exp-${modKey}-${fmt}-header`)?.value?.trim()    || '';
+          const hideCover = document.getElementById(`area-exp-${modKey}-${fmt}-hidecover`)?.checked       || false;
+          const obj = {};
+          if (footer)    obj.footerText = footer;
+          if (header)    obj.headerText = header;
+          if (hideCover) obj.hideCover  = true;
+          if (Object.keys(obj).length) exp[fmt] = obj;
+        }
+        return Object.keys(exp).length ? exp : null;
+      };
+      const portalExp        = collectExports('portal');
+      const roteirosExp      = collectExports('roteiros');
+      const bancoRoteirosExp = collectExports('banco-roteiros');
+      if (portalExp)        modules.portal           = { ...(modules.portal || {}),         exports: portalExp };
+      if (roteirosExp)      modules.roteiros         = { ...(modules.roteiros || {}),       exports: roteirosExp };
+      if (bancoRoteirosExp) modules['banco-roteiros']= { ...(modules['banco-roteiros'] || {}), exports: bancoRoteirosExp };
 
       // v4.62.40 Fase B.1: brand.useExternalName toggle (D7)
       const useExternalName = document.getElementById('area-use-external-name')?.checked !== false;
