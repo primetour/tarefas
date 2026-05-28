@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 62,
-  patch: 34,
-  build: '20260527-gds-parser-fixes-iata-nome-sem-distribuir',
+  patch: 35,
+  build: '20260527-tarefa-compartilhar-link-deep-link',
 };
 
 /** "1.2.0" */
