@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 1,
-  build: '20260528-templates-cf-upload-r2',
+  patch: 2,
+  build: '20260528-templates-r2-worker-mime-fix',
 };
 
 /** "1.2.0" */

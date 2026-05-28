@@ -1,0 +1,27 @@
+rules_version = '2';
+
+// PRIMETOUR — Firebase Storage rules
+//
+// v4.63.2+ Sprint Upload de Templates: bucket default usado pra hospedar
+// templates HTML/DOCX/PPTX uploaded via CF uploadTemplate.
+//
+// Pra outros uploads (imagens, etc.), o sistema usa Cloudflare R2 via
+// Worker (não passa por este bucket).
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Templates: read pública (templates não contêm dados de cliente,
+    // só layout); write apenas via Admin SDK na CF uploadTemplate.
+    match /templates/{module}/{filename} {
+      allow read: if true;
+      allow write: if false;  // só Admin SDK (server-side)
+    }
+
+    // Outros paths: bloqueia por default (defense in depth — caso alguém
+    // tente subir algo fora do escopo via SDK direto)
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

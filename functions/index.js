@@ -827,23 +827,26 @@ export const uploadTemplate = onCall({
   // templateId pré-gerado (Firestore auto-id format)
   const templateId = db.collection('templates').doc().id;
   const ext = fmtSpec.ext[0];
-  const r2Path = `templates/${module}/${templateId}.${ext}`;
+  const storagePath = `templates/${module}/${templateId}.${ext}`;
 
-  // Upload pro R2 worker (server-side, com token do secret)
+  // v4.63.2+ R2 Worker atualizado pra aceitar templates (HTML/DOCX/PPTX)
+  // quando path inicia com 'templates/'. Worker valida MIME + tamanho por
+  // tipo. Padrão: POST + X-Upload-Token + FormData {file, path}.
   const r2WorkerUrl = 'https://primetour-images.rene-castro.workers.dev';
-  const uploadRes = await fetch(`${r2WorkerUrl}/${r2Path}`, {
-    method: 'PUT',
-    headers: {
-      'Authorization': `Bearer ${R2_UPLOAD_TOKEN.value()}`,
-      'Content-Type': fmtSpec.mime,
-    },
-    body: buf,
+  const filename = storagePath.split('/').pop();
+  const fd = new FormData();
+  fd.append('file', new Blob([buf], { type: fmtSpec.mime }), filename);
+  fd.append('path', storagePath);
+  const uploadRes = await fetch(r2WorkerUrl, {
+    method: 'POST',
+    headers: { 'X-Upload-Token': R2_UPLOAD_TOKEN.value() },
+    body: fd,
   });
   if (!uploadRes.ok) {
     const errText = await uploadRes.text().catch(() => '');
     throw new HttpsError('internal', `R2 upload falhou (${uploadRes.status}): ${errText.slice(0, 200)}`);
   }
-  const fileUrl = `https://pub-ad909dc0c977450a93ee5faa79c7374d.r2.dev/${r2Path}`;
+  const fileUrl = `https://pub-ad909dc0c977450a93ee5faa79c7374d.r2.dev/${storagePath}`;
 
   // Cria doc Firestore (Admin SDK bypassa rules — mesmo padrão de outros uploads)
   const now = FieldValue.serverTimestamp();
@@ -852,7 +855,8 @@ export const uploadTemplate = onCall({
     module,
     format,
     fileUrl,
-    fileStoragePath: r2Path,
+    fileStoragePath: storagePath,
+    fileStorageProvider: 'cloudflare-r2',
     fileSize: sizeBytes,
     fileSha256,
     fileMime: fmtSpec.mime,

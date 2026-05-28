@@ -6,6 +6,43 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.2+20260528-templates-r2-worker-mime-fix] — 2026-05-28
+
+Release **Sprint v4.63 (3/11)** — Upload R2 end-to-end funcional.
+
+**Bug em v4.63.1**: CF `uploadTemplate` deployada mas Cloudflare R2 Worker
+rejeitava todos os arquivos não-imagem com `415 "Only image files
+accepted"`. Worker tinha check hardcoded `contentType.startsWith('image/')`
+no POST handler.
+
+**Fix v4.63.2** (Worker atualizado por Renê no Cloudflare dashboard):
+- Bloco `TEMPLATE_MIMES` no Worker com 3 mimes válidos (HTML / DOCX / PPTX)
+- Branch `isTemplate` no POST handler: se path inicia com `templates/`,
+  aceita os 3 mimes; senão mantém check `image/*` (backwards-compat 100%)
+- Size guard variável: HTML 5MB · DOCX 10MB · PPTX 15MB · imagens 10MB
+- `contentType` real (não força `image/webp` pra templates)
+- `customMetadata.kind` = `'template'` ou `'image'` pra rastreamento R2
+
+**CF `uploadTemplate` revertida pra R2** (saiu do pivot Firebase Storage
+da v4.63.1 que foi rollback):
+- `fileStorageProvider: 'cloudflare-r2'` no doc
+- Removido import `firebase-admin/storage` (não usa mais)
+
+**E2E validado (Lazer)**:
+- Upload HTML 178 bytes via CF → R2 path `templates/cotacoes/{id}.html` ✅
+- Doc Firestore criado com schema completo (status=active, version=1,
+  fileSha256, ownerType=area, ownerId=lazer) ✅
+- URL pública R2 serve o HTML original sem modificação:
+  `curl <r2.dev>/templates/cotacoes/{id}.html` retorna HTML correto ✅
+- `fetchTemplates({module:'cotacoes'})` lista o template uploaded ✅
+
+**Próxima**: v4.63.3 — CF `extractPlaceholders` que abre o arquivo
+uploaded + extrai variáveis `{{...}}` via Handlebars regex (HTML) ou
+docxtemplater inspector (DOCX/PPTX). Popula
+`templates.{id}.placeholders[]` automaticamente.
+
+---
+
 ## [4.63.1+20260528-templates-cf-upload-r2] — 2026-05-28
 
 Release **Sprint v4.63 (2/11)** — CF `uploadTemplate` deployada.
