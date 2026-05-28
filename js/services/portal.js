@@ -813,28 +813,13 @@ export async function deleteDestination(id) {
     console.warn('[deleteDestination] cleanup portal_tips.destinationId falhou:', e?.message);
   }
 
-  // 2) images taggadas pelo destino — zera o tag + flag (mantém imagem viva,
-  //    pode ser re-taggada). Imagem em si NÃO é deletada (lifecycle separado).
-  try {
-    const imgSnap = await getDocs(query(
-      collection(db, 'portal_images'),
-      where('destinationId', '==', id),
-      limit(500),
-    ));
-    if (!imgSnap.empty) {
-      const batch = writeBatch(db);
-      imgSnap.forEach(d => {
-        batch.update(d.ref, {
-          destinationId: null,
-          destinationDeleted: true,
-          destinationDeletedAt: serverTimestamp(),
-        });
-      });
-      await batch.commit();
-    }
-  } catch (e) {
-    console.warn('[deleteDestination] cleanup portal_images.destinationId falhou:', e?.message);
-  }
+  // v4.63.49: removida query `portal_images.destinationId` — audit
+  // (28/05/2026) confirmou 0/238 images com `destinationId` setado.
+  // Schema documentado em saveImageMeta NUNCA é populado pela UI
+  // (`portalImages.js` upload usa só labels continent/country/city,
+  // não FK por ID). Vinculação Banco↔destino é via LABELS, não FK.
+  // Se algum dia portalImages.js ganhar picker de destino (escreve
+  // `destinationId`), reativar esta query aqui.
 
   // v4.62.4 CRÍTICO: cleanup roteiros_bank.geo.destinationIds[].
   // Após v4.62.0 (backfill M:N, 528 refs em 184 roteiros), deletar destination
@@ -1343,65 +1328,67 @@ export async function deleteImageMeta(id) {
     before ? { name: before.name, type: before.type, url: before.url, assetCategory: before.assetCategory } : null,
     null);
 
-  // v4.57.39 fix integração PD4: cleanup refs órfãs em tips + destinos.
-  // Generator quebrava ao tentar carregar imagem inexistente (404 + render fail).
-  // 1) portal_destinations.heroImage.imageId (objeto único, simples nullify)
+  // v4.63.49: cleanup FK em material público gerado (portal_web_links).
+  // Audit Banco × Portal (28/05/2026) confirmou que TRÊS schemas de FK
+  // declarados em v4.57.39 (destinations.heroImage.imageId, tips.items[].
+  // image.imageId, images.destinationId) NUNCA foram populados pela UI:
+  // 0/354 destinations, 0/20 tips, 0/238 images. Cleanups foram REMOVIDAS
+  // por serem queries vazias em produção (custo de read sem efeito).
+  //
+  // O FK real e CRÍTICO descoberto: `portal_web_links.imagesByDest.{destId}.
+  // _overrides[seg][idx]` agora persiste `{url, name, imageId}` (a partir
+  // de v4.63.49 — antes era só `{url, name}`). Quando admin deleta imagem
+  // no Banco, material público fica com URL 404 se não rastrearmos.
+  //
+  // Schema: `imagesByDest = { destId: { _overrides: { segKey: { idx:
+  //   { url, name, imageId } } }, segKey1: {...}, segKey2: {...} } }`
+  // Limit 500 cobre prod atual (~37 web_links em 28/05) com folga.
   try {
-    const destSnap = await getDocs(query(
-      collection(db, 'portal_destinations'),
-      where('heroImage.imageId', '==', id),
-      limit(500),
-    ));
-    if (!destSnap.empty) {
-      const batch = writeBatch(db);
-      destSnap.forEach(d => {
-        batch.update(d.ref, {
-          heroImage: null,
-          heroImageDeleted: true,
-          heroImageDeletedAt: serverTimestamp(),
-        });
-      });
-      await batch.commit();
-    }
-  } catch (e) {
-    console.warn('[deleteImageMeta] cleanup destinations.heroImage falhou:', e?.message);
-  }
-
-  // 2) portal_tips com a imagem em segments[].items[].image.imageId.
-  //    Array aninhado de objetos — não dá pra arrayRemove direto; read-modify-write.
-  //    Scan limit 500 (em produção média <100 tips por área).
-  try {
-    const tipsSnap = await getDocs(query(collection(db, 'portal_tips'), limit(500)));
+    const wlSnap = await getDocs(query(collection(db, 'portal_web_links'), limit(500)));
     const dirty = [];
-    tipsSnap.forEach(d => {
-      const t = d.data();
-      const segs = Array.isArray(t.segments) ? t.segments : [];
+    wlSnap.forEach(d => {
+      const data = d.data();
+      const ibd = data.imagesByDest || {};
       let touched = false;
-      const updatedSegs = segs.map(seg => {
-        const items = Array.isArray(seg?.items) ? seg.items : [];
-        const updatedItems = items.map(it => {
-          if (it?.image?.imageId === id) {
-            touched = true;
-            return { ...it, image: null, imageDeleted: true };
+      const newIbd = {};
+      for (const destKey of Object.keys(ibd)) {
+        const destEntry = ibd[destKey] || {};
+        const newDestEntry = { ...destEntry };
+        const ov = destEntry._overrides || {};
+        const newOv = {};
+        for (const segKey of Object.keys(ov)) {
+          const seg = ov[segKey] || {};
+          const newSeg = {};
+          for (const idx of Object.keys(seg)) {
+            const it = seg[idx];
+            if (it?.imageId === id) {
+              touched = true; // dropa o override — generator vai cair pro fallback
+            } else {
+              newSeg[idx] = it;
+            }
           }
-          return it;
-        });
-        return { ...seg, items: updatedItems };
-      });
-      if (touched) dirty.push({ ref: d.ref, segments: updatedSegs });
+          if (Object.keys(newSeg).length) newOv[segKey] = newSeg;
+        }
+        if (Object.keys(newOv).length) newDestEntry._overrides = newOv;
+        else delete newDestEntry._overrides;
+        newIbd[destKey] = newDestEntry;
+      }
+      if (touched) dirty.push({ ref: d.ref, imagesByDest: newIbd });
     });
     if (dirty.length) {
       const batch = writeBatch(db);
-      dirty.forEach(({ ref, segments }) => {
+      dirty.forEach(({ ref, imagesByDest }) => {
         batch.update(ref, {
-          segments,
+          imagesByDest,
           imageDeletedAt: serverTimestamp(),
+          imageDeletedRefs: arrayUnion(id),
         });
       });
       await batch.commit();
+      console.log(`[deleteImageMeta] cleanup portal_web_links: ${dirty.length} docs dropped override`);
     }
   } catch (e) {
-    console.warn('[deleteImageMeta] cleanup tips.segments[].items[].image falhou:', e?.message);
+    console.warn('[deleteImageMeta] cleanup portal_web_links falhou:', e?.message);
   }
 }
 

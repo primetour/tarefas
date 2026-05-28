@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 48,
-  build: '20260528-logos-color-blocos-destaque-z-index',
+  patch: 49,
+  build: '20260528-audit-banco-portal-fk-imageid',
 };
 
 /** "1.2.0" */

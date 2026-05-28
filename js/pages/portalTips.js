@@ -1400,6 +1400,7 @@ function renderSegEditor(tip, segKey, destImgs, segSelectedImgs, destId) {
                 <button class="img-pick-btn"
                   data-seg="${segKey}" data-idx="${idx}" data-iidx="${iIdx}"
                   data-url="${esc(img.url)}" data-name="${esc(img.name||'')}"
+                  data-image-id="${esc(img.id||'')}"
                   style="flex-shrink:0;border:2px solid
                   ${isSelected ? 'var(--brand-gold)' : 'var(--border-subtle)'};
                   border-radius:var(--radius-sm);overflow:hidden;cursor:pointer;
@@ -1465,9 +1466,15 @@ function wireSegEditor(wTip, segKey, destImgs, destId, selectedImages, workingTi
 
   qs(`.img-pick-btn[data-seg="${segKey}"]`).forEach(btn => {
     btn.addEventListener('click', () => {
-      const idx  = Number(btn.dataset.idx);
-      const url  = btn.dataset.url;
-      const name = btn.dataset.name;
+      const idx     = Number(btn.dataset.idx);
+      const url     = btn.dataset.url;
+      const name    = btn.dataset.name;
+      // v4.63.49: persistir imageId no override pra cleanup FK funcionar
+      // quando admin deletar a imagem no Banco. Sem isso, deleteImageMeta
+      // não consegue rastrear web_links que usam essa imagem → URL fica 404
+      // sem aviso (audit Banco × Portal confirmou 7 web_links em produção
+      // com 0/21 URLs R2 tendo imageId rastreável).
+      const imageId = btn.dataset.imageId || null;
       qs(`.img-pick-btn[data-seg="${segKey}"][data-idx="${idx}"]`).forEach(b => {
         b.style.borderColor = 'var(--border-subtle)';
       });
@@ -1475,7 +1482,7 @@ function wireSegEditor(wTip, segKey, destImgs, destId, selectedImages, workingTi
         b.style.borderColor = 'var(--border-subtle)';
       });
       btn.style.borderColor = 'var(--brand-gold)';
-      selectedImages[destId][segKey][idx] = { url, name };
+      selectedImages[destId][segKey][idx] = imageId ? { url, name, imageId } : { url, name };
     });
   });
 

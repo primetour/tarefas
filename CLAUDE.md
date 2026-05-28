@@ -2173,3 +2173,44 @@ Com `isolation: isolate` (ou qualquer combo que crie stacking context: `transfor
 Wrappear com `isolation: isolate` desde a primeira integração. Mais barato prevenir que ir caçar conflito depois.
 
 **Auditoria preventiva**: `grep -rn "z-index:\s*[0-9]" js/ css/ | sort -t: -k4 -n -r | head -20` — top 20 z-indices da app revela se há valores absurdos (>10000) que indicam guerra de z-index. Padrão saudável: header/modal ~1000, dropdown ~100, toast ~9999, overlay ~5000.
+
+### s) ⚠ ARMADILHA: Cleanup FK pra schema fantasma — código morto que custa I/O (v4.63.49)
+
+**Sintoma estrutural** (auditoria triple-check Banco × Portal 28/05/2026): 3 cleanups FK escritos em v4.57.39 operavam em schema que UI **NUNCA populou**. Confirmado via Admin SDK em produção:
+- `portal_images.destinationId`: **0/238 (0%)** docs com FK setada
+- `portal_destinations.heroImage.imageId`: **0/354 (0%)** docs
+- `portal_tips.segments[].items[].image.imageId`: **0/20 (0%)** docs
+
+Cada delete de imagem/destino disparava queries que SEMPRE retornavam vazio. Custo: ~3 reads × N docs por operação destrutiva. Inócuo funcionalmente, mas:
+1. Sinal de DESALINHAMENTO entre intenção (schema documentado em cleanup) e implementação (UI nunca escreve)
+2. Dead code que dificulta refactor (novo dev assume que feature existe)
+3. Bug oculto se algum dia alguém implementar a feature SEM testar o cleanup
+
+**Lição mestre**: ao adicionar cleanup FK, validar a hipótese ANTES do merge:
+
+```bash
+# Antes de mergear cleanup que escaneia `collection.field == X`:
+cd functions && node -e "
+const admin=require('firebase-admin');
+admin.initializeApp({projectId:'...'});
+const snap = await admin.firestore().collection('collection').limit(2000).get();
+const populated = snap.docs.filter(d => d.data().field).length;
+console.log('% populated:', (populated/snap.size*100).toFixed(1));
+"
+```
+
+Se 0%, o cleanup é prematuro — espera UI escrever pelo menos uma vez. Se 100%, OK. Se misto, talvez schema em transição (legacy + novo) — adiciona OS DOIS no cleanup.
+
+**Padrão correlato (FK REAL descoberta nessa auditoria)**: `portal_web_links.imagesByDest.{destId}._overrides[seg][idx].imageId` — o picker de imagem do generator (`portalTips.js`) gerava overrides com `{url, name}` mas SEM `imageId`. Material público resultante (37 web_links em prod, 21 URLs R2 nos overrides, **0% com rastreabilidade**) ficava 404 silencioso quando admin deletava imagem no Banco.
+
+Fix em 3 partes (v4.63.49):
+1. **UI escrever a FK**: `data-image-id` no botão picker + persistir `{url, name, imageId}` no override.
+2. **Cleanup escanear**: nova query em `deleteImageMeta` percorrendo `portal_web_links.imagesByDest._overrides` por `imageId === id`, dropando override (generator cai pro fallback automático).
+3. **Backfill retroativo**: `functions/backfill-weblinks-image-id.cjs` faz lookup reverso URL → imageId via Map de `portal_images.url`, idempotente, dry-run + apply.
+
+**Audit checklist pra novos cleanups FK**:
+- [ ] Existe write da FK no caller principal? (grep do field em saves)
+- [ ] Validar % populated em produção via Admin SDK
+- [ ] Se < 50%, cleanup é especulativo — documenta na linha "ativar quando UI X popular"
+- [ ] Se > 0%, garante UI atualiza FK em TODOS os fluxos (criação + edição + import)
+- [ ] Backfill pra docs antigos antes do cleanup ir pra prod (senão cleanup é null-op naqueles)
