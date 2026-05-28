@@ -181,6 +181,7 @@
 }
 
 .float-toolbar .ft-reset { color: #fbbf24; }
+.float-toolbar .ft-reset-all { color: #f87171; font-size: 16px; }
 .float-toolbar .ft-close { color: rgba(255,255,255,0.6); margin-left: 4px; }
 .float-toolbar .ft-close:hover { color: #fff; }
 .gi-ic-overlay * { box-sizing: border-box; }

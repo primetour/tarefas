@@ -1348,6 +1348,13 @@ async function initWizard() {
     if (!state.selectedField) return;
     clearOverride(state.selectedField);
   });
+  $('#ft-reset-all')?.addEventListener('click', () => {
+    const ok = confirm('Resetar TODAS as edições visuais (fonte, tamanho, posição, cor, etc.) deste slide?\n\nO conteúdo dos textos não será afetado.');
+    if (!ok) return;
+    delete state.slideOverrides[state.activeSlideIdx];
+    deselectElement();
+    renderCanvas();
+  });
   $('#ft-close')?.addEventListener('click', deselectElement);
 
   // Click fora do canvas e fora da toolbar deseleciona
@@ -1462,7 +1469,8 @@ const OVERLAY_HTML = `
       <input type="color" id="ft-color" value="#ffffff" />
       <span class="ft-color-swatch" id="ft-color-swatch"></span>
     </label>
-    <button class="ft-btn ft-reset" id="ft-reset" title="Resetar texto pro padrão">↺</button>
+    <button class="ft-btn ft-reset" id="ft-reset" title="Resetar este texto">↺</button>
+    <button class="ft-btn ft-reset-all" id="ft-reset-all" title="Resetar TODOS os textos deste slide">⟲</button>
     <button class="ft-btn ft-close" id="ft-close" title="Fechar">✕</button>
   </div>
 
