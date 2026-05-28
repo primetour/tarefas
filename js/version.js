@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 62,
-  patch: 32,
-  build: '20260527-editor-revisar-tarifa-redistribuir',
+  patch: 33,
+  build: '20260527-roteiros-fix-confirm-duplicado-listeners',
 };
 
 /** "1.2.0" */

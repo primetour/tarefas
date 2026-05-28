@@ -6,6 +6,51 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.62.33+20260527-roteiros-fix-confirm-duplicado-listeners] — 2026-05-27
+
+Release **HOTFIX — Confirm de excluir cotação dispara 5-6×**:
+
+> *"quando tento deletar uma cotação, o banner de reconfirmação de exclusao
+> fica aparecendo 5, 6x... tem bug la"* — Renê
+
+**Causa raiz** (CLAUDE.md §11.k + §12.k):
+`js/pages/roteiros.js → renderRoteiros(container)` registrava 5
+listeners via `container.addEventListener(...)` sem AbortController.
+SPA reusa o mesmo container entre navegações: cada visita a Roteiros
+**adicionava** mais 5 listeners. Após 6 visitas: 6 listeners idênticos
+de `click` → 6 `confirm()` em cascata pra cada delete.
+
+**Sintoma escalado também em**:
+- Filtros: 2-6× re-render por click em pill
+- Busca: input dispara N renderTable encadeados
+- Mudança de status, sort, paginação: idem
+
+**Fix v4.62.33**:
+- `let _roteirosAbortCtrl = null` module-scope
+- No início de cada `renderRoteiros`:
+  ```
+  if (_roteirosAbortCtrl) _roteirosAbortCtrl.abort();
+  _roteirosAbortCtrl = new AbortController();
+  const _sig = _roteirosAbortCtrl.signal;
+  ```
+- Todos os 5 `container.addEventListener(...)` agora têm `{ signal: _sig }`
+- Visita anterior cancelada → handlers velhos GC automatic.
+
+**Impacto**:
+- Delete confirm: 1 vez (era N visitas + 1)
+- Filtros/busca/sort: 1 reação por click (era N reações)
+- Memory leak fechado.
+
+**Princípio CLAUDE.md §11.k aplicado literal**: AbortController é
+zero-overhead e idempotente. SPA reusing root container +
+addEventListener = bug latente de duplicação.
+
+**Auditoria pendente** (outro patch): mesmo padrão pode existir em
+outras pages — `grep -rn "container.addEventListener" js/pages/ |
+grep -v AbortController` revela candidatos.
+
+---
+
 ## [4.62.32+20260527-editor-revisar-tarifa-redistribuir] — 2026-05-27
 
 Release **EDITOR — REVISAR/REDISTRIBUIR TARIFA**:

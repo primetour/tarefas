@@ -55,6 +55,16 @@ const STATUS_COLORS = {
   archived: '#9CA3AF',
 };
 
+/**
+ * v4.62.33: AbortController module-scope pra evitar listeners duplicados.
+ * Bug do CLAUDE.md §11.k/§12.k: container reusado entre navegações + delegação
+ * via container.addEventListener acumulava handlers a cada renderRoteiros.
+ * Sintoma: confirm de "Excluir cotação" disparava 5-6× (uma vez por visita
+ * à página). Fix: cada renderRoteiros aborta listeners anteriores antes de
+ * registrar novos.
+ */
+let _roteirosAbortCtrl = null;
+
 const STATUS_LABELS = {
   draft:    'Rascunho',
   review:   'Em revisão',
@@ -75,6 +85,12 @@ function statusBadge(status) {
 
 /* ─── Render ──────────────────────────────────────────────── */
 export async function renderRoteiros(container) {
+  // v4.62.33: aborta listeners de visitas anteriores antes de registrar novos.
+  // SPA reusa o mesmo container — sem isso, 2ª visita = 2× confirm, 3ª = 3×, etc.
+  if (_roteirosAbortCtrl) _roteirosAbortCtrl.abort();
+  _roteirosAbortCtrl = new AbortController();
+  const _sig = _roteirosAbortCtrl.signal;
+
   /* ── State ── */
   let allRoteiros = [];
   let allAreas = [];
@@ -741,7 +757,7 @@ export async function renderRoteiros(container) {
       }
       return;
     }
-  });
+  }, { signal: _sig });
 
   /* ── Filter bar interactions ── */
   container.addEventListener('click', (e) => {
@@ -774,7 +790,7 @@ export async function renderRoteiros(container) {
       window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
-  });
+  }, { signal: _sig });
 
   // Search + selects via event delegation no container (filter bar é re-renderizado)
   container.addEventListener('input', (e) => {
@@ -783,14 +799,14 @@ export async function renderRoteiros(container) {
       currentPage = 1;
       renderTable();
     }
-  });
+  }, { signal: _sig });
   container.addEventListener('change', (e) => {
     const id = e.target.id;
     if (id === 'rt-area')        { selectedAreaId = e.target.value;     currentPage = 1; renderTable(); }
     else if (id === 'rt-destino')    { selectedDestino = e.target.value;    currentPage = 1; renderTable(); }
     else if (id === 'rt-clienttype') { selectedClientType = e.target.value; currentPage = 1; renderTable(); }
     else if (id === 'rt-consultant') { selectedConsultant = e.target.value; currentPage = 1; renderTable(); }
-  });
+  }, { signal: _sig });
 
   // Period pills wire (uiKit)
   wirePeriodPills(container, (key, range) => {
@@ -832,7 +848,7 @@ export async function renderRoteiros(container) {
     currentPage = 1;
     renderFilters();   // atualiza label do pill
     renderTable();
-  });
+  }, { signal: _sig });
 
   // Ativa dropdowns do header (export menu + overflow)
   wireUiKitMenus(container);
