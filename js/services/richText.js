@@ -97,14 +97,25 @@ export function parseRich(input) {
     }
 
     // Italic _ (mas não __)
+    // v4.63.45+ B2 fix: NÃO casar `_` cercado por word-chars (emails/identifiers).
+    // Ex: `email_with_underscore@x.com` não vira <em>with</em>.
+    // Regra markdown padrão: italic requer boundary (start/whitespace/punct) antes do `_`.
     if (s[i] === '_' && s[i + 1] !== '_') {
-      // Não case se o anterior também é _
-      const end = s.indexOf('_', i + 1);
-      if (end !== -1 && s[end + 1] !== '_' && s[end - 1] !== '_') {
-        const inner = parseRich(s.slice(i + 1, end));
-        inner.forEach((seg) => pushText(seg.text, { ...seg, italic: true }));
-        i = end + 1;
-        continue;
+      const prevChar = s[i - 1];
+      const isWordBefore = prevChar && /[\w]/.test(prevChar);
+      if (!isWordBefore) {
+        const end = s.indexOf('_', i + 1);
+        if (end !== -1 && s[end + 1] !== '_' && s[end - 1] !== '_') {
+          // Verifica se char DEPOIS do `_` final é word-char (intra-word underscore)
+          const nextChar = s[end + 1];
+          const isWordAfter = nextChar && /[\w]/.test(nextChar);
+          if (!isWordAfter) {
+            const inner = parseRich(s.slice(i + 1, end));
+            inner.forEach((seg) => pushText(seg.text, { ...seg, italic: true }));
+            i = end + 1;
+            continue;
+          }
+        }
       }
     }
 
@@ -144,12 +155,17 @@ export function richToHtml(input) {
       if (s.italic) html = `<em>${html}</em>`;
       if (s.underline) html = `<u>${html}</u>`;
       if (s.link) {
-        // v4.63.42+ HIGH H3: bloquear protocolos perigosos
-        const protoOk = /^https?:\/\//i.test(s.link);
-        const safeUrl = protoOk ? s.link : `https://${String(s.link).replace(/^[a-z]+:/i, '')}`;
-        if (/^(javascript|data|vbscript):/i.test(safeUrl.replace(/^https?:\/\//i, ''))) {
+        // v4.63.45+ B1 fix: reject ANTES de qualquer transformação. Antes:
+        // `https://${'javascript:alert(1)'.replace(/^[a-z]+:/i, '')}` virava
+        // `https://alert(1)` que passava pelo filter (não tinha mais o `javascript:`).
+        // Agora: rejeita logo se input cru começa com protocolo perigoso.
+        const rawLink = String(s.link || '').trim();
+        const proto = rawLink.match(/^([a-z]+):/i);
+        const protoName = proto ? proto[1].toLowerCase() : '';
+        if (['javascript', 'data', 'vbscript', 'file', 'about'].includes(protoName)) {
           html = _esc(s.text);  // strip link, mantém texto
         } else {
+          const safeUrl = /^https?:\/\//i.test(rawLink) ? rawLink : `https://${rawLink}`;
           html = `<a href="${_esc(safeUrl)}" target="_blank" rel="noopener noreferrer">${html}</a>`;
         }
       } else if (s.anchor) {

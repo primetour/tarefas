@@ -146,6 +146,28 @@ async function renderGenerateTab(container) {
       </div>
     ` : ''}
 
+    <!-- v4.63.45+ Mapa interativo: visão geral das cidades com dica cadastrada.
+         Colapsável (default aberto pra dar impacto visual logo na entrada). -->
+    <details id="portal-tips-map-wrap" open
+      style="background:var(--bg-card);border:1px solid var(--border-subtle);border-radius:var(--radius-md);
+      margin-bottom:20px;overflow:hidden;">
+      <summary style="cursor:pointer;padding:14px 18px;display:flex;align-items:center;gap:10px;
+        background:var(--bg-surface);font-weight:600;font-size:0.9375rem;list-style:none;
+        border-bottom:1px solid var(--border-subtle);">
+        <span style="font-size:1.125rem;">🗺</span>
+        <span>Onde temos dicas no mundo</span>
+        <span style="font-size:0.75rem;color:var(--text-muted);font-weight:400;margin-left:auto;">
+          Clique nos pins pra ver detalhes · atualização em tempo real
+        </span>
+      </summary>
+      <div id="portal-tips-map-container" style="padding:12px 14px;">
+        <div style="height:360px;display:flex;align-items:center;justify-content:center;
+          font-size:0.8125rem;color:var(--text-muted);">
+          Carregando mapa…
+        </div>
+      </div>
+    </details>
+
     <!-- Generation form -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;max-width:1100px;">
 
@@ -263,6 +285,19 @@ async function renderGenerateTab(container) {
   `;
 
   await initPortalForm();
+
+  // v4.63.45+ Mapa interativo de cidades com dicas (lazy mount)
+  try {
+    const mapHost = document.getElementById('portal-tips-map-container');
+    if (mapHost) {
+      const { renderPortalTipsMap } = await import('../components/portalTipsMap.js');
+      // Guard contra double-mount no mesmo container
+      if (container._tipsMapHandle) try { container._tipsMapHandle.destroy(); } catch {}
+      container._tipsMapHandle = await renderPortalTipsMap(mapHost, { height: 380 });
+    }
+  } catch (e) {
+    console.warn('[portalTips] mapa não montou:', e?.message);
+  }
 }
 
 /* ─── Init form logic ─────────────────────────────────────── */
@@ -952,7 +987,7 @@ async function showPreviewModal({ tip, dest, area, segments, format, extraTips }
     const heroBtn = `<button class="gen-seg-btn" data-seg="${HERO_SEG_KEY}"
       style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;
       padding:12px 14px;border:none;
-      background:${isHeroActive?'var(--brand-gold)10':'transparent'};
+      background:${isHeroActive?'rgba(212,168,67,0.10)':'transparent'};
       border-left:3px solid ${isHeroActive?'var(--brand-gold)':'transparent'};
       border-bottom:1px solid var(--border-subtle);
       cursor:pointer;transition:all .15s;font-size:0.8125rem;">
@@ -972,7 +1007,7 @@ async function showPreviewModal({ tip, dest, area, segments, format, extraTips }
       return `<button class="gen-seg-btn" data-seg="${k}"
         style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;
         padding:12px 14px;border:none;
-        background:${isActive?'var(--brand-gold)10':'transparent'};
+        background:${isActive?'rgba(212,168,67,0.10)':'transparent'};
         border-left:3px solid ${isActive?'var(--brand-gold)':'transparent'};
         cursor:pointer;transition:all .15s;font-size:0.8125rem;">
         <span style="flex:1;color:${isActive?'var(--brand-gold)':'var(--text-secondary)'};">

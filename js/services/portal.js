@@ -1148,7 +1148,9 @@ export async function checkDownloadLimit() {
   const today  = new Date().toISOString().slice(0, 10);
   const ref    = doc(db, 'portal_downloads', `${uid()}_${today}`);
   const snap   = await getDoc(ref);
-  const count  = snap.exists ? (snap.data().count || 0) : 0;
+  // v4.63.45+ BC1 fix: snap.exists() é função no SDK v9 modular, não property.
+  // Antes: snap.exists (sempre truthy) → snap.data() NaN/throw em doc inexistente.
+  const count  = snap.exists() ? (snap.data().count || 0) : 0;
   return { allowed: count < PARTNER_DAILY_LIMIT, remaining: PARTNER_DAILY_LIMIT - count, count };
 }
 
@@ -1157,7 +1159,8 @@ export async function registerDownload() {
   const today = new Date().toISOString().slice(0, 10);
   const ref   = doc(db, 'portal_downloads', `${uid()}_${today}`);
   const snap  = await getDoc(ref);
-  if (snap.exists) await updateDoc(ref, { count: increment(1), lastAt: serverTimestamp() });
+  // v4.63.45+ BC1 fix: snap.exists() função
+  if (snap.exists()) await updateDoc(ref, { count: increment(1), lastAt: serverTimestamp() });
   else await setDoc(ref, { userId: uid(), date: today, count: 1, lastAt: serverTimestamp() });
 }
 
@@ -1529,7 +1532,9 @@ export async function getActiveTerms() {
 export async function hasAcceptedTerms(termsId) {
   const ref  = doc(db, 'portal_terms_acceptance', `${uid()}_${termsId}`);
   const snap = await getDoc(ref);
-  return snap.exists;
+  // v4.63.45+ BC1 fix: snap.exists() função, não property.
+  // Antes retornava reference da função (truthy) → user "aceitava" termos automaticamente.
+  return snap.exists();
 }
 
 export async function acceptTerms(termsId) {

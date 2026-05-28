@@ -152,8 +152,15 @@ function parseRich(input){
       if(end!==-1){parseRich(s.slice(i+2,end)).forEach(seg=>pushText(seg.text,{...seg,underline:true}));i=end+2;continue;}
     }
     if(s[i]==='_'&&s[i+1]!=='_'){
-      const end=s.indexOf('_',i+1);
-      if(end!==-1&&s[end+1]!=='_'&&s[end-1]!=='_'){parseRich(s.slice(i+1,end)).forEach(seg=>pushText(seg.text,{...seg,italic:true}));i=end+1;continue;}
+      // v4.63.45+ B2 fix: italic requer word-boundary antes E depois do `_`
+      const pc=s[i-1]; const isWordBefore=pc&&/\w/.test(pc);
+      if(!isWordBefore){
+        const end=s.indexOf('_',i+1);
+        if(end!==-1&&s[end+1]!=='_'&&s[end-1]!=='_'){
+          const nc=s[end+1]; const isWordAfter=nc&&/\w/.test(nc);
+          if(!isWordAfter){parseRich(s.slice(i+1,end)).forEach(seg=>pushText(seg.text,{...seg,italic:true}));i=end+1;continue;}
+        }
+      }
     }
     let j=i;while(j<len){const c=s[j],c2=s[j+1];if(c==='['||(c==='*'&&c2==='*')||c==='_')break;j++;}
     if(j>i){pushText(s.slice(i,j));i=j;}else{pushText(s[i]);i++;}
@@ -167,11 +174,15 @@ function richToHtml(input){
     if(s.italic)h=`<em>${h}</em>`;
     if(s.underline)h=`<u>${h}</u>`;
     if(s.link){
-      // v4.63.42+ HIGH H3: bloquear javascript:/data:/vbscript:
-      const proto=/^https?:\/\//i.test(s.link);
-      const u=proto?s.link:`https://${String(s.link).replace(/^[a-z]+:/i,'')}`;
-      if(/^(javascript|data|vbscript):/i.test(u.replace(/^https?:\/\//i,''))) h=esc(s.text);
-      else h=`<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${h}</a>`;
+      // v4.63.45+ B1 fix: reject ANTES de transformações
+      const raw=String(s.link||'').trim();
+      const pm=raw.match(/^([a-z]+):/i);
+      const pn=pm?pm[1].toLowerCase():'';
+      if(['javascript','data','vbscript','file','about'].includes(pn)) h=esc(s.text);
+      else {
+        const u=/^https?:\/\//i.test(raw)?raw:`https://${raw}`;
+        h=`<a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${h}</a>`;
+      }
     }
     else if(s.anchor)h=`<a href="#seg-${esc(s.anchor)}" data-internal-link="1">${h}</a>`;
     return h;

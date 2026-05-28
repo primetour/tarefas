@@ -641,7 +641,16 @@ service cloud.firestore {
       // functions/backfill-pending-destinations.cjs). Admin SDK bypassa rules,
       // então não precisa rule liberando create pro auth não-admin.
       // Master vê/aprova via UI (portalDestinations.js — filtro reviewStatus).
-      allow write: if isAuth() && isAdmin();
+      //
+      // v4.63.45+ Exceção: update SÓ do campo _geo é permitido pra qualquer
+      // auth user. Componente portalTipsMap geocoda via Nominatim e cacheia
+      // como cache benigno. Validado por affectedKeys().hasOnly(['_geo'])
+      // — qualquer outro campo cai pra regra admin-only acima.
+      allow update: if isAuth() && (
+        isAdmin()
+        || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['_geo'])
+      );
+      allow create, delete: if isAuth() && isAdmin();
     }
 
     match /portal_tips/{docId} {

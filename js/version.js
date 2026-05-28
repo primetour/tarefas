@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 44,
-  build: '20260528-portal-hero-zindex-labels',
+  patch: 45,
+  build: '20260528-portal-mapa-interativo-audit-fixes',
 };
 
 /** "1.2.0" */
