@@ -323,9 +323,51 @@ export async function fetchDestinations({ continent, country, continentCode, cou
   return docs;
 }
 
-export async function fetchContinentsWithContent() {
-  const snap = await getDocs(query(collection(db, 'portal_destinations'), limit(1000)));
-  const continents = new Set(snap.docs.map(d => d.data().continent).filter(Boolean));
+/**
+ * v4.63.31+ Helper: retorna set de destinationIds que aparecem em pelo menos
+ * 1 tip aprovada/ativa. Tip é GLOBAL (Renê: "dica não está vinculada a área —
+ * área é apenas para definição de template"). Cached em-memória 30s pra
+ * evitar N fetches consecutivos no fluxo de Gerar Material.
+ */
+let _tipDestIdsCache = null;
+let _tipDestIdsCacheTs = 0;
+const _TIP_CACHE_TTL_MS = 30_000;
+export async function fetchDestinationIdsWithTips() {
+  if (_tipDestIdsCache && (Date.now() - _tipDestIdsCacheTs) < _TIP_CACHE_TTL_MS) {
+    return _tipDestIdsCache;
+  }
+  const snap = await getDocs(query(
+    collection(db, 'portal_tips'),
+    limit(2000),
+  ));
+  const ids = new Set();
+  snap.docs.forEach(d => {
+    const x = d.data();
+    // status default 'active' (legacy sem status field são considerados active)
+    if (x.status && x.status !== 'active' && x.status !== 'approved') return;
+    if (x.destinationId) ids.add(x.destinationId);
+  });
+  _tipDestIdsCache = ids;
+  _tipDestIdsCacheTs = Date.now();
+  return ids;
+}
+
+/**
+ * v4.57.x: lista continentes que TÊM destino cadastrado.
+ * v4.63.31+ Renê pediu: no fluxo de Gerar Material, só mostra continente que
+ * tem destino com PELO MENOS 1 dica aprovada (não basta o destino existir).
+ *
+ * Caller pode passar `{ onlyWithTips: false }` pra desativar o filtro (ex:
+ * cadastro de dica nova, onde precisa ver TODOS continentes).
+ */
+export async function fetchContinentsWithContent({ onlyWithTips = false } = {}) {
+  const destsSnap = await getDocs(query(collection(db, 'portal_destinations'), limit(1000)));
+  let dests = destsSnap.docs;
+  if (onlyWithTips) {
+    const withTipIds = await fetchDestinationIdsWithTips();
+    dests = dests.filter(d => withTipIds.has(d.id));
+  }
+  const continents = new Set(dests.map(d => d.data().continent).filter(Boolean));
   return CONTINENTS.filter(c => continents.has(c));
 }
 

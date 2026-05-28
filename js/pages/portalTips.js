@@ -7,6 +7,7 @@ import { store }  from '../store.js';
 import { toast }  from '../components/toast.js';
 import {
   fetchAreas, fetchDestinations, fetchContinentsWithContent,
+  fetchDestinationIdsWithTips,
   fetchTip, fetchAvailableSegments, checkDownloadLimit,
   hasAcceptedTerms, getActiveTerms, acceptTerms,
   recordGeneration, registerDownload, fetchImages,
@@ -411,8 +412,11 @@ async function initPortalForm() {
   } catch(e) { console.warn('fetchAreas:', e.message); }
 
   // Load continents
+  // v4.63.31+ Renê: "não deveria aparecer apenas os continentes/países e cidades
+  // que possuem dicas?" — passa onlyWithTips=true (dica é global, não vinculada
+  // a área). Filtro também propaga pra onContinentChange + onCountryChange.
   try {
-    const continents = await fetchContinentsWithContent();
+    const continents = await fetchContinentsWithContent({ onlyWithTips: true });
     const sel = document.getElementById('portal-continent');
     if (sel) {
       sel.innerHTML = `<option value="">Selecione o continente</option>` +
@@ -465,8 +469,13 @@ async function onContinentChange() {
   citySel.disabled     = true;
 
   if (!continent) return;
-  const dests = await fetchDestinations({ continent, reviewStatus: 'approved' });
-  const countries = [...new Set(dests.map(d => d.country).filter(Boolean))].sort();
+  // v4.63.31+ Filtra destinos por "tem dica" (cache 30s — barato)
+  const [dests, tipDestIds] = await Promise.all([
+    fetchDestinations({ continent, reviewStatus: 'approved' }),
+    fetchDestinationIdsWithTips(),
+  ]);
+  const destsWithTip = dests.filter(d => tipDestIds.has(d.id));
+  const countries = [...new Set(destsWithTip.map(d => d.country).filter(Boolean))].sort();
   countrySel.innerHTML = `<option value="">Selecione o país</option>` +
     countries.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
   countrySel.disabled = false;
@@ -482,8 +491,13 @@ async function onCountryChange() {
   citySel.disabled  = !country;
   if (!country) { await updateSegments(null); return; }
 
-  const dests  = await fetchDestinations({ continent, country, reviewStatus: 'approved' });
-  const cities = dests.map(d => d.city).filter(Boolean).sort();
+  // v4.63.31+ Filtra cidades por "tem dica"
+  const [dests, tipDestIds] = await Promise.all([
+    fetchDestinations({ continent, country, reviewStatus: 'approved' }),
+    fetchDestinationIdsWithTips(),
+  ]);
+  const destsWithTip = dests.filter(d => tipDestIds.has(d.id));
+  const cities = destsWithTip.map(d => d.city).filter(Boolean).sort();
   if (cities.length) {
     citySel.innerHTML = `<option value="">Qualquer país (sem cidade específica)</option>` +
       cities.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
@@ -525,7 +539,8 @@ function addExtraDestination() {
   container.appendChild(div);
 
   // Populate continents for extra dest
-  fetchContinentsWithContent().then(continents => {
+  // v4.63.31+ Mesmo filtro hasTip do destino principal (Combinar outro destino)
+  fetchContinentsWithContent({ onlyWithTips: true }).then(continents => {
     const sel = div.querySelector('.extra-continent');
     sel.innerHTML = `<option value="">Continente</option>` +
       continents.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
@@ -534,8 +549,12 @@ function addExtraDestination() {
       const cont = sel.value;
       const countrySel = div.querySelector('.extra-country');
       countrySel.innerHTML = '<option value="">Carregando…</option>';
-      const dests = await fetchDestinations({ continent: cont, reviewStatus: 'approved' });
-      const countries = [...new Set(dests.map(d => d.country).filter(Boolean))].sort();
+      const [dests, tipDestIds] = await Promise.all([
+        fetchDestinations({ continent: cont, reviewStatus: 'approved' }),
+        fetchDestinationIdsWithTips(),
+      ]);
+      const destsWithTip = dests.filter(d => tipDestIds.has(d.id));
+      const countries = [...new Set(destsWithTip.map(d => d.country).filter(Boolean))].sort();
       countrySel.innerHTML = `<option value="">País</option>` +
         countries.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
       countrySel.disabled = false;

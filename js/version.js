@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 30,
-  build: '20260528-cotacoes-web-audit-hotfix',
+  patch: 31,
+  build: '20260528-portal-gerar-filter-hastip',
 };
 
 /** "1.2.0" */
