@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 11,
-  build: '20260528-templates-generators-honor-refs',
+  patch: 12,
+  build: '20260528-post-audit-safetynet-zumbis',
 };
 
 /** "1.2.0" */

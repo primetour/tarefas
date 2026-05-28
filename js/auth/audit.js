@@ -159,6 +159,7 @@ export const ACTION_LABELS = {
   'templates.delete':        'Template excluído (hard delete + Storage)',
   'templates.duplicate':     'Template duplicado pra outra área',
   'templates.new_version':   'Nova versão de template uploaded',
+  'templates.fallback':      'Template configurado falhou → pipeline antigo (v4.63.12+)',
   // Banco de Imagens
   'portal_images.upload':    'Imagem enviada ao banco',
   'portal_images.update':    'Metadados de imagem atualizados',

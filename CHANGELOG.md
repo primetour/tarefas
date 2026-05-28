@@ -6,6 +6,49 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.12+20260528-post-audit-safetynet-zumbis] — 2026-05-28
+
+Release **pós-auditoria Sprint v4.63** — safety-net UX + zumbis fáceis.
+Agent de auditoria entregou 30+ achados (zumbis, security, perf, bugs);
+esta release ataca os 3 HIGH UX/correctness + 1 zumbi LATENT.
+
+**Fixes aplicados**:
+- **Bug #7/#8/#9 (HIGH UX)** — fallback graceful nos generators era
+  silencioso (Renê: "achei que minha marca tava aplicada, mas saiu o
+  padrão"). Agora `roteiroGenerator` (PDF + DOCX + PPTX) e
+  `portalGenerator` (todos formatos) avisam via `toast.warning(...)` +
+  gravam `audit_logs` com `templates.fallback` action (módulo, formato,
+  templateId, areaId, reason). User vê na hora que template configurado
+  falhou e pode verificar no Editor de Áreas → Templates.
+- **Bug #11 (HIGH semântico)** — `portalToTemplateData` mapeava 1:1 cada
+  par `{tip,dest}` em destino. 2 tips na mesma cidade = 2 destinos
+  duplicados no template (`{{#each destinos}}` renderizava 2×). Agora
+  agrupa via `Map` por `dest.id` (ou fallback `city__country`) — N tips
+  por destino → 1 entrada com `tips[]` array. Segments mergeados
+  (último vence pra cada key).
+- **Zumbi #1 (MEDIUM latent)** — `js/pages/portalAreas.js` linha 684:
+  `SUPPORTED_FMTS_TPL` usava key `roteiros`, mas `TEMPLATE_MODULES.id`
+  é `cotacoes` (rename canônico v4.62.50). Loop iterava com `cotacoes`
+  → lookup retornava `undefined` → caía pro fallback `[html,docx,pptx]`.
+  Funcionava por acidente; se algum dia mudasse o fallback ou tirasse
+  `'banco-roteiros'` da spec, dropdown sumia silencioso. Key normalizada
+  agora.
+- **`audit.js` schema** — adicionada action `templates.fallback` no
+  `ACTION_LABELS` map. Severity default `info` (não-bloqueante).
+
+**Não atacado nesta release** (vão pra v4.63.13+):
+- Security #2 (SSRF Puppeteer) + #5 (validar fileUrl R2 origin) → v4.63.13
+- Performance #2 (>5MB R2 fallback) + #1 (progress indicator) → v4.63.14
+- Zumbi #3 (`createNewVersion` phantom em audit.js) + #4 (ownerType filter)
+- Bug #8/#9 (template arquivado/deletado em area.templateRefs) → editor
+  precisa avisar quando ref aponta pra inexistente
+
+**Arquivos tocados**: `js/services/templateAdapter.js`,
+`js/services/roteiroGenerator.js` (3 catches), `js/services/portalGenerator.js`,
+`js/pages/portalAreas.js`, `js/auth/audit.js`, `index.html`, `js/version.js`.
+
+---
+
 ## [4.63.11+20260528-templates-generators-honor-refs] — 2026-05-28
 
 Release **Sprint v4.63 (12/12) — ENCERRA A SPRINT** — Generators honram

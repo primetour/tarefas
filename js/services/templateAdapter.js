@@ -175,21 +175,39 @@ export function roteiroToTemplateData(roteiro, area) {
  * do Portal de Dicas.
  */
 export function portalToTemplateData({ allTips, area, segments, areaName } = {}) {
+  // v4.63.12+ Fix HIGH Bug #11 (audit pós-sprint): agrupa tips por destino.
+  // Antes (v4.63.11): cada par {tip,dest} virava 1 destino → 2 tips na mesma
+  // cidade = destino duplicado, template `{{#each destinos}}` renderizava 2×.
+  // Agora consolida por dest.id (ou city_country fallback) — N tips → 1 destino
+  // com tips[]. Segments mergeados (último vence pra cada key).
+  const byDest = new Map();
+  (allTips || []).forEach(({ tip, dest }) => {
+    if (!dest) return;
+    const key = dest.id || `${dest.city || ''}__${dest.country || ''}`;
+    if (!byDest.has(key)) {
+      byDest.set(key, {
+        id:       dest.id || '',
+        cidade:   dest.city || '',
+        pais:     dest.country || '',
+        label:    [dest.city, dest.country].filter(Boolean).join(', '),
+        tips:     [],
+        segments: {},
+      });
+    }
+    const entry = byDest.get(key);
+    if (tip) {
+      entry.tips.push(tip);
+      // Merge segments — último vence pra cada key. Não-destrutivo.
+      Object.assign(entry.segments, tip.segments || {});
+    }
+  });
   return {
     area: {
       nome:       areaName || _resolveAreaName(area),
       logoUrl:    area?.logoUrl    || '',
       logoUrlAlt: area?.logoUrlAlt || '',
     },
-    destinos: (allTips || []).map(({ tip, dest }) => ({
-      id:     dest?.id || '',
-      cidade: dest?.city || '',
-      pais:   dest?.country || '',
-      label:  [dest?.city, dest?.country].filter(Boolean).join(', '),
-      tips:   tip ? [tip] : [],   // adaptar shape quando templates pedirem
-      // Preservar segments configurados nesse tip pra templates avançados
-      segments: tip?.segments || {},
-    })),
+    destinos: Array.from(byDest.values()),
     segments: Array.isArray(segments) ? segments : [],
     today:   _today(),
   };

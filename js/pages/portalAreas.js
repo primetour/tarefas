@@ -679,9 +679,12 @@ function showAreaModal(area, areas = []) {
       const currentRefs = area?.templateRefs || {};
 
       // SUPPORTED_FMTS: mesma lógica do exportsModuleBlock — só formatos que generators usam
+      // v4.63.12+ Fix Zumbi #1 (audit pós-sprint): key canônica é 'cotacoes'
+      // (rename v4.62.50). Antes 'roteiros' caía pro fallback [html,docx,pptx]
+      // por acidente — funcionava mas era latente.
       const SUPPORTED_FMTS_TPL = {
         portal:           ['html', 'docx', 'pptx'],
-        roteiros:         ['html', 'docx', 'pptx'],
+        cotacoes:         ['html', 'docx', 'pptx'],
         'banco-roteiros': ['html'],
       };
 

@@ -816,8 +816,22 @@ export async function generateRoteiroPDF(roteiro, area = null) {
       } catch {}
       return { filename: result.filename };
     } catch (e) {
+      // v4.63.12+ Fix HIGH Bug #7/#8/#9 (audit pós-sprint): fallback graceful
+      // antes silencioso — user veia pipeline antigo achando que template
+      // estava aplicado. Agora avisa explicitamente + audit log.
       console.warn('[roteiroGenerator] template falhou, fallback jsPDF:', e?.message || e);
-      // Fallback graceful: pipeline antigo abaixo continua
+      try {
+        toast.warning(`Template configurado falhou (${e?.message?.slice(0,80) || 'erro desconhecido'}). Gerando com padrão do sistema. Verifique no Editor de Áreas → Templates.`);
+      } catch {}
+      try {
+        const { logAction } = await import('../auth/audit.js');
+        await logAction('templates.fallback', {
+          module: _refKey, format: 'pdf', templateId: _tplId,
+          areaId: area?.id || roteiro.areaId || '',
+          reason: String(e?.message || e).slice(0, 200),
+        });
+      } catch {}
+      // Pipeline antigo abaixo continua (zero risco de breakage)
     }
   }
 
@@ -2177,7 +2191,13 @@ export async function generateRoteiroPPTX(roteiro, area = null) {
       try { await logGeneration({ roteiroId: roteiro.id, format: 'pptx', areaId: area?.id || roteiro.areaId || '', destinations: (roteiro.travel?.destinations || []).map(d => d.city || d.country), via: 'template', templateId: _tplId }); } catch {}
       return { filename: result.filename };
     } catch (e) {
+      // v4.63.12+ fallback graceful agora avisa user + audit log
       console.warn('[roteiroGenerator] template PPTX falhou, fallback pptxgenjs:', e?.message || e);
+      try { toast.warning(`Template PPTX falhou (${e?.message?.slice(0,80) || 'erro'}). Gerando com padrão do sistema.`); } catch {}
+      try {
+        const { logAction } = await import('../auth/audit.js');
+        await logAction('templates.fallback', { module: _refKey, format: 'pptx', templateId: _tplId, areaId: area?.id || roteiro.areaId || '', reason: String(e?.message || e).slice(0, 200) });
+      } catch {}
     }
   }
   await loadPptxGenJS();
@@ -2761,7 +2781,13 @@ export async function generateRoteiroDOCX(roteiro, area = null) {
       try { await logGeneration({ roteiroId: roteiro.id, format: 'docx', areaId: area?.id || roteiro.areaId || '', destinations: (roteiro.travel?.destinations || []).map(d => d.city || d.country), via: 'template', templateId: _tplId }); } catch {}
       return { filename: result.filename };
     } catch (e) {
+      // v4.63.12+ fallback graceful agora avisa user + audit log
       console.warn('[roteiroGenerator] template DOCX falhou, fallback docx.js:', e?.message || e);
+      try { toast.warning(`Template DOCX falhou (${e?.message?.slice(0,80) || 'erro'}). Gerando com padrão do sistema.`); } catch {}
+      try {
+        const { logAction } = await import('../auth/audit.js');
+        await logAction('templates.fallback', { module: _refKey, format: 'docx', templateId: _tplId, areaId: area?.id || roteiro.areaId || '', reason: String(e?.message || e).slice(0, 200) });
+      } catch {}
     }
   }
   await loadDocx();

@@ -468,7 +468,22 @@ export async function generateTip({ tip, area, dest, segments, format, extraTips
         downloadBlob(result.blob, result.filename);
         return { filename: result.filename };
       } catch (e) {
+        // v4.63.12+ Fix HIGH Bug #7/#8/#9 (audit pós-sprint): fallback graceful
+        // antes silencioso. Avisa user + audit log pra triagem ("achei que minha
+        // marca tava aplicada mas saiu o padrão").
         console.warn(`[portalGenerator] template ${format} falhou, fallback pipeline:`, e?.message || e);
+        try {
+          const { toast } = await import('../components/toast.js');
+          toast.warning(`Template ${format.toUpperCase()} falhou (${e?.message?.slice(0,80) || 'erro desconhecido'}). Gerando com padrão do sistema. Verifique no Editor de Áreas → Templates.`);
+        } catch {}
+        try {
+          const { logAction } = await import('../auth/audit.js');
+          await logAction('templates.fallback', {
+            module: 'portal', format, templateId: _tplId,
+            areaId: area?.id || '',
+            reason: String(e?.message || e).slice(0, 200),
+          });
+        } catch {}
       }
     }
   }
