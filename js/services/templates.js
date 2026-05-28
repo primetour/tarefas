@@ -424,6 +424,23 @@ export async function archiveTemplate(id) {
   } catch {}
 }
 
+/**
+ * v4.63.27+ Reverte archive — restaura status='active'. Preserva archivedAt/By
+ * pra rastro histórico (não nullifica). Fecha gap A13 da auditoria UX.
+ */
+export async function unarchiveTemplate(id) {
+  if (!canManageTemplates()) throw new Error('Permissão negada (templates_manage).');
+  await updateDoc(doc(db, COLLECTION, id), {
+    status: 'active',
+    unarchivedAt: serverTimestamp(),
+    unarchivedBy: uid(),
+    updatedAt: serverTimestamp(),
+  });
+  try {
+    await auditLog('templates.unarchive', 'templates', id, {}, { severity: 'info' });
+  } catch {}
+}
+
 /* ─── Helpers de UI ─────────────────────────────────────────────────── */
 
 /**

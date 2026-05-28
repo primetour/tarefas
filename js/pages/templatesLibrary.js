@@ -18,7 +18,8 @@ import { toast } from '../components/toast.js';
 import { modal } from '../components/modal.js';
 import { renderPageHeader, renderFilterBar } from '../components/uiKit.js';
 import {
-  fetchTemplates, fetchTemplate, archiveTemplate, uploadTemplate as uploadTemplateService,
+  fetchTemplates, fetchTemplate, archiveTemplate, unarchiveTemplate, updateTemplate,
+  uploadTemplate as uploadTemplateService,
   renderTemplate as renderTemplateService, downloadBlob,
   duplicateTemplate as duplicateTemplateService,
   validateTemplateFile, formatFileSize,
@@ -133,6 +134,10 @@ function _renderCard(tpl, areas) {
           </button>
         ` : ''}
         ${canManage && !isArchived ? `
+          <button class="btn btn-secondary btn-sm tpl-action-edit" data-id="${_esc(tpl.id)}"
+            style="font-size:0.75rem;" title="Editar nome e default">
+            ✎ Editar
+          </button>
           <button class="btn btn-secondary btn-sm tpl-action-duplicate" data-id="${_esc(tpl.id)}"
             style="font-size:0.75rem;" title="Duplicar pra outra área">
             ⎘ Duplicar
@@ -140,6 +145,12 @@ function _renderCard(tpl, areas) {
           <button class="btn btn-secondary btn-sm tpl-action-archive" data-id="${_esc(tpl.id)}"
             style="font-size:0.75rem;" title="Arquivar template">
             📦 Arquivar
+          </button>
+        ` : ''}
+        ${canManage && isArchived ? `
+          <button class="btn btn-primary btn-sm tpl-action-unarchive" data-id="${_esc(tpl.id)}"
+            style="font-size:0.75rem;flex:1;min-width:90px;" title="Restaurar pra ativo">
+            ↩ Desarquivar
           </button>
         ` : ''}
       </div>
@@ -325,6 +336,42 @@ export async function renderTemplatesLibrary(container) {
         toast.success(`Template "${tpl.name}" arquivado`);
       } catch (err) {
         toast.error('Erro ao arquivar: ' + err.message);
+      }
+    }
+
+    // v4.63.27+ A10: Editar metadata (nome + isDefault)
+    const editBtn = e.target.closest('.tpl-action-edit');
+    if (editBtn) {
+      e.preventDefault();
+      const id = editBtn.dataset.id;
+      const tpl = _state.all.find(t => t.id === id);
+      if (!tpl) return;
+      _openEditModal(tpl, container);
+      return;
+    }
+
+    // v4.63.27+ A13: Desarquivar (restaura status='active')
+    const unarchiveBtn = e.target.closest('.tpl-action-unarchive');
+    if (unarchiveBtn) {
+      e.preventDefault();
+      const id = unarchiveBtn.dataset.id;
+      const tpl = _state.all.find(t => t.id === id);
+      if (!tpl) return;
+      const ok = await modal.confirm({
+        title: 'Desarquivar template?',
+        message: `O template "${tpl.name}" voltará à lista padrão e pode ser atribuído a áreas de novo.`,
+        confirmText: 'Desarquivar',
+        danger: false,
+      }).catch(() => false);
+      if (!ok) return;
+      try {
+        await unarchiveTemplate(id);
+        tpl.status = 'active';
+        _applyFilters();
+        _renderResults(container);
+        toast.success(`Template "${tpl.name}" desarquivado`);
+      } catch (err) {
+        toast.error('Erro ao desarquivar: ' + err.message);
       }
     }
   }, { signal });
@@ -527,6 +574,122 @@ function _openDuplicateModal(tpl, container) {
       msgEl.textContent = `⚠ Falhou: ${err}`;
       msgEl.style.color = 'var(--color-danger,#EF4444)';
       submitBtn.disabled = false; submitBtn.textContent = '⎘ Duplicar';
+    }
+  });
+}
+
+/* ─── Edit metadata modal (v4.63.27+ A10) ────────────────────────────── */
+
+function _openEditModal(tpl, container) {
+  const sourceOwnerLabel = tpl.ownerType === 'global'
+    ? '🌐 Global'
+    : (_state.areas.find(a => a.id === tpl.ownerId)?.name || tpl.ownerId || '—');
+
+  const html = `
+    <div id="tpl-edit-overlay" style="
+      position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:9999;
+      display:flex;align-items:center;justify-content:center;padding:24px;overflow-y:auto;">
+      <div style="background:var(--bg-card);border-radius:10px;padding:24px;
+        max-width:520px;width:100%;box-shadow:0 24px 48px rgba(0,0,0,0.35);">
+
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+          <h2 style="font-size:1.125rem;margin:0;color:var(--text-primary);">✎ Editar template</h2>
+          <button id="ed-x" style="background:none;border:none;font-size:1.25rem;
+            color:var(--text-muted);cursor:pointer;padding:4px 8px;line-height:1;">×</button>
+        </div>
+        <p style="font-size:0.8125rem;color:var(--text-muted);margin:0 0 16px;">
+          ${_esc(tpl.module)} · ${_esc(tpl.format)} · ${_esc(sourceOwnerLabel)}
+          <br/><span style="font-size:0.7rem;">Pra trocar o arquivo, suba template novo e arquive este (versionamento real em v4.64+).</span>
+        </p>
+
+        <div style="display:grid;gap:12px;font-size:0.8125rem;">
+          <label>
+            <span style="display:block;color:var(--text-secondary);margin-bottom:4px;font-weight:500;">Nome</span>
+            <input id="ed-name" class="form-input" type="text" maxlength="120"
+              value="${_esc(tpl.name || '')}" style="width:100%;" />
+          </label>
+
+          <label style="display:flex;align-items:center;gap:8px;font-size:0.8125rem;">
+            <input id="ed-default" type="checkbox" style="width:14px;height:14px;accent-color:var(--brand-gold,#D4A843);"
+              ${tpl.isDefault ? 'checked' : ''}>
+            <span>Template default ${tpl.ownerType === 'global' ? 'global pra ' + _esc(tpl.module) : 'da área ' + _esc(sourceOwnerLabel)}</span>
+          </label>
+        </div>
+
+        <div id="ed-msg" style="font-size:0.7rem;color:var(--text-muted);margin-top:10px;min-height:18px;"></div>
+
+        <div style="display:flex;gap:8px;margin-top:14px;justify-content:flex-end;">
+          <button class="btn btn-secondary" id="ed-cancel">Cancelar</button>
+          <button class="btn btn-primary" id="ed-submit">Salvar</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const overlay = document.createElement('div');
+  overlay.innerHTML = html;
+  document.body.appendChild(overlay.firstElementChild);
+
+  const close = () => document.getElementById('tpl-edit-overlay')?.remove();
+  document.getElementById('ed-x')?.addEventListener('click', close);
+  document.getElementById('ed-cancel')?.addEventListener('click', close);
+  document.getElementById('tpl-edit-overlay')?.addEventListener('click', (e) => {
+    if (e.target.id === 'tpl-edit-overlay') close();
+  });
+  const keyHandler = (e) => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', keyHandler);
+  const observer = new MutationObserver(() => {
+    if (!document.getElementById('tpl-edit-overlay')) {
+      document.removeEventListener('keydown', keyHandler);
+      observer.disconnect();
+    }
+  });
+  observer.observe(document.body, { childList: true });
+
+  // Foco no input + select all
+  setTimeout(() => {
+    const inp = document.getElementById('ed-name');
+    inp?.focus();
+    inp?.select?.();
+  }, 50);
+
+  const submitBtn = document.getElementById('ed-submit');
+  submitBtn?.addEventListener('click', async () => {
+    const newName = document.getElementById('ed-name')?.value?.trim();
+    const isDefault = document.getElementById('ed-default')?.checked;
+    const msgEl = document.getElementById('ed-msg');
+
+    if (!newName) {
+      msgEl.textContent = '⚠ Nome obrigatório';
+      msgEl.style.color = 'var(--color-danger,#EF4444)';
+      return;
+    }
+    if (newName === tpl.name && isDefault === !!tpl.isDefault) {
+      // Sem mudança → fecha sem chamar service
+      close();
+      return;
+    }
+
+    submitBtn.disabled = true; submitBtn.textContent = 'Salvando…';
+    msgEl.textContent = '⏳ Atualizando…';
+    msgEl.style.color = 'var(--text-muted)';
+
+    try {
+      const patch = {};
+      if (newName !== tpl.name) patch.name = newName;
+      if (isDefault !== !!tpl.isDefault) patch.isDefault = isDefault;
+      await updateTemplate(tpl.id, patch);
+      // Update local state
+      Object.assign(tpl, patch);
+      _applyFilters();
+      _renderResults(container);
+      toast.success(`Template "${newName}" atualizado`);
+      close();
+    } catch (e) {
+      const err = String(e?.message || e).slice(0, 200);
+      msgEl.textContent = `⚠ Falhou: ${err}`;
+      msgEl.style.color = 'var(--color-danger,#EF4444)';
+      submitBtn.disabled = false; submitBtn.textContent = 'Salvar';
     }
   });
 }
