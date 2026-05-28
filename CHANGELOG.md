@@ -6,6 +6,50 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.10+20260528-templates-area-refs-tab] — 2026-05-28
+
+Release **Sprint v4.63 (11/11)** — Atribuição template→área no editor.
+
+Encerra a parte de UI da sprint. Permite que cada área aponte exatamente
+qual template HTML/DOCX/PPTX usar pra cada módulo (cotações/portal/
+banco-roteiros) + cada formato compatível. Persiste em
+`area.templateRefs[module][format] = templateId`.
+
+**Implementado**:
+- `js/pages/portalAreas.js`:
+  - Nova tab `📐 Templates` no modal de edição de área (ao lado de
+    Exports)
+  - Pane renderiza grid (3 módulos) com select por formato:
+    - Portal de Dicas: HTML/DOCX/PPTX
+    - Cotações: HTML/DOCX/PPTX
+    - Banco de Roteiros: HTML (único formato suportado pelo generator)
+  - Cada select lista templates compatíveis (mesmo module+format) com
+    filtro de visibilidade: templates `global` aparecem pra todas, +
+    templates `area` aparecem só pra área dona
+  - Opção default: "— Usar padrão do sistema (sem template) —" pra
+    preservar comportamento atual quando vazio
+  - Etiquetas dos templates mostram `🌐` se global, `★ default` se default
+  - Estado carregado em paralelo (Promise async) — não bloqueia abertura
+    do modal nas outras tabs
+- `saveArea()` payload: novo campo `templateRefs` (`null` quando vazio)
+  é persistido em `portal_areas` + `business_units` (mirror v4.62.49)
+- `saveArea` rule sem mudança — campo é livre form, write=admin
+
+**Decisão consciente**: integração nos generators fica pra release
+seguinte da sprint (v4.63.11). v4.63.10 só salva o ref no doc — generators
+ignoram por enquanto. Isso permite Renê configurar tudo antes da
+ativação, sem risco de exports quebrarem se template tiver bug.
+
+**Próxima (v4.63.11 — última da sprint)**:
+- Generators (`roteiroGenerator.js` + `portalGenerator.js`) ganham
+  branch: se `area.templateRefs[module][format]` setado E status='active',
+  chama `renderTemplate({templateId, data})` em vez de pipeline atual.
+- Fallback graceful: template falha → log + chama pipeline antigo
+- shapeForTemplate adapter mapeia roteiro/portal → schema Handlebars
+- E2E final, dev_hours, CLAUDE.md learnings.
+
+---
+
 ## [4.63.9+20260528-templates-duplicate-cf-ui] — 2026-05-28
 
 Release **Sprint v4.63 (10/11)** — Duplicação de template entre áreas.

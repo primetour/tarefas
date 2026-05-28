@@ -385,6 +385,7 @@ function showAreaModal(area, areas = []) {
         <button class="area-tab"                  data-tab="editorial"  type="button">📝 Editorial</button>
         <button class="area-tab"                  data-tab="modules"    type="button">⚙ Por módulo</button>
         <button class="area-tab"                  data-tab="exports"    type="button">📤 Exports</button>
+        <button class="area-tab"                  data-tab="templates"  type="button">📐 Templates</button>
       </div>
       <style>
         .area-tab {
@@ -573,6 +574,23 @@ function showAreaModal(area, areas = []) {
         ${exportsModuleBlock('banco-roteiros',  'Banco de Roteiros',  mods['banco-roteiros'])}
       </div>
 
+      <!-- v4.63.10+ TAB: Templates (atribuir template uploaded à área) -->
+      <div class="area-tab-pane" data-pane="templates">
+        <div style="background:var(--bg-soft,#F9FAFB);padding:12px 14px;border-left:3px solid var(--brand-blue,#3B82F6);border-radius:4px;font-size:0.8125rem;color:var(--text-muted);margin-bottom:16px;line-height:1.5;">
+          <strong style="color:var(--text-primary);">Atribuir templates uploaded a essa área.</strong>
+          Cada combinação módulo × formato pode usar um template HTML/DOCX/PPTX da
+          <a href="#templates-library" style="color:var(--brand-blue,#3B82F6);">Biblioteca</a>.
+          Vazio = generator usa layout hardcoded (comportamento atual). Quando preenchido,
+          generators (a partir de v4.63.11) renderizam via template em vez do código.
+        </div>
+        <div id="area-tpl-refs-grid" data-current-area-id="${esc(area?.id || '')}" style="display:grid;gap:14px;">
+          <!-- Populado dinamicamente pelo populateTemplateRefs() abaixo -->
+          <div style="padding:24px;text-align:center;color:var(--text-muted);font-size:0.8125rem;">
+            ⏳ Carregando templates disponíveis…
+          </div>
+        </div>
+      </div>
+
       <!-- Footer fixo -->
       <div style="display:flex;gap:8px;padding:16px 28px;border-top:1px solid var(--border-subtle);background:var(--bg-card);">
         <button class="btn btn-secondary" id="area-modal-cancel" style="flex:1;">Cancelar</button>
@@ -650,6 +668,64 @@ function showAreaModal(area, areas = []) {
       }, 1800);
     });
   });
+
+  // v4.63.10+ populate tab Templates com dropdowns por módulo × formato
+  (async () => {
+    const grid = modal.querySelector('#area-tpl-refs-grid');
+    if (!grid) return;
+    try {
+      const { fetchTemplates, TEMPLATE_MODULES, TEMPLATE_FORMATS } = await import('../services/templates.js');
+      const all = await fetchTemplates({ status: 'active' });
+      const currentRefs = area?.templateRefs || {};
+
+      // SUPPORTED_FMTS: mesma lógica do exportsModuleBlock — só formatos que generators usam
+      const SUPPORTED_FMTS_TPL = {
+        portal:           ['html', 'docx', 'pptx'],
+        roteiros:         ['html', 'docx', 'pptx'],
+        'banco-roteiros': ['html'],
+      };
+
+      const html = TEMPLATE_MODULES.map(mod => {
+        const allowed = SUPPORTED_FMTS_TPL[mod.id] || ['html', 'docx', 'pptx'];
+        const rows = allowed.map(fmtId => {
+          const fmt = TEMPLATE_FORMATS.find(f => f.id === fmtId) || { label: fmtId };
+          // Templates compatíveis: mesmo módulo + formato + (global OU dessa área)
+          const compatible = all.filter(t =>
+            t.module === mod.id
+            && t.format === fmtId
+            && (t.ownerType === 'global' || (t.ownerType === 'area' && t.ownerId === area?.id))
+          );
+          const currentVal = currentRefs?.[mod.id]?.[fmtId] || '';
+          return `
+            <div style="display:grid;grid-template-columns:130px 1fr;gap:10px;align-items:center;padding:6px 0;">
+              <span style="font-size:0.75rem;color:var(--text-muted);">${esc(fmt.label)}</span>
+              <select class="area-tpl-ref-select form-input"
+                data-tpl-mod="${esc(mod.id)}" data-tpl-fmt="${esc(fmtId)}"
+                style="width:100%;font-size:0.8125rem;">
+                <option value="">— Usar padrão do sistema (sem template) —</option>
+                ${compatible.map(t => `
+                  <option value="${esc(t.id)}" ${t.id === currentVal ? 'selected' : ''}>
+                    ${esc(t.name)}${t.ownerType === 'global' ? ' · 🌐' : ''}${t.isDefault ? ' · ★ default' : ''}
+                  </option>
+                `).join('')}
+              </select>
+            </div>
+          `;
+        }).join('');
+        return `
+          <div style="border:1px solid var(--border-subtle);border-radius:8px;padding:12px 14px;background:var(--bg-card);">
+            <h4 style="margin:0 0 4px;font-size:0.875rem;color:var(--text-primary);">
+              ${mod.icon} ${esc(mod.label)}
+            </h4>
+            ${rows || '<p style="font-size:0.7rem;color:var(--text-muted);">Sem formatos suportados.</p>'}
+          </div>
+        `;
+      }).join('');
+      grid.innerHTML = html || '<p style="color:var(--text-muted);font-size:0.8125rem;">Nenhum módulo configurável.</p>';
+    } catch (e) {
+      grid.innerHTML = `<p style="color:var(--color-danger,#EF4444);font-size:0.8125rem;">Erro ao carregar templates: ${esc(e.message || String(e))}</p>`;
+    }
+  })();
 
   // Live preview de fontes na aba Tipografia
   const updateFontPreview = () => {
@@ -842,6 +918,18 @@ function showAreaModal(area, areas = []) {
       // v4.62.40 Fase B.1: brand.useExternalName toggle (D7)
       const useExternalName = document.getElementById('area-use-external-name')?.checked !== false;
 
+      // v4.63.10+ coleta templateRefs da tab Templates
+      const templateRefs = {};
+      modal.querySelectorAll('.area-tpl-ref-select').forEach(sel => {
+        const mod = sel.dataset.tplMod;
+        const fmt = sel.dataset.tplFmt;
+        const val = sel.value;
+        if (val) {
+          if (!templateRefs[mod]) templateRefs[mod] = {};
+          templateRefs[mod][fmt] = val;
+        }
+      });
+
       await saveArea(area?.id || null, {
         name,
         category:    document.getElementById('area-category')?.value?.trim() || '',
@@ -858,6 +946,8 @@ function showAreaModal(area, areas = []) {
         modules:   Object.keys(modules).length ? modules : null,
         // v4.62.40 Fase B.1 — toggle externalName (D7 fix)
         brand:     { useExternalName },
+        // v4.63.10+ atribuição template→área (generators honram em v4.63.11+)
+        templateRefs: Object.keys(templateRefs).length ? templateRefs : null,
       });
       toast.success(`Área "${name}" ${area ? 'atualizada' : 'criada'}.`);
       close();
