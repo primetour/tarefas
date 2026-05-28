@@ -26,6 +26,7 @@ const state = {
   filterContinent: '',                   // filtro welcome
   filterCountry: '',                     // filtro welcome
   filterTipo: 'todos',                   // todos | location | hotel | restaurant | train | cruise
+  filterSoComConteudo: false,            // só destinos com tip rica/parcial
   searchQuery: '',
   formatos: new Set(['carrossel', 'story']),
   templateId: 'classico-teal',
@@ -115,10 +116,19 @@ function renderFilters() {
         <option value="">Todos países</option>
         ${countries.map(c => `<option value="${c}" ${state.filterCountry === c ? 'selected' : ''}>${c}</option>`).join('')}
       </select>
-      ${(state.filterContinent || state.filterCountry || state.searchQuery)
+      <label class="welcome-only-content">
+        <input type="checkbox" id="filter-only-content" ${state.filterSoComConteudo ? 'checked' : ''} />
+        <span>Só com dica</span>
+      </label>
+      ${(state.filterContinent || state.filterCountry || state.searchQuery || state.filterSoComConteudo)
         ? `<button id="filter-clear" class="welcome-clear">Limpar</button>` : ''}
     </div>
   `;
+  $('#filter-only-content').addEventListener('change', e => {
+    state.filterSoComConteudo = e.target.checked;
+    renderFilters();
+    renderDestinos(state.searchQuery);
+  });
   $('#filter-continent').addEventListener('change', e => {
     state.filterContinent = e.target.value;
     state.filterCountry = '';   // reset país ao mudar continente
@@ -133,6 +143,7 @@ function renderFilters() {
     state.filterContinent = '';
     state.filterCountry = '';
     state.searchQuery = '';
+    state.filterSoComConteudo = false;
     $('#search-input').value = '';
     renderFilters();
     renderDestinos('');
@@ -148,14 +159,19 @@ function renderDestinos(filter = '') {
   grid.innerHTML = state._entradas
     .filter(d => !state.filterContinent || d.continent === state.filterContinent)
     .filter(d => !state.filterCountry   || d.country   === state.filterCountry)
+    .filter(d => !state.filterSoComConteudo || d.tipQualidade !== 'empty')
     .filter(d => !norm || d.nome.toLowerCase().includes(norm))
     .map(d => {
       const bg = d.capaUrl
         ? `style="background-image:url('${d.capaUrl}')"`
         : `style="background: linear-gradient(135deg, ${d.paletaFaixa}33, ${d.paletaFaixa}11)"`;
+      const badge = d.tipQualidade === 'rich'    ? `<div class="quality-badge rich"    title="Dica completa cadastrada">●</div>`
+                  : d.tipQualidade === 'partial' ? `<div class="quality-badge partial" title="Dica parcial cadastrada">◐</div>`
+                  : `<div class="quality-badge empty"   title="Sem dica cadastrada — slides ficam vazios">○</div>`;
       return `
-        <div class="destino-card ${!d.disponivel ? 'disabled' : ''}" data-id="${d.id}">
+        <div class="destino-card ${!d.disponivel ? 'disabled' : ''} qual-${d.tipQualidade}" data-id="${d.id}">
           <div class="destino-foto" ${bg}></div>
+          ${badge}
           <div class="destino-info">
             <h3>${escapeHtml(d.nome)}</h3>
             <p>${escapeHtml(d.subtitulo)}</p>
@@ -177,6 +193,16 @@ async function pickDestino(id) {
   // Procura nas entradas atuais (pode ser destino real ou sintético)
   const d = (state._entradas || _destinos).find(x => x.id === id);
   if (!d) return;
+  // Confirma antes de entrar se a tip está vazia (slides ficam com placeholder)
+  if (d.tipQualidade === 'empty') {
+    const ok = confirm(
+      `"${d.nome}" ainda não tem dica cadastrada no Portal de Dicas.\n\n` +
+      `Os 7 slides ficarão com mensagem "SEM CONTEÚDO CADASTRADO" — você ` +
+      `pode editar manualmente todos.\n\n` +
+      `Quer continuar mesmo assim?`
+    );
+    if (!ok) return;
+  }
   showLoader('Carregando destino...');
   try {
     const slides = await buildSlidesForDestino(d);
