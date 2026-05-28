@@ -1125,6 +1125,22 @@ export async function bulkUpdateTasks(items, onProgress) {
   let   failed  = 0;
   const BATCH = 400;
 
+  // v4.62.37: pré-fetch state ANTERIOR das tasks que mexem em assignees/observers.
+  // Necessário pro diff que dispara notify (sem isso, bulk action bar nunca
+  // notificava ninguém — GAP 3 da auditoria). Fetch só pras tasks afetadas.
+  const itemsWithPeople = items.filter(it =>
+    it?.data && (Array.isArray(it.data.assignees) || Array.isArray(it.data.observers))
+  );
+  const prevMap = new Map();
+  if (itemsWithPeople.length) {
+    await Promise.all(itemsWithPeople.map(async ({ id }) => {
+      try {
+        const snap = await getDoc(doc(db, 'tasks', id));
+        if (snap.exists()) prevMap.set(id, snap.data());
+      } catch { /* skip */ }
+    }));
+  }
+
   for (let i = 0; i < total; i += BATCH) {
     const slice = items.slice(i, i + BATCH);
     const batch = writeBatch(db);
@@ -1151,6 +1167,55 @@ export async function bulkUpdateTasks(items, onProgress) {
       failed += slice.length;
     }
     if (typeof onProgress === 'function') onProgress(updated + failed, total);
+  }
+
+  // v4.62.37: dispara notify pra assignees/observers ADICIONADOS via bulk
+  // (espelha lógica de updateTask). Antes: bulk action bar reatribuía sem
+  // notificar ninguém — GAP 3 da auditoria de notif.
+  if (itemsWithPeople.length) {
+    try {
+      const { notify } = await import('./notifications.js');
+      for (const { id, data } of itemsWithPeople) {
+        const prev = prevMap.get(id);
+        if (!prev) continue;
+        const prevA = Array.isArray(prev.assignees) ? prev.assignees : [];
+        const prevO = Array.isArray(prev.observers) ? prev.observers : [];
+        const newA  = Array.isArray(data.assignees) ? data.assignees : prevA;
+        const newO  = Array.isArray(data.observers) ? data.observers : prevO;
+        const addedA   = newA.filter(uid => uid && !prevA.includes(uid));
+        const removedA = prevA.filter(uid => uid && !newA.includes(uid));
+        const addedO   = newO.filter(uid => uid && !prevO.includes(uid));
+        const title    = prev.title || data.title || 'Tarefa';
+        if (addedA.length) {
+          notify('task.assigned', {
+            entityType: 'task', entityId: id,
+            recipientIds: addedA,
+            title: 'Nova tarefa atribuída',
+            body: `"${title}" foi atribuída a você`,
+            route: 'tasks',
+            priority: prev.priority === 'urgent' ? 'high' : 'normal',
+          }).catch(e => console.warn('[bulkUpdate] notify assigned:', e?.message));
+        }
+        if (removedA.length) {
+          notify('task.unassigned', {
+            entityType: 'task', entityId: id,
+            recipientIds: removedA,
+            title: 'Você foi removido de uma tarefa',
+            body: `Você não é mais responsável por "${title}"`,
+            route: 'tasks',
+          }).catch(() => {});
+        }
+        if (addedO.length) {
+          notify('task.observing', {
+            entityType: 'task', entityId: id,
+            recipientIds: addedO,
+            title: 'Você está acompanhando uma tarefa',
+            body: `Você foi adicionado como observador em "${title}"`,
+            route: 'tasks',
+          }).catch(() => {});
+        }
+      }
+    } catch (e) { console.warn('[bulkUpdate] notify lazy import falhou:', e?.message); }
   }
 
   invalidateTasksCache();

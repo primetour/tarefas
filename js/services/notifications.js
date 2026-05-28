@@ -27,6 +27,7 @@ const TYPE_TO_ADMIN_PREF = {
 const TYPE_TO_USER_PREF = {
   'task.assigned':            'notifyAssign',
   'task.unassigned':          'notifyAssign',
+  'task.observing':           'notifyAssign',  // v4.62.37: GAP 1 da auditoria — antes undefined
   'task.rework':              'notifyAssign',
   'task.commented':           'notifyMention',
   'task.overdue':             'notifyDeadline',
@@ -66,6 +67,7 @@ export const NOTIF_ICONS = {
 export const NOTIF_TYPE_LABELS = {
   'task.assigned':            'Tarefa atribuída',
   'task.unassigned':          'Removido de tarefa',
+  'task.observing':           'Você é observador',  // v4.62.37: GAP 1
   'task.completed':           'Tarefa concluída',
   'task.commented':           'Novo comentário',
   'task.overdue':             'Tarefa atrasada',

@@ -4822,3 +4822,161 @@ export const portalTipsStaleCheckCron = onSchedule({
 
   console.log('[portalTipsStaleCheckCron] done:', JSON.stringify(stats));
 });
+
+/* ═══════════════════════════════════════════════════════════════════
+ * v4.62.37 — onTaskCreated: safety-net pra notif de assignee/observer.
+ *
+ * Bug raiz: vários caminhos criam tasks SEM passar pelo service que dispara
+ * notify (CLAUDE.md §12.n recidivismo). Casos descobertos na auditoria:
+ *   - Portal de Solicitações (portalWizard, portal, portalLegacy) faz
+ *     addDoc direto sem notificar.
+ *   - recurringTasksDailyCron cria tasks com assignees pré-definidos do
+ *     template, sem notif.
+ *   - Qualquer caller futuro que esqueça de notify.
+ *
+ * Solução §12.n option 3: trigger reativo que SEMPRE dispara, independente
+ * do caller. Idempotente (skip se já existe notif task.assigned pra
+ * recipient+task) pra evitar dobrar quando service também notifica.
+ *
+ * Garantias:
+ *   - Idempotência: query por notification.{entityId,recipientId,type} antes
+ *     de criar. Se já existe nos últimos 5min, skip (cobertura do caller UI).
+ *   - actorId derivado de task.createdBy. Self-assign não notifica.
+ *   - Rules bypassadas via Admin SDK (não passa por settings/global flag).
+ *   - Sem dependência de prefs — Cloud Function deve notificar SEMPRE pro
+ *     painel do user. Filtros de email/etc. ficam em onNotificationCreate.
+ * ═══════════════════════════════════════════════════════════════════ */
+export const onTaskCreated = onDocumentCreated({
+  document: 'tasks/{taskId}',
+  region:   'us-central1',
+}, async (event) => {
+  const task = event.data?.data();
+  const taskId = event.params?.taskId;
+  if (!task || !taskId) return;
+
+  const assignees = Array.isArray(task.assignees) ? task.assignees.filter(Boolean) : [];
+  const observers = Array.isArray(task.observers) ? task.observers.filter(Boolean) : [];
+  if (!assignees.length && !observers.length) {
+    console.log(`[onTaskCreated] task=${taskId} sem assignees/observers — skip`);
+    return;
+  }
+
+  const actorId   = task.createdBy || 'system';
+  const actorName = (actorId === 'system' || actorId === 'portal')
+    ? 'Sistema PRIMETOUR'
+    : (await db.collection('users').doc(actorId).get().catch(() => null))?.data()?.name || 'Sistema PRIMETOUR';
+
+  const title = task.title || 'Tarefa';
+  const now = FieldValue.serverTimestamp();
+
+  // Helper: cria notif SE não existe ainda (idempotência cross-caller)
+  const createIfMissing = async (recipientId, type, body, priority = 'normal') => {
+    if (recipientId === actorId) return; // self-assign: skip
+    // Idempotência: skip se já tem notif desse mesmo type+entity pra esse recipient
+    // criada nos últimos 5min (caller UI provavelmente já criou).
+    const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000);
+    const existingSnap = await db.collection('notifications')
+      .where('recipientId', '==', recipientId)
+      .where('entityType',  '==', 'task')
+      .where('entityId',    '==', taskId)
+      .where('type',        '==', type)
+      .where('createdAt',   '>=', fiveMinAgo)
+      .limit(1)
+      .get()
+      .catch(() => ({ empty: true }));
+    if (!existingSnap.empty) {
+      console.log(`[onTaskCreated] skip duplicate ${type} pra ${recipientId} (task=${taskId})`);
+      return;
+    }
+    await db.collection('notifications').add({
+      type, entityType: 'task', entityId: taskId,
+      recipientId, actorId, actorName,
+      title, body, route: 'tasks',
+      priority, category: 'tasks',
+      read: false, dismissed: false,
+      createdAt: now,
+      // expiresAt: opcional (notificationPanel já faz TTL client-side)
+    }).catch(e => console.warn(`[onTaskCreated] add notif fail (${type}/${recipientId}):`, e?.message));
+  };
+
+  const ops = [];
+  for (const uid of assignees) {
+    ops.push(createIfMissing(uid, 'task.assigned', `"${title}" foi atribuída a você`, task.priority === 'urgent' ? 'high' : 'normal'));
+  }
+  for (const uid of observers) {
+    if (assignees.includes(uid)) continue; // assignee já recebeu o principal
+    ops.push(createIfMissing(uid, 'task.observing', `Você está acompanhando "${title}"`, 'low'));
+  }
+  await Promise.all(ops);
+  console.log(`[onTaskCreated] task=${taskId} assignees=${assignees.length} observers=${observers.length} actor=${actorId}`);
+});
+
+/* ═══════════════════════════════════════════════════════════════════
+ * v4.62.37 — onTaskUpdated: safety-net pra notif quando assignees/observers
+ * mudam em task EXISTENTE via caminho que bypassa updateTask service.
+ *
+ * Casos cobertos:
+ *   - Admin reatribui via Admin SDK direto.
+ *   - Qualquer service novo que mexa em assignees sem chamar notify.
+ *   - bulkUpdateTasks v4.62.37 já notifica client-side, mas CF é defesa.
+ *
+ * Idempotência: mesmo guard de 5min do onTaskCreated.
+ * ═══════════════════════════════════════════════════════════════════ */
+export const onTaskUpdated = onDocumentUpdated({
+  document: 'tasks/{taskId}',
+  region:   'us-central1',
+}, async (event) => {
+  const before = event.data?.before?.data() || {};
+  const after  = event.data?.after?.data()  || {};
+  const taskId = event.params?.taskId;
+  if (!after || !taskId) return;
+
+  const beforeA = Array.isArray(before.assignees) ? before.assignees : [];
+  const beforeO = Array.isArray(before.observers) ? before.observers : [];
+  const afterA  = Array.isArray(after.assignees)  ? after.assignees  : [];
+  const afterO  = Array.isArray(after.observers)  ? after.observers  : [];
+  const addedA  = afterA.filter(uid => uid && !beforeA.includes(uid));
+  const addedO  = afterO.filter(uid => uid && !beforeO.includes(uid));
+  if (!addedA.length && !addedO.length) return; // nada que precise notificar
+
+  const actorId   = after.updatedBy || after.lastEditedBy || after.createdBy || 'system';
+  const actorName = (actorId === 'system' || actorId === 'portal')
+    ? 'Sistema PRIMETOUR'
+    : (await db.collection('users').doc(actorId).get().catch(() => null))?.data()?.name || 'Sistema PRIMETOUR';
+  const title = after.title || before.title || 'Tarefa';
+  const now = FieldValue.serverTimestamp();
+
+  const createIfMissing = async (recipientId, type, body, priority = 'normal') => {
+    if (recipientId === actorId) return;
+    const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000);
+    const existingSnap = await db.collection('notifications')
+      .where('recipientId', '==', recipientId)
+      .where('entityType',  '==', 'task')
+      .where('entityId',    '==', taskId)
+      .where('type',        '==', type)
+      .where('createdAt',   '>=', fiveMinAgo)
+      .limit(1)
+      .get()
+      .catch(() => ({ empty: true }));
+    if (!existingSnap.empty) return;
+    await db.collection('notifications').add({
+      type, entityType: 'task', entityId: taskId,
+      recipientId, actorId, actorName,
+      title, body, route: 'tasks',
+      priority, category: 'tasks',
+      read: false, dismissed: false,
+      createdAt: now,
+    }).catch(e => console.warn(`[onTaskUpdated] add notif fail (${type}/${recipientId}):`, e?.message));
+  };
+
+  const ops = [];
+  for (const uid of addedA) {
+    ops.push(createIfMissing(uid, 'task.assigned', `"${title}" foi atribuída a você`, after.priority === 'urgent' ? 'high' : 'normal'));
+  }
+  for (const uid of addedO) {
+    if (addedA.includes(uid)) continue;
+    ops.push(createIfMissing(uid, 'task.observing', `Você está acompanhando "${title}"`, 'low'));
+  }
+  await Promise.all(ops);
+  console.log(`[onTaskUpdated] task=${taskId} addedA=${addedA.length} addedO=${addedO.length} actor=${actorId}`);
+});

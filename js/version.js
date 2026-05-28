@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 62,
-  patch: 36,
-  build: '20260527-tarefa-copiar-link-no-rodape',
+  patch: 37,
+  build: '20260527-notif-assignee-observer-safety-net',
 };
 
 /** "1.2.0" */
