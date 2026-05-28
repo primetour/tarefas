@@ -152,17 +152,25 @@ function tipToHighlights(tip) {
 }
 
 export async function buildSlidesForDestino(destino) {
-  const imgs = getImagesForDestino(destino);
+  // Destino sintético (hotel/restaurante/etc): usa as fotos do estabelecimento
+  // E busca o tip da CIDADE REAL pra ter conteúdo editorial.
+  const isSintetico = !!destino._sintetico;
+  const imgs = isSintetico ? destino._fotos : getImagesForDestino(destino);
+  const tipDestinoId = isSintetico ? destino._destinoReal?.id : destino.id;
   const nome = destino.nome;
   const foto = (idx) => imgs[idx % Math.max(imgs.length, 1)]?.url || '';
 
   let highlights = [];
-  try {
-    const tip = await fetchTip(destino.id);
-    highlights = tipToHighlights(tip);
-    console.log('[artsByDestino] tip:', destino.id, '| segmentos com conteudo:', highlights.length);
-  } catch (e) {
-    console.warn('[artsByDestino] erro ao buscar tip:', e);
+  if (tipDestinoId) {
+    try {
+      const tip = await fetchTip(tipDestinoId);
+      highlights = tipToHighlights(tip);
+      console.log('[artsByDestino] tip:', tipDestinoId, '| segmentos com conteudo:', highlights.length);
+    } catch (e) {
+      console.warn('[artsByDestino] erro ao buscar tip:', e);
+    }
+  } else if (isSintetico) {
+    console.info('[artsByDestino] estabelecimento sem destino real correspondente:', destino.nome);
   }
 
   // Fallback se destino não tem tip
@@ -206,7 +214,16 @@ export const PICKER_CATEGORIAS = [
 ];
 
 export function getBancoCuradoForDestino(destino, categoria = 'todas') {
-  let imgs = getImagesForDestino(destino);
+  // Sintético: começa com fotos do estabelecimento + fotos da cidade real
+  let imgs;
+  if (destino?._sintetico) {
+    const cidadeImgs = destino._destinoReal ? getImagesForDestino(destino._destinoReal) : [];
+    // Fotos do estabelecimento PRIMEIRO, depois resto da cidade (sem duplicar)
+    const seen = new Set(destino._fotos.map(f => f.id));
+    imgs = [...destino._fotos, ...cidadeImgs.filter(i => !seen.has(i.id))];
+  } else {
+    imgs = getImagesForDestino(destino);
+  }
   if (categoria && categoria !== 'todas') {
     imgs = imgs.filter(img => img.assetCategory === categoria);
   }
@@ -220,7 +237,14 @@ export function getBancoCuradoForDestino(destino, categoria = 'todas') {
 
 // Quantas fotos cada categoria tem pra esse destino (pra mostrar badge nas abas)
 export function getBancoCuradoCounts(destino) {
-  const imgs = getImagesForDestino(destino);
+  let imgs;
+  if (destino?._sintetico) {
+    const cidadeImgs = destino._destinoReal ? getImagesForDestino(destino._destinoReal) : [];
+    const seen = new Set(destino._fotos.map(f => f.id));
+    imgs = [...destino._fotos, ...cidadeImgs.filter(i => !seen.has(i.id))];
+  } else {
+    imgs = getImagesForDestino(destino);
+  }
   const counts = { todas: imgs.length };
   for (const cat of PICKER_CATEGORIAS) {
     if (cat.key === 'todas') continue;
@@ -243,6 +267,63 @@ export function getCategoriasParaDestino(destino) {
     }
   }
   return set;
+}
+
+/**
+ * Cards sintéticos por estabelecimento (Hotel/Restaurante/etc) — agrupa
+ * imagens por `name`, cada nome único vira UM card. Conteúdo dos slides
+ * vem do tip da cidade (qualidade editorial mantida); apenas as fotos
+ * são do estabelecimento.
+ */
+export function getEstabelecimentosTipo(tipo, destinosReais) {
+  // Coleta todas as imagens dessa categoria do índice geral
+  const todas = [];
+  for (const arr of _imagesByCity.values()) for (const img of arr) {
+    if (img.assetCategory === tipo) todas.push(img);
+  }
+  // Dedupe (mesma imagem pode estar indexada por city e country)
+  const seen = new Set();
+  const imgs = todas.filter(img => {
+    if (seen.has(img.id)) return false;
+    seen.add(img.id);
+    return true;
+  });
+
+  // Agrupa por name
+  const grouped = new Map();
+  for (const img of imgs) {
+    if (!img.name) continue;
+    if (!grouped.has(img.name)) {
+      grouped.set(img.name, {
+        name: img.name, city: img.city, country: img.country,
+        continent: img.continent, fotos: [],
+      });
+    }
+    grouped.get(img.name).fotos.push(img);
+  }
+
+  // Vira destino sintético
+  return [...grouped.values()].map(g => {
+    const destinoReal = destinosReais.find(d =>
+      normKey(d._raw?.city || d.city) === normKey(g.city) &&
+      normKey(d._raw?.country || d.country) === normKey(g.country)
+    );
+    return {
+      id: `${tipo}:${g.name}`,
+      nome: g.name,
+      subtitulo: [g.city, g.country].filter(Boolean).join(' · '),
+      capaUrl: g.fotos[0]?.url || '',
+      disponivel: true,
+      paletaFaixa: '#2BA9A7',
+      continent: g.continent || '',
+      country: g.country || '',
+      _sintetico: true,
+      _tipo: tipo,
+      _destinoReal: destinoReal || null,
+      _fotos: g.fotos,
+      _raw: { city: g.city, country: g.country, continent: g.continent },
+    };
+  }).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
 }
 
 // API legada (não usada mais — wizard usa getBancoCuradoForDestino direto)

@@ -2,12 +2,20 @@ import { MOCK_FORMATOS, MOCK_TEMPLATES, MOCK_LAYOUTS } from './mock-data.js';
 import {
   fetchDestinos, buildSlidesForDestino,
   getBancoCuradoForDestino, getBancoCuradoCounts, getCategoriasParaDestino,
-  PICKER_CATEGORIAS,
+  getEstabelecimentosTipo, PICKER_CATEGORIAS,
 } from '../../services/artsByDestino.js';
 
 // Cache local — populado em initWizard via fetchDestinos()
 let _destinos = [];
 const getDestinos = () => _destinos;
+
+// Lista efetiva pra renderizar — destinos reais ou estabelecimentos sintéticos
+// dependendo do filterTipo selecionado.
+function getEntradas() {
+  const t = state.filterTipo;
+  if (!t || t === 'todos' || t === 'location') return _destinos;
+  return getEstabelecimentosTipo(t, _destinos);
+}
 const getBancoCurado = () => getBancoCuradoForDestino(state.destino, state.bancoCategoria || 'todas');
 
 // ───── State ─────
@@ -135,10 +143,11 @@ function renderDestinos(filter = '') {
   state.searchQuery = filter;
   const grid = $('#destinos-grid');
   const norm = filter.trim().toLowerCase();
-  grid.innerHTML = getDestinos()
+  // Entradas dependem do tipo: destinos reais OU estabelecimentos sintéticos
+  state._entradas = getEntradas();
+  grid.innerHTML = state._entradas
     .filter(d => !state.filterContinent || d.continent === state.filterContinent)
     .filter(d => !state.filterCountry   || d.country   === state.filterCountry)
-    .filter(d => state.filterTipo === 'todos' || getCategoriasParaDestino(d).has(state.filterTipo))
     .filter(d => !norm || d.nome.toLowerCase().includes(norm))
     .map(d => {
       const bg = d.capaUrl
@@ -165,7 +174,8 @@ function renderDestinos(filter = '') {
 }
 
 async function pickDestino(id) {
-  const d = getDestinos().find(x => x.id === id);
+  // Procura nas entradas atuais (pode ser destino real ou sintético)
+  const d = (state._entradas || _destinos).find(x => x.id === id);
   if (!d) return;
   showLoader('Carregando destino...');
   try {
@@ -188,7 +198,7 @@ async function pickDestino(id) {
 
 // ───── Editor canvas ─────
 function renderEditor() {
-  $('#editor-title').textContent = getDestinos().find(d => d.id === state.destinoId)?.nome || '—';
+  $('#editor-title').textContent = state.destino?.nome || '—';
   syncCanvasFormatToggle();
   prefitAllSlides().then(() => {
     renderCanvas();
@@ -781,7 +791,7 @@ function renderFotoTabPanel() {
 // ──── Sheet: Baixar ────
 async function renderSheetBaixar() {
   const body = $('#sheet-baixar-body');
-  const destino = getDestinos().find(d => d.id === state.destinoId);
+  const destino = state.destino;
   const formatos = [...state.formatos].map(id => MOCK_FORMATOS.find(f => f.id === id).label).join(' + ');
   const total = state.formatos.size * state.slides.length;
 
