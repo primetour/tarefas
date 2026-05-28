@@ -6,6 +6,42 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.24+20260528-web-template-cors-proxy] — 2026-05-28
+
+**Hotfix** do runtime Web Link (v4.63.23). A entrega do v4.63.23 estava 99%
+no ar, mas E2E real pegou o último 1%: o bucket público R2 (`pub-…r2.dev`)
+NÃO envia header `Access-Control-Allow-Origin`. Browser bloqueou `fetch` em
+`portal-view-tpl.html` linha 91 com "TypeError: Failed to fetch", e o
+fallback redirecionava pro canônico — visualmente parecia que o template
+nem tinha sido atribuído.
+
+**Fix definitivo**:
+
+- Nova CF `getTemplateHtml` (`onRequest`, region us-central1, memória 256MiB,
+  timeout 10s) — proxy CORS-aware: GET `?tplId=XXX`, valida regex
+  `/^[a-zA-Z0-9_-]+$/`, busca `templates/{tplId}`, exige `status='active'`,
+  re-valida `fileUrl` com `_validateR2FileUrl` (anti-SSRF), faz fetch do R2
+  server-side, retorna HTML com `Access-Control-Allow-Origin: *` +
+  `Cache-Control: public, max-age=300, s-maxage=300` (cache CDN 5min).
+- `portal-view-tpl.html` (linhas 89-95): substitui `fetch(webTpl.fileUrl)`
+  por `fetch('https://us-central1-…/getTemplateHtml?tplId=' +
+  encodeURIComponent(webTpl.templateId))`.
+
+**Por que CF e não habilitar CORS no R2**: bucket público `r2.dev` é pra
+dev/preview e Cloudflare não permite configurar headers nele. Worker
+`primetour-images.rene-castro.workers.dev` exigia X-Upload-Token (não
+queremos expor no client). CF é mais seguro: re-valida tplId/status, evita
+fetch arbitrário de URLs R2, mantém cache no CDN Cloudflare do GCP.
+
+**Lição estrutural** (vai pra CLAUDE.md §16): bucket pub-r2.dev nunca
+deveria ter sido usado pra recurso consumido por browser cross-origin.
+Worker com auth ou CF intermediária são os 2 caminhos válidos. Audit
+preventiva pra próximas integrações: qualquer URL `pub-…r2.dev` ou
+`s3.amazonaws.com` lida no browser via fetch precisa OU CORS habilitado
+no bucket OU proxy server-side.
+
+---
+
 ## [4.63.17+20260528-portal-default-template-seed] — 2026-05-28
 
 Release **Migração 1/3 generators legados → templates uploaded** — Portal de

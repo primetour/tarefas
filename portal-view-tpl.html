@@ -86,11 +86,12 @@
   }
 
   // Modo 'full': renderiza template completo
-  // 1. Fetch HTML do R2
+  // 1. Fetch HTML via CF proxy (v4.63.24 — R2 pub-bucket não tem CORS, precisa CF intermediar)
   let templateHtml;
   try {
-    const r = await fetch(webTpl.fileUrl);
-    if (!r.ok) throw new Error(`R2 fetch ${r.status}`);
+    const proxyUrl = 'https://us-central1-gestor-de-tarefas-primetour.cloudfunctions.net/getTemplateHtml?tplId=' + encodeURIComponent(webTpl.templateId);
+    const r = await fetch(proxyUrl);
+    if (!r.ok) throw new Error(`CF proxy ${r.status}`);
     templateHtml = await r.text();
   } catch (e) {
     console.error('[portal-view-tpl] template fetch falhou:', e);

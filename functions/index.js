@@ -1270,6 +1270,58 @@ export const renderTemplate = onCall({
  *
  * Permission: templates_manage OR isMaster.
  * ═════════════════════════════════════════════════════════ */
+
+/* ═════════════════════════════════════════════════════════
+ * getTemplateHtml — v4.63.24+ Proxy GET pra template HTML com CORS.
+ *
+ * R2 bucket público (pub-...r2.dev) NÃO retorna Access-Control-Allow-Origin
+ * → browser bloqueia fetch cross-origin de primetour.github.io. Esta CF
+ * proxia o GET, valida template ativo + R2 origin, retorna HTML com
+ * Access-Control-Allow-Origin: *.
+ *
+ * Uso: portal-view-tpl.html chama
+ *   `https://us-central1-…/getTemplateHtml?tplId=XXX`
+ *
+ * Cache: 5min CDN (template muda raramente, web link tem token único).
+ * Sem auth — templates ativos são públicos (compartilhamento web link).
+ * ═════════════════════════════════════════════════════════ */
+export const getTemplateHtml = onRequest({
+  region: 'us-central1',
+  memory: '256MiB',
+  timeoutSeconds: 10,
+  cors: true,
+}, async (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET');
+  res.set('Cache-Control', 'public, max-age=300, s-maxage=300');
+  if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+
+  const tplId = String(req.query.tplId || '').trim();
+  if (!tplId || !/^[a-zA-Z0-9_-]+$/.test(tplId)) {
+    res.status(400).type('text/plain').send('Invalid tplId');
+    return;
+  }
+
+  try {
+    const snap = await db.collection('templates').doc(tplId).get();
+    if (!snap.exists) { res.status(404).type('text/plain').send('Template not found'); return; }
+    const tpl = snap.data();
+    if (tpl.status !== 'active') { res.status(403).type('text/plain').send('Template not active'); return; }
+    if (!_validateR2FileUrl(tpl.fileUrl)) {
+      res.status(400).type('text/plain').send('Invalid fileUrl (non-R2)');
+      return;
+    }
+
+    const r = await fetch(tpl.fileUrl);
+    if (!r.ok) { res.status(502).type('text/plain').send(`R2 fetch failed (${r.status})`); return; }
+    const html = await r.text();
+    res.type('text/html; charset=utf-8').send(html);
+  } catch (e) {
+    console.error('[getTemplateHtml]', e?.message || e);
+    res.status(500).type('text/plain').send(`Error: ${e?.message || 'unknown'}`);
+  }
+});
+
 export const duplicateTemplate = onCall({
   cors: ['https://primetour.github.io', 'http://localhost:5000'],
   secrets: [R2_UPLOAD_TOKEN],
