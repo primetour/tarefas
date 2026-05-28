@@ -710,13 +710,15 @@
 .slot-solid.solid-accent { display: none; } /* reservado pra layouts futuros */
 
 /* Block que agrupa hand+titulo+desc.
-   Gap base = 8px × scale. Hand tem padding-bottom pequeno (respiro sutil). */
+   Gap base = 8px × scale. Hand tem padding-bottom pequeno (respiro sutil).
+   overflow: visible permite que texto arrastado (Canva-style) saia do block
+   e flutue pelo slide. O .slide-render em volta tem overflow:hidden global. */
 .slot-text-block {
   position: absolute;
   display: flex;
   flex-direction: column;
   gap: calc(8px * var(--slide-scale));
-  overflow: hidden;
+  overflow: visible;
 }
 
 /* Caixas de texto — fluxo natural.
