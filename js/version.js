@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 62,
-  patch: 41,
-  build: '20260528-areas-templates-fase-c-fontes-docx-pptx',
+  patch: 42,
+  build: '20260528-areas-templates-fase-d-voice-ia',
 };
 
 /** "1.2.0" */

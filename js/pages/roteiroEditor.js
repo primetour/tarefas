@@ -6339,7 +6339,31 @@ async function aiGenerateFullRoteiro() {
       luxury: 'Luxury',
     }[c.economicProfile] || c.economicProfile || '—');
 
-    const userMessage = `Você recebeu um briefing de viagem da PRIMETOUR. Crie um roteiro de luxo seguindo TODAS as diretrizes do system prompt.
+    // v4.62.42 Fase D (resolve D3): injeta editorial.voice da área no prompt.
+    // Antes: campo voice era zumbi (salvo no Firestore, sem consumer). Agora
+    // IA respeita tom configurado pela BU (formal/caloroso/editorial-luxo).
+    let _voiceHint = '';
+    try {
+      const _areaId = document.getElementById('re-area-select')?.value || currentRoteiro.areaId || '';
+      if (_areaId) {
+        const _allAreas = await import('../services/portal.js').then(m => m.fetchAreas()).catch(() => []);
+        const _area = _allAreas.find(a => a.id === _areaId);
+        const _voice = _area?.editorial?.voice;
+        if (_voice && _voice !== 'caloroso') {
+          // 'caloroso' = default, não precisa injetar instrução
+          const VOICE_INSTRUCTIONS = {
+            'formal':         'Tom formal, terceira pessoa, sem coloquialismos. Linguagem corporativa/diplomática.',
+            'editorial-luxo': 'Tom editorial de revista de luxo (Condé Nast Traveller / Robb Report). Frases evocativas, descrições sensoriais ricas, vocabulário sofisticado mas acessível. Sem clichês de "experiência única".',
+          };
+          const instruction = VOICE_INSTRUCTIONS[_voice];
+          if (instruction) {
+            _voiceHint = `\n\n## TOM DE ESCRITA (configurado pela área "${_area.name}")\n\n${instruction}\n\nMantenha esse tom em TODOS os campos de texto: narrativas dos dias, descrições, dicas.`;
+          }
+        }
+      }
+    } catch (e) { console.warn('[Roteiro] voice inject falhou (não-blocker):', e?.message); }
+
+    const userMessage = `Você recebeu um briefing de viagem da PRIMETOUR. Crie um roteiro de luxo seguindo TODAS as diretrizes do system prompt.${_voiceHint}
 
 ## CLIENTE
 
