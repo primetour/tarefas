@@ -6,6 +6,43 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.34→48+20260528-portal-dicas-sprint] — 2026-05-28
+
+**Sprint Portal de Dicas — rich text, mapa interativo, tags, hero auto + 3 ciclos de auditoria.**
+
+15 releases consecutivas (v4.63.34 → v4.63.48) sobre Portal de Dicas. Resumo por tema:
+
+### Features novas
+- **v4.63.34** — Auto-photos PDF (`enrichGalleryWithAutoPhotos` agora antes do `switch`, antes era só web) + accent swatch nos cards de área + hints granulares.
+- **v4.63.35** — Reordenar segmentos antes do export (▲▼ por segmento).
+- **v4.63.36** — Mover item entre segmentos (botão ⇄ + modal). Fix bug crianças misclassified em segment routing.
+- **v4.63.37** — Tags por item (perfil/ambiente/dietas/preço). Vocabulário fixo `DEFAULT_TIP_TAGS` (35+) + custom via `portal_tip_tags._root.tags[]`. UI chips + autocomplete + `addTipTag()`.
+- **v4.63.39** — Subtítulos livres entre itens (`type:'subtitle'`). Renderer em DOCX/PDF/PPTX/web.
+- **v4.63.40** — Rich text leve (markdown **B**/*I*/~~U~~/link/anchor) em descrições. Novo `js/services/richText.js` com `parseRich/richToHtml/richToPlain`. XSS protection em 3 camadas (parser + templateAdapter + portal-view.html). Inline + standalone parser em portal-view.html (não pode importar módulos).
+- **v4.63.41** — Âncoras internas — link entre segmentos da mesma dica via `[texto](#segment-key)`. Smooth scroll handler em portal-view.html. Modal `openInternalAnchorModal` no editor.
+- **v4.63.44** — Hero auto via `heroTasks` array (gallery primeira foto). Z-index modal manual `baseZ` 1000 → 3000 (cobrir z-index:2000 manuais). Novos labels do gerador ("Escolha a área", "Selecione o destino").
+- **v4.63.45** — Mapa interativo (`js/components/portalTipsMap.js`). Leaflet 1.9.4 + markercluster 1.5.3 via CDN unpkg.com. Geocoding Nominatim (OSM) com cache `_geo` em `portal_destinations`. Real-time `onSnapshot` debounced 1s. Pins ouro + popup cidade/país/qtd dicas. Firestore rule pra UPDATE `_geo` por qualquer auth user (cache benigno).
+- **v4.63.46** — Logos das áreas no estágio 1 do wizard (não nome). Título do mapa "Confira no mapa os destinos que já possuem nossas dicas".
+- **v4.63.47** — Mapa 3x mais rápido (Promise.all em fetchTipsAggregated + paralelizar loadLeaflet + addLayers batch). Logos com fundo branco (não cor secundária da BU). Script `prefill-geo-cache.cjs` rodado em prod (19/20 destinos pré-cacheados).
+- **v4.63.48** — Logos coloridos (`a.logoUrlAlt || a.logoUrl`, schema docs em `helpPanel.js:372`). 4 blocos dos passos com mais destaque (border-top dourado 3px + chip número dourado + shadow sutil). Fix z-index do mapa cobrindo dropdowns header (`isolation: isolate` + `z-index: 0`).
+
+### Hotfixes (3 ciclos de auditoria)
+- **v4.63.38** — Fallback Unsplash não trazia fotos no PDF (decisão direct-fetch vs proxy era restritiva; `_shouldUseProxy()` com `DIRECT_FETCH_ORIGINS` allowlist).
+- **v4.63.42** — Hotfix HIGH auditoria Agent E2E: H1 (subtitle filtered before render), H3 (XSS href não escaped em `_toHtml`), H4 (`prompt()` nativo → `openExternalLinkModal`, §11.k), H7 (anchor modal listava segmento atual), H8 (subtítulo vazio persistia).
+- **v4.63.43** — H6 (markdown leakage em card preview → `richToPlain`), H2 (PPTX subtitle safety filtra via `indexedNoSubs`).
+- **v4.63.45** — BC1 (snap.exists usado como propriedade em portal.js:1151/1160/1532 → função), BC2 (CSS `var(--brand-gold)10` inválido → `rgba(212,168,67,0.10)`), B1 (XSS bypass parcial via `[xss](javascript:alert(1))` → reject proto BEFORE transformation), B2 (email com underscore italic false-positive → word-boundary).
+
+### Patrimônio (scripts no repo)
+- `functions/smoke-test-v4-63-46.cjs` — valida portal_destinations + portal_tips + portal_areas + portal_tip_tags + portal_downloads.
+- `functions/prefill-geo-cache.cjs` — Nominatim 1/s pra pré-popular `_geo`. Idempotente.
+- `functions/inspect-area-logos.cjs` — debug schema das áreas (logoUrl/logoUrlAlt/brand/colors).
+
+### Performance medida
+- Mapa interativo: 4-5s → 1.5-2s (3x) — paralelização I/O.
+- Geocoding cache hit: 95% (19/20 destinos pré-cacheados via Admin SDK; o 20º é `Quênia/Quênia` degenerado).
+
+---
+
 ## [4.63.33+20260528-colors-accent-configuravel] — 2026-05-28
 
 **Cor de destaque (accent) configurável por área.**

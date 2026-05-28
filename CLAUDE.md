@@ -2057,3 +2057,119 @@ if (cotacoesExp) modules.cotacoes = { ...(modules.cotacoes || {}), exports: cota
 Pra caso típico (dezenas/centenas de docs, alias barato), receita acima é zero-risk + zero-downtime.
 
 **Anti-padrão correlato**: rename só nos lugares óbvios (page title, sidebar) e deixar IDs/labels da UI form em drift. Reader funciona por causa de alias → bug invisível por meses. User percebe drift mas sistema "funciona" → confusão UX. Checklist mental ao renomear schema: **TODAS as 3 camadas (reader, UI form, save) devem migrar juntas, mesmo que renderer não mude**.
+
+### n) ⚠ ARMADILHA: SDK v9 modular `snap.exists` é FUNÇÃO, não propriedade (v4.63.45)
+
+**Sintoma** (Renê reportou via Agent E2E audit): partner downloads contabilizando errado e terms acceptance não persistindo. Bug latente há semanas.
+
+**Causa**: Em `js/services/portal.js` linhas 1151, 1160, 1532 código fazia `if (snap.exists) {...}` — `snap.exists` é função em Firebase SDK v9 modular, NÃO propriedade boolean. A função-objeto é truthy sempre → condição sempre `true` → acessava `snap.data()` em docs inexistentes (return `undefined`) → silently swallow.
+
+```js
+// ❌ ERRADO em v9 modular — exists é função
+const snap = await getDoc(ref);
+if (snap.exists) { ... }   // SEMPRE entra (Function é truthy)
+
+// ✅ CORRETO
+if (snap.exists()) { ... }  // chamar a função
+```
+
+**Por que é fácil de errar**: SDK compat (v8 namespaced) tinha `snap.exists` como propriedade. Editor não acusa erro (TS não obriga no projeto vanilla). `node --check` passa. Curl passa.
+
+**Padrão de auditoria preventiva**:
+```bash
+grep -rn "snap\.exists[^(]" js/services js/pages 2>/dev/null
+# qualquer match sem () é candidato a bug
+```
+
+Aplicar antes de declarar sprint fechada quando há trabalho em services que fazem `getDoc()`. Levou ~3 semanas pra Renê notar.
+
+### o) ⚠ ARMADILHA: CSS `var(--brand-gold)10` é declaração INVÁLIDA — browser dropa silenciosamente (v4.63.45)
+
+**Sintoma** (Agent audit BC2): hover states em cards de área não exibiam tint dourado. Visualmente "flat" sem feedback.
+
+**Causa**: tentativa de concatenar opacity via hex appended: `background: var(--brand-gold)10` (esperando virar `#D4A84310`, valor com alpha). CSS NÃO suporta isso — `var()` retorna value puro, concatenar 10 cria token inválido. Browser dropa a declaração inteira.
+
+```css
+/* ❌ ERRADO — CSS não concatena dentro de var() */
+background: var(--brand-gold)10;
+
+/* ✅ CORRETO — usar rgba/hsla com canal alpha explícito */
+background: rgba(212, 168, 67, 0.10);
+
+/* ✅ ALTERNATIVA — color-mix() (CSS moderno, suporte amplo desde 2023) */
+background: color-mix(in srgb, var(--brand-gold) 10%, transparent);
+```
+
+**Padrão preventivo**: SEMPRE que precisar de cor com alpha calculada de variável CSS, usar `rgba()` direto ou `color-mix()`. Se valor da variável muda, o caller também precisa atualizar (acoplamento) — mas pelo menos o CSS é válido.
+
+**Auditoria**: `grep -rn "var(--[^)]*)[0-9a-fA-F]\{1,2\}" js/ css/` pega esse padrão. v4.63.45 achou 2 ocorrências em portalTips.js.
+
+### p) Sprint múltiplas features com Agent paralelo pós-cada-feature (v4.63.34-48)
+
+**Padrão consolidado nesta sprint**: 15 releases consecutivas, 5 features substanciais (rich text, anchors, mapa, tags, segmento UX) + 3 ciclos de auditoria. Receita que funcionou:
+
+1. **Feature → release → curl validate → Agent audit em paralelo** (não wait): próxima feature já entra em paralelo com audit anterior.
+2. **Audit findings → hotfix focado** (1-2 releases). Não rebatch — fix HIGH agora, MEDIUM/LOW backlog.
+3. **Validação Node pra parsers**: scripts adversariais (XSS, edge cases) em `/tmp/test-parser.js` rodam em <5s. Pegam B1/B2 que Agent não pegou.
+4. **Smoke test Admin SDK pós-release crítica** (mapa, tags): valida shape de dados em produção. Patrimônio do repo (§13.a).
+5. **Pré-popular cache via Admin SDK** (geocoding): elimina cold-start UX problem em primeira render. Idempotente, rodado uma vez.
+
+**Resultado da sprint**: 16 releases · 12h dev (com AI mult 0.5) · 3 ciclos audit · ~10 HIGH findings fechados · 3 scripts patrimônio.
+
+**ROI Agent paralelo (medido nessa sprint)**: cada audit pega 5-10 HIGH findings em ~5min de wall-clock, contra horas de E2E manual via MCP que cache cache stubborn corrompe.
+
+### q) ⚠ ARMADILHA: Schema 2-logos por área (logoUrl branca/escura vs logoUrlAlt colorida/clara) — confundir = invisível (v4.63.47-48)
+
+**Sintoma** (Renê 2026-05-28): "logo branco no fundo branco" — logos sumindo dos cards de área no estágio 1 do wizard.
+
+**Causa**: schema `portal_areas` tem 2 URLs de logo, distintos por contexto:
+- `logoUrl` — versão pra **fundo escuro/capa** (PNG alpha branco/claro, alto contraste em dark bg)
+- `logoUrlAlt` — versão pra **fundo claro/footer** (versão colorida, alto contraste em light bg)
+
+Documentado em `js/components/helpPanel.js:372` e `js/services/templates.js:134`. Eu inicialmente usei `logoUrl` direto (assumindo "logo principal") em UI com `background:#FFFFFF` → logo branca sobre branco = invisível.
+
+**Padrão correto**: caller decide qual variante usar baseado no contexto:
+
+```js
+// UI com fundo CLARO (cards, papel branco, footer):
+const logo = a.logoUrlAlt || a.logoUrl;  // prefere alt, fallback main
+
+// UI com fundo ESCURO (capa PDF/web, sidebar dark, hero):
+const logo = a.logoUrl || a.logoUrlAlt;  // prefere main, fallback alt
+```
+
+**Anti-padrão (FAÇO se não pensar)**: usar `a.logoUrl` direto sem considerar contexto visual. "É o nome mais óbvio" não significa "é a versão certa".
+
+**Auditoria**: `grep -rn "a\.logoUrl[^A]" js/` — cada hit precisa revisão: o contexto visual é claro ou escuro? Se claro, trocar pra `a.logoUrlAlt || a.logoUrl`.
+
+### r) ⚠ ARMADILHA: Z-index de libs externas (Leaflet) vaza do stacking context e cobre UI da app (v4.63.48)
+
+**Sintoma** (Renê 2026-05-28): mapa interativo renderizando ACIMA de dropdowns do header (Paleta de cores, Perfil), escondendo opções do menu.
+
+**Causa**: Leaflet usa z-indices internos altos:
+- `leaflet-pane`: 200 (tile) → 700 (popup)
+- `leaflet-control-zoom`, `leaflet-bar`: **1000-1010**
+
+Esses valores são absolutos do body. Quando dropdowns do header também usam z-index ~100-1000, qualquer Leaflet control passa por cima.
+
+**Fix definitivo — isolar stacking context do mapa**:
+
+```css
+.map-wrapper {
+  position: relative;
+  z-index: 0;             /* cria stacking context */
+  isolation: isolate;     /* reforço — confina filhos */
+}
+```
+
+Com `isolation: isolate` (ou qualquer combo que crie stacking context: `transform`, `filter`, `will-change`, `position + z-index`), os z-index internos do Leaflet ficam **relativos ao wrapper**, não ao body. Leaflet control com z=1010 fica acima do tile mas abaixo do header (que está em stacking context separado, z=auto do body).
+
+**Princípio mestre — qualquer lib externa que injeta DOM com z-index alto**:
+- Leaflet (z 200-1010)
+- Chart.js (tooltips z 1000+ default)
+- jsPDF render preview (z 99999 em alguns templates)
+- Slick/Swiper carousels (z 1000 em controls)
+
+Wrappear com `isolation: isolate` desde a primeira integração. Mais barato prevenir que ir caçar conflito depois.
+
+**Auditoria preventiva**: `grep -rn "z-index:\s*[0-9]" js/ css/ | sort -t: -k4 -n -r | head -20` — top 20 z-indices da app revela se há valores absurdos (>10000) que indicam guerra de z-index. Padrão saudável: header/modal ~1000, dropdown ~100, toast ~9999, overlay ~5000.
