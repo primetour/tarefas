@@ -622,11 +622,35 @@ function showFloatingToolbar(field) {
   bar.style.left = left + 'px';
   bar.style.top  = top + 'px';
 
-  // Sincroniza valores da toolbar com o override atual
+  syncToolbarState();
+}
+
+// Sincroniza estado visual da toolbar com o elemento selecionado
+function syncToolbarState() {
+  const field = state.selectedField;
+  if (!field) return;
+  const el = $(`#canvas-preview .slot-text[data-field="${field}"]`);
+  if (!el) return;
   const override = state.slideOverrides[state.activeSlideIdx]?.[field] || {};
-  const elFontSize = parseFloat(getComputedStyle(el).fontSize);
+  const computed = getComputedStyle(el);
   $('#ft-font').value = override.fontFamily || 'sans';
-  $('#ft-size').textContent = Math.round(override.fontSize || elFontSize) + 'px';
+  $('#ft-size').textContent = Math.round(override.fontSize || parseFloat(computed.fontSize)) + 'px';
+  $('#ft-bold')?.classList.toggle('active', parseInt(computed.fontWeight) >= 700);
+  $('#ft-italic')?.classList.toggle('active', computed.fontStyle === 'italic');
+  const align = override.align || computed.textAlign || 'left';
+  $('#ft-align-left')?.classList.toggle('active', align === 'left' || align === 'start');
+  $('#ft-align-center')?.classList.toggle('active', align === 'center');
+  $('#ft-align-right')?.classList.toggle('active', align === 'right' || align === 'end');
+  const color = override.color || rgbToHex(computed.color);
+  if ($('#ft-color')) $('#ft-color').value = color;
+  if ($('#ft-color-swatch')) $('#ft-color-swatch').style.background = color;
+}
+
+function rgbToHex(rgb) {
+  const m = /rgb\((\d+),\s*(\d+),\s*(\d+)\)/.exec(rgb);
+  if (!m) return '#ffffff';
+  const h = (n) => parseInt(n).toString(16).padStart(2, '0');
+  return '#' + h(m[1]) + h(m[2]) + h(m[3]);
 }
 
 function hideFloatingToolbar() {
@@ -1286,6 +1310,40 @@ async function initWizard() {
     setOverride(state.selectedField, { fontSize: novo });
     $('#ft-size').textContent = Math.round(novo) + 'px';
   });
+  $('#ft-bold')?.addEventListener('click', () => {
+    if (!state.selectedField) return;
+    const el = $(`#canvas-preview .slot-text[data-field="${state.selectedField}"]`);
+    const isBold = getComputedStyle(el).fontWeight >= 700;
+    setOverride(state.selectedField, { weight: isBold ? '400' : '800' });
+    syncToolbarState();
+  });
+  $('#ft-italic')?.addEventListener('click', () => {
+    if (!state.selectedField) return;
+    const el = $(`#canvas-preview .slot-text[data-field="${state.selectedField}"]`);
+    const isItalic = getComputedStyle(el).fontStyle === 'italic';
+    setOverride(state.selectedField, { style: isItalic ? 'normal' : 'italic' });
+    syncToolbarState();
+  });
+  $('#ft-align-left')?.addEventListener('click', () => {
+    if (!state.selectedField) return;
+    setOverride(state.selectedField, { align: 'left' });
+    syncToolbarState();
+  });
+  $('#ft-align-center')?.addEventListener('click', () => {
+    if (!state.selectedField) return;
+    setOverride(state.selectedField, { align: 'center' });
+    syncToolbarState();
+  });
+  $('#ft-align-right')?.addEventListener('click', () => {
+    if (!state.selectedField) return;
+    setOverride(state.selectedField, { align: 'right' });
+    syncToolbarState();
+  });
+  $('#ft-color')?.addEventListener('input', e => {
+    if (!state.selectedField) return;
+    setOverride(state.selectedField, { color: e.target.value });
+    $('#ft-color-swatch').style.background = e.target.value;
+  });
   $('#ft-reset')?.addEventListener('click', () => {
     if (!state.selectedField) return;
     clearOverride(state.selectedField);
@@ -1393,6 +1451,17 @@ const OVERLAY_HTML = `
       <span class="ft-size" id="ft-size">—</span>
       <button class="ft-btn" id="ft-size-plus" title="Aumentar">+</button>
     </div>
+    <button class="ft-btn ft-toggle" id="ft-bold" title="Negrito"><b>B</b></button>
+    <button class="ft-btn ft-toggle" id="ft-italic" title="Itálico"><i>I</i></button>
+    <div class="ft-align-group">
+      <button class="ft-btn ft-toggle" id="ft-align-left" title="Esquerda">◧</button>
+      <button class="ft-btn ft-toggle" id="ft-align-center" title="Centro">▣</button>
+      <button class="ft-btn ft-toggle" id="ft-align-right" title="Direita">◨</button>
+    </div>
+    <label class="ft-color-wrap" title="Cor do texto">
+      <input type="color" id="ft-color" value="#ffffff" />
+      <span class="ft-color-swatch" id="ft-color-swatch"></span>
+    </label>
     <button class="ft-btn ft-reset" id="ft-reset" title="Resetar texto pro padrão">↺</button>
     <button class="ft-btn ft-close" id="ft-close" title="Fechar">✕</button>
   </div>
