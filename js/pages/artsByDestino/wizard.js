@@ -1445,26 +1445,28 @@ const OVERLAY_HTML = `
       <div class="editor-title" id="editor-title">—</div>
       <button class="btn-icon" id="btn-menu" aria-label="Menu">⋮</button>
     </header>
-    <main class="editor-canvas">
-      <div class="canvas-stage">
-        <div class="canvas-format-toggle">
-          <button data-fmt="carrossel" class="active">Carrossel</button>
-          <button data-fmt="story">Story</button>
+    <div class="editor-body">
+      <main class="editor-canvas">
+        <div class="canvas-stage">
+          <div class="canvas-format-toggle">
+            <button data-fmt="carrossel" class="active">Carrossel</button>
+            <button data-fmt="story">Story</button>
+          </div>
+          <button class="nav-arrow nav-prev" id="nav-prev" aria-label="Slide anterior">←</button>
+          <div id="canvas-preview"></div>
+          <button class="nav-arrow nav-next" id="nav-next" aria-label="Próximo slide">→</button>
         </div>
-        <button class="nav-arrow nav-prev" id="nav-prev" aria-label="Slide anterior">←</button>
-        <div id="canvas-preview"></div>
-        <button class="nav-arrow nav-next" id="nav-next" aria-label="Próximo slide">→</button>
-      </div>
-      <div class="layout-picker" id="layout-picker"></div>
-      <div class="slide-strip-wrap"><div class="slide-strip" id="slide-strip"></div></div>
-    </main>
-    <nav class="editor-toolbar">
-      <button data-tool="formato" class="tool-btn"><span class="tool-ico">◫</span><span class="tool-lbl">Formato</span></button>
-      <button data-tool="estilo"  class="tool-btn"><span class="tool-ico">🎨</span><span class="tool-lbl">Estilo</span></button>
-      <button data-tool="texto"   class="tool-btn"><span class="tool-ico">✏️</span><span class="tool-lbl">Texto</span></button>
-      <button data-tool="foto"    class="tool-btn"><span class="tool-ico">📷</span><span class="tool-lbl">Foto</span></button>
-      <button data-tool="baixar"  class="tool-btn tool-cta"><span class="tool-ico">⬇</span><span class="tool-lbl">Baixar</span></button>
-    </nav>
+        <div class="layout-picker" id="layout-picker"></div>
+        <div class="slide-strip-wrap"><div class="slide-strip" id="slide-strip"></div></div>
+      </main>
+      <nav class="editor-toolbar">
+        <button data-tool="formato" class="tool-btn"><span class="tool-ico">◫</span><span class="tool-lbl">Formato</span></button>
+        <button data-tool="estilo"  class="tool-btn"><span class="tool-ico">🎨</span><span class="tool-lbl">Estilo</span></button>
+        <button data-tool="texto"   class="tool-btn"><span class="tool-ico">✏️</span><span class="tool-lbl">Texto</span></button>
+        <button data-tool="foto"    class="tool-btn"><span class="tool-ico">📷</span><span class="tool-lbl">Foto</span></button>
+        <button data-tool="baixar"  class="tool-btn tool-cta"><span class="tool-ico">⬇</span><span class="tool-lbl">Baixar</span></button>
+      </nav>
+    </div>
   </section>
 
   <div class="sheet-backdrop" id="sheet-backdrop"></div>
