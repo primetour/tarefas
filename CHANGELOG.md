@@ -6,6 +6,30 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.62.50+20260528-hotfix-auditlog-dup-decl] — 2026-05-28
+
+**HOTFIX CRÍTICO** descoberto em E2E via Chrome MCP (CLAUDE.md §1
+funcionou — testar em ambiente real pegou bug que `node --check` não
+viu): v4.62.47 adicionou `import { auditLog } from '../auth/audit.js'`
+no topo de `js/services/portal.js`, mas portal.js linha 1019 já tinha
+um stub `const auditLog = ...` definido. `node --check` passa (escopo
+de módulo permite shadowing), MAS no browser dispara `SyntaxError:
+Identifier 'auditLog' has already been declared` que **bloqueia boot
+inteiro do app** (módulo não carrega → cascata de imports falha).
+
+**Sintoma**: app fica em loading-screen branca eterna, sem
+`window.__PRIMETOUR_VERSION__`, sem qualquer página renderizada.
+
+**Fix**: removido stub (linha 1019). Import do topo é o único agora.
+
+**Lição (CLAUDE.md §1 reforçada)**: `node --check` + curl + deploy
+NÃO são suficientes. **Sempre** abrir Chrome MCP + ler console com
+filtro `error|SyntaxError` ANTES de declarar "pronto". Esta release
+ficou ~10min quebrada em produção pq pulei direto do deploy v4.62.49
+pra próximo trabalho.
+
+---
+
 ## [4.62.49+20260528-bu-sync-bidirectional-cotacoes-alias] — 2026-05-28
 
 Release **Fase E pós-audit Templates Áreas (parte 5/6 + 6/6)** — combina

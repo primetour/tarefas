@@ -1015,8 +1015,9 @@ export async function deletePortalMaterial(kind, id) {
   await auditLog?.('portal.material.delete', col, id, { kind, asAuthor: !canMgr && isOwner });
 }
 
-// Stub do auditLog se não estiver importado (não-fatal)
-const auditLog = (typeof window !== 'undefined' && window.__auditLog) || (async () => {});
+// v4.62.50 hotfix: auditLog já importado no topo (v4.62.47+). Stub removido
+// (causava SyntaxError 'Identifier auditLog has already been declared' que
+// quebrava boot inteiro do app).
 
 /* ─── Download control ────────────────────────────────────── */
 export async function checkDownloadLimit() {

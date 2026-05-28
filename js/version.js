@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 62,
-  patch: 49,
-  build: '20260528-bu-sync-bidirectional-cotacoes-alias',
+  patch: 50,
+  build: '20260528-hotfix-auditlog-dup-decl',
 };
 
 /** "1.2.0" */
