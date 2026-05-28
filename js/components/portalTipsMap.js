@@ -172,9 +172,13 @@ export async function renderPortalTipsMap(containerEl, opts = {}) {
   if (!containerEl) return { destroy: () => {} };
   const height = opts.height || 360;
 
+  // v4.63.48: isolation:isolate cria novo stacking context confinando os
+  // z-indices internos do Leaflet (controles têm z=1000-1010 que vazavam
+  // pra cima de dropdowns do header como Paleta/Perfil). z-index:0 reforço.
   containerEl.innerHTML = `
     <div style="position:relative;height:${height}px;border-radius:var(--radius-md);overflow:hidden;
-      border:1px solid var(--border-subtle);background:var(--bg-surface);">
+      border:1px solid var(--border-subtle);background:var(--bg-surface);
+      isolation:isolate;z-index:0;">
       <div id="ptm-loading" style="position:absolute;inset:0;display:flex;flex-direction:column;
         align-items:center;justify-content:center;background:var(--bg-surface);z-index:10;
         font-size:0.8125rem;color:var(--text-muted);gap:8px;">

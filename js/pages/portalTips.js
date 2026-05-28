@@ -169,14 +169,24 @@ async function renderGenerateTab(container) {
     </details>
 
     <!-- Generation form -->
+    <!-- v4.63.48 Renê: "blocos muito flat — mais destaque". Padrão novo:
+         border-top dourado 3px + chip número dourado + shadow sutil + título
+         em cor primária. Mantém class=card pra coerência com sistema. -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;max-width:1100px;">
 
       <!-- Left: Selection -->
       <div>
-        <div class="card" style="padding:24px;margin-bottom:16px;">
-          <h3 style="font-size:0.875rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
-            color:var(--text-muted);margin:0 0 4px;">1 · Escolha a área</h3>
-          <p style="font-size:0.75rem;color:var(--text-muted);margin:0 0 14px;">
+        <div class="card" style="padding:24px;margin-bottom:16px;
+          border-top:3px solid var(--brand-gold);
+          box-shadow:0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);">
+          <h3 style="display:flex;align-items:center;gap:10px;font-size:1rem;font-weight:700;
+            color:var(--text-primary);margin:0 0 6px;">
+            <span style="display:inline-flex;align-items:center;justify-content:center;
+              width:26px;height:26px;border-radius:50%;background:var(--brand-gold);
+              color:#0A1628;font-size:0.8125rem;font-weight:800;flex-shrink:0;">1</span>
+            Escolha a área
+          </h3>
+          <p style="font-size:0.75rem;color:var(--text-muted);margin:0 0 14px;padding-left:36px;">
             Define a identidade visual aplicada ao material (logo, cores, fonte e templates).
           </p>
           <div id="portal-areas-grid" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
@@ -186,10 +196,17 @@ async function renderGenerateTab(container) {
           </div>
         </div>
 
-        <div class="card" style="padding:24px;margin-bottom:16px;">
-          <h3 style="font-size:0.875rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
-            color:var(--text-muted);margin:0 0 4px;">2 · Selecione o destino</h3>
-          <p style="font-size:0.75rem;color:var(--text-muted);margin:0 0 14px;">
+        <div class="card" style="padding:24px;margin-bottom:16px;
+          border-top:3px solid var(--brand-gold);
+          box-shadow:0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);">
+          <h3 style="display:flex;align-items:center;gap:10px;font-size:1rem;font-weight:700;
+            color:var(--text-primary);margin:0 0 6px;">
+            <span style="display:inline-flex;align-items:center;justify-content:center;
+              width:26px;height:26px;border-radius:50%;background:var(--brand-gold);
+              color:#0A1628;font-size:0.8125rem;font-weight:800;flex-shrink:0;">2</span>
+            Selecione o destino
+          </h3>
+          <p style="font-size:0.75rem;color:var(--text-muted);margin:0 0 14px;padding-left:36px;">
             Continente → país → cidade (opcional). Você pode combinar mais de um destino na mesma dica.
           </p>
           <div style="display:flex;flex-direction:column;gap:10px;">
@@ -214,10 +231,17 @@ async function renderGenerateTab(container) {
           <div id="portal-extra-dests"></div>
         </div>
 
-        <div class="card" style="padding:24px;">
-          <h3 style="font-size:0.875rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
-            color:var(--text-muted);margin:0 0 4px;">3 · Segmentos disponíveis</h3>
-          <p style="font-size:0.75rem;color:var(--text-muted);margin:0 0 14px;">
+        <div class="card" style="padding:24px;
+          border-top:3px solid var(--brand-gold);
+          box-shadow:0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);">
+          <h3 style="display:flex;align-items:center;gap:10px;font-size:1rem;font-weight:700;
+            color:var(--text-primary);margin:0 0 6px;">
+            <span style="display:inline-flex;align-items:center;justify-content:center;
+              width:26px;height:26px;border-radius:50%;background:var(--brand-gold);
+              color:#0A1628;font-size:0.8125rem;font-weight:800;flex-shrink:0;">3</span>
+            Segmentos disponíveis
+          </h3>
+          <p style="font-size:0.75rem;color:var(--text-muted);margin:0 0 14px;padding-left:36px;">
             Marque/desmarque o que vai aparecer no material. Use ▲▼ pra reordenar — a ordem aqui é
             a mesma do PDF/Word/PPT/web.
           </p>
@@ -239,10 +263,17 @@ async function renderGenerateTab(container) {
 
       <!-- Right: Preview + Generate -->
       <div>
-        <div class="card" style="padding:24px;margin-bottom:16px;">
-          <h3 style="font-size:0.875rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
-            color:var(--text-muted);margin:0 0 4px;">4 · Formato do arquivo</h3>
-          <p style="font-size:0.75rem;color:var(--text-muted);margin:0 0 14px;">
+        <div class="card" style="padding:24px;margin-bottom:16px;
+          border-top:3px solid var(--brand-gold);
+          box-shadow:0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);">
+          <h3 style="display:flex;align-items:center;gap:10px;font-size:1rem;font-weight:700;
+            color:var(--text-primary);margin:0 0 6px;">
+            <span style="display:inline-flex;align-items:center;justify-content:center;
+              width:26px;height:26px;border-radius:50%;background:var(--brand-gold);
+              color:#0A1628;font-size:0.8125rem;font-weight:800;flex-shrink:0;">4</span>
+            Formato do arquivo
+          </h3>
+          <p style="font-size:0.75rem;color:var(--text-muted);margin:0 0 14px;padding-left:36px;">
             PDF e Word pra envio direto; PowerPoint pra apresentação; Link web pra mobile (URL pública).
           </p>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
@@ -430,14 +461,16 @@ function renderAreaPicker(grid, areas, activeCategoryFilter) {
 
 function areaItemRow(a) {
   // v4.63.46+ Renê: mostrar logo quando disponível em vez do nome.
-  // v4.63.47 Renê: logos versão fundo branco (não cor secundária da BU).
-  // Sub-area dentro de categoria — formato horizontal (logo pequeno + nome).
-  const thumbHtml = a.logoUrl
+  // v4.63.48: usar logoUrlAlt (versão pra fundo claro/colorida) em vez de
+  // logoUrl (versão pra fundo escuro/branca). Schema documentado em
+  // js/components/helpPanel.js:372 + js/services/templates.js:134.
+  const logo = a.logoUrlAlt || a.logoUrl;
+  const thumbHtml = logo
     ? `<span style="width:28px;height:28px;border-radius:4px;background:#FFFFFF;
         border:1px solid var(--border-subtle);
         display:flex;align-items:center;justify-content:center;flex-shrink:0;
         padding:3px;overflow:hidden;">
-        <img src="${esc(a.logoUrl)}" alt="${esc(a.name)}"
+        <img src="${esc(logo)}" alt="${esc(a.name)}"
           style="max-width:100%;max-height:100%;object-fit:contain;display:block;"
           onerror="this.style.display='none'">
       </span>`
@@ -453,16 +486,19 @@ function areaItemRow(a) {
 // mantém texto; areas standalone com logoUrl mostram LOGO sobre cor secundária
 // da BU; sem logo → fallback texto.
 function renderAreaButton(a) {
-  if (a.logoUrl) {
-    // v4.63.47 Renê: logos versão fundo branco (não cor secundária da BU).
-    // Borda sutil delimita o card; texto cinza-escuro pra legibilidade.
+  // v4.63.48: usar logoUrlAlt (versão colorida pra fundo claro) em vez de
+  // logoUrl (versão branca pra fundo escuro). Fallback p/ logoUrl se alt
+  // não existir.
+  const logo = a.logoUrlAlt || a.logoUrl;
+  if (logo) {
     return `<button class="portal-area-btn portal-area-cat" data-id="${a.id}" data-name="${esc(a.name)}"
       title="${esc(a.name)}"
       style="background:#FFFFFF;border:1px solid var(--border-subtle);
       padding:12px 10px;display:flex;flex-direction:column;
-      align-items:center;justify-content:center;gap:6px;min-height:64px;">
-      <img src="${esc(a.logoUrl)}" alt="${esc(a.name)}"
-        style="max-width:80%;max-height:36px;object-fit:contain;display:block;"
+      align-items:center;justify-content:center;gap:6px;min-height:64px;
+      transition:all .15s;box-shadow:0 1px 2px rgba(0,0,0,0.04);">
+      <img src="${esc(logo)}" alt="${esc(a.name)}"
+        style="max-width:85%;max-height:40px;object-fit:contain;display:block;"
         onerror="this.style.display='none';this.nextElementSibling.style.display='block';">
       <span style="font-size:0.6875rem;font-weight:500;color:var(--text-muted);
         text-align:center;line-height:1.2;">${esc(a.name)}</span>

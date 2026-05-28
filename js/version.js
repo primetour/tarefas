@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 47,
-  build: '20260528-mapa-perf-logos-fundo-branco',
+  patch: 48,
+  build: '20260528-logos-color-blocos-destaque-z-index',
 };
 
 /** "1.2.0" */
