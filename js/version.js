@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 46,
-  build: '20260528-portal-logos-areas-mapa-titulo',
+  patch: 47,
+  build: '20260528-mapa-perf-logos-fundo-branco',
 };
 
 /** "1.2.0" */

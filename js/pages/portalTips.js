@@ -430,11 +430,11 @@ function renderAreaPicker(grid, areas, activeCategoryFilter) {
 
 function areaItemRow(a) {
   // v4.63.46+ Renê: mostrar logo quando disponível em vez do nome.
+  // v4.63.47 Renê: logos versão fundo branco (não cor secundária da BU).
   // Sub-area dentro de categoria — formato horizontal (logo pequeno + nome).
-  // Mantém nome ao lado como fallback/legenda.
-  const bgColor = a.colors?.secondary || '#1F2937';
   const thumbHtml = a.logoUrl
-    ? `<span style="width:28px;height:28px;border-radius:4px;background:${esc(bgColor)};
+    ? `<span style="width:28px;height:28px;border-radius:4px;background:#FFFFFF;
+        border:1px solid var(--border-subtle);
         display:flex;align-items:center;justify-content:center;flex-shrink:0;
         padding:3px;overflow:hidden;">
         <img src="${esc(a.logoUrl)}" alt="${esc(a.name)}"
@@ -454,16 +454,17 @@ function areaItemRow(a) {
 // da BU; sem logo → fallback texto.
 function renderAreaButton(a) {
   if (a.logoUrl) {
-    const bgColor = a.colors?.secondary || '#1F2937';
+    // v4.63.47 Renê: logos versão fundo branco (não cor secundária da BU).
+    // Borda sutil delimita o card; texto cinza-escuro pra legibilidade.
     return `<button class="portal-area-btn portal-area-cat" data-id="${a.id}" data-name="${esc(a.name)}"
       title="${esc(a.name)}"
-      style="background:${esc(bgColor)};padding:12px 10px;display:flex;flex-direction:column;
-      align-items:center;justify-content:center;gap:4px;min-height:64px;">
+      style="background:#FFFFFF;border:1px solid var(--border-subtle);
+      padding:12px 10px;display:flex;flex-direction:column;
+      align-items:center;justify-content:center;gap:6px;min-height:64px;">
       <img src="${esc(a.logoUrl)}" alt="${esc(a.name)}"
-        style="max-width:80%;max-height:36px;object-fit:contain;display:block;
-        filter:drop-shadow(0 1px 2px rgba(0,0,0,0.3));"
-        onerror="this.style.display='none';this.nextElementSibling.style.color='#fff';">
-      <span style="font-size:0.6875rem;font-weight:500;color:rgba(255,255,255,0.6);
+        style="max-width:80%;max-height:36px;object-fit:contain;display:block;"
+        onerror="this.style.display='none';this.nextElementSibling.style.display='block';">
+      <span style="font-size:0.6875rem;font-weight:500;color:var(--text-muted);
         text-align:center;line-height:1.2;">${esc(a.name)}</span>
     </button>`;
   }

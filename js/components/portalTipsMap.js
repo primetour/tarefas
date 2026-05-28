@@ -127,6 +127,9 @@ async function geocodeDestination(dest) {
 /**
  * Agrega dicas por destino. Retorna [{destId, dest, count}].
  * Filtra apenas destinations com ao menos 1 tip aprovada.
+ *
+ * v4.63.47 PERF: fetch de destinations PARALELO via Promise.all
+ * (antes: N getDoc sequenciais = 20 dests × 200ms = 4s).
  */
 async function fetchTipsAggregated() {
   const tipsSnap = await getDocs(
@@ -140,17 +143,24 @@ async function fetchTipsAggregated() {
     tipsByDest.set(dId, (tipsByDest.get(dId) || 0) + 1);
   });
 
+  const destIds = Array.from(tipsByDest.keys());
+  // Paraleliza getDoc — Firestore aguenta dezenas de reads concorrentes
+  const destDocs = await Promise.all(
+    destIds.map((id) =>
+      getDoc(doc(db, 'portal_destinations', id)).catch(() => null),
+    ),
+  );
+
   const aggregated = [];
-  for (const [destId, count] of tipsByDest.entries()) {
-    try {
-      const destSnap = await getDoc(doc(db, 'portal_destinations', destId));
-      if (!destSnap.exists()) continue;
-      const dest = { id: destId, ...destSnap.data() };
-      aggregated.push({ destId, dest, count });
-    } catch (e) {
-      console.warn('[portalTipsMap] fetch dest skip:', destId);
-    }
-  }
+  destDocs.forEach((destSnap, i) => {
+    if (!destSnap || !destSnap.exists()) return;
+    const destId = destIds[i];
+    aggregated.push({
+      destId,
+      dest: { id: destId, ...destSnap.data() },
+      count: tipsByDest.get(destId),
+    });
+  });
   return aggregated;
 }
 
@@ -187,8 +197,13 @@ export async function renderPortalTipsMap(containerEl, opts = {}) {
   const statsEl   = containerEl.querySelector('#ptm-stats');
   const canvas    = containerEl.querySelector('#ptm-canvas');
 
+  // v4.63.47 PERF: arranca Leaflet + fetch em PARALELO (antes era serial).
+  // Cada um leva ~1-2s; rodando juntos reduz pra max(L, fetch) = ~1.5s.
+  let leafletPromise, aggregatedPromise;
   try {
-    L = await loadLeaflet();
+    leafletPromise = loadLeaflet();
+    aggregatedPromise = fetchTipsAggregated();
+    L = await leafletPromise;
   } catch (e) {
     loadingEl.innerHTML = `<div style="color:var(--color-danger);">Falha ao carregar Leaflet.</div>`;
     return { destroy: () => containerEl.innerHTML = '' };
@@ -226,12 +241,17 @@ export async function renderPortalTipsMap(containerEl, opts = {}) {
   });
 
   // Função pra renderizar (ou re-renderizar) markers
+  // v4.63.47 PERF: resolve coords em PARALELO via Promise.all (antes await sequencial).
+  // Com 19/20 destinos com _geo cache, resolve instantâneo (sem rede).
   let lastData = [];
   async function refresh(aggregated) {
     clusterGroup.clearLayers();
+    const withGeo = await Promise.all(
+      aggregated.map(async (a) => ({ ...a, geo: await geocodeDestination(a.dest) })),
+    );
     let okCount = 0;
-    for (const { destId, dest, count } of aggregated) {
-      const geo = await geocodeDestination(dest);
+    const markers = [];
+    for (const { dest, count, geo } of withGeo) {
       if (!geo) continue;
       const popupHtml = `
         <div style="font-family:'Poppins',sans-serif;min-width:160px;">
@@ -247,20 +267,21 @@ export async function renderPortalTipsMap(containerEl, opts = {}) {
           </div>
         </div>
       `;
-      const marker = L.marker([geo.lat, geo.lng], { icon: goldIcon }).bindPopup(popupHtml);
-      clusterGroup.addLayer(marker);
+      markers.push(L.marker([geo.lat, geo.lng], { icon: goldIcon }).bindPopup(popupHtml));
       okCount++;
     }
+    // addLayers (plural) é mais rápido que N addLayer
+    clusterGroup.addLayers(markers);
     statsEl.style.display = 'block';
     const totalTips = aggregated.reduce((s, a) => s + a.count, 0);
     statsEl.textContent = `${okCount} ${okCount === 1 ? 'cidade' : 'cidades'} · ${totalTips} ${totalTips === 1 ? 'dica' : 'dicas'}`;
   }
 
   // Carrega dados + popula
+  // v4.63.47 PERF: aggregated já está sendo buscado em paralelo desde acima.
   try {
     loadingEl.querySelector('div:last-child').textContent = 'Buscando dicas cadastradas…';
-    lastData = await fetchTipsAggregated();
-    loadingEl.querySelector('div:last-child').textContent = `Geocodando ${lastData.length} cidades…`;
+    lastData = await aggregatedPromise;
     await refresh(lastData);
     loadingEl.style.display = 'none';
   } catch (e) {
