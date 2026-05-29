@@ -68,6 +68,9 @@ const NAV_GROUPS = [
       // v4.50.0+ Banco de Roteiros: curadoria PRIMETOUR (Classic Collection etc.) que alimenta a IA. Visível a todos autenticados.
       { route: 'banco-roteiros',   icon: 'portal-areas',     label: 'Banco de Roteiros' },
       { route: 'portal-tips',      icon: 'portal-tips',      label: 'Portal de Dicas',        perm: 'portal_access'  },
+      // v4.63.55 Renê: Cadastro de Destinos vira item de 1º nível na sidebar
+      // (antes só acessível via hash direto ou link interno).
+      { route: 'portal-destinations', icon: 'destinations',   label: 'Cadastro de Destinos',   perm: 'portal_destinations_manage', altPerm: 'portal_manage' },
       // 4.49.12+ Templates de áreas: tanto portal_areas_view quanto portal_areas_manage liberam ver
       { route: 'portal-areas',     icon: 'portal-areas',     label: 'Templates de áreas',     perm: 'portal_areas_view',   altPerm: 'portal_areas_manage' },
       // v4.63.4+ Biblioteca de Templates uploaded (HTML/DOCX/PPTX) — qualquer view, manage via templates_manage

@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 54,
-  build: '20260529-toast-signature-defense',
+  patch: 55,
+  build: '20260529-sidebar-cadastro-destinos',
 };
 
 /** "1.2.0" */
