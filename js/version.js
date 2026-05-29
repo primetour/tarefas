@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 70,
-  build: '20260529-editor-tabs-restantes-cards',
+  patch: 71,
+  build: '20260529-editor-title-left-align',
 };
 
 /** "1.2.0" */

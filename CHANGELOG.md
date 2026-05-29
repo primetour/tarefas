@@ -6,6 +6,14 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.71+20260529-editor-title-left-align] — 2026-05-29
+
+**Título "Editar Cotação" alinhado à esquerda no header do editor.**
+
+O `<h1 class="page-title">` ficava centralizado por causa do `justify-content:space-between` do header flex. Adicionado `margin-right:auto` no h1 — agora ele gruda logo após o botão "← Voltar", empurrando status/autosave/Salvar pro lado direito. Mudança 100% CSS inline, zero risco funcional.
+
+---
+
 ## [4.63.70+20260529-editor-tabs-restantes-cards] — 2026-05-29
 
 **Conclusão do redesign card-painel: as 4 abas densas restantes do Gerador de Cotações ganham `.re-briefing-card`.**

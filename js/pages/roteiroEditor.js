@@ -6168,7 +6168,7 @@ export async function renderRoteiroEditor(container) {
         <!-- Header -->
         <div class="page-header" style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:16px;">
           <button class="btn btn-ghost btn-sm" data-action="back">\u2190 Voltar</button>
-          <h1 class="page-title" style="margin:0;font-size:1.25rem;font-weight:700;">${esc(pageTitle)}</h1>
+          <h1 class="page-title" style="margin:0;margin-right:auto;font-size:1.25rem;font-weight:700;">${esc(pageTitle)}</h1>
           ${_renderStatusDropdown(statusLabel)}
           <span id="re-autosave-status" style="font-size:0.75rem;color:var(--text-muted);">${roteiroId ? '' : (isAiGenerated ? 'Gerado por IA — n\u00e3o salvo' : 'Nova cotação')}</span>
           <button class="btn btn-primary btn-sm" data-action="save">Salvar</button>
