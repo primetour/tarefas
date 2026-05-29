@@ -1515,6 +1515,51 @@ function openEditModal(imgId) {
             })()}
           </div>
         </div>
+        ${/* v4.63.51 Renê: localização (continent/country/city) editável no modal.
+              Reusa wireCascade + allDests pra dropdowns en cascata. Respeita
+              _locDisplayFor pra esconder/limitar conforme categoria. */ ''}
+        ${(() => {
+          const locMode = _locDisplayFor(img.assetCategory || 'location');
+          if (locMode === 'none') return '';
+          const allConts = [...new Set(allDests.map(d => d.continent).filter(Boolean))].sort();
+          const curCont    = img.continent || '';
+          const curCountry = img.country   || '';
+          const curCity    = img.city      || '';
+          const countries = curCont
+            ? [...new Set(allDests.filter(d => d.continent === curCont).map(d => d.country).filter(Boolean))].sort()
+            : [];
+          const cities = (curCont && curCountry)
+            ? [...new Set(allDests.filter(d => d.continent === curCont && d.country === curCountry).map(d => d.city).filter(Boolean))].sort()
+            : [];
+          const showCountryCity = locMode === 'full';
+          return `
+            <div>
+              <label style="font-size:0.8125rem;font-weight:600;display:block;margin-bottom:5px;">
+                Localização
+                ${locMode === 'continent' ? '<span style="font-weight:400;color:var(--text-muted);">(continente apenas)</span>' : ''}
+              </label>
+              <div style="display:grid;grid-template-columns:${showCountryCity ? '1fr 1fr 1fr' : '1fr'};gap:6px;">
+                <select id="edit-img-continent" class="filter-select" style="width:100%;">
+                  <option value="">— Continente —</option>
+                  ${allConts.map(c => `<option value="${esc(c)}" ${c===curCont?'selected':''}>${esc(c)}</option>`).join('')}
+                </select>
+                ${showCountryCity ? `
+                  <select id="edit-img-country" class="filter-select" style="width:100%;" ${!curCont?'disabled':''}>
+                    <option value="">— País —</option>
+                    ${countries.map(c => `<option value="${esc(c)}" ${c===curCountry?'selected':''}>${esc(c)}</option>`).join('')}
+                  </select>
+                  <select id="edit-img-city" class="filter-select" style="width:100%;" ${!curCountry?'disabled':''}>
+                    <option value="">— Cidade —</option>
+                    ${cities.map(c => `<option value="${esc(c)}" ${c===curCity?'selected':''}>${esc(c)}</option>`).join('')}
+                  </select>
+                ` : ''}
+              </div>
+              <div style="font-size:0.6875rem;color:var(--text-muted);margin-top:4px;">
+                Define onde a foto aparece no filtro do Portal de Dicas e nas dicas geradas.
+              </div>
+            </div>
+          `;
+        })()}
         <!-- 4.35.31+ Direitos autorais -->
         <div>
           <label style="font-size:0.8125rem;font-weight:600;display:block;margin-bottom:5px;">
@@ -1543,6 +1588,13 @@ function openEditModal(imgId) {
   // 4.40.5+ Backdrop click fecha (UX padrão de modais)
   modal.addEventListener('click', e => { if (e.target === modal) close(); });
 
+  // v4.63.51 Renê: cascade Continente→País→Cidade no modal de edição.
+  // wireCascade já existe na página principal — reusa pros IDs do modal.
+  // Só wira se os selects existem (não existem em cruise/showLocation:none).
+  if (document.getElementById('edit-img-continent')) {
+    wireCascade('edit-img-continent', 'edit-img-country', 'edit-img-city');
+  }
+
   document.getElementById('edit-img-save')?.addEventListener('click', async () => {
     const name      = document.getElementById('edit-img-name')?.value.trim();
     const placeName = document.getElementById('edit-img-placename')?.value.trim() || '';
@@ -1550,8 +1602,17 @@ function openEditModal(imgId) {
       .split(',').map(t => t.trim()).filter(Boolean);
     // 4.40.5+ inclui copyright no patch. Type não é mais editado aqui.
     const copyright = document.getElementById('edit-img-copyright')?.value.trim() || '';
+    // v4.63.51: localização editável. Patch só inclui se field existir no DOM
+    // (cruise/none não renderiza os selects). Null/'' resetam o campo.
+    const patch = { name, placeName, tags, copyright };
+    const contEl    = document.getElementById('edit-img-continent');
+    const countryEl = document.getElementById('edit-img-country');
+    const cityEl    = document.getElementById('edit-img-city');
+    if (contEl)    patch.continent = contEl.value || '';
+    if (countryEl) patch.country   = countryEl.value || '';
+    if (cityEl)    patch.city      = cityEl.value || '';
     try {
-      await updateImageMeta(imgId, { name, placeName, tags, copyright });
+      await updateImageMeta(imgId, patch);
       toast.success('Imagem atualizada.');
       close();
       await loadImages();

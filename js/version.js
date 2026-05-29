@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 50,
-  build: '20260528-geo-alias-cross-module',
+  patch: 51,
+  build: '20260528-banco-edit-localizacao-modal',
 };
 
 /** "1.2.0" */
