@@ -7,6 +7,7 @@ import { createDoc, loadJsPdf, COL, txt, withExportGuard } from '../components/p
 import {
   fetchAreas, fetchDestinations, fetchTips,
   SEGMENTS as DEFAULT_SEGMENTS, getSegments,
+  segHasContent,  // v4.63.66: helper canônico (cobre themeDesc/periodoAgenda/dica)
 } from '../services/portal.js';
 import {
   collection, getDocs, query, orderBy, limit, where,
@@ -403,7 +404,7 @@ function renderDash() {
     const expiredSegs = _segments.filter(s => {
       const seg = t.segments?.[s.key];
       if (!seg?.hasExpiry || !seg?.expiryDate) return false;
-      return new Date(seg.expiryDate) < now;
+      return _parseLocalDate(seg.expiryDate) < now;
     }).map(s => s.label);
     if (expiredSegs.length) {
       expiredDetails.push({
@@ -828,18 +829,24 @@ async function fetchCol(col, lim=100) {
   }
 }
 
+// v4.63.66: delega pro helper canônico — antes ignorava themeDesc/periodoAgenda/dica
+// → cobertura subestimada, snapshots da IA imprecisos.
 function hasContent(tip, key) {
-  const seg = tip?.segments?.[key];
-  if (!seg) return false;
-  if (seg.info && Object.values(seg.info).some(v => v && String(v).trim())) return true;
-  return Array.isArray(seg.items) && seg.items.length > 0;
+  return segHasContent(tip?.segments?.[key]);
+}
+
+// v4.63.66: _parseLocalDate evita UTC midnight bug em UTC-3
+// (em UTC-3, "YYYY-MM-DD" virava 21:00 do dia anterior → false-positive expirado).
+function _parseLocalDate(s) {
+  if (!s) return null;
+  return new Date(String(s) + 'T12:00:00');
 }
 
 function hasBadSeg(tip, from, until) {
   return _segments.some(s => {
     const seg = tip.segments?.[s.key];
     if (!seg?.hasExpiry || !seg?.expiryDate) return false;
-    const d = new Date(seg.expiryDate);
+    const d = _parseLocalDate(seg.expiryDate);
     return until ? (d >= from && d <= until) : d < from;
   });
 }
@@ -1077,7 +1084,7 @@ const exportPortalPdf = withExportGuard(async function exportPortalPdf() {
       const expSegs = _segments.filter(s => {
         const seg = t.segments?.[s.key];
         if (!seg?.hasExpiry || !seg?.expiryDate) return false;
-        return new Date(seg.expiryDate) < now;
+        return _parseLocalDate(seg.expiryDate) < now;
       }).map(s => s.label);
       if (expSegs.length) {
         expiredDetails.push({
@@ -1295,7 +1302,7 @@ async function exportPortalXls() {
         const expSegs = _segments.filter(s => {
           const seg = t.segments?.[s.key];
           if (!seg?.hasExpiry || !seg?.expiryDate) return false;
-          return new Date(seg.expiryDate) < now;
+          return _parseLocalDate(seg.expiryDate) < now;
         }).map(s => s.label).join(' | ');
         lines.push(`${name}${sep}${t.priority?'Sim':'Não'}${sep}${expSegs}`);
       });

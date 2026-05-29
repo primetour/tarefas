@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 65,
-  build: '20260529-dashboard-custom-segments',
+  patch: 66,
+  build: '20260529-dashboard-hascontent-utc',
 };
 
 /** "1.2.0" */

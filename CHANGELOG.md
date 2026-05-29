@@ -6,6 +6,16 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.66+20260529-dashboard-hascontent-utc] — 2026-05-29
+
+**Hotfix dashboard — drift G3 UX + UTC midnight (mesmos padrões de v4.63.61/63).**
+
+### Bugfix
+- **hasContent local do dashboard ignorava `themeDesc`/`periodoAgenda`/`dica`** (mesmo drift G3 UX de v4.63.63 que afetava preview/export). Cobertura por segmento subestimada, snapshots da IA imprecisos. Fix: delega pro helper canônico `segHasContent` exportado de `services/portal.js`.
+- **UTC midnight em 4 sites de `expiryDate`** (mesmo padrão N10 de v4.63.61/62 que afetava editor). Em UTC-3, `new Date("YYYY-MM-DD")` virava 21:00 do dia anterior local → "vencido" 3h antes da meia-noite real, inflando KPI de Vencidas. Fix: helper local `_parseLocalDate(s) => new Date(s + 'T12:00:00')` aplicado em `hasBadSeg` + 3 sites inline (linhas 406, 1080, 1298).
+
+---
+
 ## [4.63.65+20260529-dashboard-custom-segments] — 2026-05-29
 
 **Hotfix — Dashboard Portal de Dicas inclui segmentos custom (21 sites).**
