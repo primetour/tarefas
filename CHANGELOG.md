@@ -6,6 +6,21 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.82+20260529-cotacoes-html-template-overflow-fix] — 2026-05-29
+
+**Fix: export PDF via template "Default HTML" — capa e fechamento cortados (transbordo pra próxima página).**
+
+Bug reportado pelo Renê no teste E2E de export via template HTML: *"capa e pág 2 com problema (fica cortado). o mesmo comportamento está na 18 e 19"*. Diferente dos fixes v4.63.79-81 (que tocam o pipeline jsPDF em `roteiroGenerator.js`), este bug está no **outro caminho de export** — o template HTML renderizado por Puppeteer na Cloud Function.
+
+**Causa raiz:** a CF renderiza TODOS os templates com `page.pdf({ format:'A4', margin:{ top:'20mm', right:'15mm', bottom:'20mm', left:'15mm' } })` (`functions/index.js:1130`), o que dá uma caixa de conteúdo de **180mm × 257mm** por página. Mas o template `cotacoes-default-html.html` tinha a `.cover` e a `.closing` hardcoded em `width:210mm; height:297mm` (página A4 cheia). Como 297mm > 257mm e 210mm > 180mm, a capa vazava ~40mm pra página 2 e o fechamento (última seção) vazava pra página seguinte. Além disso, o template usava CSS Paged Media running elements (`position: running(footer)` + `@page { @bottom-center }`) que o **Chromium não suporta** — o `.footer-area` caía pra `position:static` e renderizava como bloco solto no topo da página 1, acima da capa.
+
+**Fix (template/CSS apenas — NÃO toca a margem compartilhada da CF):**
+- `.cover` e `.closing`: `width:210mm→100%`, `height:297mm→256mm`; paddings/posições das linhas decorativas/logo recalculados pra caber na caixa de 257mm.
+- Removido o CSS morto de running elements (`.footer-area`/`.header-area`/`@page @bottom-center`/`@top-right`) + os blocos `<div class="footer-area">`/`<div class="header-area">` que ficavam soltos antes da capa.
+- Footer do documento movido pra dentro da seção `.closing` como `.closing-footer-note` (área/data + texto custom).
+
+**Validação:** render local determinístico via puppeteer-core + Chrome for Testing, replicando as opções EXATAS do `page.pdf` da CF (A4, margem 20/15mm). PDF de 10 páginas com cotação realista (13 dias, 4 voos, 4 hotéis, valores, opcionais, inclui/não-inclui, pagamento, cancelamento, informações). Rasterização confirmou: capa contida em 1 página, página 2 começa limpa em "ROTEIRO DIA A DIA" (sem bleed da capa), fechamento "Boa viagem!" contido em 1 página. Template re-seedado pro R2 + Firestore (doc novo `RPt8FtHG8bPwPsmWWUpL`, antigo arquivado).
+
 ## [4.63.81+20260529-pdf-overflow-includes-fix] — 2026-05-29
 
 **Fix: export PDF — hardening do mesmo antipadrão de transbordo nas seções "O roteiro inclui/não inclui" + disclaimer de valores.**

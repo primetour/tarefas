@@ -31,11 +31,16 @@
     }
 
     /* ─── COVER ────────────────────────────────────────────── */
+    /* v4.63.82: Puppeteer renderiza com margin 20mm/15mm (functions/index.js:1130),
+       então a caixa de conteúdo é 180mm×257mm — NÃO 210×297. Capa full-size
+       (297mm) transbordava ~40mm pra pág.2 (capa cortada). Altura 256mm fixa cabe
+       em UMA página; width:100% evita corte horizontal. Margens internas reduzidas
+       pra caber no novo envelope. */
     .cover {
-      width: 210mm; height: 297mm;
+      width: 100%; height: 256mm;
       background: var(--secondary);
       color: #fff;
-      padding: 28mm 16mm;
+      padding: 18mm 16mm;
       display: flex; flex-direction: column;
       page-break-after: always;
       position: relative;
@@ -45,15 +50,15 @@
       background: rgba(255,255,255,0.9);
     }
     .cover-line-top { top: 40mm; }
-    .cover-line-bottom { top: 237mm; }
+    .cover-line-bottom { top: 224mm; }
     .cover-logo {
       max-width: 130mm; max-height: 55mm;
-      margin: 25mm auto 18mm;
+      margin: 10mm auto 10mm;
       display: block; object-fit: contain;
     }
     .cover-brand-name {
       font-size: 22pt; font-weight: 700; text-align: center;
-      letter-spacing: 4px; margin: 35mm 0 18mm;
+      letter-spacing: 4px; margin: 18mm 0 12mm;
     }
     .cover-destinos {
       font-size: 18pt; font-weight: 700; text-transform: uppercase;
@@ -80,7 +85,7 @@
       margin: 4mm 0;
     }
     .cover-client {
-      margin-top: auto; padding-top: 24mm; text-align: center;
+      margin-top: auto; padding-top: 10mm; text-align: center;
     }
     .cover-client-name {
       font-size: 11pt; font-weight: 700;
@@ -305,53 +310,40 @@
       line-height: 1.7;
     }
 
-    /* ─── FOOTER / HEADER fixos ────────────────────────────── */
-    .footer-area {
-      position: running(footer);
-      text-align: center; font-size: 7pt; color: #999;
-      padding: 0 16mm 4mm;
-    }
-    @page {
-      @bottom-center { content: element(footer); }
-      margin-bottom: 16mm;
-    }
-    .footer-area .footer-line {
-      border-top: 0.3mm solid #ddd;
-      padding-top: 2mm;
-    }
-    .footer-area .footer-custom {
-      font-size: 6pt; color: #aaa;
-      margin-top: 1mm;
-    }
-    .header-area {
-      position: running(header);
-      text-align: right; font-size: 6pt; color: #aaa;
-      padding: 4mm 16mm 0;
-    }
-    @page {
-      @top-right { content: element(header); }
-      margin-top: 14mm;
+    /* ─── FOOTER (rodapé da capa/fechamento) ───────────────── */
+    /* v4.63.82: removido `position: running()` + `@page @bottom-center/@top-right`
+       — Chromium/Puppeteer NÃO suporta CSS Paged Media running elements. O antigo
+       .footer-area com running() caía pra `position:static` e renderizava como bloco
+       solto NO TOPO da pág.1, acima da capa (contribuindo pro transbordo). Footer
+       agora vive no rodapé da página de fechamento (.closing-footer-note). */
+    .closing-footer-note {
+      font-size: 7pt; color: rgba(255,255,255,0.65);
+      margin-top: 10mm; line-height: 1.5;
     }
 
     /* ─── CLOSING PAGE ─────────────────────────────────────── */
+    /* v4.63.82: mesma correção da capa — 256mm cabe em UMA página dentro da
+       caixa de conteúdo 180×257mm do Puppeteer. Flexbox centra o conteúdo. */
     .closing {
-      width: 210mm; height: 297mm;
+      width: 100%; height: 256mm;
       background: var(--secondary);
       color: #fff;
       position: relative;
       page-break-before: always;
-      padding: 60mm 16mm;
+      padding: 30mm 16mm;
       text-align: center;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
     }
     .closing-line {
       position: absolute; left: 16mm; right: 16mm; height: 0.5mm;
       background: rgba(255,255,255,0.9);
     }
-    .closing-line-top { top: 142mm; }
-    .closing-line-bottom { top: 182mm; }
+    .closing-line-top { top: 90mm; }
+    .closing-line-bottom { top: 166mm; }
     .closing-logo {
       max-width: 100mm; max-height: 40mm;
-      margin: 90mm auto 20mm; display: block;
+      margin: 0 auto 16mm; display: block;
       object-fit: contain;
     }
     .closing-msg {
@@ -371,13 +363,6 @@
   </style>
 </head>
 <body>
-
-{{!-- HEADER + FOOTER running --}}
-{{#if customHeaderText}}<div class="header-area">{{customHeaderText}}</div>{{/if}}
-<div class="footer-area">
-  <div class="footer-line">{{area.nome}} · {{today}}</div>
-  {{#if customFooterText}}<div class="footer-custom">{{customFooterText}}</div>{{/if}}
-</div>
 
 {{!-- COVER --}}
 {{#unless hideCover}}
@@ -694,6 +679,7 @@
   <div class="closing-msg">Boa viagem!</div>
   <div class="closing-tagline">Experiências exclusivas de viagem</div>
   {{#if contact}}<div class="closing-contact">{{contact}}</div>{{/if}}
+  <div class="closing-footer-note">{{area.nome}} · {{today}}{{#if customFooterText}}<br>{{customFooterText}}{{/if}}</div>
   <div class="closing-line closing-line-bottom"></div>
 </section>
 {{/unless}}

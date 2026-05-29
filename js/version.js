@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 81,
-  build: '20260529-pdf-overflow-includes-fix',
+  patch: 82,
+  build: '20260529-cotacoes-html-template-overflow-fix',
 };
 
 /** "1.2.0" */
