@@ -1470,6 +1470,12 @@ function renderClienteSection() {
     <h2 class="re-section-title">Cliente e Briefing</h2>
     <p class="re-briefing-intro">Quem é o cliente, viajantes, preferências e restrições. O agente de IA usa este bloco como briefing.</p>
 
+    <!-- ═══ Card 1 — Identificação ═══ -->
+    <div class="re-briefing-card">
+      <div class="re-briefing-card-head">
+        <span class="re-briefing-card-title">👤 Identificação</span>
+      </div>
+
     <!-- v4.62.30+ Vínculo com Oportunidade Salesforce.
          Hoje: campo livre pra registrar o ID/nome da oportunidade.
          Futuro (passo 2): preencher → fetch via SF REST API auto-popula
@@ -1513,22 +1519,25 @@ function renderClienteSection() {
         </select>
       </div>
     </div>
+    </div>
+
+    <!-- \u2550\u2550\u2550 Card 2 \u2014 Viajantes \u2550\u2550\u2550 -->
     <!-- 4.41.0+ Tabela de viajantes (substitui adults/children/childrenAges) -->
-    <div class="re-form-group" style="margin-top:8px;">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-        <label class="re-label" style="margin:0;">Viajantes
+    <div class="re-briefing-card">
+      <div class="re-briefing-card-head">
+        <span class="re-briefing-card-title">\ud83e\uddf3 Viajantes
           <span style="color:var(--text-muted);font-weight:400;font-size:0.75rem;margin-left:6px;">
             ${travelers.length} ${travelers.length === 1 ? 'pessoa' : 'pessoas'}
           </span>
-        </label>
+        </span>
         <button class="re-add-btn" data-action="add-trv" style="margin:0;">+ Adicionar viajante</button>
       </div>
-      <div style="background:var(--bg-soft);border-left:3px solid var(--brand-gold);padding:8px 12px;border-radius:4px;font-size:0.75rem;color:var(--text-muted);margin-bottom:10px;line-height:1.5;">
+      <div style="background:var(--bg-card);border-left:3px solid var(--brand-gold);padding:8px 12px;border-radius:4px;font-size:0.75rem;color:var(--text-muted);margin-bottom:10px;line-height:1.5;">
         Marque <strong>1 pessoa como Respons\u00e1vel</strong> (quem fecha o contrato). As demais entram como acompanhantes.
       </div>
       <table id="re-travelers-table" style="width:100%;border-collapse:collapse;">
         <thead>
-          <tr style="background:var(--bg-soft);">
+          <tr style="background:var(--bg-card);">
             <th style="text-align:left;padding:8px;font-size:0.7rem;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);font-weight:600;">Nome</th>
             <th style="text-align:left;padding:8px;font-size:0.7rem;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);font-weight:600;width:80px;">Idade</th>
             <th style="text-align:left;padding:8px;font-size:0.7rem;text-transform:uppercase;letter-spacing:.04em;color:var(--text-muted);font-weight:600;width:140px;">Papel</th>
@@ -1545,6 +1554,13 @@ function renderClienteSection() {
       <input type="hidden" data-field="client.children" value="${c.children || 0}" />
       <span id="re-children-ages" style="display:none;">${childrenAgesHTML}</span>
     </div>
+
+    <!-- \u2550\u2550\u2550 Card 3 \u2014 Briefing & Prefer\u00eancias \u2550\u2550\u2550 -->
+    <div class="re-briefing-card">
+      <div class="re-briefing-card-head">
+        <span class="re-briefing-card-title">\ud83d\udccb Briefing & Prefer\u00eancias</span>
+        <span style="font-size:0.72rem;color:var(--text-muted);font-weight:400;">O agente de IA usa este bloco</span>
+      </div>
     <div class="re-form-group">
       <label class="re-label">Prefer\u00eancias</label>
       <div class="re-checkbox-group" id="re-pref-group">
@@ -1577,10 +1593,17 @@ function renderClienteSection() {
       <label class="re-label">Observa\u00e7\u00f5es</label>
       <textarea class="re-textarea" data-field="client.notes" rows="3" placeholder="Notas sobre o cliente...">${esc(c.notes)}</textarea>
     </div>
+    </div>
 
+    <!-- ═══ Card 4 — Datas e Destinos ═══ -->
+    <div class="re-briefing-card">
+      <div class="re-briefing-card-head">
+        <span class="re-briefing-card-title">📅 Datas e Destinos</span>
+      </div>
     <!-- v4.49.88+ Datas + Destinos absorvidos em "Cliente e Briefing".
          Antes era seção "Viagem" à parte com só 2 campos efetivos. -->
     ${renderTravelBlock()}
+    </div>
   `;
 }
 
@@ -1602,7 +1625,6 @@ function renderTravelBlock() {
   if (!dests.some(d => d.city || d.country)) missingForAi.push('destinos');
 
   return `
-    <h3 class="re-subsection-title" style="margin-top:32px;padding-top:20px;border-top:1px solid var(--border-subtle);font-size:1rem;font-weight:600;color:var(--text-primary);">Datas e Destinos</h3>
     <div class="re-row">
       <div class="re-form-group">
         <label class="re-label">Data In\u00edcio</label>

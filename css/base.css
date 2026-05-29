@@ -22,6 +22,12 @@
   --bg-elevated: #1C2E4A;
   --bg-card:     #1A2B44;
   --bg-hover:    #213354;
+  /* 4.63.68: --bg-soft estava sendo usado 27× (editor + portalAreas) sem
+     nunca ter sido definido → boxes transparentes (parte do "flat" reclamado).
+     Alias pra --bg-surface resolve por-tema no ponto de uso (themes
+     sobrescrevem --bg-surface). Em cards que já usam --bg-surface, usar
+     --bg-card pros sub-elementos pra haver layering. */
+  --bg-soft:     var(--bg-surface);
 
   /* Border */
   --border-subtle:  rgba(255,255,255,0.06);

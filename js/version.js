@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 67,
-  build: '20260529-dashboard-area-creators-sparkline',
+  patch: 68,
+  build: '20260529-editor-cliente-briefing-cards',
 };
 
 /** "1.2.0" */

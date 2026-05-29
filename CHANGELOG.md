@@ -6,6 +6,26 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.68+20260529-editor-cliente-briefing-cards] — 2026-05-29
+
+**Redesign visual da aba "Cliente e Briefing" no Gerador de Cotações — fim do "tudo flat e junto".**
+
+Renê: *"tudo muito flat e muito junto... eu tenho que fixar o olhar pra entender onde as coisas começam e onde terminam, principalmente na aba cliente e briefing"*. Primeira aba do plano de redesign (validar aqui → replicar nas outras abas densas).
+
+### Agrupamento em 4 cards
+- A pilha vertical plana de form-groups virou **4 cards** usando a primitiva `.re-briefing-card` (já existia no EDITOR_CSS, estava definida mas nunca usada no JS):
+  - **👤 Identificação** — Oportunidade Salesforce + Nome/Email/Telefone/Tipo.
+  - **🧳 Viajantes** — tabela de viajantes + hint de responsável + botão "+ Adicionar viajante" no header do card.
+  - **📋 Briefing & Preferências** — Preferências + Restrições + Perfil Econômico + Observações (head avisa "O agente de IA usa este bloco").
+  - **📅 Datas e Destinos** — envolve o bloco `renderTravelBlock()` (h3 redundante removido, o head do card substitui).
+- Cada card tem título + separação por `margin` + borda, dando hierarquia visual clara.
+
+### Fix do token `--bg-soft` (causa raiz do "transparente")
+- `--bg-soft` era usado **27×** (editor + portalAreas) sem nunca ter sido definido em `:root` → boxes transparentes (parte do "flat" reclamado). Adicionado `--bg-soft: var(--bg-surface)` em `css/base.css` (resolve por-tema no ponto de uso).
+- Dentro do Card 2 (Viajantes), sub-elementos (hint + thead da tabela) trocados de `--bg-soft` → `--bg-card` pra layering correto sobre o card (que é `--bg-surface`).
+
+---
+
 ## [4.63.67+20260529-dashboard-area-creators-sparkline] — 2026-05-29
 
 **3 melhorias do Dashboard do Portal de Dicas em release única.**
