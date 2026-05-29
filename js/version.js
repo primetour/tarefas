@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 60,
-  build: '20260529-combinar-destino-3-bloqueadores-audit',
+  patch: 61,
+  build: '20260529-portal-tips-rule-genlock-pptx-richtoplain',
 };
 
 /** "1.2.0" */

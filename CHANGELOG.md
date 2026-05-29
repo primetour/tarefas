@@ -6,6 +6,26 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.61+20260529-portal-tips-rule-genlock-pptx-richtoplain] — 2026-05-29
+
+**Hotfix 3 bloqueadores Técnica (B1+B2+G1) pós-auditoria Combinar destino.**
+
+### Security
+- **B1 (deploy server-side, já em prod)** — `portal_tips` rule era `allow write: if isAuth()` (qualquer auth user podia editar QUALQUER dica). Alinhada com `store.canCreateTip()`/`canManagePortal()`:
+  - `create` + `update`: requer `isAdmin() || hasPermission('portal_create') || hasPermission('portal_manage')`.
+  - `delete`: mais restrito — só admin/portal_manage (member com `portal_create` só cria/edita, não deleta).
+
+### Bugfixes
+- **B2 — `_genInFlight` lock vazava em TODOS os paths** (sucesso E erro). Sem `try/finally`, lock só era liberado pelo TTL 30s — user pegava `"Já existe uma exportação X em andamento"` por 30s após cada geração bem-sucedida. Fix em `js/services/portalGenerator.js:451-577`:
+  - Wrap do corpo da função em `try { ... } finally { _genInFlight.delete(inflightKey); }`.
+  - `switch` agora retorna `await generateDocx(...)` (antes era `return generateDocx(...)` que retornava Promise pending → finally disparava cedo).
+- **G1 — PPTX exibia markdown literal** em 3 sites (`pageSlide.addText(String(item.descricao))`). PPTX não interpreta markdown nativo → `**Texto**` aparecia como caractere. Fix: wrap com `richToPlain(...)` em `js/services/portalGenerator.js:2195, 2284, 2308`.
+
+### Patrimônio
+- Lição §16 CLAUDE.md (próximo bump): rule-vs-store-helper drift = pattern sistêmico (5+ recidivas no projeto). Auditoria preventiva: `grep "allow write:.*if isAuth()" firestore.rules` lista todas as rules permissivas pra alinhar com canX() helpers do store.
+
+---
+
 ## [4.63.34→48+20260528-portal-dicas-sprint] — 2026-05-28
 
 **Sprint Portal de Dicas — rich text, mapa interativo, tags, hero auto + 3 ciclos de auditoria.**

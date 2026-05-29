@@ -449,6 +449,10 @@ export async function generateTip({ tip, area, dest, segments, format, extraTips
     throw new Error(`Já existe uma exportação ${String(format || 'pdf').toUpperCase()} em andamento desta dica. Aguarde.`);
   }
   _genInFlight.set(inflightKey, Date.now());
+  // v4.63.61 B2: try/finally garante release do lock. Antes vazava em TODOS
+  // os paths (sucesso E erro). User pegava "Já existe exportação em andamento"
+  // por 30s após cada geração bem-sucedida. Auditoria pós-incidente.
+  try {
   // 4.40.18+ Garante que SEGMENTS está atualizado (incl. customs) antes de
   // qualquer iteração. Sem isso, segmentos customs sumiam dos exports.
   await _loadSegmentsAsync();
@@ -567,12 +571,18 @@ export async function generateTip({ tip, area, dest, segments, format, extraTips
     }
   }
 
+  // v4.63.61 B2: await garante release do lock SÓ depois que a geração termina.
+  // Antes: `return generateDocx(...)` retornava Promise pending → finally
+  // disparava imediatamente, lock liberava no início da geração (defeito não fix).
   switch (format) {
-    case 'docx': return generateDocx({ allTips, segments, areaName, area, colors, filename, imagesByDest });
-    case 'pdf':  return generatePDF({ allTips, segments, areaName, area, colors, filename, imagesByDest });
-    case 'pptx': return generatePptx({ allTips, segments, areaName, area, colors, filename, imagesByDest });
-    case 'web':  return generateWebLink({ allTips, segments, areaName, area, colors, format, imagesOverride, heroImageOverride, clientName });
+    case 'docx': return await generateDocx({ allTips, segments, areaName, area, colors, filename, imagesByDest });
+    case 'pdf':  return await generatePDF({ allTips, segments, areaName, area, colors, filename, imagesByDest });
+    case 'pptx': return await generatePptx({ allTips, segments, areaName, area, colors, filename, imagesByDest });
+    case 'web':  return await generateWebLink({ allTips, segments, areaName, area, colors, format, imagesOverride, heroImageOverride, clientName });
     default:     throw new Error(`Formato desconhecido: ${format}`);
+  }
+  } finally {
+    _genInFlight.delete(inflightKey);
   }
 }
 
@@ -2192,7 +2202,9 @@ async function generatePptx({ allTips, segments, areaName, area, colors, filenam
               ...F({fontSize:18, bold:true, color:bgHex, valign:'top'}),
             });
             if (it.description) {
-              pageSlide.addText(String(it.description), {
+              // v4.63.61 G1: richToPlain strip markdown rich (negrito **, itálico _).
+              // Antes ia literal — "**Texto**" aparecia como caractere em vez de bold.
+              pageSlide.addText(richToPlain(String(it.description)), {
                 x:TXT_X, y:yTop+0.55, w:TXT_W, h:ITEM_H-0.55,
                 ...F({fontSize:10.5, color:'474650', valign:'top', shrinkText:true,
                   paraSpaceAfter:6}),
@@ -2279,7 +2291,8 @@ async function generatePptx({ allTips, segments, areaName, area, colors, filenam
               });
               if (item.descricao) {
                 const dY = tY + (item.categoria?0.26:0) + 0.5;
-                pageSlide.addText(String(item.descricao), {
+                // v4.63.61 G1: richToPlain (PPTX não interpreta markdown)
+                pageSlide.addText(richToPlain(String(item.descricao)), {
                   x:x+0.1, y:dY, w:cW-0.2, h:sY+cH-dY-0.45,
                   ...F({fontSize:cols===2?9:8, color:'555555', valign:'top', shrinkText:true}),
                 });
@@ -2303,7 +2316,8 @@ async function generatePptx({ allTips, segments, areaName, area, colors, filenam
               });
               iy += 0.7;
               if (item.descricao) {
-                pageSlide.addText(String(item.descricao), {
+                // v4.63.61 G1: richToPlain (PPTX não interpreta markdown)
+                pageSlide.addText(richToPlain(String(item.descricao)), {
                   x:x+0.1, y:iy, w:cW-0.2, h:cH-iy+sY-0.4,
                   ...F({fontSize:cols===2?10:9, color:'555555', valign:'top', shrinkText:true}),
                 });

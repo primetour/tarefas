@@ -665,9 +665,21 @@ service cloud.firestore {
       allow create, delete: if isAuth() && canCurate();
     }
 
+    // v4.63.61 SECURITY HOTFIX — antes era write: if isAuth() (qualquer
+    // auth user podia editar QUALQUER dica). Bypass do gate JS canCreateTip().
+    // Risco: spam, deleção de conteúdo curado, status drift.
+    // Fix: alinhar com store.canCreateTip() / canManagePortal().
     match /portal_tips/{docId} {
-      allow read:  if isAuth();
-      allow write: if isAuth();
+      allow read:   if isAuth();
+      allow create: if isAuth() && (
+        isAdmin() || hasPermission('portal_create') || hasPermission('portal_manage')
+      );
+      allow update: if isAuth() && (
+        isAdmin() || hasPermission('portal_create') || hasPermission('portal_manage')
+      );
+      // Delete mais restrito — só admin/portal_manage. Member com portal_create
+      // só pode criar/editar, não deletar conteúdo curado.
+      allow delete: if isAuth() && (isAdmin() || hasPermission('portal_manage'));
     }
 
     match /portal_images/{docId} {
