@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 84,
-  build: '20260529-cotacoes-dicas-premium-entity-decode',
+  patch: 85,
+  build: '20260529-dicas-count-fix-republish-selection',
 };
 
 /** "1.2.0" */

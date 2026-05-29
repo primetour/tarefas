@@ -6,6 +6,19 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.85+20260529-dicas-count-fix-republish-selection] — 2026-05-29
+
+**Dicas anexas no editor de cotações: contagem de itens corrigida + "Re-publicar" renomeado e preservando a seleção.**
+
+Continuação do reporte do Renê (issue da dica embedada): *"eu nao consigo editar pra escolher o que eu quero da dica (e nem editá-la)... só aparece um botão 're-publicar' que nao sei pra que serve"*. Esta release ataca **dois defeitos isolados** dessa seção (a UI de edição/curadoria pós-anexo continua design-sensitive e será co-desenhada com o Renê antes de construída):
+
+**Mudanças:**
+- **Contagem de itens corrigida** (`roteiroEditor.js` `renderEmbeddedTipsSection`): cada linha de dica anexada mostrava sempre **"0 items"** — o cálculo tratava `content.segments[key]` como array, mas o schema canônico (CLAUDE.md §16.v) é OBJETO `{items, info}`. Agora conta os itens reais por segmento (ignorando `subtitle`) + 1 bloco pra `informacoes_gerais`. Validado via harness Node contra dica real (Quioto: antes `0`, agora `95`).
+- **"↻ Re-publicar" → "↻ Atualizar do Portal"** + tooltip explicativo (Renê: *"não sei pra que serve"*): o botão puxa a versão mais recente da dica do Portal. Rótulo e copy do box "Como funciona" clarificados.
+- **Re-publicar preserva a seleção curada**: o handler `republish-tip` re-snapshotava **sem** passar `selection`, descurando silenciosamente o conteúdo que o consultor havia filtrado (puxava tudo de novo). Agora passa `tip.content?.selection` pro `snapshotTipForEmbed`, mantendo a curadoria ao atualizar.
+
+**Pendente (#227, design-sensitive):** botão "Editar/Curar" pós-anexo (reabrir seletor pré-marcado) + edição inline do texto dos itens (override local na cotação, sem afetar o Portal) + honrar `overrides` nos 3 consumidores de export (templateAdapter HTML, jsPDF, web link). Design aprovado pelo Renê ("Selecionar + editar inline", default "Tudo"); será construído com ele presente pra co-testar os cenários.
+
 ## [4.63.84+20260529-cotacoes-dicas-premium-entity-decode] — 2026-05-29
 
 **Dicas embedadas no template HTML de cotações: render premium + decode de entidades + capa ainda mais escura + secret R2 corrigido.**

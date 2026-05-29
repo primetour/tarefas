@@ -1206,8 +1206,19 @@ function renderEmbeddedTipsSection() {
 
   const rowsHTML = embedded.length
     ? embedded.map((e, i) => {
+        // v4.63.85 — §16.v: segments[key] é OBJETO {items,info}, NÃO array.
+        // Conta itens reais (ignorando subtitles) + bloco de informacoes_gerais.
         const segmentsCount = e.content?.segments
-          ? Object.values(e.content.segments).reduce((s, arr) => s + (Array.isArray(arr) ? arr.length : 0), 0)
+          ? Object.entries(e.content.segments).reduce((s, [key, val]) => {
+              if (key === 'informacoes_gerais') {
+                const hasInfo = val?.info && Object.values(val.info).some(v => v && String(v).trim());
+                return s + (hasInfo ? 1 : 0);
+              }
+              const items = Array.isArray(val?.items)
+                ? val.items.filter(it => it && it.type !== 'subtitle')
+                : 0;
+              return s + (items ? items.length : 0);
+            }, 0)
           : 0;
         const snapDate = (() => {
           const d = e.snapshotAt?.toDate ? e.snapshotAt.toDate() : (e.snapshotAt ? new Date(e.snapshotAt) : null);
@@ -1230,8 +1241,9 @@ function renderEmbeddedTipsSection() {
               </div>
             </div>
             <button class="re-add-btn" data-action="republish-tip" data-idx="${i}"
+              title="Puxa a versão mais recente desta dica do Portal, mantendo a sua seleção de conteúdo."
               style="margin:0;background:var(--bg-soft);color:var(--text-primary);font-size:0.75rem;padding:6px 12px;">
-              ↻ Re-publicar
+              ↻ Atualizar do Portal
             </button>
             <button class="re-btn-icon" data-action="remove-tip" data-idx="${i}" title="Remover">✕</button>
           </div>
@@ -1256,8 +1268,8 @@ function renderEmbeddedTipsSection() {
       border-radius:4px;font-size:0.8125rem;color:var(--text-muted);margin-bottom:16px;line-height:1.5;">
       <strong style="color:var(--text-primary);">Como funciona:</strong>
       Cada dica é um <strong>snapshot</strong> — modificações futuras na dica original
-      no Portal NÃO afetam o que o cliente vê. Use <strong>↻ Re-publicar</strong>
-      quando quiser puxar a versão atualizada.
+      no Portal NÃO afetam o que o cliente vê. Use <strong>↻ Atualizar do Portal</strong>
+      quando quiser puxar a versão mais recente (mantendo a seleção de conteúdo que você fez).
     </div>
 
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
@@ -5819,8 +5831,11 @@ async function handleEditorClick(e) {
       currentRoteiro = collectFormData();
       const tip = currentRoteiro.embeddedTips?.[idx];
       if (!tip?.tipId) { showToast('Dica sem referência ao original.', 'error'); break; }
-      showToast('Atualizando snapshot...', 'info');
-      snapshotTipForEmbed(tip.tipId).then(fresh => {
+      showToast('Atualizando do Portal...', 'info');
+      // v4.63.85 — preserva a seleção curada (selection) ao re-snapshotar.
+      // Antes puxava TUDO de novo, descurando silenciosamente o que o
+      // consultor tinha filtrado. content.selection registra a escolha.
+      snapshotTipForEmbed(tip.tipId, tip.content?.selection || null).then(fresh => {
         // Preserva o ID local (pra estabilidade na UI), mas atualiza
         // título/subtitle/snapshotAt/content com a versão atual.
         currentRoteiro.embeddedTips[idx] = { ...fresh, id: tip.id };
