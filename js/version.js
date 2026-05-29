@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 69,
-  build: '20260529-editor-servicos-cards',
+  patch: 70,
+  build: '20260529-editor-tabs-restantes-cards',
 };
 
 /** "1.2.0" */

@@ -6,6 +6,23 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.70+20260529-editor-tabs-restantes-cards] — 2026-05-29
+
+**Conclusão do redesign card-painel: as 4 abas densas restantes do Gerador de Cotações ganham `.re-briefing-card`.**
+
+Terceiro e último passo do redesign visual (depois de Cliente/Briefing em v4.63.68 e Serviços em v4.63.69). As abas que ainda renderizavam "flat" (só `re-section-title` + conteúdo solto) passam a usar o mesmo padrão de painel das demais.
+
+### Abas reorganizadas em painéis (replicando `.re-briefing-card` da aba Cliente)
+- **Inclui / Não Inclui**: 2 painéis lado-a-lado (`.re-two-cols`), cada um com header (`✅ Inclui` / `🚫 Não Inclui`), contador de itens e botão "+ Padrão" movido pro head do card. Botão "+ Adicionar" no rodapé de cada painel.
+- **Pagamento**: painel único `💳 Condições de Pagamento` envolvendo sinal/parcelas/prazo/observações.
+- **Cancelamento**: painel `📋 Política de Cancelamento` com contador de regras + "+ Política padrão" no head; tabela + "+ Adicionar Regra" dentro do painel.
+- **Informações Importantes**: 2 painéis — `ℹ️ Documentação & Logística` (grid de 6 textareas) e `➕ Campos Adicionais` (contador + "+ Adicionar Campo" no head + tabela).
+
+### Risco
+- Mudança 100% de marcação/CSS reusando classes existentes. IDs (`#re-includes-list`, `#re-excludes-list`, `#re-canc-body`, `#re-info-custom-body`) e `data-action` preservados — handlers delegados intactos, zero risco funcional.
+
+---
+
 ## [4.63.69+20260529-editor-servicos-cards] — 2026-05-29
 
 **Replicação dos cards-painel pra aba "Serviços" do Gerador de Cotações — unificação visual com "Cliente e Briefing" (v4.63.68).**

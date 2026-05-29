@@ -2257,14 +2257,19 @@ function renderIncluiSection() {
   const inc = currentRoteiro.includes || [];
   const exc = currentRoteiro.excludes || [];
   return `
-    <div class="re-section-title">Inclui / N\u00e3o Inclui</div>
-    <div style="margin-bottom:12px;display:flex;gap:8px;">
-      <button class="re-add-btn" data-action="preset-includes" style="margin-top:0;">Adicionar padr\u00e3o (Inclui)</button>
-      <button class="re-add-btn" data-action="preset-excludes" style="margin-top:0;">Adicionar padr\u00e3o (N\u00e3o Inclui)</button>
-    </div>
+    <h2 class="re-section-title">Inclui / N\u00e3o Inclui</h2>
+    <p class="re-briefing-intro">O que est\u00e1 contemplado na cota\u00e7\u00e3o e o que fica por conta do cliente.</p>
     <div class="re-two-cols">
-      <div>
-        <label class="re-label" style="color:var(--brand-blue,#3B82F6);font-weight:700;">Inclui</label>
+      <!-- \u2550\u2550\u2550 Card \u2014 Inclui \u2550\u2550\u2550 -->
+      <div class="re-briefing-card">
+        <div class="re-briefing-card-head">
+          <span class="re-briefing-card-title" style="color:var(--brand-blue,#3B82F6);">\u2705 Inclui
+            <span style="color:var(--text-muted);font-weight:400;font-size:0.75rem;margin-left:6px;">
+              ${inc.length} ${inc.length === 1 ? 'item' : 'itens'}
+            </span>
+          </span>
+          <button class="re-add-btn" data-action="preset-includes" style="margin:0;">+ Padr\u00e3o</button>
+        </div>
         <div class="re-list-col" id="re-includes-list">
           ${inc.map((item, i) => `
             <div class="re-list-item" data-inc-idx="${i}">
@@ -2275,8 +2280,16 @@ function renderIncluiSection() {
         </div>
         <button class="re-add-btn" data-action="add-inc">+ Adicionar</button>
       </div>
-      <div>
-        <label class="re-label" style="color:var(--color-danger, #EF4444);font-weight:700;">N\u00e3o Inclui</label>
+      <!-- \u2550\u2550\u2550 Card \u2014 N\u00e3o Inclui \u2550\u2550\u2550 -->
+      <div class="re-briefing-card">
+        <div class="re-briefing-card-head">
+          <span class="re-briefing-card-title" style="color:var(--color-danger,#EF4444);">\ud83d\udeab N\u00e3o Inclui
+            <span style="color:var(--text-muted);font-weight:400;font-size:0.75rem;margin-left:6px;">
+              ${exc.length} ${exc.length === 1 ? 'item' : 'itens'}
+            </span>
+          </span>
+          <button class="re-add-btn" data-action="preset-excludes" style="margin:0;">+ Padr\u00e3o</button>
+        </div>
         <div class="re-list-col" id="re-excludes-list">
           ${exc.map((item, i) => `
             <div class="re-list-item" data-exc-idx="${i}">
@@ -2295,24 +2308,30 @@ function renderIncluiSection() {
 function renderPagamentoSection() {
   const p = currentRoteiro.payment;
   return `
-    <div class="re-section-title">Pagamento</div>
-    <div class="re-row">
-      <div class="re-form-group">
-        <label class="re-label">Sinal / Entrada</label>
-        <input class="re-input" data-field="payment.deposit" value="${esc(p.deposit || '')}" placeholder="Ex: 30% no ato da reserva" />
+    <h2 class="re-section-title">Pagamento</h2>
+    <p class="re-briefing-intro">Condi\u00e7\u00f5es comerciais: entrada, parcelamento e prazos.</p>
+    <div class="re-briefing-card">
+      <div class="re-briefing-card-head">
+        <span class="re-briefing-card-title">\ud83d\udcb3 Condi\u00e7\u00f5es de Pagamento</span>
+      </div>
+      <div class="re-row">
+        <div class="re-form-group">
+          <label class="re-label">Sinal / Entrada</label>
+          <input class="re-input" data-field="payment.deposit" value="${esc(p.deposit || '')}" placeholder="Ex: 30% no ato da reserva" />
+        </div>
+        <div class="re-form-group">
+          <label class="re-label">Parcelas</label>
+          <input class="re-input" data-field="payment.installments" value="${esc(p.installments || '')}" placeholder="Ex: Saldo em at\u00e9 3x sem juros" />
+        </div>
       </div>
       <div class="re-form-group">
-        <label class="re-label">Parcelas</label>
-        <input class="re-input" data-field="payment.installments" value="${esc(p.installments || '')}" placeholder="Ex: Saldo em at\u00e9 3x sem juros" />
+        <label class="re-label">Prazo</label>
+        <input class="re-input" data-field="payment.deadline" value="${esc(p.deadline || '')}" placeholder="Ex: At\u00e9 30 dias antes do embarque" style="max-width:400px;" />
       </div>
-    </div>
-    <div class="re-form-group">
-      <label class="re-label">Prazo</label>
-      <input class="re-input" data-field="payment.deadline" value="${esc(p.deadline || '')}" placeholder="Ex: At\u00e9 30 dias antes do embarque" style="max-width:400px;" />
-    </div>
-    <div class="re-form-group">
-      <label class="re-label">Observa\u00e7\u00f5es</label>
-      <textarea class="re-textarea" data-field="payment.notes" rows="3" placeholder="Informa\u00e7\u00f5es adicionais sobre pagamento...">${esc(p.notes || '')}</textarea>
+      <div class="re-form-group">
+        <label class="re-label">Observa\u00e7\u00f5es</label>
+        <textarea class="re-textarea" data-field="payment.notes" rows="3" placeholder="Informa\u00e7\u00f5es adicionais sobre pagamento...">${esc(p.notes || '')}</textarea>
+      </div>
     </div>
   `;
 }
@@ -2321,22 +2340,30 @@ function renderPagamentoSection() {
 function renderCancelamentoSection() {
   const canc = currentRoteiro.cancellation || [];
   return `
-    <div class="re-section-title">Cancelamento</div>
-    <table class="re-dyn-table">
-      <thead><tr><th>Per\u00edodo</th><th>Penalidade</th><th></th></tr></thead>
-      <tbody id="re-canc-body">
-        ${canc.map((c, i) => `
-          <tr data-canc-idx="${i}">
-            <td><input data-canc="period" value="${esc(c.period || '')}" placeholder="Ex: At\u00e9 30 dias antes" /></td>
-            <td><input data-canc="penalty" value="${esc(c.penalty || '')}" placeholder="Ex: Sem custo" /></td>
-            <td><button class="re-remove-btn" data-action="remove-canc" data-idx="${i}">\u2715</button></td>
-          </tr>
-        `).join('')}
-      </tbody>
-    </table>
-    <div style="display:flex;gap:8px;margin-top:8px;">
+    <h2 class="re-section-title">Cancelamento</h2>
+    <p class="re-briefing-intro">Regras de penalidade por per\u00edodo de anteced\u00eancia do cancelamento.</p>
+    <div class="re-briefing-card">
+      <div class="re-briefing-card-head">
+        <span class="re-briefing-card-title">\ud83d\udccb Pol\u00edtica de Cancelamento
+          <span style="color:var(--text-muted);font-weight:400;font-size:0.75rem;margin-left:6px;">
+            ${canc.length} ${canc.length === 1 ? 'regra' : 'regras'}
+          </span>
+        </span>
+        <button class="re-add-btn" data-action="preset-canc" style="margin:0;">+ Pol\u00edtica padr\u00e3o</button>
+      </div>
+      <table class="re-dyn-table">
+        <thead><tr><th>Per\u00edodo</th><th>Penalidade</th><th></th></tr></thead>
+        <tbody id="re-canc-body">
+          ${canc.map((c, i) => `
+            <tr data-canc-idx="${i}">
+              <td><input data-canc="period" value="${esc(c.period || '')}" placeholder="Ex: At\u00e9 30 dias antes" /></td>
+              <td><input data-canc="penalty" value="${esc(c.penalty || '')}" placeholder="Ex: Sem custo" /></td>
+              <td><button class="re-remove-btn" data-action="remove-canc" data-idx="${i}">\u2715</button></td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
       <button class="re-add-btn" data-action="add-canc">+ Adicionar Regra</button>
-      <button class="re-add-btn" data-action="preset-canc">Adicionar pol\u00edtica padr\u00e3o</button>
     </div>
   `;
 }
@@ -2346,47 +2373,63 @@ function renderInfoSection() {
   const info = currentRoteiro.importantInfo;
   const custom = info.customFields || [];
   return `
-    <div class="re-section-title">Informa\u00e7\u00f5es Importantes</div>
-    <div class="re-grid-2">
-      <div class="re-form-group">
-        <label class="re-label">Passaporte</label>
-        <textarea class="re-textarea" data-field="importantInfo.passport" rows="2" placeholder="Informa\u00e7\u00f5es sobre passaporte...">${esc(info.passport || '')}</textarea>
+    <h2 class="re-section-title">Informa\u00e7\u00f5es Importantes</h2>
+    <p class="re-briefing-intro">Documenta\u00e7\u00e3o, sa\u00fade e log\u00edstica que o cliente precisa saber antes da viagem.</p>
+    <!-- \u2550\u2550\u2550 Card \u2014 Documenta\u00e7\u00e3o & Log\u00edstica \u2550\u2550\u2550 -->
+    <div class="re-briefing-card">
+      <div class="re-briefing-card-head">
+        <span class="re-briefing-card-title">\u2139\ufe0f Documenta\u00e7\u00e3o & Log\u00edstica</span>
       </div>
-      <div class="re-form-group">
-        <label class="re-label">Visto</label>
-        <textarea class="re-textarea" data-field="importantInfo.visa" rows="2" placeholder="Informa\u00e7\u00f5es sobre visto...">${esc(info.visa || '')}</textarea>
-      </div>
-      <div class="re-form-group">
-        <label class="re-label">Vacinas</label>
-        <textarea class="re-textarea" data-field="importantInfo.vaccines" rows="2" placeholder="Vacinas recomendadas...">${esc(info.vaccines || '')}</textarea>
-      </div>
-      <div class="re-form-group">
-        <label class="re-label">Clima</label>
-        <textarea class="re-textarea" data-field="importantInfo.climate" rows="2" placeholder="Informa\u00e7\u00f5es sobre o clima...">${esc(info.climate || '')}</textarea>
-      </div>
-      <div class="re-form-group">
-        <label class="re-label">Bagagem</label>
-        <textarea class="re-textarea" data-field="importantInfo.luggage" rows="2" placeholder="Dicas sobre bagagem...">${esc(info.luggage || '')}</textarea>
-      </div>
-      <div class="re-form-group">
-        <label class="re-label">Voos</label>
-        <textarea class="re-textarea" data-field="importantInfo.flights" rows="2" placeholder="Informa\u00e7\u00f5es sobre voos...">${esc(info.flights || '')}</textarea>
+      <div class="re-grid-2">
+        <div class="re-form-group">
+          <label class="re-label">Passaporte</label>
+          <textarea class="re-textarea" data-field="importantInfo.passport" rows="2" placeholder="Informa\u00e7\u00f5es sobre passaporte...">${esc(info.passport || '')}</textarea>
+        </div>
+        <div class="re-form-group">
+          <label class="re-label">Visto</label>
+          <textarea class="re-textarea" data-field="importantInfo.visa" rows="2" placeholder="Informa\u00e7\u00f5es sobre visto...">${esc(info.visa || '')}</textarea>
+        </div>
+        <div class="re-form-group">
+          <label class="re-label">Vacinas</label>
+          <textarea class="re-textarea" data-field="importantInfo.vaccines" rows="2" placeholder="Vacinas recomendadas...">${esc(info.vaccines || '')}</textarea>
+        </div>
+        <div class="re-form-group">
+          <label class="re-label">Clima</label>
+          <textarea class="re-textarea" data-field="importantInfo.climate" rows="2" placeholder="Informa\u00e7\u00f5es sobre o clima...">${esc(info.climate || '')}</textarea>
+        </div>
+        <div class="re-form-group">
+          <label class="re-label">Bagagem</label>
+          <textarea class="re-textarea" data-field="importantInfo.luggage" rows="2" placeholder="Dicas sobre bagagem...">${esc(info.luggage || '')}</textarea>
+        </div>
+        <div class="re-form-group">
+          <label class="re-label">Voos</label>
+          <textarea class="re-textarea" data-field="importantInfo.flights" rows="2" placeholder="Informa\u00e7\u00f5es sobre voos...">${esc(info.flights || '')}</textarea>
+        </div>
       </div>
     </div>
-    <label class="re-label">Campos Adicionais</label>
-    <table class="re-dyn-table" style="margin-top:4px;">
-      <thead><tr><th>Campo</th><th>Conte\u00fado</th><th></th></tr></thead>
-      <tbody id="re-info-custom-body">
-        ${custom.map((f, i) => `
-          <tr data-infoc-idx="${i}">
-            <td><input data-infoc="label" value="${esc(f.label || '')}" placeholder="Nome do campo" /></td>
-            <td><textarea data-infoc="value" rows="2" placeholder="Conte\u00fado">${esc(f.value || '')}</textarea></td>
-            <td><button class="re-remove-btn" data-action="remove-infoc" data-idx="${i}">\u2715</button></td>
-          </tr>
-        `).join('')}
-      </tbody>
-    </table>
-    <button class="re-add-btn" data-action="add-infoc">+ Adicionar Campo</button>
+    <!-- \u2550\u2550\u2550 Card \u2014 Campos Adicionais \u2550\u2550\u2550 -->
+    <div class="re-briefing-card">
+      <div class="re-briefing-card-head">
+        <span class="re-briefing-card-title">\u2795 Campos Adicionais
+          <span style="color:var(--text-muted);font-weight:400;font-size:0.75rem;margin-left:6px;">
+            ${custom.length} ${custom.length === 1 ? 'campo' : 'campos'}
+          </span>
+        </span>
+        <button class="re-add-btn" data-action="add-infoc" style="margin:0;">+ Adicionar Campo</button>
+      </div>
+      <table class="re-dyn-table" style="margin-top:4px;">
+        <thead><tr><th>Campo</th><th>Conte\u00fado</th><th></th></tr></thead>
+        <tbody id="re-info-custom-body">
+          ${custom.map((f, i) => `
+            <tr data-infoc-idx="${i}">
+              <td><input data-infoc="label" value="${esc(f.label || '')}" placeholder="Nome do campo" /></td>
+              <td><textarea data-infoc="value" rows="2" placeholder="Conte\u00fado">${esc(f.value || '')}</textarea></td>
+              <td><button class="re-remove-btn" data-action="remove-infoc" data-idx="${i}">\u2715</button></td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
   `;
 }
 
