@@ -6,6 +6,22 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.76+20260529-bank-import-days] — 2026-05-29
+
+**Fix crítico: "Consultar Banco" importava dias VAZIOS (lia resumo de cidades, não os dias reais).**
+
+Bug previsto pelo Renê durante teste E2E de export: *"tenho a impressão de que teremos bug quando você chamar conteúdo desses módulos"*. Confirmado.
+
+**Causa raiz:** `_pickDaysFromBankRoteiro` (roteiroEditor.js) lia `doc.geo.cities` — um **resumo por cidade** (campos `city`/`nights`/`iata`/`countryCode`, SEM narrativa) — em vez de `doc.days[]`, o array de dias reais (`title`/`narrative`/`overnightCity`/`flightLeg`/`activities`). Pior: mapeava `c.description`, campo que `geo.cities` nunca teve → narrativa sempre vazia. Resultado num roteiro Envision de 13 dias com narrativas ricas: a modal "Escolher dias" mostrava só 5 "dias" (uma por cidade, incluindo "Nara" que nem é dia próprio) e a importação criava 5 dias placeholder com narrativa vazia e zero atividades — descartando 100% do conteúdo do banco.
+
+**Fix:**
+- `_pickDaysFromBankRoteiro` agora lê `doc.days[]` (dias reais com narrativa). Fallback pra `geo.cities` só se `days[]` ausente (roteiros antigos só com sumário de cidades).
+- Modal "Escolher dias" mostra título + preview de narrativa por dia (antes mostrava `description` inexistente).
+- Importação copia `title`, `narrative`, `overnightCity`, `flightLeg` e `activities[]` reais.
+- 1º modal (lista de roteiros): label corrigido — `geo.cities.length` era rotulado "N dias" (errado); agora usa `days.length` "dias", fallback `geo.cities.length` "cidades".
+
+Validado por harness Node contra roteiro Envision real (id 3NdWRgM9ntRAYrreEFgw): 13 dias importados, 0 com narrativa vazia (antes: 5 dias, 5 vazios).
+
 ## [4.63.75+20260529-export-allowlist-daygate] — 2026-05-29
 
 **Revisão geral do export do Gerador de Cotações: carrega TODOS os dados da cotação e não exige mais "pelo menos um dia".**

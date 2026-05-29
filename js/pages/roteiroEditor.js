@@ -2497,7 +2497,7 @@ async function _openDayConsultBankModal() {
           justify-content:space-between;align-items:center;gap:10px;font-family:inherit;">
           <div style="flex:1;min-width:0;">
             <div style="font-weight:600;font-size:0.875rem;color:var(--text-primary);">${esc(r.title || '(sem título)')}</div>
-            <div style="font-size:0.72rem;color:var(--text-muted);">${esc((r.geo?.countries||[]).slice(0,3).join(' · '))}${(r.geo?.cities||[]).length ? ' · ' + (r.geo.cities.length) + ' dias' : ''}</div>
+            <div style="font-size:0.72rem;color:var(--text-muted);">${esc((r.geo?.countries||[]).slice(0,3).join(' · '))}${(Array.isArray(r.days) && r.days.length) ? ' · ' + r.days.length + ' dias' : ((r.geo?.cities||[]).length ? ' · ' + (r.geo.cities.length) + ' cidades' : '')}</div>
           </div>
           <span style="font-size:0.72rem;color:var(--brand-gold,#D4A843);">Escolher →</span>
         </button>`).join('');
@@ -2521,7 +2521,29 @@ async function _pickDaysFromBankRoteiro(bankId, closeFirstModal) {
     const { fetchRoteiroBank } = await import('../services/roteiroBank.js');
     const doc = await fetchRoteiroBank(bankId);
     if (!doc) { showToast('Roteiro não encontrado.', 'error'); return; }
-    const cities = doc.geo?.cities || [];
+    // v4.63.76 FIX: importar os DIAS REAIS (doc.days[]), não o resumo por cidade
+    // (doc.geo.cities). geo.cities é um sumário (city/nights/iata/...) SEM
+    // narrativa — usá-lo gerava dias vazios. days[] tem title/narrative/
+    // overnightCity/flightLeg/activities. Fallback p/ geo.cities só se days[]
+    // ausente (roteiros antigos só com sumário de cidades).
+    const rawDays = Array.isArray(doc.days) ? doc.days : [];
+    const cities = rawDays.length
+      ? rawDays.map(d => ({
+          city: d.city || '',
+          title: d.title || d.city || '',
+          narrative: d.narrative || '',
+          overnightCity: d.overnightCity || d.city || '',
+          flightLeg: d.flightLeg || null,
+          activities: Array.isArray(d.activities) ? d.activities : [],
+        }))
+      : (doc.geo?.cities || []).map(c => ({
+          city: c.city || '',
+          title: c.city || '',
+          narrative: '',
+          overnightCity: c.city || '',
+          flightLeg: null,
+          activities: [],
+        }));
     if (!cities.length) { showToast('Roteiro do banco não tem dias estruturados.', 'info'); return; }
 
     // Fecha o primeiro modal (lista de roteiros) e abre o seletor de dias
@@ -2556,9 +2578,10 @@ async function _pickDaysFromBankRoteiro(bankId, closeFirstModal) {
                   style="margin-top:3px;accent-color:var(--brand-gold,#D4A843);cursor:pointer;flex-shrink:0;">
                 <div style="flex:1;min-width:0;">
                   <div style="font-weight:600;font-size:0.875rem;color:var(--text-primary);">
-                    Dia ${i + 1}${c.city ? ' — ' + esc(c.city) : ''}
+                    Dia ${i + 1}${c.title ? ' — ' + esc(c.title) : (c.city ? ' — ' + esc(c.city) : '')}
                   </div>
-                  ${c.description ? `<div style="font-size:0.75rem;color:var(--text-muted);margin-top:4px;line-height:1.4;max-height:60px;overflow:hidden;">${esc(c.description.slice(0, 200))}${c.description.length > 200 ? '…' : ''}</div>` : ''}
+                  ${c.city && c.title && c.city !== c.title ? `<div style="font-size:0.7rem;color:var(--text-muted);margin-top:2px;">📍 ${esc(c.city)}</div>` : ''}
+                  ${c.narrative ? `<div style="font-size:0.75rem;color:var(--text-muted);margin-top:4px;line-height:1.4;max-height:60px;overflow:hidden;">${esc(c.narrative.slice(0, 200))}${c.narrative.length > 200 ? '…' : ''}</div>` : ''}
                 </div>
               </label>
             `).join('')}
@@ -2617,10 +2640,11 @@ async function _pickDaysFromBankRoteiro(bankId, closeFirstModal) {
           dayNumber: startIdx + i + 1,
           date: '',
           city: c.city || '',
-          title: c.city ? `Em ${c.city}` : `Dia ${startIdx + i + 1}`,
-          narrative: c.description || '',
-          overnightCity: c.city || '',
-          activities: [],
+          title: c.title || (c.city ? `Em ${c.city}` : `Dia ${startIdx + i + 1}`),
+          narrative: c.narrative || '',
+          overnightCity: c.overnightCity || c.city || '',
+          flightLeg: c.flightLeg || null,
+          activities: Array.isArray(c.activities) ? c.activities : [],
           imageIds: [],
           source: 'bank',
           bankRefId: bankId,

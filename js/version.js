@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 75,
-  build: '20260529-export-allowlist-daygate',
+  patch: 76,
+  build: '20260529-bank-import-days',
 };
 
 /** "1.2.0" */
