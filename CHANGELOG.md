@@ -6,6 +6,14 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.72+20260529-editor-tab-active-fix] — 2026-05-29
+
+**Fix: aba errada destacada no menu do editor de cotações.**
+
+Ao clicar numa aba da sidebar, o conteúdo abria certo, mas o destaque (`.active`) caía em outra aba. Causa: `switchSection()` comparava a **posição no NodeList** (`i`) contra o índice da seção, mas `SIDEBAR_ORDER` reordena as seções (ex: Serviços=14 aparece na 3ª posição), então posição DOM ≠ `data-section-idx`. Corrigido pra comparar contra `item.dataset.sectionIdx`. Zero impacto no conteúdo renderizado (que já usava o índice correto).
+
+---
+
 ## [4.63.71+20260529-editor-title-left-align] — 2026-05-29
 
 **Título "Editar Cotação" alinhado à esquerda no header do editor.**

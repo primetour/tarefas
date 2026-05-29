@@ -4804,8 +4804,11 @@ function switchSection(index) {
   // Update nav items
   const nav = document.getElementById('re-sidebar-nav');
   if (nav) {
-    nav.querySelectorAll('.re-nav-item').forEach((item, i) => {
-      item.classList.toggle('active', i === index);
+    // v4.63.72: comparar contra data-section-idx, NÃO a posição no NodeList.
+    // SIDEBAR_ORDER reordena seções (ex: Serviços=14 vem na 3ª posição), então
+    // a posição DOM != índice original. Usar posição destacava a aba errada.
+    nav.querySelectorAll('.re-nav-item').forEach((item) => {
+      item.classList.toggle('active', parseInt(item.dataset.sectionIdx, 10) === index);
     });
   }
 

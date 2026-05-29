@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 71,
-  build: '20260529-editor-title-left-align',
+  patch: 72,
+  build: '20260529-editor-tab-active-fix',
 };
 
 /** "1.2.0" */
