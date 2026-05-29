@@ -6,6 +6,16 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.73+20260529-editor-cache-pin-fix] — 2026-05-29
+
+**Fix de cache: import pinado de `roteiroEditor.js` no `app.js` estava congelado em `?v=4.43.0-async-fix`.**
+
+O fix do destaque de aba (v4.63.72) foi publicado correto no servidor, mas não chegava ao browser: `app.js` importa `roteiroEditor.js` com query string **hard-coded** (`?v=4.43.0-async-fix`), distinta da URL sem query. Cache-bust do `app.js` não invalida descendentes com query própria — o browser servia a entrada congelada do editor até o TTL HTTP (10 min) expirar. Pin atualizado pra `?v=4.63.73-editor-cache-pin-fix`.
+
+**Lição (CLAUDE.md §12.g + pinned-import):** sempre que `roteiroEditor.js` (ou qualquer módulo com `?v=` pinado em `app.js`) for tocado, bumpar o pin junto na linha do import. Sem isso, mudanças ficam invisíveis até o cache HTTP expirar.
+
+---
+
 ## [4.63.72+20260529-editor-tab-active-fix] — 2026-05-29
 
 **Fix: aba errada destacada no menu do editor de cotações.**

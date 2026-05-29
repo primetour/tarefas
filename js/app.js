@@ -73,7 +73,7 @@ import { renderCms }                      from './pages/cms.js';
 import { renderArtsEditor }              from './pages/artsEditor.js';
 // renderAiSkills + renderAiDashboard + mountAiPanel removidos (FAB desabilitado, rotas redirecionam pra #ai-hub)
 import { renderRoteiros }               from './pages/roteiros.js';
-import { renderRoteiroEditor, destroyRoteiroEditor } from './pages/roteiroEditor.js?v=4.43.0-async-fix';
+import { renderRoteiroEditor, destroyRoteiroEditor } from './pages/roteiroEditor.js?v=4.63.73-editor-cache-pin-fix';
 import { renderRoteiroDashboard, destroyRoteiroDashboard } from './pages/roteiroDashboard.js?v=20260508r1';
 // v4.50.0+ Banco de Roteiros — curadoria da empresa
 import { renderRoteiroBank }                                   from './pages/roteiroBank.js';

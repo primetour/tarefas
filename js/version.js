@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 72,
-  build: '20260529-editor-tab-active-fix',
+  patch: 73,
+  build: '20260529-editor-cache-pin-fix',
 };
 
 /** "1.2.0" */
