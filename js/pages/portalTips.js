@@ -458,7 +458,6 @@ function renderAreaPicker(grid, areas, activeCategoryFilter) {
   // acumular listeners em re-renders — drill-down/back triggers re-render).
   if (grid._areaClickHandler) grid.removeEventListener('click', grid._areaClickHandler);
   grid._areaClickHandler = (e) => {
-    // Procura ancestor button (descendentes <img>/<span> sobem aqui)
     const catBtn = e.target.closest('[data-category]');
     if (catBtn) {
       renderAreaPicker(grid, areas, catBtn.dataset.category);
@@ -466,8 +465,24 @@ function renderAreaPicker(grid, areas, activeCategoryFilter) {
     }
     const areaBtn = e.target.closest('.portal-area-btn');
     if (areaBtn) {
-      grid.querySelectorAll('.portal-area-btn,.portal-area-cat').forEach(b => b.classList.remove('selected'));
+      // v4.63.58 Renê: "selecionar área não funciona". Bug visual descoberto
+      // via auditoria — class .selected não SOBREVIVE aos inline styles do
+      // botão standalone com logo (border:1px solid var(--border-subtle)).
+      // User clicava, class adicionava mas visualmente nada mudava.
+      // Fix: aplicar feedback visual via inline style direto (override
+      // garantido), removido dos não-selecionados.
+      grid.querySelectorAll('.portal-area-btn,.portal-area-cat').forEach(b => {
+        b.classList.remove('selected');
+        // Reseta visual dos não-selecionados
+        if (b.classList.contains('portal-area-btn')) {
+          b.style.borderColor = 'var(--border-subtle)';
+          b.style.background = '#FFFFFF';
+        }
+      });
       areaBtn.classList.add('selected');
+      // Visual de selecionado: borda + tint gold (override inline guarantee)
+      areaBtn.style.borderColor = 'var(--brand-gold)';
+      areaBtn.style.background = 'rgba(212,168,67,0.10)';
       updatePreview();
     }
   };
@@ -775,8 +790,12 @@ async function updateSegments(destinationId) {
     });
   };
 
-  // Click delegation (sobrevive a re-render — bind no container)
-  container.addEventListener('click', (e) => {
+  // v4.63.58 HIGH#1 audit: container persistente entre trocas de destino —
+  // sem cleanup, cada chamada de updateSegments acumulava 1 listener no MESMO
+  // element. Após 3 trocas de destino, 1 click no ▲ disparava reorder 3×.
+  // Padrão §11.k recorrente.
+  if (container._segReorderHandler) container.removeEventListener('click', container._segReorderHandler);
+  container._segReorderHandler = (e) => {
     const upBtn = e.target.closest('.portal-seg-up');
     const downBtn = e.target.closest('.portal-seg-down');
     if (!upBtn && !downBtn) return;
@@ -792,7 +811,8 @@ async function updateSegments(destinationId) {
     }
     updateArrowStates();
     updatePreview();
-  });
+  };
+  container.addEventListener('click', container._segReorderHandler);
 
   // Bind checkboxes
   container.querySelectorAll('input[name=segment]').forEach(cb => {

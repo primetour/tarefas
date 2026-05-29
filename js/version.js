@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 56,
-  build: '20260529-portal-tips-area-click-defensive',
+  patch: 58,
+  build: '20260529-area-selecao-visual-fix-3HIGH-audit',
 };
 
 /** "1.2.0" */

@@ -497,7 +497,7 @@ textarea.portal-field { resize: vertical; }
   font-size: 0.8125rem; color: var(--text-secondary);
 }
 .portal-area-cat:hover { border-color: var(--brand-gold); color: var(--text-primary); }
-.portal-area-cat.selected { border-color: var(--brand-gold); background: var(--brand-gold)18; color: var(--brand-gold); }
+.portal-area-cat.selected { border-color: var(--brand-gold); background: rgba(212,168,67,0.10); color: var(--brand-gold); }
 .portal-area-cat .cat-chevron { font-size: 0.625rem; color: var(--text-muted); }
 
 .portal-area-item {
@@ -507,7 +507,7 @@ textarea.portal-field { resize: vertical; }
   font-size: 0.8125rem; color: var(--text-secondary);
 }
 .portal-area-item:hover { border-color: var(--brand-gold); color: var(--text-primary); background: var(--bg-surface); }
-.portal-area-item.selected { border-color: var(--brand-gold); background: var(--brand-gold)15; color: var(--brand-gold); font-weight: 600; }
+.portal-area-item.selected { border-color: var(--brand-gold); background: rgba(212,168,67,0.10); color: var(--brand-gold); font-weight: 600; }
 
 /* ─── MODAL ───────────────────────────────────────────────── */
 .modal-backdrop {

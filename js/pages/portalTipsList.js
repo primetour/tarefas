@@ -1279,6 +1279,7 @@ function renderSegEditorForList(tip, segKey, destImgs, segSelectedImgs, destId) 
                 <button class="regen-img-pick"
                   data-seg="${segKey}" data-idx="${idx}"
                   data-url="${esc(img.url)}" data-name="${esc(img.name||'')}"
+                  data-image-id="${esc(img.id||'')}"
                   style="flex-shrink:0;border:2px solid ${isSel?'var(--brand-gold)':'var(--border-subtle)'};
                   border-radius:var(--radius-sm);overflow:hidden;cursor:pointer;
                   width:72px;height:54px;padding:0;background:none;display:block;">
@@ -1347,8 +1348,14 @@ function wireRegenEditor(wTip, segKey, destImgs, destId, selectedImages, working
       });
       // Select this one
       btn.style.borderColor = 'var(--brand-gold)';
-      // Persist selection
-      selectedImages[destId][segKey][idx] = { url: btn.dataset.url, name: btn.dataset.name };
+      // v4.63.58 HIGH#2 audit: persistir imageId (alinhar com portalTips.js)
+      // pra cleanup FK em deleteImageMeta funcionar quando user gerou material
+      // via "Dicas Cadastradas → Material". Antes drift: este writer salvava
+      // só {url,name}, outro salvava {url,name,imageId}.
+      const imageId = btn.dataset.imageId || null;
+      selectedImages[destId][segKey][idx] = imageId
+        ? { url: btn.dataset.url, name: btn.dataset.name, imageId }
+        : { url: btn.dataset.url, name: btn.dataset.name };
     });
   });
 
