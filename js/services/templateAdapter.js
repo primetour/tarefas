@@ -52,6 +52,170 @@ function _resolveAreaName(area) {
   return area?.name || 'PRIMETOUR';
 }
 
+/* ─── Tip segment shaping (compartilhado portal ↔ cotações) ───────────
+   v4.63.84: extraído de portalToTemplateData pra ser reusado tb por
+   roteiroToTemplateData (dicas embedadas na cotação). Antes a cotação não
+   tinha NENHUM mapping de embeddedTips no path HTML → dicas eram dropadas
+   silenciosamente (Renê 29/05: "toda a parte das dicas... está muito cru").
+
+   `selection` (opcional) cura o que entra: { [segKey]: true | number[] }
+   - ausente/null → inclui TUDO (comportamento legado)
+   - segKey ausente OU false → segmento excluído
+   - segKey === true → todos os itens do segmento
+   - segKey === number[] → só os itens nesses índices (índices do array RAW,
+     incluindo subtítulos). Permite o consultor escolher subset (ex: 8 de 64
+     restaurantes) sem editar o snapshot. */
+const SEGMENT_DEFS = [
+  { key: 'informacoes_gerais',  label: 'Informações Gerais',     mode: 'special_info' },
+  { key: 'bairros',             label: 'Bairros',                mode: 'simple_list' },
+  { key: 'atracoes',            label: 'Atrações',               mode: 'place_list' },
+  { key: 'atracoes_criancas',   label: 'Atrações para Crianças', mode: 'place_list' },
+  { key: 'restaurantes',        label: 'Restaurantes',           mode: 'place_list' },
+  { key: 'vida_noturna',        label: 'Vida Noturna',           mode: 'place_list' },
+  { key: 'espetaculos',         label: 'Espetáculos & Teatros',  mode: 'place_list' },
+  { key: 'compras',             label: 'Compras',                mode: 'place_list' },
+  { key: 'arredores',           label: 'Arredores',              mode: 'simple_list' },
+  { key: 'highlights',          label: 'Highlights',             mode: 'place_list' },
+  { key: 'agenda_cultural',     label: 'Agenda Cultural',        mode: 'agenda' },
+];
+const DEF_BY_KEY = Object.fromEntries(SEGMENT_DEFS.map(d => [d.key, d]));
+
+const _escHtml = (s) => String(s || '').replace(/[&<>"']/g, (c) =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// Dados vindos do Envision/Portal podem trazer entidades HTML já codificadas
+// (&amp; &ccedil; &#225; etc.). Decodificar ANTES de re-escapar evita o
+// double-encode (&amp;amp; → "&amp;" literal no PDF). v4.63.84.
+const _NAMED_ENTITIES = {
+  amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ',
+  ccedil: 'ç', Ccedil: 'Ç', atilde: 'ã', Atilde: 'Ã', otilde: 'õ', Otilde: 'Õ',
+  aacute: 'á', eacute: 'é', iacute: 'í', oacute: 'ó', uacute: 'ú',
+  Aacute: 'Á', Eacute: 'É', Iacute: 'Í', Oacute: 'Ó', Uacute: 'Ú',
+  agrave: 'à', Agrave: 'À', acirc: 'â', ecirc: 'ê', ocirc: 'ô',
+  Acirc: 'Â', Ecirc: 'Ê', Ocirc: 'Ô', uuml: 'ü', Uuml: 'Ü',
+  ntilde: 'ñ', Ntilde: 'Ñ', ordf: 'ª', ordm: 'º', deg: '°',
+  hellip: '…', ndash: '–', mdash: '—', lsquo: '‘', rsquo: '’',
+  ldquo: '“', rdquo: '”', euro: '€', pound: '£', reg: '®', copy: '©', trade: '™',
+};
+function _decodeEntities(input) {
+  if (!input) return '';
+  return String(input)
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => { try { return String.fromCodePoint(parseInt(h, 16)); } catch { return _; } })
+    .replace(/&#(\d+);/g, (_, d) => { try { return String.fromCodePoint(parseInt(d, 10)); } catch { return _; } })
+    .replace(/&([a-z]+);/gi, (m, n) => (n in _NAMED_ENTITIES ? _NAMED_ENTITIES[n] : m));
+}
+
+// Markdown leve (**bold** __underline__ _italic_ [txt](url)) → HTML seguro.
+function _mdToHtml(input) {
+  if (!input) return '';
+  let html = _escHtml(_decodeEntities(input));
+  html = html.replace(/\*\*([^*]+?)\*\*/g, '<strong>$1</strong>');
+  html = html.replace(/__([^_]+?)__/g, '<u>$1</u>');
+  html = html.replace(/(^|[^_])_([^_]+?)_(?!_)/g, '$1<em>$2</em>');
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, txt, url) => {
+    const cleanUrl = String(url).trim();
+    if (cleanUrl.startsWith('#')) {
+      return `<a href="#seg-${_escHtml(cleanUrl.slice(1))}" data-internal-link="1">${txt}</a>`;
+    }
+    const proto = cleanUrl.match(/^([a-z]+):/i);
+    const protoName = proto ? proto[1].toLowerCase() : '';
+    if (['javascript', 'data', 'vbscript', 'file', 'about'].includes(protoName)) return txt;
+    const safe = /^https?:\/\//i.test(cleanUrl) ? cleanUrl : `https://${cleanUrl}`;
+    return `<a href="${_escHtml(safe)}" target="_blank" rel="noopener noreferrer">${txt}</a>`;
+  });
+  return html;
+}
+
+/**
+ * Converte um `segments` raw (objeto {key:{items,info,themeDesc,...}}) na lista
+ * `segmentos[]` shaped que os templates Handlebars iteram.
+ * @param {Object} segs        raw segments do tip
+ * @param {Object} [opts]
+ * @param {string[]} [opts.orderedKeys] ordem de exibição (default SSOT)
+ * @param {Object}   [opts.selection]   curadoria { segKey: true|number[] }
+ */
+export function shapeTipSegmentos(segs, { orderedKeys, selection } = {}) {
+  if (!segs || typeof segs !== 'object') return [];
+  const baseOrder = Array.isArray(orderedKeys) && orderedKeys.length
+    ? orderedKeys : SEGMENT_DEFS.map(d => d.key);
+  // Anexa keys presentes no raw mas fora da ordem (segmentos custom do CRUD).
+  const extraKeys = Object.keys(segs).filter(k => !baseOrder.includes(k));
+  const allKeys = [...baseOrder, ...extraKeys];
+  const hasSel = selection && typeof selection === 'object' && !Array.isArray(selection);
+
+  return allKeys.map(key => {
+    const def = DEF_BY_KEY[key] || { key, label: key.replace(/_/g, ' '), mode: 'place_list' };
+    const data = segs[key];
+    if (!data) return null;
+
+    // Gate de seleção (segmento inteiro)
+    let itemFilter = null; // null = todos
+    if (hasSel) {
+      const sel = selection[key];
+      if (sel === undefined || sel === null || sel === false) return null;
+      if (Array.isArray(sel)) itemFilter = new Set(sel.map(Number));
+      // sel === true → todos os itens
+    }
+    const _keepIdx = (idx) => itemFilter == null || itemFilter.has(idx);
+
+    const out = { key: def.key, label: def.label, mode: def.mode, isSpecialInfo: def.mode === 'special_info' };
+
+    if (def.mode === 'special_info' && data.info) {
+      const info = data.info;
+      const fuso = info.fusoSinal && info.fusoHoras ? `${info.fusoSinal}${info.fusoHoras}h` : '';
+      const hasChips = !!(info.populacao || info.moeda || info.lingua || info.religiao || info.voltagem || info.ddd || fuso);
+      out.info = {
+        descricao: _decodeEntities(info.descricao || ''), dica: _decodeEntities(info.dica || ''),
+        populacao: _decodeEntities(info.populacao || ''), moeda: _decodeEntities(info.moeda || ''),
+        lingua: _decodeEntities(info.lingua || ''), religiao: _decodeEntities(info.religiao || ''),
+        voltagem: _decodeEntities(info.voltagem || ''), ddd: _decodeEntities(info.ddd || ''),
+        fuso, hasChips,
+      };
+    }
+    if (def.mode === 'simple_list') {
+      out.narrative = data.themeDesc || '';
+      const rawItems = Array.isArray(data.items) ? data.items : [];
+      out.items = rawItems.map((i, idx) => ({ i, idx })).filter(({ idx }) => _keepIdx(idx))
+        .map(({ i }) => typeof i === 'string'
+          ? { name: '', desc: _decodeEntities(i) }
+          : { name: _decodeEntities(i?.name || ''), desc: _decodeEntities(i?.desc || i?.description || '') });
+    }
+    if (def.mode === 'place_list') {
+      out.narrative = data.themeDesc || '';
+      const rawItems = Array.isArray(data.items) ? data.items : [];
+      out.items = rawItems.map((p, idx) => ({ p, idx })).filter(({ idx }) => _keepIdx(idx)).map(({ p }) => {
+        if (p?.type === 'subtitle') {
+          const st = _decodeEntities(p.text || '');
+          return { isSubtitle: true, type: 'subtitle', text: st, name: st };
+        }
+        const desc = p?.descricao || p?.notes || p?.observation || p?.description || p?.address || '';
+        const obs  = p?.observacoes || '';
+        return {
+          name: _decodeEntities(p?.titulo || p?.name || p?.title || ''),
+          desc: _decodeEntities(desc), descHtml: _mdToHtml(desc),
+          categoria: _decodeEntities(p?.categoria || ''),
+          tags: (Array.isArray(p?.tags) ? p.tags : []).map(t => _decodeEntities(t)),
+          endereco: _decodeEntities(p?.endereco || p?.address || ''),
+          telefone: _decodeEntities(p?.telefone || p?.phone || ''),
+          site: p?.site || '',
+          observacoes: _decodeEntities(obs), observacoesHtml: _mdToHtml(obs),
+        };
+      });
+    }
+    if (def.mode === 'agenda') {
+      out.narrative = data.themeDesc || '';
+      const rawItems = Array.isArray(data.events || data.items) ? (data.events || data.items) : [];
+      out.items = rawItems.map((e, idx) => ({ e, idx })).filter(({ idx }) => _keepIdx(idx))
+        .map(({ e }) => ({ name: _decodeEntities(e?.title || e?.name || ''), desc: _decodeEntities([e?.date, e?.venue, e?.notes].filter(Boolean).join(' · ')) }));
+    }
+
+    const hasContent = (out.narrative && out.narrative.trim())
+      || (Array.isArray(out.items) && out.items.length > 0)
+      || (out.info && (out.info.descricao || out.info.dica || out.info.hasChips));
+    return hasContent ? out : null;
+  }).filter(Boolean);
+}
+
 /* ─── Adapter: cotações (roteiroGenerator) ──────────────────────────── */
 
 /**
@@ -212,6 +376,29 @@ export function roteiroToTemplateData(roteiro, area, opts = {}) {
     cancelamento: Array.isArray(roteiro.cancellation) ? roteiro.cancellation : [],
     informacoes: { ..._ii, hasData: _hasIi },
 
+    // v4.63.84+ DICAS embedadas (Portal de Dicas anexado à cotação).
+    // Antes não havia mapping nenhum no path HTML → dicas eram dropadas
+    // silenciosamente (Renê 29/05: "toda a parte das dicas... está muito cru").
+    // Cada tip embeda um SNAPSHOT (tip.content.segments). `tip.selection`
+    // (opcional) cura o que entra — ver shapeTipSegmentos. Sem selection,
+    // inclui tudo (compat). Tips sem segmentos visíveis são filtrados.
+    dicas: (() => {
+      const tips = Array.isArray(roteiro.embeddedTips) ? roteiro.embeddedTips : [];
+      return tips.map(t => {
+        const segs = t?.content?.segments || t?.segments || null;
+        const segmentos = shapeTipSegmentos(segs, {
+          orderedKeys: Array.isArray(t?.segmentOrder) ? t.segmentOrder : undefined,
+          selection:   t?.selection || null,
+        });
+        if (!segmentos.length) return null;
+        return {
+          titulo:    t?.title || '',
+          subtitulo: t?.subtitle || '',
+          segmentos,
+        };
+      }).filter(Boolean);
+    })(),
+
     today: _today(),
   };
 }
@@ -261,130 +448,13 @@ export function portalToTemplateData({ allTips, area, segments, areaName, images
   // Convert raw segments map → ordered iterable array per dest.
   // v4.63.35+ Renê: "dar a possibilidade de escolher a ordem de exibição dos
   // segmentos nos arquivos antes de exportar". A ordem default vem do SSOT
-  // canônico abaixo, MAS se o caller passar `segments` (array de keys),
-  // respeita essa ordem — assim a UI portalTips.js controla a ordem do export
-  // via reorder (↑/↓).
-  const SEGMENT_DEFS = [
-    { key: 'informacoes_gerais',  label: 'Informações Gerais', mode: 'special_info' },
-    { key: 'bairros',             label: 'Bairros',            mode: 'simple_list' },
-    { key: 'atracoes',            label: 'Atrações',           mode: 'place_list' },
-    { key: 'atracoes_criancas',   label: 'Atrações para Crianças', mode: 'place_list' },
-    { key: 'restaurantes',        label: 'Restaurantes',       mode: 'place_list' },
-    { key: 'vida_noturna',        label: 'Vida Noturna',       mode: 'place_list' },
-    { key: 'espetaculos',         label: 'Espetáculos & Teatros', mode: 'place_list' },
-    { key: 'compras',             label: 'Compras',            mode: 'place_list' },
-    { key: 'arredores',           label: 'Arredores',          mode: 'simple_list' },
-    { key: 'highlights',          label: 'Highlights',         mode: 'place_list' },
-    { key: 'agenda_cultural',     label: 'Agenda Cultural',    mode: 'agenda' },
-  ];
-  const DEF_BY_KEY = Object.fromEntries(SEGMENT_DEFS.map(d => [d.key, d]));
-
-  // Ordem efetiva: segments passado pelo caller (UI reorder) OU default SSOT.
-  // Se caller passou keys que não estão em SEGMENT_DEFS (ex: custom segments
-  // do CRUD), faz fallback gracioso construindo def mínima.
-  const orderedKeys = Array.isArray(segments) && segments.length
-    ? segments
-    : SEGMENT_DEFS.map(d => d.key);
-  const SEGMENT_ORDER = orderedKeys.map(k =>
-    DEF_BY_KEY[k] || { key: k, label: k.replace(/_/g, ' '), mode: 'place_list' }
-  );
-
+  // canônico (SEGMENT_DEFS, módulo), MAS se o caller passar `segments` (array
+  // de keys), respeita essa ordem — assim a UI portalTips.js controla a ordem
+  // do export via reorder (↑/↓).
+  // v4.63.84+ shaping extraído pro helper compartilhado shapeTipSegmentos
+  // (reusado tb por roteiroToTemplateData/dicas embedadas).
   for (const entry of byDest.values()) {
-    const segs = entry.segments || {};
-    entry.segmentos = SEGMENT_ORDER.map(def => {
-      const data = segs[def.key];
-      if (!data) return null;
-      const out = { key: def.key, label: def.label, mode: def.mode };
-      if (def.mode === 'special_info' && data.info) {
-        const info = data.info;
-        const fuso = info.fusoSinal && info.fusoHoras ? `${info.fusoSinal}${info.fusoHoras}h` : '';
-        const hasChips = !!(info.populacao || info.moeda || info.lingua || info.religiao || info.voltagem || info.ddd || fuso);
-        out.info = {
-          descricao: info.descricao || '',
-          dica:      info.dica || '',
-          populacao: info.populacao || '', moeda: info.moeda || '', lingua: info.lingua || '',
-          religiao:  info.religiao || '',  voltagem: info.voltagem || '', ddd: info.ddd || '',
-          fuso,
-          hasChips,
-        };
-      }
-      if (def.mode === 'simple_list') {
-        out.narrative = data.themeDesc || '';
-        const rawItems = Array.isArray(data.items) ? data.items : [];
-        out.items = rawItems.map(i => typeof i === 'string' ? { name: '', desc: i } : { name: i?.name || '', desc: i?.desc || i?.description || '' });
-      }
-      if (def.mode === 'place_list') {
-        out.narrative = data.themeDesc || '';
-        const rawItems = Array.isArray(data.items) ? data.items : [];
-        // v4.63.37+ Expor `tags` no shape do template — render HTML pode iterar
-        // {{#each tags}} pra exibir chips. Renderer legado ignora silenciosamente.
-        // v4.63.39+ Subtítulos preservam type='subtitle' + text para template
-        // iterar e renderizar como heading. `name` aliasado pra `text` por compat.
-        // v4.63.40+ Rich text: descricao/observacoes podem ter markdown
-        // (**bold**, _italic_, __underline__, [link](url)). Convertemos pra
-        // HTML safe ANTES de passar pro template (templates usam triple-stash
-        // {{{desc}}} pra renderizar HTML sem escape, OU double-stash {{desc}}
-        // que mantém escapado e markdown vira texto literal — backward compat).
-        // Helper inline pra evitar ciclo de import com richText.js:
-        const _esc = (s) => String(s || '').replace(/[&<>"']/g, (c) =>
-          ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-        const _toHtml = (input) => {
-          if (!input) return '';
-          // Importação dinâmica é overhead — fallback rápido com regex:
-          // Strip-safe transform de markdown → HTML básico. Se markdown ausente,
-          // retorna texto escapado direto.
-          let html = _esc(input);
-          // Bold **x** (não-greedy)
-          html = html.replace(/\*\*([^*]+?)\*\*/g, '<strong>$1</strong>');
-          // Underline __x__
-          html = html.replace(/__([^_]+?)__/g, '<u>$1</u>');
-          // Italic _x_ (não em volta de underline)
-          html = html.replace(/(^|[^_])_([^_]+?)_(?!_)/g, '$1<em>$2</em>');
-          // v4.63.45+ B1 fix: reject ANTES de transformações. URL é sempre
-          // escapada pra prevenir injection de atributos.
-          html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, txt, url) => {
-            const cleanUrl = String(url).trim();
-            if (cleanUrl.startsWith('#')) {
-              return `<a href="#seg-${_esc(cleanUrl.slice(1))}" data-internal-link="1">${txt}</a>`;
-            }
-            const proto = cleanUrl.match(/^([a-z]+):/i);
-            const protoName = proto ? proto[1].toLowerCase() : '';
-            if (['javascript', 'data', 'vbscript', 'file', 'about'].includes(protoName)) {
-              return txt;  // strip link
-            }
-            const safe = /^https?:\/\//i.test(cleanUrl) ? cleanUrl : `https://${cleanUrl}`;
-            return `<a href="${_esc(safe)}" target="_blank" rel="noopener noreferrer">${txt}</a>`;
-          });
-          return html;
-        };
-        out.items = rawItems.map(p => {
-          if (p?.type === 'subtitle') {
-            return { isSubtitle: true, type: 'subtitle', text: p.text || '', name: p.text || '' };
-          }
-          const desc = p?.descricao || p?.notes || p?.observation || p?.description || p?.address || '';
-          const obs  = p?.observacoes || '';
-          return {
-            name: p?.titulo || p?.name || p?.title || '',
-            desc,             // legado: texto cru pra templates antigos
-            descHtml: _toHtml(desc),   // v4.63.40+ HTML pré-renderizado
-            categoria: p?.categoria || '',
-            tags: Array.isArray(p?.tags) ? p.tags : [],
-            observacoes: obs,
-            observacoesHtml: _toHtml(obs),
-          };
-        });
-      }
-      if (def.mode === 'agenda') {
-        out.narrative = data.themeDesc || '';
-        const rawItems = Array.isArray(data.events || data.items) ? (data.events || data.items) : [];
-        out.items = rawItems.map(e => ({ name: e?.title || e?.name || '', desc: [e?.date, e?.venue, e?.notes].filter(Boolean).join(' · ') }));
-      }
-      // Skip se segment ficou vazio (sem narrative + sem items + sem info)
-      const hasContent = (out.narrative && out.narrative.trim())
-        || (Array.isArray(out.items) && out.items.length > 0)
-        || (out.info && (out.info.descricao || out.info.dica || out.info.hasChips));
-      return hasContent ? out : null;
-    }).filter(Boolean);
+    entry.segmentos = shapeTipSegmentos(entry.segments || {}, { orderedKeys: segments });
   }
 
   return {

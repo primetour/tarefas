@@ -59,14 +59,22 @@
     .cover-scrim {
       position: absolute; inset: 0;
       z-index: 1;
-      /* Véu escuro forte: topo e base mais densos (logo + cliente), meio um
-         pouco mais leve. Mistura preto + var(--secondary) pra manter a marca. */
+      /* v4.63.84 (Renê 29/05: "capa precisa ser mais escura"): véu escuro
+         MAIS forte. Antes o meio caía pra 0.50 e o título (que fica no meio)
+         perdia contraste em fotos claras. Agora: 3 camadas —
+         (1) preto vertical denso (0.86→0.66→0.66→0.90),
+         (2) preto uniforme 0.30 cobrindo a capa inteira (garante piso de
+             escuridão mesmo no centro),
+         (3) tint var(--secondary) topo/base pra manter a marca. */
       background:
         linear-gradient(180deg,
-          rgba(0,0,0,0.74) 0%,
-          rgba(0,0,0,0.50) 32%,
-          rgba(0,0,0,0.50) 64%,
-          rgba(0,0,0,0.80) 100%),
+          rgba(0,0,0,0.86) 0%,
+          rgba(0,0,0,0.66) 32%,
+          rgba(0,0,0,0.66) 64%,
+          rgba(0,0,0,0.90) 100%),
+        linear-gradient(180deg,
+          rgba(0,0,0,0.30) 0%,
+          rgba(0,0,0,0.30) 100%),
         linear-gradient(180deg,
           var(--secondary) 0%,
           rgba(0,0,0,0) 40%,
@@ -83,7 +91,7 @@
     .cover.cover-has-photo .cover-client-name,
     .cover.cover-has-photo .cover-client-pax,
     .cover.cover-has-photo .cover-title {
-      text-shadow: 0 1px 4px rgba(0,0,0,0.55);
+      text-shadow: 0 1px 6px rgba(0,0,0,0.85), 0 0 2px rgba(0,0,0,0.6);
     }
     .cover-line-top, .cover-line-bottom {
       position: absolute; left: 16mm; right: 16mm; height: 0.6mm;
@@ -366,6 +374,73 @@
       font-size: 10pt; color: #3D3D3D;
       line-height: 1.7;
     }
+
+    /* ─── DICAS (Portal de Dicas embedado) v4.63.84 ───────────
+       Renê 29/05: dicas estavam "muito cru". Layout premium: cada dica
+       (destino) tem subtítulo; segmentos com label em barra; itens-lugar
+       como cards compactos (nome + categoria + descrição + endereço/site). */
+    .dica-block { margin: 4mm 0 6mm; }
+    .dica-head {
+      display: flex; align-items: baseline; gap: 3mm;
+      margin: 2mm 0 4mm;
+      break-after: avoid; page-break-after: avoid;
+    }
+    .dica-city {
+      font-size: 11pt; font-weight: 700; color: var(--secondary);
+      letter-spacing: 0.5px;
+    }
+    .dica-sub {
+      font-size: 8.5pt; color: var(--accent);
+      text-transform: uppercase; letter-spacing: 1px;
+    }
+    .dica-seg { margin: 3mm 0 4mm; }
+    .dica-seg-label {
+      font-size: 8.5pt; font-weight: 700; color: var(--primary);
+      text-transform: uppercase; letter-spacing: 1.5px;
+      padding-bottom: 1mm; margin-bottom: 2.5mm;
+      border-bottom: 0.3mm solid var(--border-light);
+      break-after: avoid; page-break-after: avoid;
+    }
+    .dica-seg-narr {
+      font-size: 9pt; color: #555; line-height: 1.6;
+      margin-bottom: 3mm; font-style: italic;
+    }
+    .dica-item {
+      margin: 0 0 3mm; padding-left: 3mm;
+      border-left: 0.5mm solid var(--border-light);
+      page-break-inside: avoid; break-inside: avoid;
+    }
+    .dica-subtitle {
+      font-size: 9.5pt; font-weight: 700; color: var(--secondary);
+      margin: 3mm 0 2mm; letter-spacing: 0.3px;
+      break-after: avoid; page-break-after: avoid;
+    }
+    .dica-item-name {
+      font-size: 9.5pt; font-weight: 700; color: var(--text-dark);
+    }
+    .dica-item-cat {
+      display: inline-block; font-size: 7pt; font-weight: 700;
+      color: var(--primary); text-transform: uppercase; letter-spacing: 0.5px;
+      margin-left: 2mm;
+    }
+    .dica-item-desc {
+      font-size: 8.5pt; color: #3D3D3D; line-height: 1.55;
+      margin-top: 0.8mm;
+    }
+    .dica-item-meta {
+      font-size: 7.5pt; color: #888; margin-top: 0.8mm;
+      line-height: 1.4;
+    }
+    .dica-item-meta a { color: var(--accent); text-decoration: none; }
+    .dica-info-desc { font-size: 9pt; color: #3D3D3D; line-height: 1.7; margin-bottom: 2mm; }
+    .dica-chips { display: flex; flex-wrap: wrap; gap: 2mm; margin: 2mm 0; }
+    .dica-chip {
+      font-size: 7.5pt; color: #444;
+      background: var(--bg-alt-row);
+      border: 0.2mm solid var(--border-light);
+      padding: 1mm 2.5mm; border-radius: 1mm;
+    }
+    .dica-chip b { color: var(--secondary); font-weight: 700; }
 
     /* ─── FOOTER (rodapé da capa/fechamento) ───────────────── */
     /* v4.63.82: removido `position: running()` + `@page @bottom-center/@top-right`
@@ -728,6 +803,63 @@
       <div class="info-sublabel">{{label}}</div>
       <div class="info-content">{{value}}</div>
     {{/if}}
+  {{/each}}
+</section>
+{{/if}}
+
+{{!-- DICAS (Portal de Dicas embedado) --}}
+{{#if dicas.length}}
+<section class="section">
+  <div class="section-title-bar">
+    <div class="section-bar"></div>
+    <div class="section-title">Dicas dos Destinos</div>
+  </div>
+  <div class="section-line"></div>
+  {{#each dicas}}
+  <div class="dica-block">
+    <div class="dica-head">
+      <span class="dica-city">{{titulo}}</span>
+      {{#if subtitulo}}<span class="dica-sub">{{subtitulo}}</span>{{/if}}
+    </div>
+    {{#each segmentos}}
+    <div class="dica-seg">
+      <div class="dica-seg-label">{{label}}</div>
+      {{#if narrative}}<div class="dica-seg-narr">{{narrative}}</div>{{/if}}
+      {{#if isSpecialInfo}}
+        {{#if info.descricao}}<div class="dica-info-desc">{{info.descricao}}</div>{{/if}}
+        {{#if info.hasChips}}
+        <div class="dica-chips">
+          {{#if info.populacao}}<span class="dica-chip"><b>População</b> {{info.populacao}}</span>{{/if}}
+          {{#if info.moeda}}<span class="dica-chip"><b>Moeda</b> {{info.moeda}}</span>{{/if}}
+          {{#if info.lingua}}<span class="dica-chip"><b>Idioma</b> {{info.lingua}}</span>{{/if}}
+          {{#if info.religiao}}<span class="dica-chip"><b>Religião</b> {{info.religiao}}</span>{{/if}}
+          {{#if info.voltagem}}<span class="dica-chip"><b>Voltagem</b> {{info.voltagem}}</span>{{/if}}
+          {{#if info.ddd}}<span class="dica-chip"><b>DDD</b> {{info.ddd}}</span>{{/if}}
+          {{#if info.fuso}}<span class="dica-chip"><b>Fuso</b> {{info.fuso}}</span>{{/if}}
+        </div>
+        {{/if}}
+        {{#if info.dica}}<div class="dica-info-desc"><b>Dica:</b> {{info.dica}}</div>{{/if}}
+      {{else}}
+        {{#each items}}
+          {{#if isSubtitle}}
+            <div class="dica-subtitle">{{text}}</div>
+          {{else}}
+            <div class="dica-item">
+              <div>
+                <span class="dica-item-name">{{name}}</span>
+                {{#if categoria}}<span class="dica-item-cat">{{categoria}}</span>{{/if}}
+              </div>
+              {{#if descHtml}}<div class="dica-item-desc">{{{descHtml}}}</div>{{/if}}
+              {{#if observacoesHtml}}<div class="dica-item-desc">{{{observacoesHtml}}}</div>{{/if}}
+              {{#if endereco}}<div class="dica-item-meta">{{endereco}}</div>{{/if}}
+              {{#if site}}<div class="dica-item-meta"><a href="{{site}}">{{site}}</a></div>{{/if}}
+            </div>
+          {{/if}}
+        {{/each}}
+      {{/if}}
+    </div>
+    {{/each}}
+  </div>
   {{/each}}
 </section>
 {{/if}}

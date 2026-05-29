@@ -6,6 +6,22 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.84+20260529-cotacoes-dicas-premium-entity-decode] — 2026-05-29
+
+**Dicas embedadas no template HTML de cotações: render premium + decode de entidades + capa ainda mais escura + secret R2 corrigido.**
+
+Reportado pelo Renê após gerar PDF de cotação real (Bradesco/família Yamamoto): *"deu msg de erro ao gerar o template puppeteer e falou que ia usar outro modelo... na capa, acho que ainda precisa ser mais escuro... no pdf do template do bradesco, na pagina 10 tem problema nos titulos. toda a parte das dicas eu também acho que precisa de atenção. está muito cru."*
+
+**Mudanças:**
+- **Render de erro do Puppeteer corrigido na raiz** (`functions/index.js` `renderTemplate`): a CF tem fallback R2 pra PDFs >5MB (faz upload pro worker com header `X-Upload-Token`), mas o secret `R2_UPLOAD_TOKEN` **não estava bindado** no `onCall({ secrets:[...] })` da função → `R2_UPLOAD_TOKEN.value()` lançava, o upload falhava, e o PDF gigante voltava como base64 estourando "Response size was too large" → cliente caía pro jsPDF ("outro modelo" que o Renê viu). Bind do secret + `defineSecret('R2_UPLOAD_TOKEN')`. Deployada e log-verificada.
+- **Dicas embedadas renderizadas como cards premium** (`templateAdapter.js` `roteiroToTemplateData` agora mapeia `embeddedTips` → `dicas` via helper compartilhado `shapeTipSegmentos`, reusando o shaping já provado do `portalToTemplateData`; nova seção `{{#if dicas.length}}` no seed + CSS dedicado `.dica-block/.dica-seg/.dica-item/.dica-chips/...`): antes o template não tinha seção de dicas (saía "cru"); agora cada destino vira bloco com cidade/subtítulo, segmentos (Restaurantes, Atrações, Compras, ...) com nome em destaque + categoria + descrição (markdown→HTML) + endereço/site, e o segmento "Informações Gerais" vira chips (População, Moeda, Idioma, Religião, Voltagem, DDD, Fuso). `break-inside:avoid` nos itens; `break-after:avoid` em labels/headings (sem título órfão — resolve também o problema de títulos da pág. 10, que era artefato do jsPDF fallback).
+- **Decode de entidades HTML** (`templateAdapter.js` `_decodeEntities` + `_NAMED_ENTITIES`, aplicado antes do escape em `_mdToHtml` e nos campos de place/info/agenda): dados importados do Envision guardam entidades literais (`&amp;`), que o Handlebars re-escapava → o usuário via `&amp;` cru ("HOTEL THE MITSUI KYOTO &amp; SPA"). Agora decodifica-primeiro-reescapa: `&` renderiza literal.
+- **Capa ainda mais escura** (`cotacoes-default-html.html` `.cover-scrim`): scrim reforçado (gradiente preto 0.86→0.66→0.90 + flat 0.30 + cor secundária) + `text-shadow` mais forte no título, garantindo leitura sobre fotos muito claras.
+
+**Validação:** render local determinístico (puppeteer-core + Chrome for Testing replicando as opções EXATAS do `page.pdf` da CF — A4, margem 20/15mm) contra a **cotação real do Bradesco** (família Yamamoto, Japão; 13 dias, 4 voos, 4 hotéis, 1 dica de Quioto com 5 segmentos / 94 itens). PDF de 26 páginas rasterizado e inspecionado: capa legível, dicas como cards premium (Informações Gerais em chips + Restaurantes/Atrações/Compras com nome+categoria+descrição+endereço), zero título órfão. `pdftotext | grep` de entidades = **zero** sobreviventes; `&` renderiza literal ("MITSUI KYOTO & SPA"). Template re-seedado pro R2 + Firestore (doc novo `DXKW7JzJ6ijQiJO09ydF` `isDefault`, antigo arquivado).
+
+> **Pendente (design-sensitive, não implementado nesta release):** UI no editor pra editar a dica embedada + escolher granularmente quais segmentos/itens incluir (hoje só há o botão "↻ Re-publicar", que re-snapshota a dica na cotação). O hook de dados (`selection` em `shapeTipSegmentos`) já está pronto; a UI será apresentada ao Renê antes de construída.
+
 ## [4.63.83+20260529-cotacoes-html-universal-photo-cover] — 2026-05-29
 
 **Padronização do template default de cotações: HTML universal + capa com foto legível + sem títulos órfãos.**

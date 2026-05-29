@@ -1037,6 +1037,10 @@ export const renderTemplate = onCall({
   memory: '1GiB',                  // Chromium precisa
   timeoutSeconds: 90,
   maxInstances: 5,
+  secrets: [R2_UPLOAD_TOKEN],      // 4.63.84 — necessário pro R2 fallback (>5MB).
+                                   // Sem isso, .value() vinha vazio → upload 401 →
+                                   // base64 gigante → "Response size too large" →
+                                   // render falhava → cliente caía pro jsPDF.
 }, async (request) => {
   const auth = requireAuth(request);
   const { templateId, data = {} } = request.data || {};

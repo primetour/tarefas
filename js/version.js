@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 83,
-  build: '20260529-cotacoes-html-universal-photo-cover',
+  patch: 84,
+  build: '20260529-cotacoes-dicas-premium-entity-decode',
 };
 
 /** "1.2.0" */
