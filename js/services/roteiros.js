@@ -466,18 +466,52 @@ function migrateRoteiroOnRead(doc) {
  *     restaurante etc.) NÃO mudam o que cliente já viu — previsibilidade
  *   - User pode chamar `republishEmbeddedTip` quando quiser atualizar
  */
-export async function snapshotTipForEmbed(tipId) {
+/**
+ * Filtra `segments` de uma dica conforme a seleção granular do consultor.
+ *
+ * Formato de `selection` (v4.63.79+):
+ *   - null/undefined          → retorna TODOS os segmentos (retrocompat)
+ *   - { [segKey]: true }      → inclui o segmento INTEIRO
+ *   - { [segKey]: number[] }  → inclui só os itens nesses índices do segmento
+ *   - segKey ausente/falsy    → segmento OMITIDO
+ *
+ * Schema real (CLAUDE.md §16.v): `segments[key]` é OBJETO
+ * `{ items:[...], info:{...}, ... }`, NÃO array. `informacoes_gerais` tem só
+ * `info` (sem `items`) — só pode ser incluído via `true` (inteiro).
+ */
+function _applyTipSelection(segments, selection) {
+  if (!selection || typeof selection !== 'object') return segments || {};
+  const out = {};
+  for (const [key, val] of Object.entries(segments || {})) {
+    const sel = selection[key];
+    if (!sel) continue;                 // segmento não selecionado → omite
+    if (sel === true) { out[key] = val; continue; } // inteiro
+    if (Array.isArray(sel)) {
+      const items = Array.isArray(val?.items) ? val.items : [];
+      const want = new Set(sel.map(Number));
+      const kept = items.filter((_, i) => want.has(i));
+      // Preserva metadata do segmento (themeDesc, dica, hasExpiry...) mas
+      // troca items pelos selecionados. Se nada sobrou, omite o segmento.
+      if (kept.length) out[key] = { ...val, items: kept };
+    }
+  }
+  return out;
+}
+
+export async function snapshotTipForEmbed(tipId, selection = null) {
   const snap = await getDoc(doc(db, 'portal_tips', tipId));
   if (!snap.exists()) throw new Error('Dica não encontrada (pode ter sido removida).');
   const tip = snap.data();
   const updatedAtSnapshot = tip.updatedAt || tip.createdAt || null;
+  const segments = _applyTipSelection(tip.segments || {}, selection);
   // Pega apenas o que importa pra render — sem metadata interna (_geo
   // pode ser pesado, deixamos só se já está no snapshot).
   const content = {
     city:              tip.city || '',
     country:           tip.country || '',
     continent:         tip.continent || '',
-    segments:          tip.segments || {},
+    segments,
+    selection:         selection || null, // registra o que foi escolhido (re-edit)
     updatedAtSnapshot, // ref pra detect stale
   };
   return {

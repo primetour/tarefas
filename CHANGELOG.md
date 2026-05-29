@@ -6,6 +6,18 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.79+20260529-briefing-dests-dicas-select] — 2026-05-29
+
+**Feature: Briefing com multi-select de destinos (do SSOT) que auto-filtra Banco + Dicas · Seleção granular de conteúdo das Dicas.**
+
+Duas melhorias de UX apontadas pelo Renê ao revisar o teste E2E de export:
+
+1. **Briefing — multi-select de destinos + auto-filtra ambos** (#1). Novo botão "🔎 Selecionar destinos do banco" na seção Viagem abre um multi-picker sobre `portal_destinations` (SSOT geográfico) — consultor marca várias cidades de uma vez (busca + filtro por continente, dedup por cidade+país), confirma e cada uma vira um destino em `travel.destinations[]`. Com destinos preenchidos, um painel dourado contextual oferece "📚 Consultar Banco filtrado" e "💡 Anexar dicas destes destinos". Ambos os modais (Consultar Banco e Anexar Dica) agora trazem um toggle "Só destinos do briefing (N)" **ligado por padrão** que pré-filtra a lista pelos países/cidades do briefing (com escape "desmarque pra ver todos"). Um ponto de entrada único → roteiros e dicas relevantes já chegam pré-selecionados.
+
+2. **Dicas — seleção granular do que anexar** (#2). Ao clicar numa dica do Portal, abre um sub-step de seleção: checkbox por **segmento inteiro** (Restaurantes, Atrações, Infos Gerais, …) com opção de expandir e escolher **itens específicos** dentro de cada um (estado indeterminate em seleção parcial, contador dinâmico, "Selecionar tudo"/"Limpar"). `snapshotTipForEmbed(tipId, selection)` agora aceita uma seleção opcional e embeda só o escolhido; se tudo estiver marcado, passa `null` (snapshot completo, 100% retrocompatível com os callers que não passam seleção). Respeita o schema real de `portal_tips.segments` (§16.v): objeto `{items,info}`, índices reais preservam posição de subtitles, `informacoes_gerais` conta como 1 bloco.
+
+Sem mudança de schema. Validação: `node --check` nos 2 arquivos + harness Node de `_applyTipSelection` (5 cenários: null→tudo, segmento inteiro, índices específicos, array vazio→drop, posições reais preservadas). Validação visual E2E pendente (requer Renê relogar — não insiro SSO dele).
+
 ## [4.63.78+20260529-preview-area-resumo] — 2026-05-29
 
 **UX/fix: Preview & Export — campo Área/BU em destaque + Resumo da Cotação populando de fontes corretas.**

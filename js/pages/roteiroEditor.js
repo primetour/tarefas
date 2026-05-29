@@ -8,7 +8,7 @@ import { toast } from '../components/toast.js';
 const showToast = (msg, type = 'info') => toast[type]?.(msg) ?? toast.info(msg);
 import { fetchRoteiro, saveRoteiro, snapshotTipForEmbed, isEmbeddedTipStale, createWebLink, updateRoteiroStatus } from '../services/roteiros.js';
 import { generateRoteiroForExport, resolveDestinationImage } from '../services/roteiroGenerator.js';
-import { fetchDestinations, fetchAreas, fetchImages, fetchTips, saveDestination, CONTINENTS } from '../services/portal.js';
+import { fetchDestinations, fetchAreas, fetchImages, fetchTips, saveDestination, CONTINENTS, SEGMENTS } from '../services/portal.js';
 import { detectBankContext, showBankGuardModal } from '../services/bankClientGuard.js';
 
 /* ─── State ───────────────────────────────────────────────── */
@@ -1658,9 +1658,20 @@ function renderTravelBlock() {
       ${[...new Set(allDestinations.map(d => d.country).filter(Boolean))].sort().map(c => `<option value="${esc(c)}">`).join('')}
     </datalist>
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;">
+      <button class="btn btn-secondary btn-sm" data-action="pick-dests-bank">🔎 Selecionar destinos do banco</button>
       <button class="btn btn-ghost btn-sm" data-action="add-dest">+ Adicionar Destino</button>
       <button class="btn btn-ghost btn-sm" data-action="cadastrar-novo-destino">+ Cadastrar destino novo no banco</button>
     </div>
+    ${dests.some(d => d.city || d.country) ? `
+      <div style="margin-top:10px;padding:10px 12px;background:rgba(212,168,67,0.08);
+        border-left:3px solid var(--brand-gold,#D4A843);border-radius:6px;
+        display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+        <span style="font-size:0.75rem;color:var(--text-secondary);">
+          Com os destinos definidos, o Banco e as Dicas já filtram por eles:
+        </span>
+        <button class="btn btn-ghost btn-sm" data-action="dia-consult-bank" style="font-size:0.75rem;">📚 Consultar Banco filtrado</button>
+        <button class="btn btn-ghost btn-sm" data-action="open-tip-picker" style="font-size:0.75rem;">💡 Anexar dicas destes destinos</button>
+      </div>` : ''}
 
     <div class="re-briefing-ai" style="margin-top:24px;">
       <button class="btn btn-primary" data-action="ai-generate-full">Gerar roteiro com IA</button>
@@ -2447,7 +2458,158 @@ function _normKey(s) {
  * de Roteiros (filtra por país do briefing se houver). User escolhe um roteiro
  * + quais dias importar (checkboxes). Dias importados ganham source='bank'.
  */
+/** Normaliza string p/ comparação (lowercase, sem acento, trim). */
+function _normGeo(s) {
+  return String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+}
+
+/**
+ * v4.63.79 — Filtro derivado dos destinos do Briefing.
+ * Retorna Sets normalizados de cidades e países pra pré-filtrar Banco/Dicas.
+ */
+function _getBriefingDestFilter() {
+  const dests = currentRoteiro?.travel?.destinations || [];
+  const cities = new Set();
+  const countries = new Set();
+  dests.forEach(d => {
+    if (d.city) cities.add(_normGeo(d.city));
+    if (d.country) countries.add(_normGeo(d.country));
+  });
+  return { cities, countries, count: dests.filter(d => d.city || d.country).length };
+}
+
+/**
+ * v4.63.79 — Renê #1: multi-select de destinos a partir do SSOT
+ * (portal_destinations / allDestinations). User marca várias cidades →
+ * confirma → cada uma vira um row em travel.destinations[] (dedupe por
+ * cidade+país normalizado). Depois disso, Banco e Dicas filtram por elas.
+ */
+function _openDestinationMultiPicker() {
+  // Dedupe a lista do SSOT por cidade+país (allDestinations pode ter ruído).
+  const seen = new Set();
+  const pool = (allDestinations || []).filter(d => d.city || d.country).filter(d => {
+    const k = _normGeo(d.city) + '|' + _normGeo(d.country);
+    if (seen.has(k)) return false;
+    seen.add(k); return true;
+  }).sort((a, b) =>
+    (a.country || '').localeCompare(b.country || '', 'pt') ||
+    (a.city || '').localeCompare(b.city || '', 'pt'));
+
+  // Já presentes no briefing (pra marcar como adicionados).
+  const existing = new Set((currentRoteiro?.travel?.destinations || [])
+    .map(d => _normGeo(d.city) + '|' + _normGeo(d.country)));
+
+  const overlay = document.createElement('div');
+  overlay.className = 're-img-modal-overlay';
+  overlay.innerHTML = `
+    <div class="re-img-modal" style="max-width:640px;max-height:82vh;display:flex;flex-direction:column;">
+      <div class="re-img-modal-header">
+        <div class="re-img-modal-title">🔎 Selecionar destinos do banco</div>
+        <button class="re-img-modal-close" type="button">&times;</button>
+      </div>
+      <div style="padding:14px 18px;border-bottom:1px solid var(--border-subtle,#e5e7eb);display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+        <input id="re-dp-search" class="re-input" placeholder="Buscar cidade ou país…" style="flex:1;min-width:220px;" />
+        <select id="re-dp-continent" class="re-select" style="max-width:200px;">
+          <option value="">Todos continentes</option>
+          ${[...new Set(pool.map(d => d.continent).filter(Boolean))].sort().map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('')}
+        </select>
+      </div>
+      <div class="re-img-modal-body" style="overflow:auto;">
+        <div style="display:flex;gap:8px;margin-bottom:10px;align-items:center;">
+          <span id="re-dp-count" style="font-size:0.75rem;color:var(--text-muted);"></span>
+        </div>
+        <div id="re-dp-list" style="display:flex;flex-direction:column;gap:5px;"></div>
+      </div>
+      <div style="padding:14px 20px;border-top:1px solid var(--border-subtle,#e5e7eb);display:flex;justify-content:flex-end;gap:8px;">
+        <button class="btn btn-ghost btn-sm" type="button" data-cancel style="font-size:0.8125rem;">Cancelar</button>
+        <button class="btn btn-primary btn-sm" type="button" data-confirm style="font-size:0.8125rem;">Adicionar destinos →</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+  overlay.querySelector('.re-img-modal-close').addEventListener('click', close);
+  overlay.querySelector('[data-cancel]').addEventListener('click', close);
+
+  const listEl = overlay.querySelector('#re-dp-list');
+  const searchEl = overlay.querySelector('#re-dp-search');
+  const contEl = overlay.querySelector('#re-dp-continent');
+  // Mantém as escolhas marcadas entre re-renders de filtro.
+  const picked = new Set();
+
+  const render = () => {
+    const term = _normGeo(searchEl.value);
+    const cont = contEl.value;
+    const filtered = pool.filter(d => {
+      if (cont && d.continent !== cont) return false;
+      if (term) {
+        const hay = _normGeo(`${d.city || ''} ${d.country || ''}`);
+        if (!hay.includes(term)) return false;
+      }
+      return true;
+    });
+    if (!filtered.length) {
+      listEl.innerHTML = `<div style="text-align:center;color:var(--text-muted);padding:30px;font-size:0.8125rem;">Nenhum destino encontrado.</div>`;
+      return;
+    }
+    listEl.innerHTML = filtered.slice(0, 200).map(d => {
+      const k = _normGeo(d.city) + '|' + _normGeo(d.country);
+      const already = existing.has(k);
+      const isPicked = picked.has(k);
+      return `
+        <label data-dp-row="${esc(k)}" style="display:flex;align-items:center;gap:10px;
+          padding:8px 12px;border:1px solid var(--border-subtle,#e5e7eb);border-radius:7px;
+          background:${already ? 'var(--bg-soft,#f3f4f6)' : 'var(--bg-surface)'};
+          cursor:${already ? 'default' : 'pointer'};opacity:${already ? '0.6' : '1'};">
+          <input type="checkbox" data-dp-cb="${esc(k)}" ${isPicked ? 'checked' : ''} ${already ? 'disabled' : ''}
+            style="accent-color:var(--brand-gold,#D4A843);cursor:${already ? 'default' : 'pointer'};flex-shrink:0;width:16px;height:16px;">
+          <div style="flex:1;min-width:0;">
+            <div style="font-weight:600;font-size:0.8125rem;color:var(--text-primary);">${esc(d.city || '(sem cidade)')}</div>
+            <div style="font-size:0.72rem;color:var(--text-muted);">${esc(d.country || '')}${d.continent ? ' · ' + esc(d.continent) : ''}</div>
+          </div>
+          ${already ? `<span style="font-size:0.68rem;color:var(--color-success,#10b981);font-weight:600;">já no briefing</span>` : ''}
+        </label>`;
+    }).join('');
+    listEl.querySelectorAll('[data-dp-cb]').forEach(cb => {
+      cb.addEventListener('change', () => {
+        const k = cb.dataset.dpCb;
+        if (cb.checked) picked.add(k); else picked.delete(k);
+        updateCount();
+      });
+    });
+  };
+  const updateCount = () => {
+    const el = overlay.querySelector('#re-dp-count');
+    if (el) el.textContent = `${picked.size} destino${picked.size !== 1 ? 's' : ''} selecionado${picked.size !== 1 ? 's' : ''}`;
+    overlay.querySelector('[data-confirm]').disabled = picked.size === 0;
+  };
+  searchEl.addEventListener('input', render);
+  contEl.addEventListener('change', render);
+  render(); updateCount();
+
+  overlay.querySelector('[data-confirm]').addEventListener('click', () => {
+    if (!picked.size) return;
+    if (!Array.isArray(currentRoteiro.travel.destinations)) currentRoteiro.travel.destinations = [];
+    // Remove rows totalmente vazios antes de mesclar (evita linha em branco no topo).
+    currentRoteiro.travel.destinations = currentRoteiro.travel.destinations.filter(d => d.city || d.country);
+    let added = 0;
+    picked.forEach(k => {
+      const dest = pool.find(d => (_normGeo(d.city) + '|' + _normGeo(d.country)) === k);
+      if (!dest) return;
+      if (existing.has(k)) return; // dedupe
+      currentRoteiro.travel.destinations.push({ city: dest.city || '', country: dest.country || '', nights: 1 });
+      added++;
+    });
+    rerenderCurrentSection();
+    markDirty();
+    close();
+    showToast(`+${added} destino${added !== 1 ? 's' : ''}. Banco e Dicas agora filtram por eles.`, 'success');
+  });
+}
+
 async function _openDayConsultBankModal() {
+  // v4.63.79 — Renê #1: filtro derivado dos destinos do Briefing.
+  const brief = _getBriefingDestFilter();
   const overlay = document.createElement('div');
   overlay.className = 're-img-modal-overlay';
   overlay.innerHTML = `
@@ -2463,6 +2625,14 @@ async function _openDayConsultBankModal() {
         </p>
         <input class="re-input" type="search" id="re-bank-q" placeholder="Filtrar por título, cidade, país…"
           style="margin-bottom:12px;" />
+        ${brief.count ? `
+        <label style="display:flex;align-items:center;gap:6px;font-size:0.78rem;
+          color:var(--text-secondary);cursor:pointer;padding:6px 10px;border-radius:8px;margin-bottom:12px;
+          background:rgba(212,168,67,0.10);border-left:3px solid var(--brand-gold,#D4A843);width:fit-content;">
+          <input type="checkbox" id="re-bank-brief" checked
+            style="accent-color:var(--brand-gold,#D4A843);cursor:pointer;">
+          Só destinos do briefing (${brief.count})
+        </label>` : ''}
         <div id="re-bank-list" style="display:flex;flex-direction:column;gap:6px;">
           <div style="text-align:center;color:var(--text-muted);padding:20px;">Carregando…</div>
         </div>
@@ -2479,15 +2649,25 @@ async function _openDayConsultBankModal() {
     const approved = all.filter(r => r.status === 'approved');
     const list = overlay.querySelector('#re-bank-list');
     const q = overlay.querySelector('#re-bank-q');
+    const briefCb = overlay.querySelector('#re-bank-brief');
     const norm = s => String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+    // Roteiro do banco casa o briefing se algum país/cidade dele bate.
+    const matchesBrief = (r) => {
+      const rCountries = (r.geo?.countries || []).map(norm);
+      const rCities = (r.geo?.cities || []).map(c => norm(c.city));
+      return rCountries.some(c => brief.countries.has(c))
+          || rCities.some(c => brief.cities.has(c));
+    };
     const render = (filter) => {
       const f = norm(filter);
-      const matched = !f ? approved : approved.filter(r => {
+      const useBrief = !!briefCb?.checked && brief.count > 0;
+      let pool = useBrief ? approved.filter(matchesBrief) : approved;
+      const matched = !f ? pool : pool.filter(r => {
         const hay = norm([r.title, ...(r.geo?.countries||[]), ...((r.geo?.cities||[]).map(c=>c.city))].join(' '));
         return hay.includes(f);
       });
       if (!matched.length) {
-        list.innerHTML = `<div style="text-align:center;color:var(--text-muted);padding:20px;font-size:0.8125rem;">Nenhum roteiro encontrado.</div>`;
+        list.innerHTML = `<div style="text-align:center;color:var(--text-muted);padding:20px;font-size:0.8125rem;">Nenhum roteiro encontrado.${useBrief ? '<br>Desmarque "Só destinos do briefing" pra ver todos.' : ''}</div>`;
         return;
       }
       list.innerHTML = matched.slice(0, 50).map(r => `
@@ -2506,6 +2686,7 @@ async function _openDayConsultBankModal() {
     };
     render('');
     q.addEventListener('input', e => render(e.target.value));
+    if (briefCb) briefCb.addEventListener('change', () => render(q.value));
   } catch (e) {
     overlay.querySelector('#re-bank-list').innerHTML = `<div style="color:var(--color-danger);padding:20px;">Falha ao carregar banco: ${esc(e?.message || e)}</div>`;
   }
@@ -3766,16 +3947,226 @@ async function checkEmbeddedTipsStale(embedded) {
 }
 
 /**
+ * Conta itens "anexáveis" de uma dica respeitando o schema real
+ * (CLAUDE.md §16.v): segments[key] = { items:[...], info:{...} }.
+ * informacoes_gerais não tem items — conta como 1 bloco se tiver info.
+ */
+function _countTipItems(segments) {
+  if (!segments || typeof segments !== 'object') return 0;
+  let n = 0;
+  for (const [key, val] of Object.entries(segments)) {
+    if (key === 'informacoes_gerais') {
+      if (val && val.info && Object.values(val.info).some(v => v && String(v).trim())) n += 1;
+      continue;
+    }
+    if (Array.isArray(val?.items)) {
+      n += val.items.filter(it => it && it.type !== 'subtitle').length;
+    }
+  }
+  return n;
+}
+
+/** Label legível pra uma chave de segmento (usa SEGMENTS, fallback humaniza). */
+function _segmentLabel(key) {
+  const def = (SEGMENTS || []).find(s => s.key === key);
+  if (def) return def.label;
+  return String(key || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+/** Título curto de um item de dica (chaves PT canônicas, fallback EN). */
+function _tipItemTitle(it) {
+  return (it?.titulo || it?.title || it?.nome || it?.name
+       || it?.categoria || it?.category || '(sem título)').toString();
+}
+
+/**
+ * v4.63.79 — Seletor granular de dica (segmento + item).
+ *
+ * Renê: "dicas: seria bom eu selecionar o que eu quero dessas dicas".
+ * Mostra checkbox por segmento (inteiro) + expansão opcional pra escolher
+ * itens específicos. Resultado vira `selection` pra snapshotTipForEmbed:
+ *   - { [segKey]: true }      → segmento inteiro
+ *   - { [segKey]: [idx,...] } → só esses itens
+ *   - se TUDO marcado → passa null (snapshot completo, retrocompat)
+ *
+ * Espelha o padrão de checkboxes do _pickDaysFromBankRoteiro.
+ */
+function _openTipSelectionModal(tip, onConfirm) {
+  const segments = tip.segments || {};
+  // Lista de segmentos com conteúdo, na ordem canônica de SEGMENTS.
+  const orderedKeys = [
+    ...(SEGMENTS || []).map(s => s.key).filter(k => segments[k]),
+    ...Object.keys(segments).filter(k => !(SEGMENTS || []).some(s => s.key === k)),
+  ];
+  const segs = orderedKeys.map(key => {
+    const val = segments[key];
+    const isInfo = key === 'informacoes_gerais';
+    const items = (!isInfo && Array.isArray(val?.items))
+      ? val.items.filter(it => it && it.type !== 'subtitle')
+      : [];
+    // índices REAIS no array original (subtitles preservam posição)
+    const itemIdxs = (!isInfo && Array.isArray(val?.items))
+      ? val.items.map((it, i) => ({ it, i })).filter(o => o.it && o.it.type !== 'subtitle').map(o => o.i)
+      : [];
+    const hasInfo = isInfo && val?.info && Object.values(val.info).some(v => v && String(v).trim());
+    return { key, isInfo, items, itemIdxs, hasInfo, count: isInfo ? (hasInfo ? 1 : 0) : items.length };
+  }).filter(s => s.count > 0);
+
+  const overlay = document.createElement('div');
+  overlay.className = 're-img-modal-overlay';
+  overlay.innerHTML = `
+    <div class="re-img-modal" style="max-width:640px;max-height:82vh;display:flex;flex-direction:column;">
+      <div class="re-img-modal-header">
+        <div class="re-img-modal-title">💡 Escolher conteúdo · <span style="color:var(--text-muted);font-weight:400;font-size:0.875rem;">${esc(tip.city || '')}${tip.country ? ', ' + esc(tip.country) : ''}</span></div>
+        <button class="re-img-modal-close" type="button">&times;</button>
+      </div>
+      <div class="re-img-modal-body" style="overflow:auto;">
+        <p style="font-size:0.8125rem;color:var(--text-muted);margin:0 0 12px;">
+          Marque os segmentos inteiros, ou expanda pra escolher itens específicos.
+        </p>
+        <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;">
+          <button class="btn btn-ghost btn-sm" type="button" data-bulk="all" style="font-size:0.75rem;">✓ Selecionar tudo</button>
+          <button class="btn btn-ghost btn-sm" type="button" data-bulk="none" style="font-size:0.75rem;">✕ Limpar</button>
+          <span id="re-tipsel-count" style="margin-left:auto;font-size:0.75rem;color:var(--text-muted);"></span>
+        </div>
+        <div id="re-tipsel-list" style="display:flex;flex-direction:column;gap:8px;">
+          ${segs.map((s, si) => `
+            <div data-seg-block="${si}" style="border:1px solid var(--border-subtle,#e5e7eb);border-radius:8px;background:var(--bg-surface);overflow:hidden;">
+              <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;">
+                <input type="checkbox" data-seg-cb="${si}" checked
+                  style="accent-color:var(--brand-gold,#D4A843);cursor:pointer;flex-shrink:0;width:16px;height:16px;">
+                <div style="flex:1;min-width:0;font-weight:600;font-size:0.875rem;color:var(--text-primary);">
+                  ${esc(_segmentLabel(s.key))}
+                  <span style="font-weight:400;color:var(--text-muted);font-size:0.75rem;">· ${s.count} ${s.isInfo ? 'bloco' : 'item' + (s.count !== 1 ? 's' : '')}</span>
+                </div>
+                ${s.isInfo ? '' : `<button class="btn btn-ghost btn-sm" type="button" data-seg-toggle="${si}" style="font-size:0.7rem;padding:2px 8px;">Itens ▾</button>`}
+              </div>
+              ${s.isInfo ? '' : `
+                <div data-seg-items="${si}" style="display:none;padding:0 12px 10px 38px;flex-direction:column;gap:4px;">
+                  ${s.items.map((it, ii) => `
+                    <label style="display:flex;align-items:center;gap:8px;font-size:0.8125rem;color:var(--text-secondary);cursor:pointer;">
+                      <input type="checkbox" data-item-cb="${si}" data-item-idx="${s.itemIdxs[ii]}" checked
+                        style="accent-color:var(--brand-gold,#D4A843);cursor:pointer;flex-shrink:0;">
+                      <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(_tipItemTitle(it))}</span>
+                    </label>
+                  `).join('')}
+                </div>
+              `}
+            </div>
+          `).join('')}
+        </div>
+      </div>
+      <div style="padding:14px 20px;border-top:1px solid var(--border-subtle,#e5e7eb);display:flex;justify-content:flex-end;gap:8px;">
+        <button class="btn btn-ghost btn-sm" type="button" data-cancel style="font-size:0.8125rem;">Cancelar</button>
+        <button class="btn btn-primary btn-sm" type="button" data-confirm style="font-size:0.8125rem;">Anexar selecionados →</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+  overlay.querySelector('.re-img-modal-close').addEventListener('click', close);
+  overlay.querySelector('[data-cancel]').addEventListener('click', close);
+
+  // Expandir/colapsar itens de um segmento
+  overlay.querySelectorAll('[data-seg-toggle]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const si = btn.dataset.segToggle;
+      const box = overlay.querySelector(`[data-seg-items="${si}"]`);
+      if (!box) return;
+      const open = box.style.display !== 'none';
+      box.style.display = open ? 'none' : 'flex';
+      btn.textContent = open ? 'Itens ▾' : 'Itens ▴';
+    });
+  });
+
+  // Segmento checkbox → marca/desmarca todos os itens dele
+  overlay.querySelectorAll('[data-seg-cb]').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const si = cb.dataset.segCb;
+      overlay.querySelectorAll(`[data-item-cb="${si}"]`).forEach(ic => { ic.checked = cb.checked; });
+      updateCount();
+    });
+  });
+  // Item checkbox → reflete estado no checkbox do segmento (indeterminate)
+  overlay.querySelectorAll('[data-item-cb]').forEach(ic => {
+    ic.addEventListener('change', () => {
+      const si = ic.dataset.itemCb;
+      const all = [...overlay.querySelectorAll(`[data-item-cb="${si}"]`)];
+      const checked = all.filter(x => x.checked).length;
+      const segCb = overlay.querySelector(`[data-seg-cb="${si}"]`);
+      if (segCb) {
+        segCb.checked = checked > 0;
+        segCb.indeterminate = checked > 0 && checked < all.length;
+      }
+      updateCount();
+    });
+  });
+
+  function updateCount() {
+    let total = 0;
+    segs.forEach((s, si) => {
+      if (s.isInfo) {
+        if (overlay.querySelector(`[data-seg-cb="${si}"]`)?.checked) total += 1;
+      } else {
+        total += overlay.querySelectorAll(`[data-item-cb="${si}"]:checked`).length;
+      }
+    });
+    const el = overlay.querySelector('#re-tipsel-count');
+    if (el) el.textContent = `${total} item${total !== 1 ? 's' : ''} selecionado${total !== 1 ? 's' : ''}`;
+    overlay.querySelector('[data-confirm]').disabled = total === 0;
+  }
+  updateCount();
+
+  overlay.querySelector('[data-bulk="all"]').addEventListener('click', () => {
+    overlay.querySelectorAll('[data-seg-cb],[data-item-cb]').forEach(cb => { cb.checked = true; cb.indeterminate = false; });
+    updateCount();
+  });
+  overlay.querySelector('[data-bulk="none"]').addEventListener('click', () => {
+    overlay.querySelectorAll('[data-seg-cb],[data-item-cb]').forEach(cb => { cb.checked = false; cb.indeterminate = false; });
+    updateCount();
+  });
+
+  overlay.querySelector('[data-confirm]').addEventListener('click', () => {
+    const selection = {};
+    let allFull = true; // se tudo marcado, manda null (snapshot completo)
+    segs.forEach((s, si) => {
+      if (s.isInfo) {
+        if (overlay.querySelector(`[data-seg-cb="${si}"]`)?.checked) selection[s.key] = true;
+        else allFull = false;
+        return;
+      }
+      const checkedIdxs = [...overlay.querySelectorAll(`[data-item-cb="${si}"]:checked`)]
+        .map(ic => parseInt(ic.dataset.itemIdx, 10));
+      if (checkedIdxs.length === s.items.length) {
+        selection[s.key] = true; // segmento inteiro
+      } else if (checkedIdxs.length > 0) {
+        selection[s.key] = checkedIdxs;
+        allFull = false;
+      } else {
+        allFull = false; // segmento omitido
+      }
+    });
+    const hasAny = Object.keys(selection).length > 0;
+    if (!hasAny) { showToast('Selecione ao menos 1 item.', 'info'); return; }
+    close();
+    onConfirm(allFull ? null : selection);
+  });
+}
+
+/**
  * 4.42.0+ (Sprint 3) — Modal pra anexar dica do Portal de Dicas.
  *
  * Reusa visual e estrutura do modal de imagens (mesmas classes CSS). Lista
  * dicas com filtros por continent + country + busca textual. Click numa
- * dica → faz snapshot via snapshotTipForEmbed e adiciona ao roteiro.
+ * dica → abre seletor granular (segmento + item) → snapshotTipForEmbed
+ * com a seleção → adiciona ao roteiro.
  *
  * Snapshot é defensivo: se a tip mudar depois, o roteiro mantém versão
  * anexada. User pode re-publicar manualmente quando quiser.
  */
 async function openTipPickerModal() {
+  // v4.63.79 — Renê #1: filtro derivado dos destinos do Briefing.
+  const brief = _getBriefingDestFilter();
   const modal = document.createElement('div');
   modal.className = 're-img-modal-overlay';
   modal.innerHTML = `
@@ -3790,6 +4181,14 @@ async function openTipPickerModal() {
         <select id="re-tip-continent" class="re-select" style="max-width:200px;">
           <option value="">Todos continentes</option>
         </select>
+        ${brief.count ? `
+        <label style="display:flex;align-items:center;gap:6px;font-size:0.78rem;
+          color:var(--text-secondary);cursor:pointer;padding:6px 10px;border-radius:8px;
+          background:rgba(212,168,67,0.10);border-left:3px solid var(--brand-gold,#D4A843);white-space:nowrap;">
+          <input type="checkbox" id="re-tip-brief" checked
+            style="accent-color:var(--brand-gold,#D4A843);cursor:pointer;">
+          Só destinos do briefing (${brief.count})
+        </label>` : ''}
       </div>
       <div id="re-tip-picker-list" style="padding:18px;overflow:auto;max-height:60vh;">
         <div style="text-align:center;color:var(--text-muted);padding:40px;">Carregando dicas...</div>
@@ -3833,10 +4232,16 @@ async function openTipPickerModal() {
 
   // Render fn
   const listEl = modal.querySelector('#re-tip-picker-list');
+  const briefCb = modal.querySelector('#re-tip-brief');
   const renderList = () => {
     const term = (modal.querySelector('#re-tip-search')?.value || '').trim().toLowerCase();
     const cont = contSelect.value;
+    const useBrief = !!briefCb?.checked && brief.count > 0;
     const filtered = allTips.filter(t => {
+      if (useBrief) {
+        const c = _normGeo(t.city), co = _normGeo(t.country);
+        if (!brief.cities.has(c) && !brief.countries.has(co)) return false;
+      }
       if (cont && t.continent !== cont) return false;
       if (term) {
         const hay = `${t.city || ''} ${t.country || ''}`.toLowerCase();
@@ -3846,15 +4251,15 @@ async function openTipPickerModal() {
     });
     if (!filtered.length) {
       listEl.innerHTML = `<div style="text-align:center;color:var(--text-muted);padding:40px;">
-        Nenhuma dica encontrada com esses filtros.
+        Nenhuma dica encontrada com esses filtros.${useBrief ? '<br><span style="font-size:0.78rem;">Desmarque "Só destinos do briefing" pra ver todas.</span>' : ''}
       </div>`;
       return;
     }
     listEl.innerHTML = filtered.map(t => {
       const already = attachedIds.has(t.id);
-      const items = t.segments
-        ? Object.values(t.segments).reduce((s, arr) => s + (Array.isArray(arr) ? arr.length : 0), 0)
-        : 0;
+      // Schema real (CLAUDE.md §16.v): segments[key] é objeto {items,info}.
+      // informacoes_gerais não tem items mas conta como 1 bloco se preenchido.
+      const items = _countTipItems(t.segments);
       return `
         <div data-pick-tip-id="${esc(t.id)}" style="display:flex;align-items:center;gap:14px;
           padding:12px 14px;border:1px solid var(--border);border-radius:8px;
@@ -3878,32 +4283,33 @@ async function openTipPickerModal() {
         </div>
       `;
     }).join('');
-    // Wire clicks
+    // Wire clicks — abre o seletor granular (segmento + item) antes de anexar
     listEl.querySelectorAll('[data-pick-tip-id]').forEach(row => {
       const tipId = row.dataset.pickTipId;
       if (attachedIds.has(tipId)) return; // já anexada — sem ação
-      row.addEventListener('click', async () => {
-        try {
-          row.style.opacity = '0.5';
-          row.style.pointerEvents = 'none';
-          const snapshot = await snapshotTipForEmbed(tipId);
-          if (!Array.isArray(currentRoteiro.embeddedTips)) currentRoteiro.embeddedTips = [];
-          currentRoteiro.embeddedTips.push(snapshot);
-          rerenderCurrentSection();
-          markDirty();
-          showToast('Dica anexada.', 'success');
-          closeModal();
-        } catch (err) {
-          showToast('Erro ao anexar: ' + err.message, 'error');
-          row.style.opacity = '1';
-          row.style.pointerEvents = 'auto';
-        }
+      row.addEventListener('click', () => {
+        const tip = allTips.find(t => t.id === tipId);
+        if (!tip) { showToast('Dica não encontrada.', 'error'); return; }
+        _openTipSelectionModal(tip, async (selection) => {
+          try {
+            const snapshot = await snapshotTipForEmbed(tipId, selection);
+            if (!Array.isArray(currentRoteiro.embeddedTips)) currentRoteiro.embeddedTips = [];
+            currentRoteiro.embeddedTips.push(snapshot);
+            rerenderCurrentSection();
+            markDirty();
+            showToast('Dica anexada.', 'success');
+            closeModal();
+          } catch (err) {
+            showToast('Erro ao anexar: ' + err.message, 'error');
+          }
+        });
       });
     });
   };
 
   modal.querySelector('#re-tip-search').addEventListener('input', renderList);
   contSelect.addEventListener('change', renderList);
+  if (briefCb) briefCb.addEventListener('change', renderList);
   renderList();
 }
 
@@ -5105,6 +5511,14 @@ async function handleEditorClick(e) {
       currentRoteiro.travel.destinations.push({ city: '', country: '', nights: 1 });
       rerenderCurrentSection();
       markDirty();
+      break;
+
+    case 'pick-dests-bank':
+      // v4.63.79 — Renê #1: multi-select de destinos do banco (SSOT
+      // portal_destinations). Pré-seleciona destinos → preenche os rows →
+      // Banco e Dicas passam a filtrar automaticamente por eles.
+      currentRoteiro = collectFormData();
+      _openDestinationMultiPicker();
       break;
 
     case 'remove-dest':

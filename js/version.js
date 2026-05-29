@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 78,
-  build: '20260529-preview-area-resumo',
+  patch: 79,
+  build: '20260529-briefing-dests-dicas-select',
 };
 
 /** "1.2.0" */
