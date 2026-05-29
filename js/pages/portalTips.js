@@ -411,17 +411,21 @@ function renderAreaPicker(grid, areas, activeCategoryFilter) {
       }
     });
 
-    // Bind item clicks
-    sublistEl?.querySelectorAll('.portal-area-item').forEach(item => {
-      item.addEventListener('click', () => {
+    // v4.63.56: event delegation no sublist (mesmo motivo do handler do grid acima —
+    // clicks em <img>/<span> filhos sobem corretamente via closest()).
+    if (sublistEl) {
+      if (sublistEl._areaItemHandler) sublistEl.removeEventListener('click', sublistEl._areaItemHandler);
+      sublistEl._areaItemHandler = (e) => {
+        const item = e.target.closest('.portal-area-item');
+        if (!item) return;
         sublistEl.querySelectorAll('.portal-area-item').forEach(i => i.classList.remove('selected'));
         item.classList.add('selected');
-        // Also update the grid header to show selected
         const nameEl = grid.querySelector('#area-selected-label');
         if (nameEl) nameEl.textContent = item.dataset.name;
         updatePreview();
-      });
-    });
+      };
+      sublistEl.addEventListener('click', sublistEl._areaItemHandler);
+    }
 
     searchInput?.focus();
     return;
@@ -442,21 +446,32 @@ function renderAreaPicker(grid, areas, activeCategoryFilter) {
     ${standaloneAreas.map(a => renderAreaButton(a)).join('')}
   `;
 
-  // Category click → drill down
-  grid.querySelectorAll('[data-category]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      renderAreaPicker(grid, areas, btn.dataset.category);
-    });
-  });
-
-  // Standalone area click
-  grid.querySelectorAll('.portal-area-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
+  // v4.63.56 Renê reportou em produção: "não consigo clicar em nenhuma área".
+  // Fix DEFENSIVO: event delegation no grid (em vez de N listeners por button).
+  // Robusto contra re-render do innerHTML + clicks que caem em filhos (<img>,
+  // <span>) — closest() sobe até o button correto.
+  // Antes (N listeners): se algum elemento filho tinha pointer-events ou
+  // se o handler era anexado antes do innerHTML completar, click sumia.
+  // Agora (1 listener no grid): captura QUALQUER click descendente.
+  //
+  // Idempotente: remove handler anterior antes de adicionar novo (evita
+  // acumular listeners em re-renders — drill-down/back triggers re-render).
+  if (grid._areaClickHandler) grid.removeEventListener('click', grid._areaClickHandler);
+  grid._areaClickHandler = (e) => {
+    // Procura ancestor button (descendentes <img>/<span> sobem aqui)
+    const catBtn = e.target.closest('[data-category]');
+    if (catBtn) {
+      renderAreaPicker(grid, areas, catBtn.dataset.category);
+      return;
+    }
+    const areaBtn = e.target.closest('.portal-area-btn');
+    if (areaBtn) {
       grid.querySelectorAll('.portal-area-btn,.portal-area-cat').forEach(b => b.classList.remove('selected'));
-      btn.classList.add('selected');
+      areaBtn.classList.add('selected');
       updatePreview();
-    });
-  });
+    }
+  };
+  grid.addEventListener('click', grid._areaClickHandler);
 }
 
 function areaItemRow(a) {

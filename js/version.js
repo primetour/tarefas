@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 55,
-  build: '20260529-sidebar-cadastro-destinos',
+  patch: 56,
+  build: '20260529-portal-tips-area-click-defensive',
 };
 
 /** "1.2.0" */
