@@ -657,12 +657,24 @@ async function onCountryChange() {
 function addExtraDestination() {
   const container = document.getElementById('portal-extra-dests');
   if (!container) return;
-  const idx = container.children.length + 1;
+  // v4.63.60 BLOQUEADORES audit Agent:
+  // B1: faltava class .extra-dest-block → handleGenerate (linha 930)
+  //     buscava por .extra-dest-block e nunca achava NADA → destinos extras
+  //     silenciosamente DESCARTADOS no submit. CRÍTICO produção.
+  // B2: faltava handler de change em .extra-country pra popular city.
+  // B3: label "Destino N+1" off-by-one — primário não tem label.
+  // Posição correta: primário = "Destino 1", extras começam em "Destino 2"
+  // mas primário não tem rótulo visível, então extras começam em "Destino 2".
   const div = document.createElement('div');
+  div.className = 'extra-dest-block';  // B1 FIX
   div.style.cssText = 'margin-top:10px;padding:12px;border:1px solid var(--border-subtle);border-radius:var(--radius-md);';
+  // B3 FIX: container.children.length = quantos extras já existem ANTES deste.
+  // Novo extra é container.children.length+1 (já que primário não conta).
+  // Display: primário implícito é "1" → extras começam em "2".
+  const displayN = container.children.length + 2;
   div.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-      <span style="font-size:0.8125rem;font-weight:600;color:var(--text-muted);">Destino ${idx + 1}</span>
+      <span style="font-size:0.8125rem;font-weight:600;color:var(--text-muted);">Destino ${displayN}</span>
       <button class="extra-dest-remove" style="border:none;background:none;cursor:pointer;color:var(--text-muted);">✕</button>
     </div>
     <select class="filter-select extra-continent" style="width:100%;margin-bottom:6px;">
@@ -675,16 +687,13 @@ function addExtraDestination() {
       <option value="">Cidade (opcional)</option>
     </select>
   `;
-  // 4.35.7+ Bind do remover via addEventListener (antes era inline com
-  // updatePreview() que falhava por estar fora do escopo global do módulo).
   div.querySelector('.extra-dest-remove')?.addEventListener('click', () => {
     div.remove();
     updatePreview();
   });
   container.appendChild(div);
 
-  // Populate continents for extra dest
-  // v4.63.31+ Mesmo filtro hasTip do destino principal (Combinar outro destino)
+  // Populate continents for extra dest (v4.63.31+ mesmo filtro hasTip)
   fetchContinentsWithContent({ onlyWithTips: true }).then(continents => {
     const sel = div.querySelector('.extra-continent');
     sel.innerHTML = `<option value="">Continente</option>` +
@@ -693,6 +702,16 @@ function addExtraDestination() {
     sel.addEventListener('change', async () => {
       const cont = sel.value;
       const countrySel = div.querySelector('.extra-country');
+      const citySel    = div.querySelector('.extra-city');
+      // Reset cascade abaixo
+      citySel.innerHTML = '<option value="">Cidade (opcional)</option>';
+      citySel.disabled = true;
+      if (!cont) {
+        countrySel.innerHTML = '<option value="">País</option>';
+        countrySel.disabled = true;
+        updatePreview();
+        return;
+      }
       countrySel.innerHTML = '<option value="">Carregando…</option>';
       const [dests, tipDestIds] = await Promise.all([
         fetchDestinations({ continent: cont, reviewStatus: 'approved' }),
@@ -704,6 +723,28 @@ function addExtraDestination() {
         countries.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
       countrySel.disabled = false;
     });
+    // B2 FIX: handler de country pra popular cidade
+    div.querySelector('.extra-country').addEventListener('change', async () => {
+      const cont    = sel.value;
+      const country = div.querySelector('.extra-country').value;
+      const citySel = div.querySelector('.extra-city');
+      citySel.innerHTML = '<option value="">Cidade (opcional)</option>';
+      citySel.disabled = true;
+      if (!country) { updatePreview(); return; }
+      const [dests, tipDestIds] = await Promise.all([
+        fetchDestinations({ continent: cont, country, reviewStatus: 'approved' }),
+        fetchDestinationIdsWithTips(),
+      ]);
+      const destsWithTip = dests.filter(d => tipDestIds.has(d.id));
+      const cities = [...new Set(destsWithTip.map(d => d.city).filter(Boolean))].sort();
+      if (cities.length) {
+        citySel.innerHTML = `<option value="">Nível país (sem cidade)</option>` +
+          cities.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+        citySel.disabled = false;
+      }
+      updatePreview();
+    });
+    div.querySelector('.extra-city').addEventListener('change', updatePreview);
   });
 }
 

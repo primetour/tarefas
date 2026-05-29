@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 58,
-  build: '20260529-area-selecao-visual-fix-3HIGH-audit',
+  patch: 60,
+  build: '20260529-combinar-destino-3-bloqueadores-audit',
 };
 
 /** "1.2.0" */
