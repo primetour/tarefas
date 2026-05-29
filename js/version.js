@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 80,
-  build: '20260529-pdf-overflow-photos-fix',
+  patch: 81,
+  build: '20260529-pdf-overflow-includes-fix',
 };
 
 /** "1.2.0" */

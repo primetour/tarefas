@@ -6,6 +6,19 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.81+20260529-pdf-overflow-includes-fix] — 2026-05-29
+
+**Fix: export PDF — hardening do mesmo antipadrão de transbordo nas seções "O roteiro inclui/não inclui" + disclaimer de valores.**
+
+Continuação direta do fix v4.63.80 (texto transbordando sobre o rodapé). Auditoria dos 17 callsites de `checkPageBreak` em `roteiroGenerator.js` encontrou **3 instâncias residuais** do mesmo antipadrão `checkPageBreak(reserva_fixa)` → desenho de bloco multi-linha variável que o fix anterior não cobriu:
+
+- **`buildIncludesExcludes`** — loop de itens INCLUI (reserva fixa 8mm) e loop de itens NÃO INCLUI (idem). Item longo (que quebra em 2+ linhas) perto do fim da página vazava sobre o rodapé. Seções que o Renê citou explicitamente: *"o que inclui, o que não inclui"*.
+- **`buildPricingSection`** — disclaimer de valores (reserva fixa 25mm). Disclaimer jurídico longo (8+ linhas) transbordava.
+
+Fix idêntico ao v4.63.80: computar `lines`/`blockH` PRIMEIRO via `splitTextToSize`, depois `checkPageBreak(doc, y, blockH + margem)`, desenhar, `y += blockH`. Demais 14 callsites confirmados saudáveis (títulos de seção = altura fixa; pernoite/separador = linha única que cabe na reserva).
+
+Validação: `node --check` OK. Mesmo padrão determinístico já validado no v4.63.80 (computar-antes-de-quebrar garante que o bloco cabe antes de desenhar). Visual no PDF pendente (requer relogin do Renê).
+
 ## [4.63.80+20260529-pdf-overflow-photos-fix] — 2026-05-29
 
 **Fix crítico: export PDF de cotação — fotos repetidas + texto transbordando sobre o rodapé ("embola textos pág 8 / caos pág 9+").**

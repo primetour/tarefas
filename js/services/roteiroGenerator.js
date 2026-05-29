@@ -1985,11 +1985,12 @@ function buildPricingSection(doc, roteiro, primary, secondary) {
 
   // Disclaimer (8pt, muted)
   if (pricing.disclaimer) {
-    y = checkPageBreak(doc, y, 25);
+    // v4.63.81+ anti-overflow: mede o bloco ANTES de quebrar página
     doc.setFont('Poppins', 'italic');
     doc.setFontSize(8);
-    doc.setTextColor(120, 120, 120);
     const disclaimerLines = doc.splitTextToSize(pricing.disclaimer, CONTENT_W);
+    y = checkPageBreak(doc, y, disclaimerLines.length * 3.6 + 3);
+    doc.setTextColor(120, 120, 120);
     doc.text(disclaimerLines, MARGIN, y + 3);
   }
 }
@@ -2089,14 +2090,19 @@ function buildIncludesExcludes(doc, roteiro, primary, secondary) {
     y += 3;
 
     for (const item of roteiro.includes) {
-      y = checkPageBreak(doc, y, 8);
+      // v4.63.81+ anti-overflow: mede o bloco ANTES de quebrar página
+      // (item longo perto do rodapé vazava com reserva fixa de 8mm)
+      doc.setFont('Poppins', 'normal');
+      doc.setFontSize(10);
+      const lines = doc.splitTextToSize(item, CONTENT_W - 12);
+      const blockH = lines.length * 4.5 + 2;
+      y = checkPageBreak(doc, y, blockH + 3);
       drawCheck(MARGIN + 3, y + 2);
       doc.setFont('Poppins', 'normal');
       doc.setFontSize(10);
       doc.setTextColor(50, 50, 50);
-      const lines = doc.splitTextToSize(item, CONTENT_W - 12);
       doc.text(lines, MARGIN + 10, y + 3);
-      y += lines.length * 4.5 + 2;
+      y += blockH;
     }
     y += 6;
   }
@@ -2108,14 +2114,18 @@ function buildIncludesExcludes(doc, roteiro, primary, secondary) {
     y += 3;
 
     for (const item of roteiro.excludes) {
-      y = checkPageBreak(doc, y, 8);
+      // v4.63.81+ anti-overflow: mede o bloco ANTES de quebrar página
+      doc.setFont('Poppins', 'normal');
+      doc.setFontSize(10);
+      const lines = doc.splitTextToSize(item, CONTENT_W - 12);
+      const blockH = lines.length * 4.5 + 2;
+      y = checkPageBreak(doc, y, blockH + 3);
       drawCross(MARGIN + 3, y + 2);
       doc.setFont('Poppins', 'normal');
       doc.setFontSize(10);
       doc.setTextColor(50, 50, 50);
-      const lines = doc.splitTextToSize(item, CONTENT_W - 12);
       doc.text(lines, MARGIN + 10, y + 3);
-      y += lines.length * 4.5 + 2;
+      y += blockH;
     }
   }
 
