@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 61,
-  build: '20260529-portal-tips-rule-genlock-pptx-richtoplain',
+  patch: 62,
+  build: '20260529-tipeditor-destroy-utc-parse',
 };
 
 /** "1.2.0" */

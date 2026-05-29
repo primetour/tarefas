@@ -42,6 +42,25 @@ let categoriesCache = {};
 // v4.63.37+ cache do vocabulário de tags (carregado on boot)
 let _tipTagsList = [];
 
+/* ─── Cleanup (v4.63.61 N7) ───────────────────────────────────
+   Chamado em router.beforeNavigation pra evitar:
+   1. autoSaveTimer pendente disparar contra segmentData stale (SPA)
+   2. Save async ainda em flight escrever depois que user navegou
+   3. Module state vazando entre navegações
+*/
+export function destroyPortalTipEditor() {
+  if (autoSaveTimer) {
+    clearTimeout(autoSaveTimer);
+    autoSaveTimer = null;
+  }
+  // Reset state — defesa contra "abrir editor de novo carrega dados do anterior"
+  currentDestId   = null;
+  currentDestInfo = null;
+  segmentData     = {};
+  activeSegKey    = null;
+  isDirty         = false;
+}
+
 /* ─── Entry ───────────────────────────────────────────────── */
 export async function renderPortalTipEditor(container) {
   if (!store.canCreateTip()) {
@@ -643,8 +662,14 @@ const HEAD_STYLE  = `padding:16px 20px;border-bottom:1px solid var(--border-subt
   display:flex;align-items:center;justify-content:space-between;gap:16px;background:var(--bg-surface);`;
 const BODY_STYLE  = `padding:20px 24px;`;
 
+// v4.63.61 N10: parse local-noon evita UTC midnight (em UTC-3, "YYYY-MM-DD"
+// virava 21:00 do dia anterior local → false-positive "vencido" 3h antes).
+function _parseLocalDate(s) {
+  if (!s) return null;
+  return new Date(String(s) + 'T12:00:00');
+}
 function expiryControls(data) {
-  const isExpired = data.hasExpiry && data.expiryDate && new Date(data.expiryDate) < new Date();
+  const isExpired = data.hasExpiry && data.expiryDate && _parseLocalDate(data.expiryDate) < new Date();
   return `
     <div style="display:flex;align-items:center;gap:10px;flex-shrink:0;">
       <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:0.8125rem;">
@@ -1681,7 +1706,7 @@ function renderExpiryOverview() {
   }
   el.innerHTML = withExp.map(s => {
     const d       = segmentData[s.key];
-    const exp     = new Date(d.expiryDate);
+    const exp     = _parseLocalDate(d.expiryDate);  // v4.63.61 N10
     const expired = exp < new Date();
     const days    = Math.ceil((exp - new Date()) / 86400000);
     return `<div style="display:flex;justify-content:space-between;font-size:0.75rem;">
@@ -1885,7 +1910,8 @@ function segHasContent(key) {
 
 function isExpiredSeg(key) {
   const d = segmentData[key];
-  return d?.hasExpiry && d?.expiryDate && new Date(d.expiryDate) < new Date();
+  // v4.63.61 N10
+  return d?.hasExpiry && d?.expiryDate && _parseLocalDate(d.expiryDate) < new Date();
 }
 
 function markDirty() {

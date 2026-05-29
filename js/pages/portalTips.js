@@ -905,7 +905,9 @@ async function updatePreview() {
   const segLabels = SEGMENTS.filter(s => segments.includes(s.key)).map(s => s.label);
   const expiredSegs = SEGMENTS.filter(s => {
     const seg = tip.segments?.[s.key];
-    return seg?.hasExpiry && seg?.expiryDate && new Date(seg.expiryDate) < new Date();
+    // v4.63.61 N10: append T12:00:00 evita UTC midnight (em UTC-3, "2026-05-29"
+    // virava 2026-05-28 21:00 local → false-positive expirado 3h antes da meia-noite).
+    return seg?.hasExpiry && seg?.expiryDate && new Date(String(seg.expiryDate) + 'T12:00:00') < new Date();
   });
 
   card.innerHTML = `

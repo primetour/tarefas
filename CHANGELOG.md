@@ -6,6 +6,23 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.62+20260529-tipeditor-destroy-utc-parse] — 2026-05-29
+
+**Hotfix continuação — N7 (cleanup editor) + N10 (UTC parse expiry).**
+
+### Bugfixes
+- **N7 — `destroyPortalTipEditor()`** novo. Wired em `app.js` `beforeNavigation` + na rota `portal-tip-editor` (recarrega editor fresh). Resolve:
+  - `autoSaveTimer` pendente disparava contra `segmentData` stale após user navegar fora.
+  - Save assíncrono em flight gravava depois que user mudou de página.
+  - Module state (`segmentData`, `activeSegKey`, `currentDestId`) vazava entre navegações — abrir editor de novo carregava dados do destino anterior.
+- **N10 — UTC midnight em 4 sites de `expiryDate`**. `new Date('YYYY-MM-DD')` em UTC-3 parseia como 21:00 do dia anterior local → segmento marcado `● Vencido` 3h ANTES da meia-noite real. Fix: helper `_parseLocalDate(s) => new Date(s + 'T12:00:00')` (noon local = longe de qualquer fronteira de timezone). Sites corrigidos:
+  - `portalTips.js:908` (expiredSegs filter na preview)
+  - `portalTipEditor.js:647` (`expiryControls` isExpired badge)
+  - `portalTipEditor.js:1685` (`renderExpiryOverview` exp + days)
+  - `portalTipEditor.js:1894` (`isExpiredSeg`)
+
+---
+
 ## [4.63.61+20260529-portal-tips-rule-genlock-pptx-richtoplain] — 2026-05-29
 
 **Hotfix 3 bloqueadores Técnica (B1+B2+G1) pós-auditoria Combinar destino.**
