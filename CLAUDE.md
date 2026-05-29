@@ -2277,3 +2277,25 @@ if (!profile) {
 **Auditoria preventiva**: `grep -rn "PUBLIC_FIELDS\|stripInternal" js/` — confirmar que toda chave do `emptyRoteiro()` client-facing está na allowlist. Quando adicionar seção nova ao generator, conferir que o campo-fonte está em `PUBLIC_FIELDS` ANTES de declarar a seção "feita" (senão renderiza vazia em produção).
 
 **Sinais que pegariam mais cedo**: `node --check` + curl NÃO pegam (allowlist é dado, não sintaxe). Só E2E real gerando PDF de cotação com TODAS as seções preenchidas + abrindo o arquivo pega. Harness Node que roda `stripInternalFields(roteiroCompleto)` e asserta que cada seção sobrevive = barato e determinístico (foi o que validou esse fix — 2 harnesses, allowlist + buildPaxLabel).
+
+### v) ⚠ ARMADILHA: `portal_tips.segments[key]` é OBJETO `{items,info}` com chaves PT — render como array+chaves EN = 100% vazio (v4.63.76-77)
+
+**Sintoma Renê 2026-05-29** (previsto por ele no teste E2E de export: *"tenho a impressao de que teremos bug qdo vc chamar conteúdo desses módulos"*): Dicas embedadas em cotação saíam VAZIAS em PDF/PPTX/DOCX **e** Web link, mesmo com tip preenchida (Quioto, 94 itens).
+
+**Schema CANÔNICO de `portal_tips.segments` (decorar)**:
+- `segments[key]` é **OBJETO**, NÃO array: `{ items:[...], info:{...}, themeDesc, hasExpiry, expiryDate, dica }`.
+- Itens reais vivem em `segments[key].items` (array). Cada item usa **chaves em PORTUGUÊS**: `{ categoria, titulo, descricao, endereco, telefone, site, observacoes, tags, _geo:{lat,lng} }`.
+- Itens podem ter `type:'subtitle'` (heading dentro do segmento) — renderizar como título, não como item.
+- `informacoes_gerais` é ESPECIAL: **sem** array `items`; tem `info` = `{ descricao, dica, moeda, lingua, religiao, populacao, voltagem, ddd, fusoSinal, fusoHoras }`.
+- Fallback legado: alguns itens antigos usam `title`/`description` (EN). Ler PT primeiro, cair pra EN.
+- Snapshot embedado na cotação: `embeddedTips[i].content.segments` (mesmo shape).
+
+**Bug**: os 4 caminhos de render tratavam `segments[key]` como **array** (`Array.isArray` sempre `false` → 0 itens) e liam chaves **EN** (`name/address/note/description` → todas `undefined`). Render 100% vazio, sem erro.
+
+**Fix**: helper único `flattenTipSegment(segKey, segVal)` (+ `_tipStripHtml`) espelhado em `roteiroGenerator.js` (PDF/PPTX/DOCX) e `roteiro-view.html` (Dicas + pins do mapa + `hasMapData`). Lê `segVal.items` com fallback array; trata `informacoes_gerais.info`; respeita `type:'subtitle'`; chaves PT canônicas com fallback EN; higieniza HTML.
+
+**Validação E2E (a que pegou)**: harness Node contra snapshot real (Quioto 94 itens) → 0→102 linhas; depois Chrome MCP gerando PDF de verdade e **interceptando `doc.text()`** — confirmado "DICAS LOCAIS" + "RESTAURANTES" + `· BANYAN TREE … — endereço — descrição` (nome em negrito), além de moeda/idioma/voltagem (prova do `informacoes_gerais.info`). `node --check` + curl NÃO pegariam (shape é dado).
+
+**Padrão de teste reusável — interceptar `jsPDF` text**: `text` é own-property por instância (não está em `jsPDF.API` nem no protótipo). Pra capturar o que entra no PDF sem abrir o arquivo: envelopar o construtor `window.jspdf.jsPDF` (wrapper que sobrescreve `inst.text` de cada instância) ANTES de chamar o generator, restaurar em `finally`. Generators leem `window.jspdf.jsPDF` em tempo de chamada, então o wrap pega.
+
+**Princípio mestre**: quando consumir shape de OUTRO módulo (cross-module read), confirmar o schema real lendo um doc de produção ANTES de escrever o reader — não assumir array/chaves EN. `segments` parece array (tem itens) mas é objeto-container. Bug invisível porque `Array.isArray` num objeto não-array retorna `false` graciosamente (0 itens, sem throw).
