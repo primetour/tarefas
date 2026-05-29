@@ -5,7 +5,8 @@
 import { store }   from '../store.js';
 import { createDoc, loadJsPdf, COL, txt, withExportGuard } from '../components/pdfKit.js';
 import {
-  fetchAreas, fetchDestinations, fetchTips, SEGMENTS,
+  fetchAreas, fetchDestinations, fetchTips,
+  SEGMENTS as DEFAULT_SEGMENTS, getSegments,
 } from '../services/portal.js';
 import {
   collection, getDocs, query, orderBy, limit, where,
@@ -43,6 +44,9 @@ let rawGens     = [];
 let rawImages   = [];
 let rawLinks    = [];
 let _mapInstance = null;  // v4.63.64: mapa mini reuso do componente portalTipsMap
+// v4.63.65: _segments dinâmico inclui custom criados via Settings. Carregado
+// no boot de loadAll() via getSegments(); fallback: DEFAULT_SEGMENTS (builtins).
+let _segments = DEFAULT_SEGMENTS;
 
 /**
  * v4.63.64 — cleanup do mapa interativo embedded. Chamado em beforeNavigation.
@@ -196,12 +200,14 @@ async function loadAll() {
   body.innerHTML = spinner();
 
   try {
-    const [areas, dests, tips, gens, images, links] = await Promise.all([
+    const [areas, dests, tips, gens, images, links, segments] = await Promise.all([
       // v4.61.3: passa reviewStatus:'approved' pra count não inflar com 228 pending (banco-auto)
       fetchAreas(), fetchDestinations({ reviewStatus: 'approved' }), fetchTips(),
       fetchCol('portal_generations', 2000),
       fetchCol('portal_images', 5000),
       fetchCol('portal_web_links', 200),
+      // v4.63.65: inclui custom segments na cobertura/expiração/etc.
+      getSegments().catch(e => { console.warn('[portalDashboard] getSegments fail:', e?.message); return DEFAULT_SEGMENTS; }),
     ]);
     rawAreas  = areas;
     rawDests  = dests;
@@ -209,6 +215,7 @@ async function loadAll() {
     rawGens   = gens;
     rawImages = images;
     rawLinks  = links;
+    _segments = Array.isArray(segments) && segments.length ? segments : DEFAULT_SEGMENTS;
     renderDash();
   } catch(e) {
     body.innerHTML = `<div style="text-align:center;padding:48px;color:var(--text-muted);">
@@ -294,8 +301,8 @@ function renderDash() {
   const healthy  = allTips.filter(t => !hasBadSeg(t,now,null) && !hasBadSeg(t,now,in30));
 
   const totalFilled = allTips.reduce((a,t) =>
-    a + SEGMENTS.filter(s => hasContent(t, s.key)).length, 0);
-  const maxFilled   = allTips.length * SEGMENTS.length || 1;
+    a + _segments.filter(s => hasContent(t, s.key)).length, 0);
+  const maxFilled   = allTips.length * _segments.length || 1;
 
   const priorityTips    = allTips.filter(t => t.priority);
   const priorityExpired = priorityTips.filter(t => hasBadSeg(t, now, null));
@@ -374,7 +381,7 @@ function renderDash() {
   const topSegments = Object.entries(segGenCount)
     .sort(([,a],[,b]) => b - a)
     .map(([sk, cnt]) => {
-      const seg = SEGMENTS.find(s => s.key === sk);
+      const seg = _segments.find(s => s.key === sk);
       return { label: seg?.label || sk, count: cnt };
     });
   const totalSegGens = Object.values(segGenCount).reduce((a,b) => a+b, 0) || 1;
@@ -393,7 +400,7 @@ function renderDash() {
   const expiredDetails = [];
   expired.forEach(t => {
     const dest = dests.find(d => d.id === t.destinationId);
-    const expiredSegs = SEGMENTS.filter(s => {
+    const expiredSegs = _segments.filter(s => {
       const seg = t.segments?.[s.key];
       if (!seg?.hasExpiry || !seg?.expiryDate) return false;
       return new Date(seg.expiryDate) < now;
@@ -409,7 +416,7 @@ function renderDash() {
   });
 
   // Segment coverage
-  const segCov = SEGMENTS.map(s => ({
+  const segCov = _segments.map(s => ({
     label: s.label,
     covered: allTips.filter(t => hasContent(t, s.key)).length,
   }));
@@ -449,7 +456,7 @@ function renderDash() {
                 ? `<span style="color:#22C55E;font-size:0.6875rem;">atualizadas</span>` : '',
             'Destinos marcados com estrela (★) como prioritários. Indica os destinos mais importantes que devem ser mantidos sempre atualizados.')}
       ${kpi('Cobertura',          pct(totalFilled,maxFilled)+'%', '📊', null, '',
-            'Percentual de preenchimento dos segmentos em todas as dicas. Cada dica tem ' + SEGMENTS.length + ' segmentos possíveis (ex: Informações, Bairros, Atrações, Restaurantes…). Cobertura = (segmentos preenchidos ÷ total possível) × 100.')}
+            'Percentual de preenchimento dos segmentos em todas as dicas. Cada dica tem ' + _segments.length + ' segmentos possíveis (ex: Informações, Bairros, Atrações, Restaurantes…). Cobertura = (segmentos preenchidos ÷ total possível) × 100.')}
       ${kpi('Vencidas',           expired.length,   '⚠', expired.length > 0 ? '#EF4444' : null, '',
             'Dicas que possuem pelo menos um segmento com data de validade expirada. Esses segmentos precisam ser revisados e atualizados.')}
       ${kpi('Imagens (banco)',    rawImages.length,  '🖼', null, '',
@@ -829,7 +836,7 @@ function hasContent(tip, key) {
 }
 
 function hasBadSeg(tip, from, until) {
-  return SEGMENTS.some(s => {
+  return _segments.some(s => {
     const seg = tip.segments?.[s.key];
     if (!seg?.hasExpiry || !seg?.expiryDate) return false;
     const d = new Date(seg.expiryDate);
@@ -929,8 +936,8 @@ const exportPortalPdf = withExportGuard(async function exportPortalPdf() {
     const expiring = allTips.filter(t => !hasBadSeg(t, now, null) && hasBadSeg(t, now, in30));
     const healthy  = allTips.filter(t => !hasBadSeg(t, now, null) && !hasBadSeg(t, now, in30));
 
-    const totalFilled = allTips.reduce((a, t) => a + SEGMENTS.filter(s => hasContent(t, s.key)).length, 0);
-    const maxFilled   = allTips.length * SEGMENTS.length || 1;
+    const totalFilled = allTips.reduce((a, t) => a + _segments.filter(s => hasContent(t, s.key)).length, 0);
+    const maxFilled   = allTips.length * _segments.length || 1;
     const coveragePct = pct(totalFilled, maxFilled);
 
     const byFormat = {};
@@ -940,7 +947,7 @@ const exportPortalPdf = withExportGuard(async function exportPortalPdf() {
     const tipDestIds   = new Set(allTips.map(t => t.destinationId));
     const missingDests = dests.filter(d => !tipDestIds.has(d.id));
 
-    const segCov = SEGMENTS.map(s => ({
+    const segCov = _segments.map(s => ({
       label: s.label,
       covered: allTips.filter(t => hasContent(t, s.key)).length,
     }));
@@ -1067,7 +1074,7 @@ const exportPortalPdf = withExportGuard(async function exportPortalPdf() {
     const expiredDetails = [];
     expired.forEach(t => {
       const dest = dests.find(d => d.id === t.destinationId);
-      const expSegs = SEGMENTS.filter(s => {
+      const expSegs = _segments.filter(s => {
         const seg = t.segments?.[s.key];
         if (!seg?.hasExpiry || !seg?.expiryDate) return false;
         return new Date(seg.expiryDate) < now;
@@ -1179,10 +1186,10 @@ async function exportPortalXls() {
     const expiring = allTips.filter(t => !hasBadSeg(t,now,null) && hasBadSeg(t,now,in30));
     const healthy  = allTips.filter(t => !hasBadSeg(t,now,null) && !hasBadSeg(t,now,in30));
 
-    const totalFilled = allTips.reduce((a,t) => a + SEGMENTS.filter(s => hasContent(t, s.key)).length, 0);
-    const maxFilled   = allTips.length * SEGMENTS.length || 1;
+    const totalFilled = allTips.reduce((a,t) => a + _segments.filter(s => hasContent(t, s.key)).length, 0);
+    const maxFilled   = allTips.length * _segments.length || 1;
 
-    const segCov = SEGMENTS.map(s => ({
+    const segCov = _segments.map(s => ({
       label: s.label,
       covered: allTips.filter(t => hasContent(t, s.key)).length,
     }));
@@ -1285,7 +1292,7 @@ async function exportPortalXls() {
       expired.forEach(t => {
         const dest = dests.find(d => d.id === t.destinationId);
         const name = dest ? [dest.city, dest.country].filter(Boolean).join(', ') : '—';
-        const expSegs = SEGMENTS.filter(s => {
+        const expSegs = _segments.filter(s => {
           const seg = t.segments?.[s.key];
           if (!seg?.hasExpiry || !seg?.expiryDate) return false;
           return new Date(seg.expiryDate) < now;
@@ -1336,8 +1343,8 @@ function pdSnapshotKpis() {
   const links = rawLinks.filter(l => inRange(l.createdAt, range));
   const now = new Date();
   const expired = rawTips.filter(t => hasBadSeg(t, now, null));
-  const totalFilled = rawTips.reduce((a,t) => a + SEGMENTS.filter(s => hasContent(t, s.key)).length, 0);
-  const maxFilled = rawTips.length * SEGMENTS.length || 1;
+  const totalFilled = rawTips.reduce((a,t) => a + _segments.filter(s => hasContent(t, s.key)).length, 0);
+  const maxFilled = rawTips.length * _segments.length || 1;
   return {
     dicasCadastradas: rawTips.length,
     dicasNoPeriodo: tips.length,
@@ -1365,7 +1372,7 @@ function pdSnapshotValidade() {
 }
 
 function pdSnapshotCobertura() {
-  const segCov = SEGMENTS.map(s => ({
+  const segCov = _segments.map(s => ({
     label: s.label,
     count: rawTips.filter(t => hasContent(t, s.key)).length,
     total: rawTips.length,

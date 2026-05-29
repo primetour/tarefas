@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 64,
-  build: '20260529-dashboard-mapa-mini',
+  patch: 65,
+  build: '20260529-dashboard-custom-segments',
 };
 
 /** "1.2.0" */

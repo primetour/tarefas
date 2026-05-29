@@ -6,6 +6,16 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.65+20260529-dashboard-custom-segments] — 2026-05-29
+
+**Hotfix — Dashboard Portal de Dicas inclui segmentos custom (21 sites).**
+
+### Bugfix
+- Dashboard usava `SEGMENTS` (builtin only) hardcoded em 20+ pontos: cobertura por segmento, totalFilled/maxFilled, hasBadSeg, snapshots de insights, expiry details, PDF/XLS exports. Resultado: segmentos custom criados via Settings (`portal_segments` collection) **NÃO** apareciam em nenhuma das métricas — admin via "8 segmentos" mas tinha 11.
+- Fix: introduz módulo state `_segments` carregado via `getSegments()` no boot de `loadAll()` (paralelo via Promise.all). Substitui todas as 21 referências SEGMENTS internas (mantém import como `DEFAULT_SEGMENTS` pra fallback). Builtin defaults usados se fetch falha (degradação graceful).
+
+---
+
 ## [4.63.64+20260529-dashboard-mapa-mini] — 2026-05-29
 
 **Feature — Mapa mini com pins das cidades com dica no Dashboard do Portal de Dicas.**
