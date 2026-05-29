@@ -652,6 +652,54 @@ import { firebaseConfig } from './js/config.js';
 /* ── Helpers ── */
 const esc = s => String(s || '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
 
+/* 4.63.77 — flatten de segments de DICAS embedded. Espelha flattenTipSegment
+   de js/services/roteiroGenerator.js. portal_tips guarda segments[key] como
+   OBJETO { items:[...], info:{...} } com chaves PT (titulo/endereco/descricao/
+   observacoes), NÃO array com chaves EN. Sem isso, Dicas saíam vazias no link. */
+function _tipStripHtml(s) {
+  if (!s || typeof s !== 'string') return '';
+  return s
+    .replace(/<br\s*\/?>/gi, ' ').replace(/<\/(p|div|li)>/gi, ' ').replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+    .replace(/\s+/g, ' ').trim();
+}
+function flattenTipSegment(segKey, segVal) {
+  const lines = [];
+  if (segKey === 'informacoes_gerais') {
+    const info = (segVal && segVal.info) || {};
+    const desc = _tipStripHtml(info.descricao);
+    if (desc) lines.push({ text: desc });
+    const pairs = [
+      ['Moeda', info.moeda], ['Língua', info.lingua], ['Religião', info.religiao],
+      ['População', info.populacao], ['Voltagem', info.voltagem], ['DDD', info.ddd],
+    ].filter(([, v]) => v);
+    for (const [k, v] of pairs) lines.push({ text: `${k}: ${v}` });
+    const dica = _tipStripHtml(info.dica);
+    if (dica) lines.push({ text: `Dica: ${dica}` });
+    return lines;
+  }
+  const items = Array.isArray(segVal?.items) ? segVal.items
+              : Array.isArray(segVal) ? segVal : [];
+  for (const item of items) {
+    if (typeof item === 'string') { const t = _tipStripHtml(item); if (t) lines.push({ text: t }); continue; }
+    if (!item || typeof item !== 'object') continue;
+    if (item.type === 'subtitle') {
+      const h = item.titulo || item.title || '';
+      if (h) lines.push({ heading: true, text: h });
+      continue;
+    }
+    const name = item.titulo || item.title || item.name || '';
+    const addr = item.endereco || item.address || item.location || '';
+    const desc = _tipStripHtml(item.descricao || item.description || item.note || '');
+    const obs  = _tipStripHtml(item.observacoes || '');
+    const detail = [addr, desc, obs].filter(Boolean).join(' — ');
+    const text = [name, detail].filter(Boolean).join(' — ');
+    if (text) lines.push({ text, strong: !!name });
+  }
+  return lines;
+}
+
 function fmtDate(d) {
   if (!d) return '';
   try {
@@ -772,8 +820,10 @@ function render(container, r, area) {
     (r.travel?.destinations?.length || r.hotels?.length) ||
     embeddedTips.some(emb => {
       const segs = emb?.content?.segments || {};
-      return Object.values(segs).some(arr =>
-        Array.isArray(arr) && arr.some(it => it?._geo?.lat));
+      return Object.values(segs).some(seg => {
+        const arr = Array.isArray(seg?.items) ? seg.items : Array.isArray(seg) ? seg : [];
+        return arr.some(it => it?._geo?.lat);
+      });
     })
   );
 
@@ -1210,18 +1260,17 @@ function render(container, r, area) {
             arredores: 'Arredores', highlights: 'Highlights',
             agenda_cultural: 'Agenda Cultural',
           };
-          const segHtml = Object.entries(segments).map(([k, items]) => {
-            if (!Array.isArray(items) || !items.length) return '';
-            const itemsHtml = items.map(it => {
-              if (typeof it === 'string') return `<li>${esc(it)}</li>`;
-              if (it && typeof it === 'object') {
-                const parts = [];
-                if (it.name) parts.push(`<strong>${esc(it.name)}</strong>`);
-                if (it.address || it.location) parts.push(esc(it.address || it.location));
-                if (it.note || it.description) parts.push(esc(it.note || it.description));
-                return `<li>${parts.join(' &middot; ')}</li>`;
+          const segHtml = Object.entries(segments).map(([k, segVal]) => {
+            const segLines = flattenTipSegment(k, segVal);
+            if (!segLines.length) return '';
+            const itemsHtml = segLines.map(ln => {
+              if (ln.heading) return `<li style="list-style:none;font-weight:600;margin-top:10px;color:var(--muted);">${esc(ln.text)}</li>`;
+              if (ln.strong) {
+                const [name, ...rest] = ln.text.split(' — ');
+                const detail = rest.join(' — ');
+                return `<li><strong>${esc(name)}</strong>${detail ? ' &middot; ' + esc(detail) : ''}</li>`;
               }
-              return '';
+              return `<li>${esc(ln.text)}</li>`;
             }).join('');
             const label = segLabels[k] || k.split('_').map(w => w.charAt(0).toUpperCase()+w.slice(1)).join(' ');
             return `<div class="dica-segment" style="margin-top:18px;">
@@ -1406,8 +1455,9 @@ async function mountRoteiroMap(r, embeddedTips) {
   // 3) Dicas embedded (só items com _geo já calculado pelo Portal)
   for (const emb of embeddedTips || []) {
     const segs = emb?.content?.segments || {};
-    for (const [segKey, items] of Object.entries(segs)) {
-      if (!Array.isArray(items)) continue;
+    for (const [segKey, segVal] of Object.entries(segs)) {
+      const items = Array.isArray(segVal?.items) ? segVal.items
+                  : Array.isArray(segVal) ? segVal : [];
       for (const it of items) {
         if (!it?._geo?.lat || !it?._geo?.lng) continue;
         const title = it.titulo || it.title || it.name || '';

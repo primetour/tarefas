@@ -6,6 +6,20 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.77+20260529-embedded-tips-render] — 2026-05-29
+
+**Fix crítico: Dicas embedadas (Portal de Dicas) saíam VAZIAS em TODOS os exports (PDF/PPTX/DOCX/Web link).**
+
+Bug previsto pelo Renê no mesmo teste E2E: *"tenho a impressão de que teremos bug quando você chamar conteúdo desses módulos"*. Confirmado — segundo módulo afetado.
+
+**Causa raiz:** `portal_tips` guarda `segments[key]` como **objeto** `{ items:[...], info:{...} }` com chaves em **português** (`titulo`/`endereco`/`descricao`/`observacoes`), além de itens `type:'subtitle'` e o bloco especial `informacoes_gerais.info`. Mas os 4 caminhos de render tratavam `segments[key]` como **array** (`Array.isArray(items)` sempre falso no schema real) e liam chaves em **inglês** (`name`/`address`/`note`/`description`). Resultado: 100% das Dicas curadas (restaurantes, atrações, compras, infos gerais) renderizavam vazias.
+
+**Fix:** helper `flattenTipSegment(segKey, segVal)` + `_tipStripHtml()` (espelhados nos 2 arquivos) que: lê `segVal.items` (fallback array legado); trata `informacoes_gerais` (descrição + moeda/língua/religião/população/voltagem/DDD + dica); trata `type:'subtitle'` como heading; mapeia chaves PT canônicas com fallback EN/legado; higieniza HTML inline. Aplicado em `js/services/roteiroGenerator.js` (loops PDF + PPTX + DOCX) e `roteiro-view.html` (seção Dicas Locais + pins do mapa + detecção `hasMapData`).
+
+Validado por harness Node contra a cotação real 4bTybLbDGfarh3Rp5XSd (snapshot Quioto, 94 itens): **0 → 102 linhas renderáveis** (restaurantes 64, atrações 22, compras 6, atrações-crianças 2, infos gerais 8).
+
+**Gap conhecido (não bug):** web link em **modo template custom** (`roteiroToTemplateData`) ainda não inclui placeholder de Dicas — feature ausente, não corrupção. Link padrão (roteiro-view.html) cobre Dicas.
+
 ## [4.63.76+20260529-bank-import-days] — 2026-05-29
 
 **Fix crítico: "Consultar Banco" importava dias VAZIOS (lia resumo de cidades, não os dias reais).**

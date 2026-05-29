@@ -2327,10 +2327,11 @@ function buildEmbeddedTipsSection(doc, roteiro, primary, secondary) {
       y += 6;
     }
 
-    // Renderiza segments (pegamos apenas os que têm items)
+    // Renderiza segments — v4.63.77: schema real é segments[k].items (não array direto)
     const segments = emb.content?.segments || {};
-    for (const [segKey, items] of Object.entries(segments)) {
-      if (!Array.isArray(items) || items.length === 0) continue;
+    for (const [segKey, segVal] of Object.entries(segments)) {
+      const segLines = flattenTipSegment(segKey, segVal);
+      if (!segLines.length) continue;
 
       // Label do segmento (usa key humanizada como fallback)
       const segLabel = humanizeSegmentKey(segKey);
@@ -2341,26 +2342,21 @@ function buildEmbeddedTipsSection(doc, roteiro, primary, secondary) {
       doc.text(segLabel.toUpperCase(), MARGIN + 3, y + 3, { charSpace: 0.6 });
       y += 6;
 
-      // Items — adaptamos pra string OU objeto
-      doc.setFont('Poppins', 'normal');
-      doc.setFontSize(9.5);
-      doc.setTextColor(60, 60, 60);
-      for (const item of items) {
+      for (const ln of segLines) {
         y = checkPageBreak(doc, y, 10);
-        let line;
-        if (typeof item === 'string') {
-          line = '· ' + item;
-        } else if (item && typeof item === 'object') {
-          const parts = [];
-          if (item.name)        parts.push(item.name);
-          if (item.address)     parts.push(item.address);
-          else if (item.location) parts.push(item.location);
-          if (item.note || item.description) parts.push(item.note || item.description);
-          line = '· ' + parts.filter(Boolean).join(' — ');
-        } else {
+        if (ln.heading) {
+          doc.setFont('Poppins', 'bold');
+          doc.setFontSize(9);
+          doc.setTextColor(90, 90, 90);
+          const hl = doc.splitTextToSize(ln.text, CONTENT_W - 6);
+          doc.text(hl, MARGIN + 4, y + 3);
+          y += hl.length * 4.5 + 1;
           continue;
         }
-        const lines = doc.splitTextToSize(line, CONTENT_W - 6);
+        doc.setFont('Poppins', 'normal');
+        doc.setFontSize(9.5);
+        doc.setTextColor(60, 60, 60);
+        const lines = doc.splitTextToSize('· ' + ln.text, CONTENT_W - 6);
         doc.text(lines, MARGIN + 5, y + 3);
         y += lines.length * 4.5 + 1;
       }
@@ -2391,6 +2387,80 @@ function humanizeSegmentKey(key) {
   if (MAP[key]) return MAP[key];
   // Fallback: snake_case → Title Case
   return key.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+
+/**
+ * v4.63.77 — Strip HTML + decodifica entidades básicas + colapsa espaços.
+ * descricao/observacoes de portal_tips podem vir como rich text (HTML da toolbar).
+ */
+function _tipStripHtml(s) {
+  if (!s || typeof s !== 'string') return '';
+  return s
+    .replace(/<br\s*\/?>/gi, ' ')
+    .replace(/<\/(p|div|li)>/gi, ' ')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * v4.63.77 — Achata um segment de dica (portal_tips) em linhas renderáveis.
+ *
+ * ⚠ BUG histórico (Renê 2026-05-29): os 3 generators (PDF/PPTX/DOCX) tratavam
+ *   `segments[key]` como array de items e liam chaves EN (name/address/note).
+ *   Schema real: `segments[key] = { items:[{titulo,categoria,descricao,endereco,
+ *   telefone,site,observacoes,tags,type}], info:{...}, themeDesc, hasExpiry }`.
+ *   Resultado: TODO o conteúdo de dicas anexadas saía vazio nos exports.
+ *
+ * Trata: items nested (`seg.items`), array direto legado, strings legadas,
+ *   `informacoes_gerais` (bloco `info`), e items `type:'subtitle'` (heading).
+ *
+ * @returns {Array<{heading?:boolean, text:string}>}
+ */
+function flattenTipSegment(segKey, segVal) {
+  const lines = [];
+
+  // informacoes_gerais: bloco especial (sem items array)
+  if (segKey === 'informacoes_gerais') {
+    const info = (segVal && segVal.info) || {};
+    const desc = _tipStripHtml(info.descricao);
+    if (desc) lines.push({ text: desc });
+    const pairs = [
+      ['Moeda', info.moeda], ['Língua', info.lingua], ['Religião', info.religiao],
+      ['População', info.populacao], ['Voltagem', info.voltagem], ['DDD', info.ddd],
+    ].filter(([, v]) => v);
+    for (const [k, v] of pairs) lines.push({ text: `${k}: ${v}` });
+    const dica = _tipStripHtml(info.dica);
+    if (dica) lines.push({ text: `Dica: ${dica}` });
+    return lines;
+  }
+
+  // segments normais: items nested OU array direto (legado) OU strings
+  const items = Array.isArray(segVal?.items) ? segVal.items
+              : Array.isArray(segVal) ? segVal : [];
+  for (const item of items) {
+    if (typeof item === 'string') { const t = _tipStripHtml(item); if (t) lines.push({ text: t }); continue; }
+    if (!item || typeof item !== 'object') continue;
+    if (item.type === 'subtitle') {
+      const h = item.titulo || item.title || '';
+      if (h) lines.push({ heading: true, text: h });
+      continue;
+    }
+    const name = item.titulo || item.title || item.name || '';
+    const addr = item.endereco || item.address || item.location || '';
+    const desc = _tipStripHtml(item.descricao || item.description || item.note || '');
+    const obs  = _tipStripHtml(item.observacoes || '');
+    const detail = [addr, desc, obs].filter(Boolean).join(' — ');
+    const text = [name, detail].filter(Boolean).join(' — ');
+    if (text) lines.push({ text });
+  }
+  return lines;
 }
 
 /* ─── Closing Page ────────────────────────────────────────── */
@@ -2956,35 +3026,28 @@ export async function generateRoteiroPPTX(roteiro, area = null) {
         tSlide.addText(emb.subtitle, { x: 0.5, y: 1.25, w: W - 1, h: 0.3, fontSize: 10, color: '888888', italic: true });
       }
 
-      // Renderiza segments — máx 4 segmentos por slide (cabe visualmente)
+      // Renderiza segments — v4.63.77: schema real é segments[k].items; máx 4 por slide
       const segments = emb.content?.segments || {};
-      const segEntries = Object.entries(segments)
-        .filter(([_, items]) => Array.isArray(items) && items.length > 0)
-        .slice(0, 4);
+      const allSeg = Object.entries(segments)
+        .map(([k, v]) => [k, flattenTipSegment(k, v)])
+        .filter(([, lines]) => lines.length > 0);
+      const segEntries = allSeg.slice(0, 4);
       let ySeg = 1.7;
-      for (const [segKey, items] of segEntries) {
+      for (const [segKey, segLines] of segEntries) {
         const label = humanizeSegmentKey(segKey);
         tSlide.addText(label.toUpperCase(), { x: 0.5, y: ySeg, w: W - 1, h: 0.3, fontSize: 9.5, bold: true, color: primary });
         ySeg += 0.35;
-        // Top 5 items por segment pra caber visualmente
-        const lines = items.slice(0, 5).map(it => {
-          if (typeof it === 'string') return '• ' + it;
-          if (it && typeof it === 'object') {
-            const parts = [];
-            if (it.name) parts.push(it.name);
-            if (it.address || it.location) parts.push(it.address || it.location);
-            return '• ' + parts.filter(Boolean).join(' — ');
-          }
-          return '';
-        }).filter(Boolean).join('\n');
-        const blockH = Math.min(1.4, 0.2 + items.slice(0, 5).length * 0.22);
+        // Top 5 linhas por segment pra caber visualmente
+        const top = segLines.slice(0, 5);
+        const lines = top.map(ln => (ln.heading ? ln.text : '• ' + ln.text)).join('\n');
+        const blockH = Math.min(1.4, 0.2 + top.length * 0.22);
         tSlide.addText(lines, { x: 0.7, y: ySeg, w: W - 1.4, h: blockH, fontSize: 8.5, color: '444444', valign: 'top', wrap: true });
         ySeg += blockH + 0.15;
         if (ySeg > 5.0) break;  // não estoura slide
       }
 
       // Se algum segmento ficou de fora, sinaliza no footer
-      if (segEntries.length < Object.keys(segments).filter(k => segments[k]?.length).length) {
+      if (segEntries.length < allSeg.length) {
         tSlide.addText(`+ outras categorias no roteiro completo`, { x: 0.5, y: 5.2, w: W - 1, h: 0.3, fontSize: 8, color: '999999', italic: true });
       }
     }
@@ -3490,22 +3553,23 @@ export async function generateRoteiroDOCX(roteiro, area = null) {
     for (const emb of roteiro.embeddedTips) {
       children.push(sub(emb.title || '—'));
       if (emb.subtitle) children.push(p([tr(emb.subtitle, { italics: true, color: mutedHex, size: 18 })], { spacing: { after: 80 } }));
+      // v4.63.77: schema real é segments[k].items (não array direto)
       const segments = emb.content?.segments || {};
-      for (const [segKey, items] of Object.entries(segments)) {
-        if (!Array.isArray(items) || !items.length) continue;
+      for (const [segKey, segVal] of Object.entries(segments)) {
+        const segLines = flattenTipSegment(segKey, segVal);
+        if (!segLines.length) continue;
         children.push(p([tr(humanizeSegmentKey(segKey).toUpperCase(), { bold: true, color: accentHex, size: 18 })], { spacing: { before: 100, after: 60 } }));
-        items.slice(0, 10).forEach(it => {  // máx 10 por segmento pra não inflar
-          let line;
-          if (typeof it === 'string') line = `• ${it}`;
-          else if (it && typeof it === 'object') {
-            const parts = [];
-            if (it.name) parts.push(it.name);
-            if (it.address || it.location) parts.push(it.address || it.location);
-            if (it.note || it.description) parts.push(it.note || it.description);
-            line = `• ${parts.filter(Boolean).join(' — ')}`;
-          } else return;
+        segLines.slice(0, 12).forEach(ln => {  // máx 12 linhas por segmento pra não inflar
+          if (ln.heading) {
+            children.push(new Paragraph({
+              children: [tr(ln.text, { size: 18, bold: true, color: '5A5A5A' })],
+              spacing: { before: 60, after: 30 },
+              indent: { left: 180 },
+            }));
+            return;
+          }
           children.push(new Paragraph({
-            children: [tr(line, { size: 18, color: '444444' })],
+            children: [tr(`• ${ln.text}`, { size: 18, color: '444444' })],
             spacing: { after: 40 },
             indent: { left: 220 },
           }));
