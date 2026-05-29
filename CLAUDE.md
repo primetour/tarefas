@@ -2214,3 +2214,39 @@ Fix em 3 partes (v4.63.49):
 - [ ] Se < 50%, cleanup é especulativo — documenta na linha "ativar quando UI X popular"
 - [ ] Se > 0%, garante UI atualiza FK em TODOS os fluxos (criação + edição + import)
 - [ ] Backfill pra docs antigos antes do cleanup ir pra prod (senão cleanup é null-op naqueles)
+
+### t) ⚠ ARMADILHA: `persistentLocalCache` serve falso-negativo (`exists()===false`) no boot do auth → tranca usuário existente (v4.63.74)
+
+**Sintoma** (Thais Yoshitomi 2026-05-29): *"não consigo MAIS entrar / Erro ao criar perfil. Verifique as regras do Firestore (users create)"*. Conta existente, ativa, Auth UID batendo com o doc — mas o login travava. Regressão ("não consigo MAIS" = funcionava antes).
+
+**Causa raiz** (confirmada por evidência operacional, NÃO era App Check):
+1. `js/firebase.js` usa `initializeFirestore(..., { localCache: persistentLocalCache(...) })` (IndexedDB). O cache do browser dela tinha uma **entrada negativa obsoleta** pro doc `users/{uid}` — "sabia" que o doc não existia, de algum estado anterior (read negado pontual / storage parcial / device novo).
+2. `getDoc(users/{uid})` resolveu `exists()===false` **a partir do cache, sem lançar erro nem confirmar com o servidor**. `fetchUserProfile` retornou null.
+3. Auto-provisioning SSO assumiu "usuário novo". O lookup por email **exclui o próprio uid** (o único doc dela) → `mergedFromPending` null → montou `newProfile` com DEFAULTS (setor/núcleos/visibleSectors vazios, role member).
+4. `setDoc(users/{uid}, defaults)` caiu no doc **EXISTENTE** → Firestore avalia como **UPDATE** → a self-update rule proíbe membro mudar `role/sector/nucleos/visibleSectors` → `permission-denied` → toast "Erro ao criar perfil".
+
+**Evidência que matou a hipótese App Check**: admin abriu Usuários e **re-salvou o doc dela sem mudar nada** → login destravou **44s depois** (`updatedAt 16:54:16` → `lastLogin 16:55:00`, campos estruturais idênticos). Write server-side NÃO conserta App Check de navegador — só pode ter mutado o doc e disparado o listener persistente do client a **re-sincronizar e invalidar a entrada obsoleta do cache**. Logo, cache local obsoleto era o mecanismo dominante.
+
+**Fix** (cirúrgico, só o caminho `profile===null` em `js/auth/auth.js`):
+```js
+let profile = await fetchUserProfile(firebaseUser.uid);
+if (!profile) {
+  try {
+    const srvSnap = await getDocFromServer(doc(db, 'users', firebaseUser.uid)); // read autoritativo
+    if (srvSnap.exists()) profile = { id: srvSnap.id, ...srvSnap.data() };       // doc existe → usa, não provisiona
+  } catch (srvErr) {
+    toast.error('Não foi possível verificar seu perfil...'); // read falhou de verdade (rede/App Check) → NÃO provisiona destrutivo
+    await signOut(); return;
+  }
+}
+// só cai no auto-provision se o SERVIDOR confirmou que não existe
+```
+`getDocFromServer` força read no servidor ignorando o cache — é a **versão automática do re-save manual do admin**, sem precisar de intervenção.
+
+**Princípio mestre — toda decisão crítica de "existe vs não existe" baseada em `getDoc` com `persistentLocalCache`**:
+- ❌ `getDoc` pode devolver `exists()===false` falso-positivo a partir de cache obsoleto, **sem throw**. Confiar nisso pra decidir "criar entidade nova" = risco de overwrite destrutivo / lockout.
+- ✅ Antes de qualquer write de criação que cai em doc potencialmente existente (auth provisioning, "upsert", "criar se não existe"), confirmar inexistência com `getDocFromServer`.
+- ✅ Se o read autoritativo **falha** (rede/permissão), abortar com erro claro — NÃO assumir "não existe" e seguir pro create.
+- ⚠️ Lembrar: `setDoc` em doc existente é **UPDATE** pra fins de rules. Se a rule de update é mais restritiva que a de create (self-update lock), o "create" falha de um jeito confuso.
+
+**Auditoria preventiva**: `grep -rn "fetchUserProfile\|getDoc(" js/auth js/services | grep -i "exists\|null"` — qualquer ramo que decide criar/provisionar a partir de `getDoc` cacheado é candidato ao mesmo bug.
