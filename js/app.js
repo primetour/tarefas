@@ -525,8 +525,11 @@ function mountShell(root) {
           if (newOnes.length) {
             import('./components/toast.js').then(({ toast }) => {
               for (const n of newOnes.slice(0, 3)) {   // máx 3 toasts simultâneos pra não floodar
+                // v4.63.53 BUG FIX: signature do toast.info é (message, title,
+                // duration). Antes passava { duration:8000 } como 2º arg →
+                // renderizado como title → mostrava "[object Object]" no toast.
                 const msg = `${n.title || 'Nova notificação'}${n.body ? ' — ' + String(n.body).slice(0, 80) : ''}`;
-                toast.info(msg, { duration: 8000 });
+                toast.info(msg, null, 8000);
               }
             }).catch(() => {});
           }

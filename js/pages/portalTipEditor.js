@@ -82,8 +82,25 @@ export async function renderPortalTipEditor(container) {
       </div>
     </div>
 
+    <!-- v4.63.53: Loading indicator (só visível durante boot c/ destId).
+         Antes: o seletor de destino piscava por 1-2s durante o fetch da dica
+         existente, parecia link errado. Agora: barra de loading enquanto
+         carrega. -->
+    <div id="editor-loading-indicator" class="card"
+      style="${destId ? '' : 'display:none;'}padding:60px;text-align:center;
+      color:var(--text-muted);margin-bottom:20px;">
+      <div style="display:inline-block;width:36px;height:36px;border:3px solid var(--border-subtle);
+        border-top-color:var(--brand-gold);border-radius:50%;
+        animation:portal-tip-spin 0.8s linear infinite;margin-bottom:14px;"></div>
+      <div style="font-size:0.875rem;font-weight:500;color:var(--text-secondary);">
+        Carregando dica…
+      </div>
+      <style>@keyframes portal-tip-spin{to{transform:rotate(360deg)}}</style>
+    </div>
+
     <!-- Destination selector -->
-    <div id="editor-dest-selector" class="card" style="padding:24px;margin-bottom:20px;">
+    <div id="editor-dest-selector" class="card"
+      style="padding:24px;margin-bottom:20px;${destId ? 'display:none;' : ''}">
       <h3 style="font-size:0.875rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;
         color:var(--text-muted);margin:0 0 16px;">Destino</h3>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;align-items:end;">
@@ -194,7 +211,20 @@ export async function renderPortalTipEditor(container) {
   // 4.49.13+ Marca dirty quando user edita observações internas
   document.getElementById('editor-internal-notes')?.addEventListener('input', () => markDirty());
 
-  if (destId) await loadDestinationById(destId);
+  if (destId) {
+    // v4.63.53: try/catch — se destId inválido (ex: doc deletado), volta
+    // pro seletor de destino em vez de deixar o loading indicator travado.
+    try {
+      await loadDestinationById(destId);
+    } catch (e) {
+      console.warn('[tipEditor] loadDestinationById falhou:', e?.message);
+      const loadingEl = document.getElementById('editor-loading-indicator');
+      const selectorEl = document.getElementById('editor-dest-selector');
+      if (loadingEl) loadingEl.style.display = 'none';
+      if (selectorEl) selectorEl.style.display = 'block';
+      toast.error('Destino não encontrado. Selecione outro.');
+    }
+  }
 }
 
 /* ─── Destination loading ─────────────────────────────────── */
@@ -291,6 +321,9 @@ async function loadDestinationById(destId, destInfo = null) {
   document.getElementById('editor-save-btn').disabled    = false;
   document.getElementById('editor-layout').style.display = 'block';
   document.getElementById('editor-dest-selector').style.display = 'none';
+  // v4.63.53: esconde loading indicator (mostrado no boot c/ destId pré-setado)
+  const loadingEl = document.getElementById('editor-loading-indicator');
+  if (loadingEl) loadingEl.style.display = 'none';
   const priorityBar = document.getElementById('editor-priority-bar');
   const priorityChk = document.getElementById('editor-priority');
   if (priorityBar) priorityBar.style.display = 'block';

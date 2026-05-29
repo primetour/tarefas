@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 52,
-  build: '20260529-richtext-info-gerais-export-coerente',
+  patch: 53,
+  build: '20260529-toast-objectobject-tipeditor-loading',
 };
 
 /** "1.2.0" */
