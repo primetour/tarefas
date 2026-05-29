@@ -126,7 +126,7 @@ export async function withRetryToast(fn, opts = {}) {
       : isFirestoreError(error)
       ? 'Falha de conexão após várias tentativas. Verifique sua internet e tente novamente.'
       : (errorMsg || ('Erro: ' + (error?.message || error)));
-    toast.error(friendly, { duration: 7000 });
+    toast.error(friendly, null, 7000);  // v4.63.54: signature (message, title, duration)
     return { ok: false, error };
   }
 }

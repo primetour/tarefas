@@ -51,6 +51,14 @@ class ToastManager {
   }
 
   show(type, message, title = null, duration = null) {
+    // v4.63.54 defesa: se title é objeto (callsite errado tipo
+    // `toast.info(msg, {duration:8000})`), trata como opts em vez de
+    // renderizar "[object Object]". Detecta { duration: N } ou { title: 'X' }.
+    if (title && typeof title === 'object' && !Array.isArray(title)) {
+      const opts = title;
+      duration = opts.duration ?? duration;
+      title = opts.title ?? null;
+    }
     const id = ++this.counter;
     const container = this._getContainer();
     const ms = duration ?? DURATION[type] ?? 4000;

@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 53,
-  build: '20260529-toast-objectobject-tipeditor-loading',
+  patch: 54,
+  build: '20260529-toast-signature-defense',
 };
 
 /** "1.2.0" */
