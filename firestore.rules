@@ -611,7 +611,10 @@ service cloud.firestore {
     // ── Portal de Dicas ───────────────────────────────────────
     match /portal_areas/{docId} {
       allow read:  if isAuth();
-      allow write: if isAuth() && isAdmin();
+      // v4.63.59 alinhar rule com store.canManagePortalAreas()
+      allow write: if isAuth() && (
+        isAdmin() || hasPermission('portal_areas_manage') || hasPermission('portal_manage')
+      );
     }
 
     // v4.62.44+ Fase F — SSOT unificado business_units.
@@ -669,7 +672,10 @@ service cloud.firestore {
 
     match /portal_images/{docId} {
       allow read:  if isAuth();
-      allow write: if isAuth() && isAdmin();
+      // v4.63.59 alinhar rule com store.canManagePortalImages()
+      allow write: if isAuth() && (
+        isAdmin() || hasPermission('portal_images_manage') || hasPermission('portal_manage')
+      );
     }
 
     match /portal_generations/{docId} {
@@ -881,25 +887,35 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // v4.63.59 alinhar com store.canManagePortalSegments():
+    // analista relatou "não consegue editar categorias dentro de segmentos".
+    // canManagePortalSegments = master || portal_segments_manage || portal_manage.
+    // Rule só aceitava isAdmin() → erro silencioso ao salvar categoria.
     match /portal_categories/{docId} {
       allow read:  if isAuth();
-      allow write: if isAuth() && isAdmin();
+      allow write: if isAuth() && (
+        isAdmin() || hasPermission('portal_segments_manage') || hasPermission('portal_manage')
+      );
     }
 
     // 4.40.18+ Custom segments (segmentos extras além dos 11 builtin).
     // Leitura PÚBLICA pra portal-view.html renderizar web links sem auth.
-    // Escrita só admin (mesmo padrão de portal_categories).
+    // v4.63.59 write alinhado com canManagePortalSegments.
     match /portal_segments/{segKey} {
       allow read:  if true;
-      allow write: if isAuth() && isAdmin();
+      allow write: if isAuth() && (
+        isAdmin() || hasPermission('portal_segments_manage') || hasPermission('portal_manage')
+      );
     }
 
     // v4.63.37+ Vocabulário de tags pra items (perfil, ambiente, dietas).
-    // Single doc `_root.tags[]`. Leitura pública pra portal-view consumir
-    // (tags renderizam como chips). Escrita restrita a quem gerencia segmentos.
+    // Single doc `_root.tags[]`. Leitura pública pra portal-view consumir.
+    // v4.63.59 write alinhado com canManagePortalSegments (mesmo escopo de segmentos).
     match /portal_tip_tags/{docId} {
       allow read:  if true;
-      allow write: if isAuth() && isAdmin();
+      allow write: if isAuth() && (
+        isAdmin() || hasPermission('portal_segments_manage') || hasPermission('portal_manage')
+      );
     }
 
     // ── Roteiros de Viagem ──────────────────────────────────
