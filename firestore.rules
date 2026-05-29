@@ -635,22 +635,31 @@ service cloud.firestore {
 
     match /portal_destinations/{docId} {
       allow read:  if isAuth();
-      // v4.59.0+ SSOT geo: write é admin-only no client.
+      // v4.59.0+ SSOT geo: write era admin-only no client.
+      // v4.63.57 HOTFIX: analista relatou que não consegue criar destino.
+      // canManageDestinations() em js/store.js:180 aceita portal_destinations_manage
+      // ou portal_manage além de master — mas rule só aceitava isAdmin(),
+      // gerando erro silencioso depois do check JS passar. Alinhar rule
+      // com store: permissões granulares portal_destinations_manage ou
+      // portal_manage também podem criar/atualizar/deletar.
+      //
       // Pending destinations (reviewStatus='pending', source='envision-auto')
       // são criadas via Admin SDK (functions/import-envision-bundle.cjs +
-      // functions/backfill-pending-destinations.cjs). Admin SDK bypassa rules,
-      // então não precisa rule liberando create pro auth não-admin.
-      // Master vê/aprova via UI (portalDestinations.js — filtro reviewStatus).
+      // functions/backfill-pending-destinations.cjs). Admin SDK bypassa rules.
       //
-      // v4.63.45+ Exceção: update SÓ do campo _geo é permitido pra qualquer
-      // auth user. Componente portalTipsMap geocoda via Nominatim e cacheia
-      // como cache benigno. Validado por affectedKeys().hasOnly(['_geo'])
-      // — qualquer outro campo cai pra regra admin-only acima.
+      // v4.63.45+ Exceção pra auth não-curador: update SÓ do campo _geo é
+      // permitido. Componente portalTipsMap geocoda via Nominatim e cacheia
+      // como cache benigno. Validado por affectedKeys().hasOnly(['_geo']).
+      function canCurate() {
+        return isAdmin()
+            || hasPermission('portal_destinations_manage')
+            || hasPermission('portal_manage');
+      }
       allow update: if isAuth() && (
-        isAdmin()
+        canCurate()
         || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['_geo'])
       );
-      allow create, delete: if isAuth() && isAdmin();
+      allow create, delete: if isAuth() && canCurate();
     }
 
     match /portal_tips/{docId} {
