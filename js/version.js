@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 82,
-  build: '20260529-cotacoes-html-template-overflow-fix',
+  patch: 83,
+  build: '20260529-cotacoes-html-universal-photo-cover',
 };
 
 /** "1.2.0" */

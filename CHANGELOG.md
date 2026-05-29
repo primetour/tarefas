@@ -6,6 +6,20 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.83+20260529-cotacoes-html-universal-photo-cover] — 2026-05-29
+
+**Padronização do template default de cotações: HTML universal + capa com foto legível + sem títulos órfãos.**
+
+Reportado pelo Renê após testar a extração de **todas as áreas cadastradas**: *"tem problemas de títulos no meio do texto, sistema ignorando padrões e colocando texto sem formatação, capa com foto no fundo dificultando a leitura do título... precisamos padronizar esse template default pra ter um mínimo de qualidade de entrega"*. Decisões dele (via opções): motor = **Template HTML pra todas as áreas**; capa = **Foto do destino + véu escuro forte**.
+
+**Mudanças:**
+- **HTML universal pra cotações** (`roteiroGenerator.js` + novo helper `fetchDefaultCotacoesTemplate` em `templates.js`): quando a área não tem `templateRefs.cotacoes.html` próprio, o export agora resolve **dinamicamente o template global default** (doc `isDefault` cotações/html/global) em vez de cair pro pipeline jsPDF legado. jsPDF vira fallback só em erro de render (mantém o safety-net + toast.warning + audit `templates.fallback`). Resultado: toda cotação, de qualquer área, sai com o mesmo padrão de qualidade.
+- **Capa com foto + véu escuro forte** (`cotacoes-default-html.html` + thread `heroUrl`→`coverImageUrl` via `templateAdapter.js`/`_buildAdapterOpts`): a capa recebe a foto do destino (`<img class="cover-photo">`) sob um **scrim duplo** (gradiente preto rgba 0.74→0.50→0.80 + gradiente da cor secundária) e `text-shadow` no título/subtítulo, garantindo leitura sempre legível independente do brilho da foto.
+- **Sem títulos órfãos / texto colado** (CSS do template): `.section-title-bar` ganhou `break-inside/after:avoid` (título nunca fica sozinho no fim da página, sempre cola no conteúdo seguinte); `table.gdt thead { display:table-header-group }` (cabeçalho de Aéreo/Hospedagem repete em cada página) + `tbody tr { break-inside:avoid }` (linha não corta no meio).
+- **SSRF allowlist da CF** (`functions/index.js` `renderTemplate`): adicionadas 5 CDNs públicas de imagem (`images.unsplash.com`, worker `primetour-images`, `upload.wikimedia.org`, `lh3.googleusercontent.com`, `storage.googleapis.com`) ao `ALLOWED_FETCH_ORIGINS` do `setRequestInterception` — antes, a foto da capa era **bloqueada server-side** (só R2 + Google Fonts eram permitidos) e a capa caía pra cor sólida silenciosamente. CDNs públicas non-proxy espelhando a CSP `img-src` (sem risco de SSRF-to-internal).
+
+**Validação:** render local determinístico (puppeteer-core + Chrome for Testing replicando as opções EXATAS do `page.pdf` da CF — A4, margem 20/15mm) com dados adversariais (12 dias, 8 voos, 8 hotéis, capa Unsplash brilhante pra estressar o scrim). PDF de 9 páginas rasterizado e inspecionado: capa com foto + título/logo/datas legíveis; "ROTEIRO DIA A DIA"/"AÉREO"/"HOSPEDAGEM"/"VALORES"/"INFORMAÇÕES IMPORTANTES" todos colados ao conteúdo (zero título órfão); thead das tabelas presente; fechamento "Boa viagem!" contido. Template re-seedado pro R2 + Firestore (doc novo `aziKOrLrxLqexqEVauZZ` `isDefault`, antigo arquivado). CF `renderTemplate` deployada com a allowlist nova.
+
 ## [4.63.82+20260529-cotacoes-html-template-overflow-fix] — 2026-05-29
 
 **Fix: export PDF via template "Default HTML" — capa e fechamento cortados (transbordo pra próxima página).**

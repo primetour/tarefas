@@ -1114,6 +1114,16 @@ export const renderTemplate = onCall({
           'https://pub-ad909dc0c977450a93ee5faa79c7374d.r2.dev',
           'https://fonts.googleapis.com',
           'https://fonts.gstatic.com',
+          // v4.63.83+ Capa/dias com foto: CDNs de imagem públicas que o sistema
+          // usa pra hero (enrichRoteiroImages / resolveBankHero / Unsplash
+          // fallback). Sem isso a foto da capa é abortada pelo SSRF guard e cai
+          // pro fundo sólido. São CDNs públicos bem-conhecidos (não-proxy, sem
+          // risco de SSRF pra rede interna) — mesma whitelist do img-src CSP.
+          'https://images.unsplash.com',
+          'https://primetour-images.rene-castro.workers.dev',
+          'https://upload.wikimedia.org',
+          'https://lh3.googleusercontent.com',
+          'https://storage.googleapis.com',
         ];
         await page.setRequestInterception(true);
         page.on('request', req => {

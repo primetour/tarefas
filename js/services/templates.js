@@ -347,6 +347,44 @@ export async function fetchTemplate(id) {
 }
 
 /**
+ * Resolve o id do template HTML default GLOBAL de cotações.
+ *
+ * v4.63.83 — fundação pra "Template HTML universal" (decisão Renê 29/05/2026):
+ * quando uma área NÃO tem `templateRefs.cotacoes.html` próprio, o gerador de
+ * cotações cai pra ESTE template global (em vez do jsPDF legado, que tem bugs
+ * de layout: header collision, tabela cortada, capa com scrim fraco).
+ *
+ * Busca o doc `isDefault=true` + `ownerType='global'` + module cotacoes/roteiros
+ * + format html. Cacheado em memória pro resto da sessão (defaults mudam raro).
+ *
+ * @returns {Promise<string|null>} id do template ou null se nenhum default global.
+ */
+let _defaultCotacoesTplCache; // undefined = não resolvido; string|null = resolvido
+export async function fetchDefaultCotacoesTemplate() {
+  if (_defaultCotacoesTplCache !== undefined) return _defaultCotacoesTplCache;
+  try {
+    const snap = await getDocs(query(collection(db, COLLECTION), limit(500)));
+    const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    const candidates = docs.filter(d =>
+         (d.status || 'active') === 'active'
+      && d.format === 'html'
+      && (d.module === 'cotacoes' || d.module === 'roteiros')
+      && d.ownerType === 'global'
+    );
+    // Prioridade: isDefault=true primeiro, depois mais recente
+    candidates.sort((a, b) => {
+      if (!!a.isDefault !== !!b.isDefault) return a.isDefault ? -1 : 1;
+      return (b.updatedAt?.toMillis?.() || 0) - (a.updatedAt?.toMillis?.() || 0);
+    });
+    _defaultCotacoesTplCache = candidates[0]?.id || null;
+  } catch (e) {
+    console.warn('[templates] fetchDefaultCotacoesTemplate falhou:', e?.message);
+    _defaultCotacoesTplCache = null;
+  }
+  return _defaultCotacoesTplCache;
+}
+
+/**
  * Cria entrada de template após upload do arquivo no Storage.
  * NOTA: o upload físico do arquivo é responsabilidade da CF `uploadTemplate`
  * (v4.63.1). Esta função apenas registra o doc no Firestore.

@@ -888,6 +888,9 @@ async function _buildAdapterOpts(roteiro, area, refKey, format) {
     customFooterText: _exportTpl?.footerText || '',
     customHeaderText: _exportTpl?.headerText || '',
     hideCover: !!_exportTpl?.hideCover,
+    // v4.63.83+ Capa com foto do destino + véu escuro (decisão Renê 29/05/2026).
+    // Mesma hero usada pelo jsPDF (buildCoverPage) — flui pro template HTML.
+    coverImageUrl: _imagesForTpl?.heroUrl || '',
   };
 }
 
@@ -905,8 +908,21 @@ export async function generateRoteiroPDF(roteiro, area = null) {
   // qualquer falha cai pro pipeline antigo (zero risco de breakage).
   const _moduleKeyForRefs = roteiro._exportModuleKey || 'cotacoes';
   const _refKey = _moduleKeyForRefs === 'roteiros' ? 'cotacoes' : _moduleKeyForRefs;
-  const _tplId = area?.templateRefs?.[_refKey]?.html
-              || area?.templateRefs?.roteiros?.html;  // alias retrocompat
+  let _tplId = area?.templateRefs?.[_refKey]?.html
+            || area?.templateRefs?.roteiros?.html;  // alias retrocompat
+  // v4.63.83+ Template HTML universal (decisão Renê 29/05/2026): se a área NÃO
+  // tem template próprio configurado pra cotações, cai pro template HTML default
+  // GLOBAL em vez do jsPDF legado (que tem bugs de layout — header collision,
+  // tabela cortada, capa com scrim fraco). jsPDF fica só como fallback de erro.
+  // Escopo: só cotações (banco-roteiros mantém comportamento anterior).
+  if (!_tplId && _refKey === 'cotacoes') {
+    try {
+      const { fetchDefaultCotacoesTemplate } = await import('./templates.js');
+      _tplId = await fetchDefaultCotacoesTemplate();
+    } catch (e) {
+      console.warn('[roteiroGenerator] fetchDefaultCotacoesTemplate falhou:', e?.message);
+    }
+  }
   if (_tplId) {
     // v4.63.14+ Perf #1 (audit pós-sprint): progress indicator dinâmico.
     // Antes: 10s silenciosos, user achava que travou.

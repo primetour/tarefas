@@ -106,6 +106,11 @@ export function roteiroToTemplateData(roteiro, area, opts = {}) {
     customFooterText: opts?.customFooterText || '',
     customHeaderText: opts?.customHeaderText || '',
     hideCover: !!opts?.hideCover,
+    // v4.63.83+ Capa com foto do destino + véu escuro forte (decisão Renê
+    // 29/05/2026). Mesma hero do jsPDF (buildCoverPage). Template renderiza a
+    // imagem full-bleed sob gradiente escuro pra título/logo ficarem legíveis;
+    // fallback pra cor sólida var(--secondary) quando vazio.
+    coverImageUrl: opts?.coverImageUrl || '',
     contact: roteiro.contact || roteiro.client?.agentEmail || '',
     hasIncExc: (Array.isArray(roteiro.includes) && roteiro.includes.length > 0)
             || (Array.isArray(roteiro.excludes) && roteiro.excludes.length > 0),

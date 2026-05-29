@@ -44,10 +44,51 @@
       display: flex; flex-direction: column;
       page-break-after: always;
       position: relative;
+      overflow: hidden;
+    }
+    /* v4.63.83: Capa com foto do destino + véu escuro forte (decisão Renê
+       29/05/2026). A foto preenche a capa inteira (full-bleed); por cima dela
+       um gradiente escuro garante contraste pro título/logo/datas. Sem foto,
+       a capa cai pra cor sólida var(--secondary) (comportamento anterior). */
+    .cover-photo {
+      position: absolute; inset: 0;
+      width: 100%; height: 100%;
+      object-fit: cover;
+      z-index: 0;
+    }
+    .cover-scrim {
+      position: absolute; inset: 0;
+      z-index: 1;
+      /* Véu escuro forte: topo e base mais densos (logo + cliente), meio um
+         pouco mais leve. Mistura preto + var(--secondary) pra manter a marca. */
+      background:
+        linear-gradient(180deg,
+          rgba(0,0,0,0.74) 0%,
+          rgba(0,0,0,0.50) 32%,
+          rgba(0,0,0,0.50) 64%,
+          rgba(0,0,0,0.80) 100%),
+        linear-gradient(180deg,
+          var(--secondary) 0%,
+          rgba(0,0,0,0) 40%,
+          rgba(0,0,0,0) 60%,
+          var(--secondary) 100%);
+    }
+    /* Conteúdo da capa fica acima da foto+scrim */
+    .cover > *:not(.cover-photo):not(.cover-scrim) { position: relative; z-index: 2; }
+    /* Sombra de texto reforça legibilidade sobre foto clara */
+    .cover.cover-has-photo .cover-destinos,
+    .cover.cover-has-photo .cover-subtitle,
+    .cover.cover-has-photo .cover-brand-name,
+    .cover.cover-has-photo .cover-dates,
+    .cover.cover-has-photo .cover-client-name,
+    .cover.cover-has-photo .cover-client-pax,
+    .cover.cover-has-photo .cover-title {
+      text-shadow: 0 1px 4px rgba(0,0,0,0.55);
     }
     .cover-line-top, .cover-line-bottom {
       position: absolute; left: 16mm; right: 16mm; height: 0.6mm;
       background: rgba(255,255,255,0.9);
+      z-index: 2;
     }
     .cover-line-top { top: 40mm; }
     .cover-line-bottom { top: 224mm; }
@@ -107,6 +148,13 @@
     .section-title-bar {
       display: flex; align-items: center; gap: 4mm;
       margin-bottom: 5mm;
+      /* v4.63.83: impede "título no meio do texto" — o cabeçalho nunca quebra
+         internamente e nunca fica órfão no fim de uma página (Chromium honra
+         break-inside/break-after; o título carrega a linha+1º conteúdo junto). */
+      break-inside: avoid;
+      page-break-inside: avoid;
+      break-after: avoid;
+      page-break-after: avoid;
     }
     .section-bar {
       width: 6mm; height: 4mm; background: var(--primary);
@@ -119,6 +167,10 @@
     .section-line {
       border-bottom: 0.3mm solid var(--border-light);
       margin: 1mm 0 5mm;
+      break-before: avoid;
+      page-break-before: avoid;
+      break-after: avoid;
+      page-break-after: avoid;
     }
 
     /* ─── DIAS (DAY-BY-DAY) ────────────────────────────────── */
@@ -187,6 +239,11 @@
       width: 100%; border-collapse: collapse;
       font-size: 8pt; margin: 3mm 0;
     }
+    /* v4.63.83: tabela longa que cruza página repete o cabeçalho e nunca corta
+       uma linha pela metade (Chromium honra thead display:table-header-group +
+       break-inside:avoid no tr). Evita "tabela cortada" / linha sem header. */
+    table.gdt thead { display: table-header-group; }
+    table.gdt tbody tr { break-inside: avoid; page-break-inside: avoid; }
     table.gdt thead th {
       background: var(--secondary); color: #fff;
       padding: 3mm 2.5mm; text-align: left;
@@ -366,7 +423,11 @@
 
 {{!-- COVER --}}
 {{#unless hideCover}}
-<section class="cover">
+<section class="cover{{#if coverImageUrl}} cover-has-photo{{/if}}">
+  {{#if coverImageUrl}}
+    <img src="{{coverImageUrl}}" alt="" class="cover-photo">
+    <div class="cover-scrim"></div>
+  {{/if}}
   <div class="cover-line-top"></div>
   {{#if area.logoUrl}}
     <img src="{{area.logoUrl}}" alt="{{area.nome}}" class="cover-logo">
