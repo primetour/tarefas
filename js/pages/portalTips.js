@@ -12,6 +12,7 @@ import {
   hasAcceptedTerms, getActiveTerms, acceptTerms,
   recordGeneration, registerDownload, fetchImages,
   SEGMENTS, GENERATION_FORMATS,
+  segHasContent,  // v4.63.63 G3 UX
 } from '../services/portal.js';
 import { generateTip } from '../services/portalGenerator.js';
 import { detectBankContext, showBankGuardModal, listBankClients } from '../services/bankClientGuard.js';
@@ -1016,13 +1017,10 @@ async function showPreviewModal({ tip, dest, area, segments, format, extraTips }
     }
   }
 
+  // v4.63.63 G3 UX: usa helper canônico segHasContent — antes ignorava
+  // themeDesc/periodoAgenda/dica → segmento com tema mas sem items sumia.
   const activeSeg = segments.filter(k =>
-    workingTips.some(({ tip: t }) => {
-      const seg = t?.segments?.[k];
-      if (!seg) return false;
-      if (seg.info && Object.values(seg.info).some(v => v && String(v).trim())) return true;
-      return Array.isArray(seg.items) && seg.items.length > 0;
-    })
+    workingTips.some(({ tip: t }) => segHasContent(t?.segments?.[k]))
   );
 
   const selectedImages     = {};  // { [destId]: { [segKey]: { [idx]: { url, name } } } }
@@ -1144,10 +1142,8 @@ async function showPreviewModal({ tip, dest, area, segments, format, extraTips }
     document.getElementById('gen-seg-list').innerHTML = heroBtn + activeSeg.map(k => {
       const seg = SEGMENTS.find(s => s.key === k);
       const segData = wTip?.segments?.[k];
-      const hasContent = segData && (
-        (segData.info && Object.values(segData.info).some(v => v && String(v).trim())) ||
-        (Array.isArray(segData.items) && segData.items.length > 0)
-      );
+      // v4.63.63 G3 UX
+      const hasContent = segHasContent(segData);
       const isActive = k === curSegKey;
       return `<button class="gen-seg-btn" data-seg="${k}"
         style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;

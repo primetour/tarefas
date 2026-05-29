@@ -1103,17 +1103,31 @@ export async function toggleTipPriority(tipId, priority) {
   });
 }
 
+/**
+ * v4.63.63 G3 UX — helper canônico "esse segmento tem conteúdo?".
+ * Antes cada caller tinha sua própria lógica e perdia:
+ *   - themeDesc (place_list: descrição do tema do segmento)
+ *   - periodoAgenda (agenda: período/temporada)
+ *   - dica (agenda: dica geral do segmento, separada de items)
+ * Resultado: segmentos com texto MAS sem items eram considerados vazios,
+ * sumiam de fetchAvailableSegments → preview/export.
+ */
+export function segHasContent(seg) {
+  if (!seg) return false;
+  if (seg.info && Object.values(seg.info).some(v => v && String(v).trim())) return true;
+  if (typeof seg.content === 'string' && seg.content.trim()) return true;
+  if (typeof seg.themeDesc === 'string' && seg.themeDesc.trim()) return true;
+  if (typeof seg.periodoAgenda === 'string' && seg.periodoAgenda.trim()) return true;
+  if (typeof seg.dica === 'string' && seg.dica.trim()) return true;
+  if (Array.isArray(seg.items) && seg.items.length > 0) return true;
+  return false;
+}
+
 export async function fetchAvailableSegments(destinationId) {
   const tip = await fetchTip(destinationId);
   if (!tip?.segments) return [];
   return Object.entries(tip.segments)
-    .filter(([, seg]) => {
-      if (!seg) return false;
-      if (seg.info && Object.values(seg.info).some(v => v && String(v).trim())) return true;
-      if (typeof seg.content === 'string' && seg.content.trim()) return true;
-      if (Array.isArray(seg.items) && seg.items.length > 0) return true;
-      return false;
-    })
+    .filter(([, seg]) => segHasContent(seg))
     .map(([key]) => key);
 }
 

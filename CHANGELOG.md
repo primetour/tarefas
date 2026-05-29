@@ -6,6 +6,19 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.63+20260529-seghascontent-helper-g3-ux] — 2026-05-29
+
+**Hotfix G3 UX — helper canônico `segHasContent` em 3 sites.**
+
+### Bugfix
+- **G3 UX — segmentos com `themeDesc`/`periodoAgenda`/`dica` sumiam da preview/export.** Cada caller tinha sua própria lógica de "esse segmento tem conteúdo?" e só checava `info` + `items.length`. Resultado: segmento com tema descrito (place_list) ou período de agenda mas sem items virais era considerado vazio → sumia de:
+  - `fetchAvailableSegments(destId)` em `services/portal.js` → preview no estágio 3
+  - `activeSeg` filter em `portalTips.js:1019` → segmentos mostrados no painel direito
+  - `hasContent` badge verde em `portalTips.js:1147` → status visual no dropdown
+- **Fix**: novo helper canônico `segHasContent(seg)` em `services/portal.js` exportado e importado pelos 3 callers. Cobre `info`, `content`, `themeDesc`, `periodoAgenda`, `dica`, `items[]`. Sites refatorados pra single source of truth.
+
+---
+
 ## [4.63.62+20260529-tipeditor-destroy-utc-parse] — 2026-05-29
 
 **Hotfix continuação — N7 (cleanup editor) + N10 (UTC parse expiry).**

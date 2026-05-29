@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 62,
-  build: '20260529-tipeditor-destroy-utc-parse',
+  patch: 63,
+  build: '20260529-seghascontent-helper-g3-ux',
 };
 
 /** "1.2.0" */
