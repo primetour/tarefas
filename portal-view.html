@@ -789,12 +789,12 @@ function renderInfo(sd,data){
   ].filter(([,,v])=>v);
 
   return `${segHead(sd)}
-    ${descClean ? `<p class="info-description">${esc(descClean)}</p>` : ''}
+    ${descClean ? `<p class="info-description">${richToHtml(descClean)}</p>` : ''}
     ${inf.dica ? `<div class="info-dica">
       <span class="material-symbols-outlined">lightbulb</span>
       <div class="info-dica-text">
         <span class="info-dica-label">Dica do concierge</span>
-        ${esc(inf.dica)}
+        ${richToHtml(inf.dica)}
       </div>
     </div>` : ''}
     ${chips.length ? `<div class="info-chips">${chips.map(([icon,l,v])=>`
@@ -844,7 +844,7 @@ function renderSimple(sd,data,imgs){
     return `${segHead(sd)}<div class="simple-list">${items.map((item,i)=>`<div class="simple-item" style="position:relative;">
       <div style="position:absolute;top:var(--portal-space-4);right:0;">${favBtnHtml({titulo:item.title})}</div>
       <div class="simple-item-title">${esc(item.title)}</div>
-      ${item.description?`<div class="simple-item-desc">${esc(item.description)}</div>`:''}
+      ${item.description?`<div class="simple-item-desc">${richToHtml(item.description)}</div>`:''}
     </div>`).join('')}</div>`;
   }
   // Layout com fotos: cards uniformes (mesmo do place_list)
@@ -959,7 +959,7 @@ function renderPlaces(sd,data,imgs,isAgenda){
 
   const heroCard=(item,idx,segDef=null)=>{const img=getImg(item,idx,segDef);return `<div class="hero-card">${favBtnHtml(item)}<div style="position:absolute;inset:0;">${img?`<img style="width:100%;height:100%;object-fit:cover;" src="${esc(img)}" alt="${esc(item.titulo)}" loading="lazy">`:`<div style="width:100%;height:100%;background:linear-gradient(135deg,${navy} 0%,${shade(navy,-20)} 100%);"></div>`}</div><div class="card-gradient"></div><div class="card-content">${item.categoria?`<div class="card-supertitle">${esc(item.categoria)}</div>`:''}<div class="card-title">${esc(item.titulo)}</div><div class="card-underline"></div></div></div>`;};
 
-  const themeHtml=data.themeDesc?`<p style="padding:0 32px 24px;font-size:.875rem;color:var(--muted);font-style:italic;line-height:1.7;">${esc(data.themeDesc)}</p>`:'';
+  const themeHtml=data.themeDesc?`<p style="padding:0 32px 24px;font-size:.875rem;color:var(--muted);font-style:italic;line-height:1.7;">${richToHtml(data.themeDesc)}</p>`:'';
   const agendaHtml=isAgenda&&data.periodoAgenda?`<div class="agenda-period">📅 ${esc(data.periodoAgenda)}</div>`:'';
 
   // Cards UNIFORMES — sem destaque hero/bento, todos iguais (preferência do user).

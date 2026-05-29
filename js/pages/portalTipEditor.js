@@ -686,8 +686,8 @@ function buildInfoGeneraisPanel(data) {
     <div style="${BODY_STYLE}">
 
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">
-        ${field('ig-descricao','Descrição','textarea',inf.descricao,{rows:4})}
-        ${field('ig-dica','Dica','textarea',inf.dica,{rows:4})}
+        ${field('ig-descricao','Descrição','textarea',inf.descricao,{rows:4, rich:true})}
+        ${field('ig-dica','Dica','textarea',inf.dica,{rows:4, rich:true})}
         ${field('ig-populacao','População (habitantes)','text',inf.populacao,{placeholder:'Ex: 2.161.000'})}
         ${field('ig-moeda','Moeda','text',inf.moeda,{placeholder:'Ex: Euro (€)'})}
         ${field('ig-lingua','Língua oficial','text',inf.lingua)}
@@ -736,7 +736,7 @@ function buildInfoGeneraisPanel(data) {
           ${field('rep-telefone','Telefone','text',rep.telefone)}
           ${field('rep-link','Link','url',rep.link,{placeholder:'https://'})}
           <div style="grid-column:1/-1;">
-            ${field('rep-obs','Observações','textarea',rep.obs,{rows:2})}
+            ${field('rep-obs','Observações','textarea',rep.obs,{rows:2, rich:true})}
           </div>
         </div>
       </div>
@@ -748,8 +748,14 @@ const LBL = `font-size:0.8125rem;font-weight:600;display:block;margin-bottom:6px
 
 function field(id, label, type, value='', opts={}) {
   const base = `class="portal-field" id="${id}" style="${opts.style||''}"`;
-  if (type === 'textarea') return `<div><label style="${LBL}">${label}</label>
-    <textarea ${base} rows="${opts.rows||3}" placeholder="${esc(opts.placeholder||'')}">${esc(value||'')}</textarea></div>`;
+  if (type === 'textarea') {
+    // v4.63.52: opt `rich` adiciona barra de formatação acima do textarea.
+    // Reusa richToolbar (mesma usada em place-desc) — segmenta pelo id.
+    const richBar = opts.rich ? richToolbar(`#${id}`, { compact: true }) : '';
+    return `<div><label style="${LBL}">${label}</label>
+      ${richBar}
+      <textarea ${base} rows="${opts.rows||3}" placeholder="${esc(opts.placeholder||'')}">${esc(value||'')}</textarea></div>`;
+  }
   return `<div><label style="${LBL}">${label}</label>
     <input type="${type}" ${base} value="${esc(value||'')}" placeholder="${esc(opts.placeholder||'')}"></div>`;
 }
@@ -790,6 +796,7 @@ function simpleItemRow(item, i) {
       <input type="text" class="simple-item-title portal-field" data-index="${i}"
         style="width:100%;margin-bottom:6px;font-weight:600;"
         placeholder="Nome do bairro / local" value="${esc(item.title||'')}">
+      ${richToolbar(`.simple-item-desc[data-index="${i}"]`, { compact: true })}
       <textarea class="simple-item-desc portal-field" data-index="${i}"
         style="width:100%;resize:vertical;min-height:60px;" placeholder="Descrição (opcional)"
         rows="2">${esc(item.description||'')}</textarea>
@@ -1046,15 +1053,15 @@ function richToolbar(targetSel, opts = {}) {
   const sz = compact ? '0.7rem' : '0.75rem';
   return `<div class="rich-toolbar" data-target="${esc(targetSel)}"
     style="display:flex;gap:3px;margin-bottom:4px;font-size:${sz};">
-    <button type="button" class="rt-btn" data-rt="bold" title="Negrito (** **)"
+    <button type="button" class="rt-btn" data-rt="bold" title="Negrito"
       style="border:1px solid var(--border-subtle);background:var(--bg-card);
       padding:2px 8px;font-weight:700;cursor:pointer;border-radius:3px;
       color:var(--text-secondary);font-family:inherit;">B</button>
-    <button type="button" class="rt-btn" data-rt="italic" title="Itálico (_ _)"
+    <button type="button" class="rt-btn" data-rt="italic" title="Itálico"
       style="border:1px solid var(--border-subtle);background:var(--bg-card);
       padding:2px 8px;font-style:italic;cursor:pointer;border-radius:3px;
       color:var(--text-secondary);font-family:inherit;">I</button>
-    <button type="button" class="rt-btn" data-rt="underline" title="Sublinhado (__ __)"
+    <button type="button" class="rt-btn" data-rt="underline" title="Sublinhado"
       style="border:1px solid var(--border-subtle);background:var(--bg-card);
       padding:2px 8px;text-decoration:underline;cursor:pointer;border-radius:3px;
       color:var(--text-secondary);font-family:inherit;">U</button>
@@ -1062,7 +1069,7 @@ function richToolbar(targetSel, opts = {}) {
       style="border:1px solid var(--border-subtle);background:var(--bg-card);
       padding:2px 8px;cursor:pointer;border-radius:3px;
       color:var(--text-secondary);font-family:inherit;">🔗</button>
-    <button type="button" class="rt-btn" data-rt="anchor" title="Link interno (ir pra outro segmento)"
+    <button type="button" class="rt-btn" data-rt="anchor" title="Link interno (outro bloco)"
       style="border:1px solid var(--border-subtle);background:var(--bg-card);
       padding:2px 8px;cursor:pointer;border-radius:3px;
       color:var(--brand-gold,#D4A843);font-family:inherit;">⚓</button>
@@ -1115,7 +1122,7 @@ function buildAgendaPanel(seg, data) {
             placeholder="Ex: Janeiro a Março 2026" value="${esc(data.periodoAgenda||'')}">
         </div>
         <div>
-          ${field('agenda-dica','Dica geral','textarea',data.dica,{rows:2})}
+          ${field('agenda-dica','Dica geral','textarea',data.dica,{rows:2, rich:true})}
         </div>
         <div style="grid-column:1/-1;">
           <label style="${LBL}">Descrição do tema</label>
@@ -1185,7 +1192,7 @@ function placeItemBlock(item, i, cats, isAgenda) {
       ${richToolbar(`.place-desc[data-index="${i}"]`)}
       <textarea class="place-desc portal-field" data-index="${i}"
         style="width:100%;resize:vertical;" rows="3"
-        placeholder="Descrição do local… (** negrito **, _ itálico _, __ sublinhado __, [texto](url))">${esc(item.descricao||'')}</textarea>
+        placeholder="Descrição do local…">${esc(item.descricao||'')}</textarea>
     </div>
 
     ${isAgenda ? `

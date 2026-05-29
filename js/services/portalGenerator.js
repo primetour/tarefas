@@ -899,13 +899,15 @@ async function generateDocx({ allTips, segments, areaName, area, colors, filenam
         const { descricao: descClean, climate } = parseDescricao(inf.descricao, !!repObj.nome);
 
         // ── DESCRIÇÃO em parágrafo (largura total) ──
+        // v4.63.52: usa _richDescToDocxRuns pra renderizar bold/italic/link
+        // (markdown leve da toolbar do editor — antes saía literal "**texto**").
         if (descClean) {
           children.push(new Paragraph({
             children:[new TextRun({font:_DOCX_FONT,text:'DESCRIÇÃO',size:13,bold:true,color:gold,characterSpacing:200})],
             spacing:{before:120,after:120},
           }));
           children.push(new Paragraph({
-            children:[new TextRun({font:_DOCX_FONT,text:descClean,size:20,color:'474650'})],
+            children:_richDescToDocxRuns(descClean, _DOCX_FONT, gold, ExternalHyperlink, TextRun, { size: 20, color: '474650' }),
             spacing:{after:400, line:320},
           }));
         }
@@ -916,7 +918,7 @@ async function generateDocx({ allTips, segments, areaName, area, colors, filenam
             spacing:{before:300,after:120},
           }));
           children.push(new Paragraph({
-            children:[new TextRun({font:_DOCX_FONT,text:inf.dica,size:20,italics:true,color:'474650'})],
+            children:_richDescToDocxRuns(inf.dica, _DOCX_FONT, gold, ExternalHyperlink, TextRun, { size: 20, italics: true, color: '474650' }),
             spacing:{after:400, line:320},
             indent:{left:200},
           }));
@@ -988,10 +990,10 @@ async function generateDocx({ allTips, segments, areaName, area, colors, filenam
         });
         for(const item of uniqueItems){
           children.push(new Paragraph({children:[new TextRun({font:_DOCX_FONT,text:item.title,bold:true,size:22,color:navy})],spacing:{before:360,after:120}}));
-          if(item.description) children.push(new Paragraph({children:[new TextRun({font:_DOCX_FONT,text:item.description,size:20,color:'474650'})],spacing:{after:240, line:320}}));
+          if(item.description) children.push(new Paragraph({children:_richDescToDocxRuns(item.description, _DOCX_FONT, gold, ExternalHyperlink, TextRun, { size: 20, color: '474650' }),spacing:{after:240, line:320}}));
         }
       } else {
-        if(data.themeDesc) children.push(new Paragraph({children:[new TextRun({font:_DOCX_FONT,text:data.themeDesc,size:18,italics:true,color:'474650'})],spacing:{after:160}}));
+        if(data.themeDesc) children.push(new Paragraph({children:_richDescToDocxRuns(data.themeDesc, _DOCX_FONT, gold, ExternalHyperlink, TextRun, { size: 18, italics: true, color: '474650' }),spacing:{after:160}}));
 
         // Dedupe + ordena por categoria pra agrupar (heading da categoria
         // só uma vez por grupo, não em cada item).
@@ -1336,7 +1338,9 @@ async function generatePDF({
   // que serão usadas. Retorna altura em mm.
   const estimateInfoGeraisH = (info, hasClimate, hasRep) => {
     if (!info) return 0;
-    const descClean = info._descClean ?? cleanText(info.descricao || '');
+    // v4.63.52: richToPlain strip de markdown leve (B/I/U/link) caso user
+    // tenha usado a toolbar nos campos info.descricao/info.dica.
+    const descClean = info._descClean ?? richToPlain(cleanText(info.descricao || ''));
     let h = 14; // segment heading "INFORMAÇÕES GERAIS" + margin
     // DESCRIÇÃO
     if (descClean) {
@@ -1347,7 +1351,7 @@ async function generatePDF({
     // DICA (callout)
     if (info.dica) {
       doc.setFontSize(9); setF('normal');
-      const dicaLines = doc.splitTextToSize(cleanText(info.dica), CONTENT - 10);
+      const dicaLines = doc.splitTextToSize(richToPlain(cleanText(info.dica)), CONTENT - 10);
       h += dicaLines.length * 4.5 + 8 + 6;
     }
     // CHIPS (4 por linha, 18mm + 3mm gap)
@@ -1463,12 +1467,14 @@ async function generatePDF({
         const { descricao: descClean, climate } = parseDescricao(inf.descricao, !!rep.nome);
 
         // ── DESCRIÇÃO em largura total ──────────────────────────────
+        // v4.63.52: richToPlain strip de markdown (Fase 1 — PDF rich render
+        // virá em release futura). DOCX já renderiza bold/italic real.
         if (descClean) {
           checkPage(8);
           doc.setFontSize(6); setF('bold'); doc.setTextColor(pR,pG,pB);
           doc.text('DESCRIÇÃO', MARGIN, y, {charSpace:0.8}); y+=5;
           doc.setFontSize(9); setF('normal'); doc.setTextColor(60,60,60);
-          const lines = doc.splitTextToSize(cleanText(descClean), CONTENT);
+          const lines = doc.splitTextToSize(richToPlain(cleanText(descClean)), CONTENT);
           checkPage(lines.length*4.5+2);
           doc.text(lines, MARGIN, y); y+=lines.length*4.5+5;
         }
@@ -1476,7 +1482,7 @@ async function generatePDF({
         // ── DICA em callout ─────────────────────────────────────────
         if (inf.dica) {
           doc.setFontSize(9); setF('normal');
-          const dicaLines = doc.splitTextToSize(cleanText(inf.dica), CONTENT-10);
+          const dicaLines = doc.splitTextToSize(richToPlain(cleanText(inf.dica)), CONTENT-10);
           const calloutH = dicaLines.length*4.5 + 8;
           checkPage(calloutH+2);
           doc.setFillColor(248,247,244); doc.rect(MARGIN, y, CONTENT, calloutH, 'F');
@@ -1597,9 +1603,11 @@ async function generatePDF({
           setF('bold'); doc.setFontSize(10);
           const titleLines = doc.splitTextToSize(cleanText(item.title||''), textW - 4);
           let descLines = [];
-          if (item.description) {
+          // v4.63.52: richToPlain strip markdown leve (sem mutar item)
+          const descPlain = item.description ? richToPlain(item.description) : '';
+          if (descPlain) {
             setF('normal'); doc.setFontSize(8.5);
-            descLines = doc.splitTextToSize(cleanText(item.description), textW - 4);
+            descLines = doc.splitTextToSize(cleanText(descPlain), textW - 4);
           }
           const TITLE_LH=5.2, DESC_LH=4.2, GAP_TITLE_DESC=1;
           const textH = titleLines.length*TITLE_LH + (descLines.length ? GAP_TITLE_DESC + descLines.length*DESC_LH : 0);
@@ -1629,7 +1637,7 @@ async function generatePDF({
       } else {
         if (data.themeDesc) {
           setF('italic'); doc.setFontSize(8); doc.setTextColor(100,100,100);
-          const lines = doc.splitTextToSize(cleanText(data.themeDesc), CONTENT);
+          const lines = doc.splitTextToSize(richToPlain(cleanText(data.themeDesc)), CONTENT);
           doc.text(lines, MARGIN, y); y+=lines.length*4+4;
         }
 
@@ -2014,13 +2022,14 @@ async function generatePptx({ allTips, segments, areaName, area, colors, filenam
         const LEFT = 0.4, COLW = W - 0.8;
 
         // ── DESCRIÇÃO em parágrafo
+        // v4.63.52: richToPlain strip markdown (PPTX rich virá em release futura).
         if (descClean) {
           slide.addText('DESCRIÇÃO', {
             x:LEFT, y:yy, w:COLW, h:0.3,
             ...F({fontSize:10, bold:true, color:pHex, charSpacing:2}),
           });
           yy += 0.32;
-          slide.addText(String(descClean), {
+          slide.addText(richToPlain(String(descClean)), {
             x:LEFT, y:yy, w:COLW, h:1.6,
             ...F({fontSize:11, color:'474650', valign:'top'}),
           });
@@ -2034,7 +2043,7 @@ async function generatePptx({ allTips, segments, areaName, area, colors, filenam
             fill:{color:pHex}, line:{type:'none'}});
           slide.addText([
             {text:'DICA DO CONCIERGE  ', options:F({bold:true,color:pHex,fontSize:9,charSpacing:2})},
-            {text:String(inf.dica), options:F({color:'474650',fontSize:10,italic:true})},
+            {text:richToPlain(String(inf.dica)), options:F({color:'474650',fontSize:10,italic:true})},
           ], {x:LEFT+0.12, y:yy+0.05, w:COLW-0.2, h:0.6});
           yy += 0.85;
         }
@@ -2231,7 +2240,7 @@ async function generatePptx({ allTips, segments, areaName, area, colors, filenam
 
           // Themedesc só na primeira página
           if (pg === 0 && data.themeDesc) {
-            pageSlide.addText(String(data.themeDesc).slice(0,180),
+            pageSlide.addText(richToPlain(String(data.themeDesc)).slice(0,180),
               {x:0.3,y:0.85,w:W-0.6,h:0.45,
                 ...F({fontSize:9, italic:true, color:'888888'})});
           }

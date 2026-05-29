@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 51,
-  build: '20260528-banco-edit-localizacao-modal',
+  patch: 52,
+  build: '20260529-richtext-info-gerais-export-coerente',
 };
 
 /** "1.2.0" */
