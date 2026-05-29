@@ -6,6 +6,26 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.67+20260529-dashboard-area-creators-sparkline] — 2026-05-29
+
+**3 melhorias do Dashboard do Portal de Dicas em release única.**
+
+### Filtro por área
+- 3º picker na linha de filtros (após período + usuário). Pré-fetch via `fetchAreas()` no boot pra montar antes do `loadAll`.
+- Aplicado em: `tips` (via destinationId → dest.areaId), `gens` (g.areaId OR destinationIds matching área), `links` (l.areaId), `images` (best-effort via destinationId), `dests` (lista "destinos sem dica"), e `allTips` para análise de validade. Period summary mostra área ativa.
+
+### Top Criadores de Dicas
+- Novo card entre "Top 10 Dicas Mais Geradas" e "Top Templates Escolhidos".
+- Ranking dos top 10 analistas por dicas cadastradas no período (respeita todos os filtros). Avatar inicial colorido por hashColor, barra de progresso ouro, contagem + % do total.
+- Empty state quando nenhuma dica no período.
+
+### Sparkline nos KPIs
+- Helper `_sparkline(values, opts)` renderiza SVG inline 80×22px sem deps. Detecção de tendência: ↗ (last > prev*1.1, verde), ↘ (last < prev*0.9, vermelho), → (estável, cinza). Dashed flat line se tudo zero.
+- Helper `_monthlySeries(items, tsField, months=6)` agrupa coleção por mês usando `tsToDate` (Firestore Timestamp ou Date) — `diffMonths` entre item e now, índice = months-1-diffMonths (mais recente no fim).
+- Wired em 3 KPIs: **Dicas Cadastradas** (allTips.createdAt, respeita filterUser), **Gerações** (rawGens.generatedAt, respeita filterUser + filterArea), **Links Web** (rawLinks.createdAt, respeita filterArea).
+
+---
+
 ## [4.63.66+20260529-dashboard-hascontent-utc] — 2026-05-29
 
 **Hotfix dashboard — drift G3 UX + UTC midnight (mesmos padrões de v4.63.61/63).**

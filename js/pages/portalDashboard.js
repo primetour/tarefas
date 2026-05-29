@@ -38,6 +38,7 @@ const TH = `padding:6px 12px;text-align:left;font-size:0.6875rem;font-weight:700
 /* ─── State ──────────────────────────────────────────────── */
 let filterDays  = '0';     // 0 = all-time
 let filterUser  = '';      // '' = all users
+let filterArea  = '';      // v4.63.67: '' = todas as áreas
 let rawAreas    = [];
 let rawDests    = [];
 let rawTips     = [];
@@ -82,6 +83,14 @@ export async function renderPortalDashboard(container) {
     } catch { /* ignore */ }
   }
 
+  // v4.63.67: pré-fetch áreas (incluindo arquivadas — admin pode querer ver histórico).
+  // loadAll() vai recarregar depois e popular rawAreas — mas precisamos delas
+  // pra montar o picker antes do innerHTML inicial.
+  let areasForFilter = [];
+  try {
+    areasForFilter = await fetchAreas();
+  } catch (e) { console.warn('[portalDashboard] fetchAreas filter falhou:', e?.message); }
+
   container.innerHTML = `
     <div class="page-header">
       <div class="page-header-left">
@@ -123,6 +132,14 @@ export async function renderPortalDashboard(container) {
         </select>
         ${renderPickerButton({ btnId: 'pd-user-filter-btn', selected: null, emptyLabel: 'Todos os usuários' })}
       </div>
+      <!-- v4.63.67: filtro por área -->
+      <div class="toolbar-filter-wrap" style="min-width:200px;">
+        <select id="pd-area-filter" style="display:none;">
+          <option value="">Todas as áreas</option>
+          ${areasForFilter.map(a => `<option value="${esc(a.id)}">${esc(a.name || a.id)}</option>`).join('')}
+        </select>
+        ${renderPickerButton({ btnId: 'pd-area-filter-btn', selected: null, emptyLabel: 'Todas as áreas' })}
+      </div>
     </div>
 
     <div id="dash-body">${skeleton()}</div>`;
@@ -145,6 +162,11 @@ export async function renderPortalDashboard(container) {
   });
   document.getElementById('pd-user-filter')?.addEventListener('change', e => {
     filterUser = e.target.value;
+    renderDash();
+  });
+  // v4.63.67: filtro por área
+  document.getElementById('pd-area-filter')?.addEventListener('change', e => {
+    filterArea = e.target.value;
     renderDash();
   });
 
@@ -181,6 +203,25 @@ export async function renderPortalDashboard(container) {
     }),
     findSelected: (id) => findIn(pdUserOpts(), id),
     emptyLabel: 'Todos os usuários',
+  });
+
+  // v4.63.67: picker visual de área
+  const pdAreaOpts = () => areasForFilter.map(a => ({
+    id: a.id,
+    label: a.name || a.id,
+    icon: (a.name || '?').trim().charAt(0).toUpperCase(),
+    color: a.brand?.colors?.primary || hashColor(a.id),
+  }));
+  bindOptionPicker({
+    btnId: 'pd-area-filter-btn',
+    selectId: 'pd-area-filter',
+    buildConfig: () => ({
+      options: pdAreaOpts(),
+      empty: { id: '', label: 'Todas as áreas' },
+      searchPlaceholder: 'Buscar área…',
+    }),
+    findSelected: (id) => findIn(pdAreaOpts(), id),
+    emptyLabel: 'Todas as áreas',
   });
 
   document.getElementById('dash-refresh')?.addEventListener('click', () => loadAll());
@@ -268,33 +309,50 @@ function renderDash() {
   const now   = new Date();
   const in30  = new Date(+now + 30 * 86400_000);
 
-  // Filter generations by period + user
+  // v4.63.67: Set de destIds da área filtrada (memoizado por render).
+  // Áreas têm cidades (dest.areaId === filterArea). Tips são ligadas a destinos.
+  const _areaDestIds = filterArea
+    ? new Set(rawDests.filter(d => d.areaId === filterArea).map(d => d.id))
+    : null;
+  const _tipInArea   = t => !_areaDestIds || _areaDestIds.has(t.destinationId);
+  const _imgInArea   = i => !_areaDestIds || (i.destinationId && _areaDestIds.has(i.destinationId));
+  const _genInArea   = g => !filterArea ? true :
+    (g.areaId === filterArea) ||
+    (Array.isArray(g.destinationIds) && g.destinationIds.some(id => _areaDestIds.has(id)));
+  const _linkInArea  = l => !filterArea || l.areaId === filterArea;
+
+  // Filter generations by period + user + área
   const gens = rawGens.filter(g => {
     if (!inRange(g.generatedAt, range)) return false;
     if (filterUser && g.generatedBy !== filterUser) return false;
+    if (!_genInArea(g)) return false;
     return true;
   });
 
-  // Filter images by period + user (uploadedAt / uploadedBy)
+  // Filter images by period + user (uploadedAt / uploadedBy) + área (best-effort: imagens podem ou não ter destinationId)
   const images = rawImages.filter(img => {
     if (!inRange(img.uploadedAt, range)) return false;
     if (filterUser && img.uploadedBy !== filterUser) return false;
+    if (filterArea && !_imgInArea(img)) return false;
     return true;
   });
 
-  // Tips: filter by creation date + user (createdBy)
+  // Tips: filter by creation date + user (createdBy) + área (via destinationId)
   const tips = rawTips.filter(t => {
     if (!inRange(t.createdAt, range)) return false;
     if (filterUser && t.createdBy !== filterUser) return false;
+    if (!_tipInArea(t)) return false;
     return true;
   });
 
-  // For validity analysis we always use ALL tips (not filtered)
-  const allTips = rawTips;
+  // For validity analysis we always use ALL tips (não filtrado por período/user),
+  // mas área SIM — vencidas de outra área não importam quando filtra.
+  const allTips = filterArea ? rawTips.filter(_tipInArea) : rawTips;
 
   const areas = rawAreas;
-  const dests = rawDests;
-  const links = rawLinks.filter(l => inRange(l.createdAt, range));
+  // v4.63.67: destinos filtrados pela área (afeta "Destinos sem dica")
+  const dests = filterArea ? rawDests.filter(d => d.areaId === filterArea) : rawDests;
+  const links = rawLinks.filter(l => inRange(l.createdAt, range) && _linkInArea(l));
 
   // ── Computed metrics ──
   const expired  = allTips.filter(t => hasBadSeg(t, now, null));
@@ -353,6 +411,29 @@ function renderDash() {
       return { name: dest ? [dest.city, dest.country].filter(Boolean).join(', ') : did, count: cnt };
     });
   const totalDestGens = Object.values(destGenCount).reduce((a,b) => a+b, 0) || 1;
+
+  // v4.63.68: Top criadores — analistas que mais cadastraram dicas no período
+  // Usa `tips` (já filtrado por período + área), conta por `createdBy`.
+  // Nota: `filterUser` é o filtro de "ver dicas DE X". Top criadores tem sentido
+  // mesmo com filterUser ligado — vai mostrar só essa pessoa, ranking 1.
+  const tipsByCreator = {};
+  tips.forEach(t => {
+    const uid = t.createdBy || '_none';
+    tipsByCreator[uid] = (tipsByCreator[uid] || 0) + 1;
+  });
+  const usersAll = store.get('users') || [];
+  const topCreators = Object.entries(tipsByCreator)
+    .sort(([,a],[,b]) => b - a)
+    .slice(0, 10)
+    .map(([uid, cnt]) => {
+      const u = usersAll.find(x => x.id === uid);
+      return {
+        name: u?.name || u?.email || (uid === '_none' ? '(sem autor)' : uid.slice(0,8) + '…'),
+        count: cnt,
+        color: hashColor(uid),
+      };
+    });
+  const totalCreatorTips = Object.values(tipsByCreator).reduce((a,b) => a+b, 0) || 1;
 
   // Top templates (areas) chosen
   const areaGenCount = {};
@@ -432,10 +513,14 @@ function renderDash() {
   const userLabel = filterUser
     ? (store.get('users')||[]).find(u => u.id === filterUser)?.name || 'Usuário'
     : 'Todos os usuários';
+  // v4.63.67: label da área no resumo
+  const areaLabel = filterArea
+    ? (rawAreas.find(a => a.id === filterArea)?.name || 'Área')
+    : 'Todas as áreas';
 
   body.innerHTML = `
     <div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:16px;">
-      ${esc(periodLabel)} · ${esc(userLabel)} · ${tips.length} dicas criadas no período · ${gens.length} gerações
+      ${esc(periodLabel)} · ${esc(userLabel)} · ${esc(areaLabel)} · ${tips.length} dicas no período · ${gens.length} gerações
     </div>
 
     <!-- KPIs row 1 -->
@@ -446,8 +531,9 @@ function renderDash() {
         <span class="widget-insights-slot" data-widget-id="dash-kpis-block"></span>
       </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(145px,1fr));gap:12px;">
-      ${kpi('Dicas Cadastradas',  allTips.length,   '✈', null, '',
-            'Total de dicas cadastradas no sistema, independente do filtro de período.')}
+      ${kpi('Dicas Cadastradas',  allTips.length,   '✈', null,
+            _sparkline(_monthlySeries(allTips.filter(t => filterUser ? t.createdBy === filterUser : true), 'createdAt')),
+            'Total de dicas cadastradas no sistema, independente do filtro de período. Curva: últimos 6 meses.')}
       ${kpi('Criadas no Período', tips.length,      '📝', null, '',
             'Quantidade de dicas criadas dentro do período e usuário selecionados nos filtros acima.')}
       ${kpi('Prioritárias',       priorityTips.length, '★', null,
@@ -462,10 +548,18 @@ function renderDash() {
             'Dicas que possuem pelo menos um segmento com data de validade expirada. Esses segmentos precisam ser revisados e atualizados.')}
       ${kpi('Imagens (banco)',    rawImages.length,  '🖼', null, '',
             'Total de imagens cadastradas no banco de imagens do portal, considerando todos os continentes e países.')}
-      ${kpi('Gerações',           gens.length,       '⚡', null, '',
-            'Quantidade de materiais gerados (Word, PDF, PowerPoint ou Link Web) no período e pelo usuário selecionados.')}
-      ${kpi('Links Web',          links.length,      '🔗', null, '',
-            'Links web criados para compartilhamento de dicas de viagem com clientes. Cada link é acessível sem login.')}
+      ${kpi('Gerações',           gens.length,       '⚡', null,
+            _sparkline(_monthlySeries(
+              rawGens.filter(g => (!filterUser || g.generatedBy === filterUser) && _genInArea(g)),
+              'generatedAt'
+            )),
+            'Quantidade de materiais gerados (Word, PDF, PowerPoint ou Link Web) no período e pelo usuário selecionados. Curva: últimos 6 meses.')}
+      ${kpi('Links Web',          links.length,      '🔗', null,
+            _sparkline(_monthlySeries(
+              rawLinks.filter(l => _linkInArea(l)),
+              'createdAt'
+            )),
+            'Links web criados para compartilhamento de dicas de viagem com clientes. Cada link é acessível sem login. Curva: últimos 6 meses.')}
     </div>
     </div><!-- /dash-kpis-block -->
 
@@ -611,6 +705,40 @@ function renderDash() {
               </div>`).join('')}
           </div>`}
       </div>
+    </div>
+
+    <!-- v4.63.68: Top Criadores de Dicas — quem cadastrou mais no período -->
+    <div class="card" id="dash-top-criadores" style="padding:20px;margin-bottom:24px;">
+      <div style="${SECTION_HEAD};display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span style="flex:1;min-width:0;">👥 Top Criadores de Dicas</span>
+        <span style="font-size:0.6875rem;font-weight:400;color:var(--text-muted);text-transform:none;">
+          Período aplicado · ${tips.length} dica${tips.length===1?'':'s'} de ${Object.keys(tipsByCreator).length} criador${Object.keys(tipsByCreator).length===1?'':'es'}
+        </span>
+      </div>
+      ${topCreators.length === 0
+        ? `<div style="color:var(--text-muted);font-size:0.8125rem;padding:20px 0;text-align:center;">
+            Nenhuma dica cadastrada no período.</div>`
+        : `<div style="display:flex;flex-direction:column;gap:6px;">
+          ${topCreators.map((c, i) => {
+            const p = pct(c.count, totalCreatorTips);
+            const initial = (c.name || '?').trim().charAt(0).toUpperCase();
+            return `<div style="display:flex;align-items:center;gap:10px;font-size:0.8125rem;
+              padding:6px 10px;background:var(--bg-surface);border-radius:var(--radius-sm);">
+              <span style="font-size:0.6875rem;color:var(--text-muted);min-width:18px;">${i+1}.</span>
+              <span style="display:inline-flex;align-items:center;justify-content:center;
+                width:24px;height:24px;border-radius:50%;background:${c.color};color:#fff;
+                font-size:0.6875rem;font-weight:700;flex-shrink:0;">${esc(initial)}</span>
+              <span style="flex:1;font-weight:500;overflow:hidden;text-overflow:ellipsis;
+                white-space:nowrap;">${esc(c.name)}</span>
+              <div style="flex:1;max-width:140px;background:var(--bg-card);border-radius:20px;height:5px;">
+                <div style="height:100%;background:var(--brand-gold);width:${p}%;border-radius:20px;
+                  transition:width .4s;"></div>
+              </div>
+              <span style="font-weight:700;min-width:28px;text-align:right;">${c.count}</span>
+              <span style="font-size:0.6875rem;color:var(--text-muted);min-width:36px;text-align:right;">${p}%</span>
+            </div>`;
+          }).join('')}
+        </div>`}
     </div>
 
     <!-- Row: Templates + Formato + Segmentos -->
@@ -854,6 +982,74 @@ function hasBadSeg(tip, from, until) {
 function buildViewUrl(token) {
   const base = window.location.origin + window.location.pathname.replace(/index\.html$/, '');
   return `${base}portal-view.html#${token}`;
+}
+
+/**
+ * v4.63.69 — Sparkline mini SVG (~80×22px) pra mostrar tendência inline ao lado do KPI.
+ * Não tem axes nem labels — só a curva. Se todos os valores forem zero, mostra
+ * dash flat (sem tendência detectável).
+ * @param {number[]} values  série temporal (ex: 6 últimos meses).
+ * @param {object}   opts    { color, width, height, showTrend }.
+ * @returns {string} SVG inline + opcional trend arrow.
+ */
+function _sparkline(values, opts = {}) {
+  const w = opts.width  || 80;
+  const h = opts.height || 22;
+  const color = opts.color || 'var(--brand-gold)';
+  const showTrend = opts.showTrend !== false;
+  const vals = (values || []).map(v => Number(v) || 0);
+  if (vals.length < 2) {
+    return `<span style="color:var(--text-muted);font-size:0.625rem;">—</span>`;
+  }
+  const max = Math.max(...vals);
+  const min = Math.min(...vals);
+  const range = max - min || 1;
+  // Pontos da polyline normalizados pra (w, h). Top é y=0, então invertemos.
+  const points = vals.map((v, i) => {
+    const x = (i / (vals.length - 1)) * w;
+    const y = h - ((v - min) / range) * h;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+  // Última métrica: tendência detectada comparando últimos 2 vs média geral.
+  let trend = '→';
+  let trendColor = 'var(--text-muted)';
+  if (max > 0) {
+    const last = vals[vals.length - 1];
+    const prev = vals[vals.length - 2];
+    if (last > prev * 1.1) { trend = '↗'; trendColor = '#22C55E'; }
+    else if (last < prev * 0.9) { trend = '↘'; trendColor = '#EF4444'; }
+  }
+  const allZero = max === 0;
+  return `<span style="display:inline-flex;align-items:center;gap:4px;">
+    ${showTrend ? `<span style="font-size:0.6875rem;color:${trendColor};font-weight:700;">${trend}</span>` : ''}
+    <svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="overflow:visible;">
+      ${allZero
+        ? `<line x1="0" y1="${h/2}" x2="${w}" y2="${h/2}" stroke="var(--border-default,#E5E7EB)" stroke-width="1" stroke-dasharray="2,2"/>`
+        : `<polyline points="${points}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+           <circle cx="${(w).toFixed(1)}" cy="${(h - ((vals[vals.length-1] - min) / range) * h).toFixed(1)}" r="2" fill="${color}"/>`}
+    </svg>
+  </span>`;
+}
+
+/**
+ * v4.63.69 — Helper: agrupa coleção por mês usando timestamp + tsToDate.
+ * Retorna array de N meses (oldest primeiro), com o último sendo o mês atual.
+ */
+function _monthlySeries(items, tsField, months = 6) {
+  const now = new Date();
+  const series = new Array(months).fill(0);
+  // labels só pra debug
+  for (const it of items) {
+    const ts = it?.[tsField];
+    const d = tsToDate(ts);
+    if (!d) continue;
+    const diffMs = now - d;
+    const diffMonths = (now.getFullYear() - d.getFullYear()) * 12 + (now.getMonth() - d.getMonth());
+    if (diffMonths < 0 || diffMonths >= months) continue;
+    const idx = months - 1 - diffMonths;  // mais recente no fim
+    series[idx]++;
+  }
+  return series;
 }
 
 function kpi(label, value, icon, color, extra, info) {

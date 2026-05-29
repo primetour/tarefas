@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 66,
-  build: '20260529-dashboard-hascontent-utc',
+  patch: 67,
+  build: '20260529-dashboard-area-creators-sparkline',
 };
 
 /** "1.2.0" */
