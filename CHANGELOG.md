@@ -6,6 +6,22 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.74+20260529-sso-cache-false-negative-fix] — 2026-05-29
+
+**Fix de login SSO: falso-negativo do cache local trancava usuário existente fora do sistema ("Erro ao criar perfil").**
+
+Reportado pela Thais Yoshitomi: *"não consigo mais entrar / Erro ao criar perfil. Verifique as regras do Firestore (users create)"*. Conta existente, ativa, Auth UID batendo com o doc Firestore — mas o login travava.
+
+**Causa raiz (cadeia de 1 gatilho + 2 defeitos latentes):**
+1. (Gatilho) App Check (reCAPTCHA Enterprise) falhando no browser dela → leitura do Firestore negada no servidor.
+2. (Defeito A) Com `persistentLocalCache` (IndexedDB) habilitado e o doc dela NÃO em cache (device novo/storage limpo), `getDoc` resolve `exists()===false` **a partir do cache** em vez de lançar erro → `fetchUserProfile` retorna null → cai no auto-provision SSO. Falso-negativo de cache tratado como "usuário não existe".
+3. O lookup por email exclui o próprio uid (o único doc dela) → `mergedFromPending` null → monta `newProfile` com DEFAULTS (setor/núcleos/visibleSectors vazios, role member).
+4. (Defeito B) `setDoc(users/{uid}, defaults)` cai no doc EXISTENTE → avaliado como UPDATE → a self-update rule proíbe membro mudar `role/sector/nucleos/visibleSectors` → `permission-denied` → "Erro ao criar perfil". Mesmo se passasse, apagaria setor/núcleos dela.
+
+**Fix (cirúrgico, baixo blast radius — só o caminho `profile===null`):** quando `fetchUserProfile` volta null, força um read **autoritativo no servidor** via `getDocFromServer` antes de decidir provisionar. Se o doc existe no servidor → usa ele (evita o overwrite destrutivo + o lockout). Se o read do servidor **falha** (App Check/permissão/rede) → NÃO provisiona: emite erro claro e acionável + signOut, em vez de tentar um `setDoc` destrutivo fadado a falhar. Logins normais (profile não-null) e usuários genuinamente novos (servidor retorna vazio) ficam intactos.
+
+---
+
 ## [4.63.73+20260529-editor-cache-pin-fix] — 2026-05-29
 
 **Fix de cache: import pinado de `roteiroEditor.js` no `app.js` estava congelado em `?v=4.43.0-async-fix`.**

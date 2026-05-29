@@ -21,6 +21,7 @@ import {
 import {
   doc,
   getDoc,
+  getDocFromServer,
   getDocs,
   setDoc,
   updateDoc,
@@ -154,6 +155,39 @@ export function initAuthObserver(onReady) {
     if (firebaseUser) {
       try {
         let profile = await fetchUserProfile(firebaseUser.uid);
+
+        // ── Guard anti-falso-negativo de cache (§ login Thais 2026-05-29) ──
+        // fetchUserProfile usa getDoc, que com persistentLocalCache habilitado
+        // pode resolver exists()===false a partir do CACHE quando:
+        //   (a) o doc não está no IndexedDB local (device novo / storage limpo), E
+        //   (b) o read no servidor foi negado (App Check falhando no browser dela)
+        //       ou a rede está indisponível.
+        // Resultado do bug: um usuário EXISTENTE (com role/setor/núcleos) era
+        // tratado como inexistente → caía no auto-provision → setDoc batia no
+        // doc dela como UPDATE → self-update rule bloqueia mudança de
+        // role/sector/nucleos/visibleSectors → permission-denied → "Erro ao
+        // criar perfil". Mesmo se passasse, sobrescreveria setor/núcleos dela.
+        // Fix: quando profile vier null, força um read AUTORITATIVO no servidor
+        // antes de decidir provisionar. Se o doc existe no servidor, usa ele
+        // (evita o overwrite destrutivo + o lockout). Se o read do servidor
+        // FALHAR (App Check / permissão / rede), NÃO provisiona — emite erro
+        // claro e desloga, em vez de tentar um setDoc destrutivo fadado a falhar.
+        if (!profile) {
+          try {
+            const srvSnap = await getDocFromServer(doc(db, 'users', firebaseUser.uid));
+            if (srvSnap.exists()) {
+              profile = { id: srvSnap.id, ...srvSnap.data() };
+              console.warn('[auth] profile recuperado via getDocFromServer (cache estava com falso-negativo)');
+            }
+          } catch (srvErr) {
+            // Read do servidor negado/indisponível → provavelmente App Check ou
+            // rede. Provisionar agora é perigoso (overwrite-as-update). Aborta.
+            console.error('[auth] getDocFromServer falhou — abortando auto-provision:', srvErr?.code || srvErr?.message);
+            toast.error('Não foi possível verificar seu perfil (App Check/rede). Recarregue a página ou tente em outra rede/navegador. Se persistir, avise o administrador.');
+            await signOut();
+            return;
+          }
+        }
 
         // ── Auto-provisioning SSO Microsoft (domínios corporativos) ──
         if (!profile) {

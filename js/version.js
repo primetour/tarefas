@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 73,
-  build: '20260529-editor-cache-pin-fix',
+  patch: 74,
+  build: '20260529-sso-cache-false-negative-fix',
 };
 
 /** "1.2.0" */
