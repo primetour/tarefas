@@ -63,7 +63,7 @@ async function renderPortalAreas(container) {
 }
 import { renderPortalDestinations }       from './pages/portalDestinations.js';
 import { renderPortalImages }             from './pages/portalImages.js';
-import { renderPortalDashboard }          from './pages/portalDashboard.js?v=20260508r1';
+import { renderPortalDashboard, destroyPortalDashboard } from './pages/portalDashboard.js?v=4.63.64';
 import { renderPortalTipEditor, destroyPortalTipEditor } from './pages/portalTipEditor.js';
 import { renderPortalImport }             from './pages/portalImport.js';
 import { renderPortalTipsList }           from './pages/portalTipsList.js';
@@ -612,7 +612,7 @@ function setupRouter() {
     },
     'portal-destinations':  async () => { await renderPortalDestinations(content); },
     'portal-images':        async () => { await renderPortalImages(content); },
-    'portal-dashboard':     async () => { await renderPortalDashboard(content); },
+    'portal-dashboard':     async () => { destroyPortalDashboard(); await renderPortalDashboard(content); },
     'portal-tip-editor':    async () => { destroyPortalTipEditor(); await renderPortalTipEditor(content); },
     'portal-import':        async () => { await renderPortalTips(content, 'import'); },
     'landing-pages':        async () => { await renderLandingPages(content); },
@@ -694,7 +694,8 @@ function setupRouter() {
       destroyRequests();
       destroyNotifications();
       destroyRoteiroEditor();
-      destroyPortalTipEditor();  // v4.63.61 N7
+      destroyPortalTipEditor();   // v4.63.61 N7
+      destroyPortalDashboard();   // v4.63.64 (Leaflet snap cleanup)
       // v4.53.4+ Limpa subscriptions de pages migradas pra real-time
       // (dashboard, capacity, goals, squadWorkspace, timeline, calendar,
       // profile, projects) — defesa-em-profundidade caso destroyXxx

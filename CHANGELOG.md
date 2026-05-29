@@ -6,6 +6,25 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.64+20260529-dashboard-mapa-mini] — 2026-05-29
+
+**Feature — Mapa mini com pins das cidades com dica no Dashboard do Portal de Dicas.**
+
+### Adicionado
+- **Mapa de Cobertura** novo card no Dashboard do Portal de Dicas (`portalDashboard.js`), logo após Indicadores. Reusa o componente `portalTipsMap.js` (v4.63.45+) com Leaflet + markercluster + Nominatim cache. Pins ouro com popup cidade/país/qtd de dicas.
+- **`destroyPortalDashboard()`** novo export. Wired em `app.js beforeNavigation` + na rota `portal-dashboard` (reentrada limpa). Sem isso, re-render do dashboard duplicava listener Firestore `onSnapshot` do mapa → custo + handlers stale.
+
+### Características
+- Lazy-load do componente (dynamic import) — não bloqueia render do resto do dashboard.
+- Tolerante a falha de CDN Leaflet: fallback inline com mensagem "Recarregue a página".
+- Reusa cache `_geo` em `portal_destinations` (sem custo extra Nominatim).
+- Real-time via onSnapshot — quando admin cadastra dica nova, pin aparece automaticamente.
+
+### Próximos passos (pendente)
+- v4.63.65+: `SEGMENTS` hardcoded em portalDashboard ignora segmentos custom (linhas 285, 400, 791, 1327). Substituir por `await getSegments()` no boot — refactor pra `renderDash()` async-aware.
+
+---
+
 ## [4.63.63+20260529-seghascontent-helper-g3-ux] — 2026-05-29
 
 **Hotfix G3 UX — helper canônico `segHasContent` em 3 sites.**

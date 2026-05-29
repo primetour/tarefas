@@ -42,6 +42,18 @@ let rawTips     = [];
 let rawGens     = [];
 let rawImages   = [];
 let rawLinks    = [];
+let _mapInstance = null;  // v4.63.64: mapa mini reuso do componente portalTipsMap
+
+/**
+ * v4.63.64 — cleanup do mapa interativo embedded. Chamado em beforeNavigation.
+ * Sem isso: re-renderizar dashboard duplica listeners do Leaflet snap → memory leak.
+ */
+export function destroyPortalDashboard() {
+  if (_mapInstance?.destroy) {
+    try { _mapInstance.destroy(); } catch (e) { console.warn('[portalDashboard] map destroy:', e?.message); }
+  }
+  _mapInstance = null;
+}
 
 /* ─── Entry point ────────────────────────────────────────── */
 export async function renderPortalDashboard(container) {
@@ -449,6 +461,17 @@ function renderDash() {
     </div>
     </div><!-- /dash-kpis-block -->
 
+    <!-- v4.63.64: Mapa de cobertura geográfica das dicas -->
+    <div id="dash-map-block" class="card" style="padding:20px;margin-bottom:24px;">
+      <div style="${SECTION_HEAD};display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span style="flex:1;min-width:0;">🗺 Mapa de Cobertura — cidades com dica cadastrada</span>
+        <span style="font-size:0.6875rem;font-weight:400;color:var(--text-muted);text-transform:none;">
+          Cliques no marcador mostram o destino
+        </span>
+      </div>
+      <div id="dash-map-target" style="margin-top:12px;"></div>
+    </div>
+
     <!-- Row: Validade + Cobertura por Segmento -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px;">
       <div id="dash-validade" class="card" style="padding:20px;">
@@ -765,6 +788,24 @@ function renderDash() {
 
   // Setup insights na primeira render (idempotente)
   setTimeout(() => setupPdInsights(), 500);
+
+  // v4.63.64: lazy-load + render do mapa mini. Async + tolerante (Leaflet CDN
+  // pode falhar; componente já tem fallback "carregando…" embutido). Idempotente:
+  // destrói instância anterior antes de re-renderizar (filtro/refresh).
+  (async () => {
+    const target = document.getElementById('dash-map-target');
+    if (!target) return;
+    try {
+      if (_mapInstance?.destroy) { try { _mapInstance.destroy(); } catch {} }
+      const { renderPortalTipsMap } = await import('../components/portalTipsMap.js');
+      _mapInstance = await renderPortalTipsMap(target, { height: 340 });
+    } catch (e) {
+      console.warn('[portalDashboard] map render fail:', e?.message || e);
+      target.innerHTML = `<div style="padding:24px;text-align:center;color:var(--text-muted);font-size:0.8125rem;">
+        Mapa indisponível no momento (CDN Leaflet). Recarregue a página.
+      </div>`;
+    }
+  })();
 }
 
 /* ─── Helpers ────────────────────────────────────────────── */

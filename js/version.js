@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 63,
-  build: '20260529-seghascontent-helper-g3-ux',
+  patch: 64,
+  build: '20260529-dashboard-mapa-mini',
 };
 
 /** "1.2.0" */
