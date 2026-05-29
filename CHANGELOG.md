@@ -6,6 +6,27 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.75+20260529-export-allowlist-daygate] — 2026-05-29
+
+**Revisão geral do export do Gerador de Cotações: carrega TODOS os dados da cotação e não exige mais "pelo menos um dia".**
+
+Reportado pelo Renê: *"o export nao carrega todos os dados possíveis da cotação, ele exige preenchimento de ao menos um dia (não precisa)"*.
+
+**Causa raiz (dois defeitos independentes):**
+1. **Allowlist desatualizada (dados sumindo).** `stripInternalFields` (PDF/PPTX/DOCX) filtra por `PUBLIC_FIELDS` (allowlist, security-by-default). A lista tinha apenas as chaves-fantasma `paymentPolicy`/`cancelPolicy` (que o schema nunca usou) e **não incluía** `payment`, `cancellation`, `importantInfo`, `embeddedTips` nem `travelers`/`consultantName`. Resultado: as seções dedicadas dos generators (pagamento, cancelamento, informações importantes, dicas) renderizavam vazias mesmo com dados preenchidos.
+2. **Trava de "pelo menos um dia".** Os 4 caminhos de export (PDF/DOCX/PPTX/Web link) abortavam com toast se `days[]` estava vazio — mas cotação sem itinerário dia-a-dia (só voos+hotéis+valores) é exportável: todos os generators já pulam a seção de dias graciosamente.
+
+**Fixes:**
+- **Fix 1** — Allowlist `PUBLIC_FIELDS` completada com `payment`, `cancellation`, `importantInfo`, `embeddedTips`, `travelers`, `consultantName`. Mantidos FORA (privacidade/custo): `costPricing`, `aiGeneration`, `collaboratorIds`, `workflowMode`, `linkedTaskIds`, `tasksGeneratedAt`, `consultantId`, `pricing.costInternal/commission/margin`.
+- **Fix 2** — Removidas as 4 travas de dia em `roteiroEditor.js`. Continua exigindo Área (BU) — sem ela o doc sai sem branding.
+- **Fix 3** — Capa (label de pax) usa `travelers[]` como fonte canônica (conta adultos vs crianças por idade<18 ou notes /crian/i), com fallback pro legado `client.adults/children`. Helper `buildPaxLabel` compartilhado por PDF, PPTX e DOCX (DOCX ganhou linha de pax que não tinha).
+- **Fix 4** — Export DOCX agora chama `collectFormData()` antes de gerar (igual PDF/PPTX) — antes dependia só de save prévio, com risco de DOCX desatualizado.
+- **Fix 5** — Colunas de hotéis em PPTX e DOCX padronizadas pra bater com o PDF: `Cidade · Hotel · Categoria · Regime · Check-in · Check-out · Noites` (antes faltava categoria + datas).
+
+Validado por harness Node (allowlist preserva client-facing e estripa internos; `buildPaxLabel` cobre 9 cenários).
+
+---
+
 ## [4.63.74+20260529-sso-cache-false-negative-fix] — 2026-05-29
 
 **Fix de login SSO: entrada obsoleta no cache local (IndexedDB) trancava usuário existente fora do sistema ("Erro ao criar perfil").**

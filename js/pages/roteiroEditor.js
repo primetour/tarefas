@@ -5584,10 +5584,8 @@ async function handleEditorClick(e) {
         showToast('Roteiro n\u00e3o carregado. Recarregue a p\u00e1gina.', 'error');
         break;
       }
-      if (!(currentRoteiro.days || []).length) {
-        showToast('Adicione pelo menos um dia antes de exportar.', 'warning');
-        break;
-      }
+      // v4.63.75+ Sem trava de "pelo menos um dia": cota\u00e7\u00e3o s\u00f3 voos+hot\u00e9is+pricing
+      // (sem itiner\u00e1rio dia-a-dia) \u00e9 export\u00e1vel. buildDayByDayPages pula graciosamente.
       // \u00c1rea obrigat\u00f3ria: sem ela o doc sai sem logo, sem cores certas, sem branding.
       {
         const areaId = document.getElementById('re-area-select')?.value || currentRoteiro.areaId || '';
@@ -5610,10 +5608,15 @@ async function handleEditorClick(e) {
 
     case 'export-docx': {
       // 4.46.0+ (Sprint 5 Phase 3)
-      if (!(currentRoteiro?.days || []).length) {
-        showToast('Adicione pelo menos um dia antes de exportar.', 'warning');
+      // v4.63.75+ collectFormData() pra exportar estado fresco do form (igual
+      // PDF/PPTX); antes dependia só de save prévio → risco de DOCX desatualizado.
+      const formData = collectFormData();
+      if (formData) currentRoteiro = formData;
+      if (!currentRoteiro) {
+        showToast('Roteiro não carregado. Recarregue a página.', 'error');
         break;
       }
+      // v4.63.75+ Sem trava de "pelo menos um dia" (ver export-pdf).
       {
         const areaId = document.getElementById('re-area-select')?.value || currentRoteiro.areaId || '';
         if (!areaId) {
@@ -5638,10 +5641,7 @@ async function handleEditorClick(e) {
     case 'export-pptx': {
       const formData = collectFormData();
       if (formData) currentRoteiro = formData;
-      if (!(currentRoteiro?.days || []).length) {
-        showToast('Adicione pelo menos um dia antes de exportar.', 'warning');
-        break;
-      }
+      // v4.63.75+ Sem trava de "pelo menos um dia" (ver export-pdf).
       {
         const areaId = document.getElementById('re-area-select')?.value || currentRoteiro.areaId || '';
         if (!areaId) {
@@ -5710,11 +5710,7 @@ async function doGenerateWebLink() {
     }
   }
 
-  if (!(currentRoteiro?.days || []).length) {
-    showToast('Adicione pelo menos um dia antes de gerar o link.', 'warning');
-    return;
-  }
-
+  // v4.63.75+ Sem trava de "pelo menos um dia" (ver export-pdf).
   const areaId = document.getElementById('re-area-select')?.value || currentRoteiro.areaId || '';
   if (!areaId) {
     showToast('Selecione uma \u00c1rea (BU) antes de gerar o link.', 'warning');

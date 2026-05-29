@@ -470,8 +470,13 @@ function _cacheSetMulti(k, urls) {
 const PUBLIC_FIELDS = [
   // Identificação básica
   'id', 'title', 'name', 'status',
+  // Consultor responsável (nome aparece na capa/rodapé — id e demais internals NÃO)
+  'consultantName',
   // Cliente (PII — vai pro template renderizar, mas auditado)
   'cliente', 'client',
+  // v4.41.0+ Viajantes estruturados (substitui client.adults/children).
+  // Client-facing — aparecem na capa (label de pax) e podem ir no corpo.
+  'travelers',
   // Viagem
   'travel', 'viagem',
   // Itinerário
@@ -483,6 +488,13 @@ const PUBLIC_FIELDS = [
   'pricing', 'valores',
   // Includes/exclusões públicos
   'includes', 'inclusos', 'excludes', 'exclusoes',
+  // v4.63.75+ Termos comerciais client-facing — os generators PDF/PPTX/DOCX
+  // têm seção dedicada pra cada um (buildPaymentSection, buildCancellationSection,
+  // buildImportantInfoSection, buildEmbeddedTipsSection). Faltavam na allowlist
+  // (que tinha só os fantasmas `paymentPolicy`/`cancelPolicy`, chaves que o
+  // schema NUNCA usou) → renderizavam vazio mesmo com dados. Bug raiz do
+  // "export não carrega todos os dados". costPricing/aiGeneration continuam FORA.
+  'payment', 'cancellation', 'importantInfo', 'embeddedTips',
   // Conteúdo textual
   'briefing', 'notes', 'description', 'observations', 'observacoes',
   // Imagens público (banco_imagens + Unsplash)
@@ -493,7 +505,9 @@ const PUBLIC_FIELDS = [
   'periodLabel', 'paxLabel',
   // Áreas/destinos
   'destinations', 'destinos', 'destinationsLinked',
-  // Metadata pública
+  // Metadata pública (cancelPolicy/paymentPolicy mantidos por retrocompat de
+  // docs antigos que porventura usem essas chaves; schema atual usa
+  // payment/cancellation acima)
   'cancelPolicy', 'paymentPolicy', 'validity',
 ];
 
@@ -675,6 +689,33 @@ function fmtDateFull(dateStr) {
     const d = new Date(dateStr + 'T12:00:00');
     return d.toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' });
   } catch { return dateStr; }
+}
+
+/**
+ * Build a "pax" label (ex: "2 adultos + 1 criança") from a roteiro.
+ * v4.63.75+ — prefere travelers[] (schema canônico) e cai pro legado
+ * client.adults/client.children quando travelers[] não existe.
+ * Classifica criança via (age != null && age < 18) OU notes batendo /crian/i.
+ * Retorna '' quando não há nenhuma info de pax.
+ */
+function buildPaxLabel(roteiro) {
+  const travelers = Array.isArray(roteiro?.travelers) ? roteiro.travelers : [];
+  let adults = 0, children = 0;
+  if (travelers.length) {
+    for (const t of travelers) {
+      const ageNum = (t?.age != null && t.age !== '') ? Number(t.age) : null;
+      const isChild = (ageNum != null && !isNaN(ageNum) && ageNum < 18)
+        || /crian/i.test(String(t?.notes || ''));
+      if (isChild) children++; else adults++;
+    }
+  } else {
+    adults = Number(roteiro?.client?.adults) || 0;
+    children = Number(roteiro?.client?.children) || 0;
+  }
+  const parts = [];
+  if (adults)   parts.push(`${adults} adulto${adults > 1 ? 's' : ''}`);
+  if (children) parts.push(`${children} criança${children > 1 ? 's' : ''}`);
+  return parts.join(' + ');
 }
 
 /** Format currency value */
@@ -1468,14 +1509,13 @@ async function buildCoverPage(doc, roteiro, buName, primary, secondary, heroImag
     doc.setTextColor(255, 255, 255);
     doc.text(`Preparado para ${roteiro.client.name}`, PAGE_W / 2, PAGE_H - 48, { align: 'center' });
 
-    const paxParts = [];
-    if (roteiro.client.adults) paxParts.push(`${roteiro.client.adults} adulto${roteiro.client.adults > 1 ? 's' : ''}`);
-    if (roteiro.client.children) paxParts.push(`${roteiro.client.children} crian\u00E7a${roteiro.client.children > 1 ? 's' : ''}`);
-    if (paxParts.length) {
+    // v4.63.75+ pax via travelers[] (fallback client.adults/children)
+    const paxLabel = buildPaxLabel(roteiro);
+    if (paxLabel) {
       doc.setFont('Poppins', 'normal');
       doc.setFontSize(10);
       doc.setTextColor(230, 230, 230);
-      doc.text(paxParts.join(' + '), PAGE_W / 2, PAGE_H - 41, { align: 'center' });
+      doc.text(paxLabel, PAGE_W / 2, PAGE_H - 41, { align: 'center' });
     }
   }
 
@@ -2613,11 +2653,10 @@ export async function generateRoteiroPPTX(roteiro, area = null) {
     cover.addText(`Preparado para ${roteiro.client.name}`, {
       x: 0, y: 4.85, w: W, h: 0.3, align: 'center', fontSize: 11, bold: true, color: 'FFFFFF',
     });
-    const paxParts = [];
-    if (roteiro.client.adults) paxParts.push(`${roteiro.client.adults} adulto${roteiro.client.adults > 1 ? 's' : ''}`);
-    if (roteiro.client.children) paxParts.push(`${roteiro.client.children} criança${roteiro.client.children > 1 ? 's' : ''}`);
-    if (paxParts.length) {
-      cover.addText(paxParts.join(' + '), {
+    // v4.63.75+ pax via travelers[] (fallback client.adults/children)
+    const paxLabel = buildPaxLabel(roteiro);
+    if (paxLabel) {
+      cover.addText(paxLabel, {
         x: 0, y: 5.15, w: W, h: 0.25, align: 'center', fontSize: 10, color: 'E6E6E6',
       });
     }
@@ -2719,17 +2758,23 @@ export async function generateRoteiroPPTX(roteiro, area = null) {
       tableY = 0.8 + th + 0.4;
     }
 
+    // v4.63.75+ colunas alinhadas ao PDF (categoria + check-in/out)
+    const hHead = (t) => ({ text: t, options: { bold: true, color: 'FFFFFF', fill: { color: secondary } } });
     const rows = [
-      [{ text: 'Cidade', options: { bold: true, color: 'FFFFFF', fill: { color: secondary } } },
-       { text: 'Hotel', options: { bold: true, color: 'FFFFFF', fill: { color: secondary } } },
-       { text: 'Quarto', options: { bold: true, color: 'FFFFFF', fill: { color: secondary } } },
-       { text: 'Regime', options: { bold: true, color: 'FFFFFF', fill: { color: secondary } } },
-       { text: 'Noites', options: { bold: true, color: 'FFFFFF', fill: { color: secondary } } }],
+      [hHead('Cidade'), hHead('Hotel'), hHead('Categoria'), hHead('Regime'), hHead('Check-in'), hHead('Check-out'), hHead('Noites')],
     ];
     roteiro.hotels.forEach(h => {
-      rows.push([h.city || '', h.hotelName || '', h.roomType || '', h.regime || '', String(h.nights || '')]);
+      rows.push([
+        h.city || '',
+        h.hotelName || '',
+        h.category || h.roomType || '',
+        h.regime || '',
+        h.checkIn ? fmtDateBR(h.checkIn) : '',
+        h.checkOut ? fmtDateBR(h.checkOut) : '',
+        h.nights != null ? String(h.nights) : '',
+      ]);
     });
-    hSlide.addTable(rows, { x: 0.5, y: tableY, w: W - 1, fontSize: 9, border: { pt: 0.5, color: 'CCCCCC' }, colW: [1.8, 2.5, 2, 1.5, 1] });
+    hSlide.addTable(rows, { x: 0.5, y: tableY, w: W - 1, fontSize: 9, border: { pt: 0.5, color: 'CCCCCC' }, colW: [1.5, 2.4, 1.5, 1.3, 1.1, 1.1, 0.8] });
   }
 
   // ─── Pricing slide (v4.49.102+ schema services com displayMode) ──
@@ -3175,6 +3220,14 @@ export async function generateRoteiroDOCX(roteiro, area = null) {
     }));
   }
 
+  // v4.63.75+ pax via travelers[] (fallback client.adults/children)
+  const paxLabel = buildPaxLabel(roteiro);
+  if (paxLabel) {
+    children.push(p([tr(paxLabel, { size: 20, color: mutedHex })], {
+      alignment: AlignmentType.CENTER, spacing: { after: 200 },
+    }));
+  }
+
   const dests = (roteiro.travel?.destinations || []).map(d => d.city || d.country).filter(Boolean).join(' · ');
   if (dests) {
     children.push(p([tr(dests, { size: 24, bold: true, color: accentHex })], {
@@ -3304,16 +3357,20 @@ export async function generateRoteiroDOCX(roteiro, area = null) {
     }
 
     // Tabela com detalhes operacionais
+    // v4.63.75+ colunas alinhadas ao PDF (categoria + check-in/out)
     const rows = [
       new TableRow({ children: [
-        headerCell('Cidade'), headerCell('Hotel'), headerCell('Quarto'), headerCell('Regime'), headerCell('Noites'),
+        headerCell('Cidade'), headerCell('Hotel'), headerCell('Categoria'), headerCell('Regime'),
+        headerCell('Check-in'), headerCell('Check-out'), headerCell('Noites'),
       ]}),
       ...roteiro.hotels.map(h => new TableRow({ children: [
         cell(h.city || '—'),
         cell(h.hotelName || '—'),
-        cell(h.roomType || '—'),
+        cell(h.category || h.roomType || '—'),
         cell(h.regime || '—'),
-        cell(String(h.nights || '—')),
+        cell(h.checkIn ? fmtDateBR(h.checkIn) : '—'),
+        cell(h.checkOut ? fmtDateBR(h.checkOut) : '—'),
+        cell(h.nights != null ? String(h.nights) : '—'),
       ]})),
     ];
     children.push(new Table({ rows, width: { size: 100, type: WidthType.PERCENTAGE } }));

@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 74,
-  build: '20260529-sso-cache-false-negative-fix',
+  patch: 75,
+  build: '20260529-export-allowlist-daygate',
 };
 
 /** "1.2.0" */
