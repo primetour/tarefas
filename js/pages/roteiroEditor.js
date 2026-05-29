@@ -4076,17 +4076,27 @@ function renderPreviewSection() {
   const r = currentRoteiro;
   const t = r.travel || {};
   const c = r.client || {};
-  const dests = (t.destinations || []).map(d => d.city || d.country).filter(Boolean).join(' \u2192 ');
+  // 4.63.78+ Resumo: deriva destinos de days[].overnightCity quando travel.destinations[]
+  // vazio (cota\u00e7\u00e3o vinda do Banco popula days[] direto, sem travel.destinations).
+  let destList = (t.destinations || []).map(d => d.city || d.country).filter(Boolean);
+  if (!destList.length) destList = [...new Set((r.days || []).map(d => d.overnightCity).filter(Boolean))];
+  const dests = destList.join(' \u2192 ');
   const totalNights = (t.destinations || []).reduce((s, d) => s + (parseInt(d.nights) || 0), 0);
+  // 4.63.78+ Hot\u00e9is: fallback pro schema novo pricing.services.hoteis[] (legado r.hotels[]).
+  const hotelCount = (r.hotels || []).length || (r.pricing?.services?.hoteis || []).length || 0;
+  const hasArea = !!currentRoteiro.areaId;
 
   return `
     <div class="re-section-title">Preview & Export</div>
-    <div class="re-form-group">
-      <label class="re-label">\u00c1rea / BU</label>
+    <div class="re-form-group" style="background:rgba(212,168,67,0.10);border-left:3px solid var(--brand-gold,#D4A843);border-radius:6px;padding:12px 14px;margin-bottom:16px;">
+      <label class="re-label" style="color:var(--brand-gold,#D4A843);font-weight:700;">\u00c1rea / BU <span style="color:var(--brand-gold,#D4A843);">*</span></label>
       <select class="re-select" data-field="areaId" id="re-area-select" style="max-width:300px;">
-        <option value="">Padr\u00e3o</option>
+        <option value="">\u2014 Selecione a \u00e1rea \u2014</option>
         ${areaOptions}
       </select>
+      <div style="font-size:0.72rem;margin-top:6px;${hasArea ? 'color:var(--text-muted,#9aa);' : 'color:var(--color-danger,#dc3545);font-weight:600;'}">
+        ${hasArea ? 'Define o branding (logo, cores, templates) aplicado na exporta\u00e7\u00e3o.' : '\u26a0 Obrigat\u00f3rio para exportar \u2014 define o branding (logo, cores, templates) do PDF/PPTX/DOCX/Web link.'}
+      </div>
     </div>
     <div class="re-preview-summary">
       <strong>Resumo da Cotação:</strong><br/>
@@ -4095,7 +4105,7 @@ function renderPreviewSection() {
       <strong>Destinos:</strong> ${esc(dests) || '(nenhum)'}<br/>
       <strong>Per\u00edodo:</strong> ${t.startDate || '?'} a ${t.endDate || '?'} (${totalNights} noites)<br/>
       <strong>Dias:</strong> ${(r.days || []).length} dia(s) configurado(s)<br/>
-      <strong>Hot\u00e9is:</strong> ${(r.hotels || []).length} hotel(\u00e9is)<br/>
+      <strong>Hot\u00e9is:</strong> ${hotelCount} hotel(\u00e9is)<br/>
       <strong>Status:</strong> ${esc(r.status)}
     </div>
     <div style="display:flex;gap:10px;flex-wrap:wrap;">

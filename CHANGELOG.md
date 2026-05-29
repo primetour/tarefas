@@ -6,6 +6,18 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.78+20260529-preview-area-resumo] — 2026-05-29
+
+**UX/fix: Preview & Export — campo Área/BU em destaque + Resumo da Cotação populando de fontes corretas.**
+
+Dois ajustes apontados pelo Renê ao revisar o teste E2E de export:
+
+1. **Área/BU "passava batido"** (campo escondido, sem destaque). Agora renderizado como card destacado (borda-esquerda dourada `var(--brand-gold)` + fundo `rgba(212,168,67,0.10)`), label em negrito dourado com asterisco `*`, opção placeholder "— Selecione a área —" (era "Padrão"), e hint contextual: aviso vermelho "⚠ Obrigatório para exportar…" quando vazio, texto explicativo neutro quando preenchido. Define o branding (logo/cores/templates) aplicado em todos os exports.
+
+2. **Resumo da Cotação não populava Destinos/Hotéis** quando a cotação vinha do Banco. `Destinos` lia só `travel.destinations[]` (vazio em cotações importadas) → mostrava "(nenhum)". Agora deriva de `days[].overnightCity` (dedup, ordem preservada) como fallback. `Hotéis` lia só `r.hotels[]` (legado) → agora cai pro schema novo `pricing.services.hoteis[]`.
+
+Sem mudança de schema. Validado em browser (Chrome MCP) na cotação 4bTybLbDGfarh3Rp5XSd.
+
 ## [4.63.77+20260529-embedded-tips-render] — 2026-05-29
 
 **Fix crítico: Dicas embedadas (Portal de Dicas) saíam VAZIAS em TODOS os exports (PDF/PPTX/DOCX/Web link).**

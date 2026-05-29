@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 77,
-  build: '20260529-embedded-tips-render',
+  patch: 78,
+  build: '20260529-preview-area-resumo',
 };
 
 /** "1.2.0" */
