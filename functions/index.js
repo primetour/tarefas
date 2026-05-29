@@ -1032,26 +1032,20 @@ export const extractPlaceholders = onDocumentCreated({
  *
  * Permission: qualquer auth (templates ativos da biblioteca).
  * ═════════════════════════════════════════════════════════ */
-export const renderTemplate = onCall({
-  cors: ['https://primetour.github.io', 'http://localhost:5000'],
-  memory: '1GiB',                  // Chromium precisa
-  timeoutSeconds: 90,
-  maxInstances: 5,
-  secrets: [R2_UPLOAD_TOKEN],      // 4.63.84 — necessário pro R2 fallback (>5MB).
-                                   // Sem isso, .value() vinha vazio → upload 401 →
-                                   // base64 gigante → "Response size too large" →
-                                   // render falhava → cliente caía pro jsPDF.
-}, async (request) => {
-  const auth = requireAuth(request);
-  const { templateId, data = {} } = request.data || {};
-
-  if (!templateId || typeof templateId !== 'string') {
-    throw new HttpsError('invalid-argument', 'templateId obrigatório.');
-  }
-
-  // Rate limit
-  await checkRateLimit(auth.uid, 'renderTemplate', 30, 60);
-
+/* ═════════════════════════════════════════════════════════
+ * _renderTemplateCore — v4.63.87+ núcleo compartilhado de render.
+ *
+ * Extraído de renderTemplate pra ser reusado pelo endpoint streaming
+ * renderTemplateFile (onRequest). Faz: fetch do template doc → baixa
+ * arquivo R2 → Handlebars/Puppeteer (HTML→PDF) ou docxtemplater
+ * (DOCX/PPTX) → retorna o buffer final + metadata.
+ *
+ * NÃO faz auth nem rate-limit (responsabilidade do caller). Lança
+ * HttpsError com .code semântico (not-found / failed-precondition /
+ * invalid-argument / internal) — callers onCall propagam direto;
+ * onRequest mapeia .code → HTTP status.
+ * ═════════════════════════════════════════════════════════ */
+async function _renderTemplateCore(templateId, data = {}) {
   // Fetch template doc
   const snap = await db.collection('templates').doc(templateId).get();
   if (!snap.exists) throw new HttpsError('not-found', 'Template não encontrado.');
@@ -1195,9 +1189,36 @@ export const renderTemplate = onCall({
     }
   }
 
-  const sizeBytes = outputBuf.length;
   const safeName = (tpl.name || 'template').replace(/[^a-zA-Z0-9À-ſ\-_ ]/g, '').slice(0, 60).trim() || 'template';
   const filename = `${safeName}.${outputExt}`;
+
+  return { outputBuf, outputMime, outputExt, filename, format: tpl.format, tplName: tpl.name || '' };
+}
+
+export const renderTemplate = onCall({
+  cors: ['https://primetour.github.io', 'http://localhost:5000'],
+  memory: '1GiB',                  // Chromium precisa
+  timeoutSeconds: 90,
+  maxInstances: 5,
+  secrets: [R2_UPLOAD_TOKEN],      // 4.63.84 — necessário pro R2 fallback (>5MB).
+                                   // Sem isso, .value() vinha vazio → upload 401 →
+                                   // base64 gigante → "Response size too large" →
+                                   // render falhava → cliente caía pro jsPDF.
+}, async (request) => {
+  const auth = requireAuth(request);
+  const { templateId, data = {} } = request.data || {};
+
+  if (!templateId || typeof templateId !== 'string') {
+    throw new HttpsError('invalid-argument', 'templateId obrigatório.');
+  }
+
+  // Rate limit
+  await checkRateLimit(auth.uid, 'renderTemplate', 30, 60);
+
+  const { outputBuf, outputMime, outputExt, filename } = await _renderTemplateCore(templateId, data);
+  const tpl = { format: outputExt === 'pdf' ? 'html' : outputExt, name: filename.replace(/\.[^.]+$/, '') };
+
+  const sizeBytes = outputBuf.length;
 
   // v4.63.16+ Fix HIGH Perf #2 (audit pós-sprint): callable response limit
   // ~10MB força base64 + JSON overhead. Tudo >5MB sobe pra R2 worker em
@@ -1272,6 +1293,113 @@ export const renderTemplate = onCall({
     // Backwards compat (clientes antigos v4.63.6 esperam pdfBase64)
     pdfBase64: tpl.format === 'html' ? outputBuf.toString('base64') : undefined,
   };
+});
+
+/* ═════════════════════════════════════════════════════════
+ * renderTemplateFile — v4.63.87+ endpoint STREAMING (onRequest).
+ *
+ * RAIZ DO BUG "internal" (v4.63.84→86): renderTemplate (onCall) tinha
+ * limite de resposta ~10MB. PDF de cotação real (>7MB) estourava o
+ * base64 → "Response size too large" → cliente caía pro jsPDF. O R2
+ * fallback NÃO resolvia porque o worker rejeita PDF em TODO path (415)
+ * + a URL pub-*.r2.dev não tem CORS pro fetch do browser.
+ *
+ * Solução: onRequest (Cloud Run, limite ~32MiB) que renderiza e
+ * STREAMA o binário direto, com CORS. Sem worker, sem Storage, sem
+ * secret novo. O domínio us-central1-…cloudfunctions.net já está no
+ * connect-src do CSP (index.html), então o fetch do browser passa.
+ *
+ * Auth: Bearer ID token (Authorization header), verificado via Admin
+ * SDK. Rate-limit por uid. POST { templateId, data }.
+ * ═════════════════════════════════════════════════════════ */
+export const renderTemplateFile = onRequest({
+  region: 'us-central1',
+  memory: '1GiB',          // Chromium precisa
+  timeoutSeconds: 90,
+  maxInstances: 5,
+  cors: true,
+}, async (req, res) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+  res.set('Access-Control-Expose-Headers', 'Content-Disposition, X-Template-Name, X-Render-Format');
+  if (req.method === 'OPTIONS') { res.status(204).send(''); return; }
+
+  if (req.method !== 'POST') {
+    res.set('Allow', 'POST, OPTIONS');
+    res.status(405).type('text/plain').send('Method Not Allowed');
+    return;
+  }
+
+  // Auth via Bearer ID token
+  const authz = req.get('authorization') || req.get('Authorization') || '';
+  const m = authz.match(/^Bearer\s+(.+)$/i);
+  if (!m) { res.status(401).type('text/plain').send('Missing Bearer token'); return; }
+  let uid;
+  try {
+    const decoded = await getAuth().verifyIdToken(m[1].trim());
+    uid = decoded.uid;
+  } catch (e) {
+    res.status(401).type('text/plain').send('Invalid token');
+    return;
+  }
+
+  // Body
+  const body = req.body || {};
+  const templateId = body.templateId;
+  const data = body.data || {};
+  if (!templateId || typeof templateId !== 'string') {
+    res.status(400).type('text/plain').send('templateId obrigatório');
+    return;
+  }
+
+  // Rate limit (reusa o mesmo bucket do renderTemplate onCall)
+  try {
+    await checkRateLimit(uid, 'renderTemplate', 30, 60);
+  } catch (e) {
+    res.status(429).type('text/plain').send(e?.message || 'Rate limit');
+    return;
+  }
+
+  try {
+    const { outputBuf, outputMime, outputExt, filename, format, tplName } =
+      await _renderTemplateCore(templateId, data);
+
+    // Audit fire-and-forget
+    db.collection('audit_logs').add({
+      action: 'templates.render',
+      userId: uid,
+      entity: 'templates',
+      entityId: templateId,
+      details: {
+        format, sizeBytes: outputBuf.length,
+        dataKeys: Object.keys(data).slice(0, 20),
+        via: 'stream',
+      },
+      severity: 'info',
+      timestamp: FieldValue.serverTimestamp(),
+    }).catch(() => {});
+
+    res.set('Content-Type', outputMime);
+    res.set('Content-Disposition', `attachment; filename="${filename.replace(/"/g, '')}"; filename*=UTF-8''${encodeURIComponent(filename)}`);
+    res.set('X-Template-Name', encodeURIComponent(tplName || ''));
+    res.set('X-Render-Format', outputExt);
+    res.status(200).send(outputBuf);
+  } catch (e) {
+    // Mapeia HttpsError.code → HTTP status
+    const codeMap = {
+      'not-found': 404,
+      'failed-precondition': 412,
+      'invalid-argument': 400,
+      'unauthenticated': 401,
+      'permission-denied': 403,
+      'resource-exhausted': 429,
+      'internal': 500,
+    };
+    const status = codeMap[e?.code] || 500;
+    console.error(`[renderTemplateFile] ${e?.code || 'error'}: ${e?.message || e}`);
+    res.status(status).type('text/plain').send(e?.message || 'Render failed');
+  }
 });
 
 /* ═════════════════════════════════════════════════════════

@@ -6,6 +6,18 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.87+20260529-render-stream-fix] — 2026-05-29
+
+**Fix do erro `internal` no render de template de cotação: endpoint STREAMING substitui o onCall com limite de 10MB.**
+
+Reporte do Renê: *"tentei gerar 2x o pdf e o mesmo erro apareceu, antes do sistema gerar o arquivo: Template configurado falhou (internal). Gerando com padrão do sistema."* A correção de secret (v4.63.84) resolveu o 401, mas expôs a causa real: o PDF de cotação real (>7MB) estourava o limite de resposta (~10MB) do callable `renderTemplate` → "Response size too large" → erro `internal` → cliente caía pro jsPDF. O fallback R2 não salvava: o worker rejeita PDF em **todo** path (HTTP 415) e a URL `pub-*.r2.dev` não tem CORS pro fetch do browser.
+
+**Mudanças:**
+- **Novo endpoint `renderTemplateFile`** (`functions/index.js`, `onRequest`/Cloud Run, limite ~32MiB): renderiza e **streama o binário direto** com CORS (`Access-Control-Allow-Origin: *`). Sem worker R2, sem Storage, sem secret novo. O domínio `cloudfunctions.net` já está no `connect-src` do CSP — fetch do browser passa sem mudança.
+- **Auth via Bearer ID token** (header `Authorization`), verificado pelo Admin SDK (`getAuth().verifyIdToken`). Rate-limit por uid (reusa o bucket `renderTemplate`, 30/60s). OPTIONS→204, não-POST→405. Erros `HttpsError.code` mapeados pra HTTP status (404/412/400/429/500).
+- **Refator `_renderTemplateCore(templateId, data)`** (`functions/index.js`): núcleo de render extraído (fetch template → Handlebars/Puppeteer ou docxtemplater → buffer) e compartilhado entre o `renderTemplate` onCall (legado, mantido) e o novo `renderTemplateFile`. Zero duplicação da lógica de render + SSRF allowlist.
+- **Cliente `renderTemplate`** (`js/services/templates.js`): troca o `httpsCallable` por `fetch(POST)` ao novo endpoint com `Authorization: Bearer <idToken>`, lê `res.blob()` direto (sem base64, sem CORS de R2), extrai filename do `Content-Disposition`. Mesma assinatura de retorno `{filename, sizeBytes, blob, mime, ...}` — consumidores em `roteiroGenerator.js`/`portalGenerator.js` não mudam.
+
 ## [4.63.86+20260529-dica-editar-conteudo-curar] — 2026-05-29
 
 **Dicas anexas no editor de cotações: botão "✎ Editar conteúdo" — re-curar granularmente a seleção da dica já anexada.**

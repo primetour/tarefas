@@ -538,49 +538,65 @@ export async function uploadTemplate(file, meta) {
 }
 
 /**
- * v4.63.6+ Render template via Cloud Function renderTemplate.
+ * v4.63.87+ Render template via CF STREAMING renderTemplateFile (onRequest).
  *
- * Chama CF que interpola Handlebars + renderiza (HTML→PDF via Puppeteer)
- * e retorna PDF como base64. Helper decodifica + dispara download no browser.
+ * Substitui a antiga chamada onCall `renderTemplate` que tinha limite de
+ * resposta ~10MB — PDF de cotação real (>7MB) estourava o base64 →
+ * "Response size too large" → erro `internal` → cliente caía pro jsPDF.
+ * O R2 fallback não resolvia (worker rejeita PDF 415 + pub-*.r2.dev sem CORS).
+ *
+ * Agora: POST pro endpoint onRequest (Cloud Run, ~32MiB) que renderiza +
+ * streama o binário direto, com CORS. O domínio cloudfunctions.net já está
+ * no connect-src do CSP. Auth via Bearer ID token.
  *
  * @param {string} templateId
  * @param {Object} data — payload pra interpolação (depende do schema do template)
- * @returns {Promise<{filename, sizeBytes, blob}>}
+ * @returns {Promise<{filename, sizeBytes, blob, mime, templateName, via}>}
  */
 export async function renderTemplate(templateId, data = {}) {
   if (!templateId) throw new Error('templateId obrigatório');
 
-  const { getFunctions, httpsCallable } = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js');
-  const { app } = await import('../firebase.js');
-  const fn = httpsCallable(getFunctions(app, 'us-central1'), 'renderTemplate');
+  const { auth } = await import('../firebase.js');
+  if (!auth.currentUser) throw new Error('Não autenticado.');
+  const idToken = await auth.currentUser.getIdToken();
 
-  const res = await fn({ templateId, data });
-  // v4.63.8+ resposta unificada {fileBase64, mime, filename, ...}.
-  // v4.63.16+ Output >5MB volta como {downloadUrl} (R2 fallback) em vez de
-  // base64 — callable limit ~10MB força isso. Fallback pra pdfBase64 da
-  // v4.63.6-7 quando CF antiga.
-  const r = res.data || {};
-  const mime = r.mime || 'application/pdf';
+  const ENDPOINT = 'https://us-central1-gestor-de-tarefas-primetour.cloudfunctions.net/renderTemplateFile';
 
-  let blob;
-  if (r.downloadUrl) {
-    // v4.63.16+ R2 fallback: fetcha o output do bucket público
-    const dlRes = await fetch(r.downloadUrl);
-    if (!dlRes.ok) throw new Error(`Download R2 falhou (${dlRes.status}) ${r.downloadUrl?.slice(0,80)}`);
-    blob = await dlRes.blob();
-    // Garante mime correto (R2 worker pode não preservar Content-Type)
-    if (blob.type !== mime) blob = new Blob([blob], { type: mime });
-  } else {
-    const b64 = r.fileBase64 || r.pdfBase64;
-    if (!b64) throw new Error('CF não retornou fileBase64/pdfBase64/downloadUrl');
-    // Decode base64 → Blob
-    const binary = atob(b64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-    blob = new Blob([bytes], { type: mime });
+  let res;
+  try {
+    res = await fetch(ENDPOINT, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${idToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ templateId, data }),
+    });
+  } catch (e) {
+    throw new Error(`Falha de rede no render do template: ${e?.message || e}`);
   }
 
-  return { filename: r.filename, sizeBytes: r.sizeBytes, mime, blob, templateName: r.templateName, via: r.via };
+  if (!res.ok) {
+    let detail = '';
+    try { detail = await res.text(); } catch {}
+    throw new Error(`Render falhou (${res.status}): ${detail.slice(0, 200)}`);
+  }
+
+  const blob = await res.blob();
+  const mime = blob.type || 'application/pdf';
+
+  // filename do Content-Disposition (filename*=UTF-8'' tem prioridade)
+  let filename = `${templateId}.pdf`;
+  const cd = res.headers.get('content-disposition') || '';
+  const mStar = cd.match(/filename\*=UTF-8''([^;]+)/i);
+  const mPlain = cd.match(/filename="?([^";]+)"?/i);
+  if (mStar) { try { filename = decodeURIComponent(mStar[1]); } catch {} }
+  else if (mPlain) filename = mPlain[1];
+
+  let templateName = '';
+  try { templateName = decodeURIComponent(res.headers.get('x-template-name') || ''); } catch {}
+
+  return { filename, sizeBytes: blob.size, mime, blob, templateName, via: 'stream' };
 }
 
 /**
