@@ -1555,12 +1555,18 @@ async function buildDayByDayPages(doc, roteiro, primary, secondary, accent, byCi
     })
   );
 
+  // v4.63.79+ dedupe banner: cada cidade mostra sua imagem UMA vez (no 1º dia
+  // que aparece). Antes repetia em todo dia da mesma cidade ("repete fotos").
+  const shownCityBanners = new Set();
+
   for (let i = 0; i < roteiro.days.length; i++) {
     const day = roteiro.days[i];
     const cityKey = day.city
       ? day.city.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
       : '';
-    const dayImageData = cityImageData[cityKey] || null;
+    const showBanner = !!(cityKey && cityImageData[cityKey] && !shownCityBanners.has(cityKey));
+    const dayImageData = showBanner ? cityImageData[cityKey] : null;
+    if (showBanner) shownCityBanners.add(cityKey);
 
     // Estimate space: header + city + image + narrative + overnight + padding
     const narrativeLines = day.narrative
@@ -1661,7 +1667,15 @@ async function buildDayByDayPages(doc, roteiro, primary, secondary, accent, byCi
     // Activities list (time + description)
     if (day.activities?.length) {
       for (const act of day.activities) {
-        y = checkPageBreak(doc, y, 10);
+        const descX = act.time ? MARGIN + 28 : MARGIN + 14;
+        const descW = CONTENT_W - (descX - MARGIN);
+        doc.setFont('Poppins', 'normal');
+        doc.setFontSize(8);
+        const actLines = doc.splitTextToSize(act.description || act.text || '', descW);
+        // v4.63.79+ reserva = altura REAL do bloco (não 10mm fixo). Antes,
+        // atividade longa perto do rodapé transbordava ("embola textos").
+        const blockH = actLines.length * 3.8 + 2;
+        y = checkPageBreak(doc, y, blockH + 3);
 
         if (act.time) {
           doc.setFont('Poppins', 'bold');
@@ -1670,14 +1684,11 @@ async function buildDayByDayPages(doc, roteiro, primary, secondary, accent, byCi
           doc.text(act.time, MARGIN + 14, y + 3);
         }
 
-        const descX = act.time ? MARGIN + 28 : MARGIN + 14;
-        const descW = CONTENT_W - (descX - MARGIN);
         doc.setFont('Poppins', 'normal');
         doc.setFontSize(8);
         doc.setTextColor(60, 60, 60);
-        const actLines = doc.splitTextToSize(act.description || act.text || '', descW);
         doc.text(actLines, descX, y + 3);
-        y += actLines.length * 3.8 + 2;
+        y += blockH;
       }
     }
 
@@ -2135,7 +2146,13 @@ function buildPaymentSection(doc, roteiro, primary, secondary) {
   ].filter(e => e.value);
 
   for (const entry of entries) {
-    y = checkPageBreak(doc, y, 15);
+    doc.setFont('Poppins', 'normal');
+    doc.setFontSize(10);
+    const lines = doc.splitTextToSize(entry.value, CONTENT_W - 48);
+    // v4.63.79+ reserva = altura REAL (não 15mm fixo). Observação longa perto
+    // do rodapé transbordava sobre o footer.
+    const blockH = Math.max(lines.length * 4.5, 6) + 3;
+    y = checkPageBreak(doc, y, blockH + 3);
 
     doc.setFont('Poppins', 'bold');
     doc.setFontSize(10);
@@ -2145,9 +2162,8 @@ function buildPaymentSection(doc, roteiro, primary, secondary) {
     doc.setFont('Poppins', 'normal');
     doc.setFontSize(10);
     doc.setTextColor(60, 60, 60);
-    const lines = doc.splitTextToSize(entry.value, CONTENT_W - 48);
     doc.text(lines, MARGIN + 45, y + 3);
-    y += Math.max(lines.length * 4.5, 6) + 3;
+    y += blockH;
   }
 
   // Anchor pra próxima seção saber onde paramos
@@ -2343,20 +2359,25 @@ function buildEmbeddedTipsSection(doc, roteiro, primary, secondary) {
       y += 6;
 
       for (const ln of segLines) {
-        y = checkPageBreak(doc, y, 10);
         if (ln.heading) {
           doc.setFont('Poppins', 'bold');
           doc.setFontSize(9);
-          doc.setTextColor(90, 90, 90);
           const hl = doc.splitTextToSize(ln.text, CONTENT_W - 6);
+          // v4.63.79+ reserva = altura REAL do heading (não 10mm fixo).
+          y = checkPageBreak(doc, y, hl.length * 4.5 + 1 + 3);
+          doc.setTextColor(90, 90, 90);
           doc.text(hl, MARGIN + 4, y + 3);
           y += hl.length * 4.5 + 1;
           continue;
         }
         doc.setFont('Poppins', 'normal');
         doc.setFontSize(9.5);
-        doc.setTextColor(60, 60, 60);
         const lines = doc.splitTextToSize('· ' + ln.text, CONTENT_W - 6);
+        // v4.63.79+ reserva = altura REAL do item multi-linha. Era 10mm fixo,
+        // então restaurante/atração longo perto do rodapé transbordava
+        // sobre o footer ("embola textos pag 8 / caos pg9+").
+        y = checkPageBreak(doc, y, lines.length * 4.5 + 1 + 3);
+        doc.setTextColor(60, 60, 60);
         doc.text(lines, MARGIN + 5, y + 3);
         y += lines.length * 4.5 + 1;
       }

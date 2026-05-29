@@ -6,6 +6,20 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.80+20260529-pdf-overflow-photos-fix] — 2026-05-29
+
+**Fix crítico: export PDF de cotação — fotos repetidas + texto transbordando sobre o rodapé ("embola textos pág 8 / caos pág 9+").**
+
+Bugs reportados pelo Renê no teste E2E de export: *"repete fotos / embola textos (pag 8) / das páginas 9 pra frente é puro caos"*.
+
+**Causa raiz 1 — fotos repetidas:** `buildDayByDayPages` desenhava o banner da cidade em **todo dia** daquela cidade. Roteiro com 3 dias em Tóquio → a mesma foto aparecia 3×. Fix: `Set` `shownCityBanners` — cada cidade mostra a imagem **uma vez**, no primeiro dia em que aparece.
+
+**Causa raiz 2 — texto transbordando ("embola"/caos):** antipadrão `checkPageBreak(doc, y, RESERVA_FIXA)` seguido do desenho de um bloco multi-linha **variável** (`splitTextToSize → N linhas`). Quando o bloco real era maior que a reserva fixa perto do fim da página, o texto vazava sobre a linha do rodapé e por cima da próxima seção. Pior com a Dica de Quioto (94 itens: 64 restaurantes + 22 atrações). Fix: computar a **altura real** do bloco PRIMEIRO, depois `checkPageBreak(altura_real)`. Aplicado em 3 builders: `buildEmbeddedTipsSection` (itens + headings das Dicas), `buildDayByDayPages` (atividades) e `buildPaymentSection` (observações longas).
+
+Validação: `node --check` + simulação determinística da paginação (94 itens, início perto do rodapé) — algoritmo antigo desenhava **4 itens** abaixo da linha do rodapé (bottom 287mm > limite 281mm); algoritmo novo mantém tudo dentro dos limites (máx 272,5mm). Validação visual no PDF pendente (requer Renê relogar — não insiro SSO dele).
+
+**Nota (não é bug):** preço/condições/o que inclui/cancelamento/documentação saírem vazios na cotação de teste 4bTybLbDGfarh3Rp5XSd é porque esses campos estão **vazios** no Firestore — os gates de seção corretamente suprimem seções sem dado. Não é falha de render; preencher os campos no editor faz as seções aparecerem.
+
 ## [4.63.79+20260529-briefing-dests-dicas-select] — 2026-05-29
 
 **Feature: Briefing com multi-select de destinos (do SSOT) que auto-filtra Banco + Dicas · Seleção granular de conteúdo das Dicas.**
