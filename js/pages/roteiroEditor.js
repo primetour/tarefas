@@ -603,8 +603,16 @@ function renderServicosSection() {
  * --border-subtle, --bg-surface, --text-*). */
 function _servicosStyles() {
   return `
-    <style data-svc-css="v4.62.31">
-      .svc-block { margin-bottom: 36px; }
+    <style data-svc-css="v4.63.69">
+      /* v4.63.69: bloco vira painel .re-briefing-card pra unificar com a aba
+         Cliente e Briefing (mesma cara: bg-surface + border + radius). */
+      .svc-block {
+        margin: 18px 0;
+        padding: 14px 16px;
+        background: var(--bg-surface, #222);
+        border: 1px solid var(--border-subtle, #333);
+        border-radius: 8px;
+      }
       .svc-block-header {
         display: flex; align-items: center; justify-content: space-between;
         gap: 12px; flex-wrap: wrap; margin-bottom: 12px;
@@ -616,7 +624,7 @@ function _servicosStyles() {
       }
       .svc-block-count {
         font-size: 0.72rem; color: var(--text-muted); font-weight: 500;
-        background: var(--bg-surface); padding: 2px 8px; border-radius: 999px;
+        background: var(--bg-card); padding: 2px 8px; border-radius: 999px;
       }
       .svc-block-actions { display: flex; gap: 6px; flex-wrap: wrap; }
       .svc-cards { display: flex; flex-direction: column; gap: 10px; }
@@ -676,7 +684,8 @@ function _servicosStyles() {
       .svc-empty {
         text-align: center; padding: 24px 16px;
         color: var(--text-muted); font-size: 0.875rem;
-        background: var(--bg-surface); border: 1px dashed var(--border-subtle, #e5e7eb);
+        /* v4.63.69: bg-card pra destacar do painel .svc-block (bg-surface). */
+        background: var(--bg-card); border: 1px dashed var(--border-subtle, #e5e7eb);
         border-radius: 8px;
       }
       .svc-totals {

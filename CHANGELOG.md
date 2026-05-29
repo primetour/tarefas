@@ -6,6 +6,23 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.69+20260529-editor-servicos-cards] — 2026-05-29
+
+**Replicação dos cards-painel pra aba "Serviços" do Gerador de Cotações — unificação visual com "Cliente e Briefing" (v4.63.68).**
+
+Segundo passo do redesign: aplicar a mesma "cara" de painel (`.re-briefing-card`: `bg-surface` + borda + radius) aos blocos de Serviços (Aéreo / Hotéis / Opcionais / Resumo Financeiro), que antes eram blocos planos só separados por `margin-bottom`.
+
+### Restyle puro de CSS (zero mudança de HTML/handlers — baixo risco)
+- `.svc-block` deixa de ser bloco plano (`margin-bottom: 36px`) e vira painel: `margin: 18px 0; padding: 14px 16px; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: 8px` — idêntico ao `.re-briefing-card` da aba Cliente.
+- `data-svc-css` bumpado `v4.62.31` → `v4.63.69`.
+
+### Ajustes de layering (sub-elementos que blendariam no novo fundo)
+- `.svc-block-count` (pill de contagem): `bg-surface` → `bg-card` — antes sumia no novo fundo do painel.
+- `.svc-empty` (estado vazio): `bg-surface` → `bg-card` pela mesma razão.
+- `.svc-card` (cards internos brancos) e `.svc-totals` (tint dourado) mantidos — já contrastam bem sobre o painel.
+
+---
+
 ## [4.63.68+20260529-editor-cliente-briefing-cards] — 2026-05-29
 
 **Redesign visual da aba "Cliente e Briefing" no Gerador de Cotações — fim do "tudo flat e junto".**

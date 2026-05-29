@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 68,
-  build: '20260529-editor-cliente-briefing-cards',
+  patch: 69,
+  build: '20260529-editor-servicos-cards',
 };
 
 /** "1.2.0" */
