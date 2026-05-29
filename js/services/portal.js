@@ -404,6 +404,63 @@ export async function fetchDestinations({ continent, country, continentCode, cou
 }
 
 /**
+ * v4.63.50+ Helper: cache de aliases geo (city + country) de
+ * portal_destinations pra resolver drift entre Banco de Imagens e Portal
+ * de Dicas. Lazy load + TTL 5min.
+ *
+ * Schema: Map<labelQualquer, Set<canonical + todas aliases>> — assim
+ * `fetchImages({city:'Kyoto'})` expande pra Set{Quioto, Kyoto} antes do
+ * filtro. Idem country.
+ */
+let _geoAliasCache = null;
+let _geoAliasCacheTs = 0;
+const _GEO_ALIAS_TTL_MS = 5 * 60_000;
+
+async function _ensureGeoAliasCache() {
+  if (_geoAliasCache && (Date.now() - _geoAliasCacheTs) < _GEO_ALIAS_TTL_MS) {
+    return _geoAliasCache;
+  }
+  const snap = await getDocs(query(collection(db, 'portal_destinations'), limit(5000)));
+  const cityMap    = new Map(); // labelQualquer → Set<variantes>
+  const countryMap = new Map();
+  snap.forEach(d => {
+    const data = d.data();
+    if (data.city) {
+      const variants = new Set([data.city, ...((Array.isArray(data.cityAliases) ? data.cityAliases : []))]);
+      for (const v of variants) {
+        const existing = cityMap.get(v) || new Set();
+        for (const x of variants) existing.add(x);
+        cityMap.set(v, existing);
+      }
+    }
+    if (data.country) {
+      const variants = new Set([data.country, ...((Array.isArray(data.countryAliases) ? data.countryAliases : []))]);
+      for (const v of variants) {
+        const existing = countryMap.get(v) || new Set();
+        for (const x of variants) existing.add(x);
+        countryMap.set(v, existing);
+      }
+    }
+  });
+  _geoAliasCache = { cityMap, countryMap };
+  _geoAliasCacheTs = Date.now();
+  return _geoAliasCache;
+}
+
+function _expandGeoLabel(cache, type, value) {
+  if (!cache || !value) return new Set([value]);
+  const map = type === 'city' ? cache.cityMap : cache.countryMap;
+  return map.get(value) || new Set([value]);
+}
+
+/** Chamado quando saveDestination / mergeDestinations / deleteDestination
+ *  invalida estrutura geo. Próxima leitura recarrega cache. */
+function _invalidateGeoAliasCache() {
+  _geoAliasCache = null;
+  _geoAliasCacheTs = 0;
+}
+
+/**
  * v4.63.31+ Helper: retorna set de destinationIds que aparecem em pelo menos
  * 1 tip aprovada/ativa. Tip é GLOBAL (Renê: "dica não está vinculada a área —
  * área é apenas para definição de template"). Cached em-memória 30s pra
@@ -538,7 +595,7 @@ export async function saveDestination(id, data, opts = {}) {
   // v4.59.0 — auto-resolve countryCode/continentCode SSOT (geographic SSOT sprint).
   // Não destrutivo: se data já trouxe countryCode/continentCode, respeita; senão
   // resolve a partir dos labels legados. Reader prioriza countryCode quando presente.
-  let { countryCode, continentCode, source, reviewStatus, cityAliases, envisionLocationId } = data || {};
+  let { countryCode, continentCode, source, reviewStatus, cityAliases, countryAliases, envisionLocationId } = data || {};
   if (!countryCode || !continentCode) {
     try {
       const { resolveCountry, resolveContinent } = await import('./geoResolver.js');
@@ -624,12 +681,15 @@ export async function saveDestination(id, data, opts = {}) {
     ...(continentCode  !== undefined ? { continentCode }  : {}),
     ...(source         !== undefined ? { source }         : {}),
     ...(reviewStatus   !== undefined ? { reviewStatus }   : {}),
-    ...(Array.isArray(cityAliases)   ? { cityAliases }    : {}),
+    ...(Array.isArray(cityAliases)    ? { cityAliases }    : {}),
+    ...(Array.isArray(countryAliases) ? { countryAliases } : {}),  // v4.63.50
     ...(envisionLocationId !== undefined ? { envisionLocationId } : {}),
     updatedAt: serverTimestamp(),
     updatedBy: uid(),
     ...(isNew ? { createdAt: serverTimestamp(), createdBy: uid() } : {}),
   }, { merge: true });
+
+  _invalidateGeoAliasCache();  // v4.63.50: força refetch na próxima leitura
 
   // v4.57.40 fix integração PD13: notif quando destino é criado.
   // Antes: curador criava 10 destinos, ninguém sabia até abrir dashboard.
@@ -768,6 +828,7 @@ export async function mergeDestinations(keeperId, duplicateId) {
 
   // 4. Deleta o duplicate
   await deleteDoc(doc(db, 'portal_destinations', duplicateId));
+  _invalidateGeoAliasCache();  // v4.63.50
 
   return { keeperId, redirected, aliasesAdded: dedupedToAdd };
 }
@@ -786,6 +847,7 @@ export async function deleteDestination(id) {
     }
   } catch {}
   await deleteDoc(doc(db, 'portal_destinations', id));
+  _invalidateGeoAliasCache();  // v4.63.50
 
   // v4.57.39 fix integração PD2: cleanup portal_tips + portal_images
   // referenciando destino deletado.
@@ -1210,10 +1272,23 @@ export async function fetchImagesPage(filters = {}) {
     return { id: d.id, ...data, assetCategory: inferredCategory || 'location' };
   });
 
+  // v4.63.50: filtros country/city respeitam cityAliases/countryAliases
+  // de portal_destinations. Ex: Banco tem `country: "Reino Unido"`, mas
+  // destinations canônico é `"Inglaterra"` com `countryAliases: ["Reino
+  // Unido"]` → fetchImages({country: "Inglaterra"}) agora bate. Idem
+  // pra `city: "Kyoto"` ↔ canônico "Quioto" com cityAliases.
+  // Cache lazy 5min em-memória (_geoAliasCache).
+  const aliasCache = (country || city) ? await _ensureGeoAliasCache() : null;
   // Filtros client-side
   if (continent)     docs = docs.filter(d => d.continent === continent);
-  if (country)       docs = docs.filter(d => d.country   === country);
-  if (city)          docs = docs.filter(d => d.city       === city);
+  if (country)       {
+    const variants = _expandGeoLabel(aliasCache, 'country', country);
+    docs = docs.filter(d => variants.has(d.country));
+  }
+  if (city)          {
+    const variants = _expandGeoLabel(aliasCache, 'city', city);
+    docs = docs.filter(d => variants.has(d.city));
+  }
   if (assetCategory) docs = docs.filter(d => d.assetCategory === assetCategory);
   if (type)          docs = docs.filter(d => d.type === type);
   if (uploadedBy)    docs = docs.filter(d => d.uploadedBy === uploadedBy);

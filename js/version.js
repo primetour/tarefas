@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 49,
-  build: '20260528-audit-banco-portal-fk-imageid',
+  patch: 50,
+  build: '20260528-geo-alias-cross-module',
 };
 
 /** "1.2.0" */
