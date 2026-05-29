@@ -2250,3 +2250,30 @@ if (!profile) {
 - ⚠️ Lembrar: `setDoc` em doc existente é **UPDATE** pra fins de rules. Se a rule de update é mais restritiva que a de create (self-update lock), o "create" falha de um jeito confuso.
 
 **Auditoria preventiva**: `grep -rn "fetchUserProfile\|getDoc(" js/auth js/services | grep -i "exists\|null"` — qualquer ramo que decide criar/provisionar a partir de `getDoc` cacheado é candidato ao mesmo bug.
+
+### u) ⚠ ARMADILHA: Duas funções de "strip" divergentes (allowlist vs blacklist) → export silenciosamente vazio (v4.63.75)
+
+**Sintoma Renê 2026-05-29**: *"o export nao carrega todos os dados possíveis da cotação, ele exige preenchimento de ao menos um dia (não precisa)"*. Seções dedicadas (pagamento, cancelamento, infos importantes, dicas, viajantes, consultor) saíam vazias no PDF/PPTX/DOCX **mesmo com dados preenchidos**.
+
+**Causa raiz DUPLA**:
+
+1. **Drift de allowlist entre 2 funções de strip.** O sistema tem DUAS funções de saneamento com lógicas OPOSTAS:
+   - `stripInternalFields` (roteiroGenerator.js:514) = **ALLOWLIST** via `PUBLIC_FIELDS`. Usada por TODOS os exports de arquivo (PDF/PPTX/DOCX). Qualquer chave **fora** da lista é DROPADA.
+   - `stripInternalForPublicLink` (roteiros.js) = **BLACKLIST**. Usada só pelo web link. Qualquer chave **não-listada** PASSA.
+
+   A `PUBLIC_FIELDS` listava apenas chaves-fantasma (`paymentPolicy`/`cancelPolicy` que nem existem no schema) e NÃO incluía os campos reais (`payment`, `cancellation`, `importantInfo`, `embeddedTips`, `travelers`, `consultantName`). Os generators tinham seções dedicadas pra renderizar esses campos, mas recebiam `undefined` porque o strip removia tudo ANTES. Resultado: bug invisível — generator "correto", dados "presentes" no Firestore, mas zerados no pipeline.
+
+2. **4 travas de dia espúrias.** PDF/DOCX/PPTX/Web link abortavam se `days[]` vazio. Mas cotação só com voos+hotéis+valores É exportável (generators pulam dias graciosamente). A trava forçava preencher itinerário dia-a-dia sem necessidade.
+
+**Fix**:
+- Completar `PUBLIC_FIELDS` com os 6 campos client-facing reais — **mantendo FORA** os internos por privacidade/custo: `costPricing`, `aiGeneration`, `collaboratorIds`, `workflowMode`, `linkedTaskIds`, `tasksGeneratedAt`, `consultantId`, `pricing.cost*`. Defense-in-depth: deletar explicitamente `pricing.costInternal/commission/margin` mesmo se vazarem.
+- Remover as 4 travas de dia (manter só exigência de Área/BU pro branding).
+
+**Princípio mestre — quando há N funções pra "a mesma coisa" (sanitizar, validar, serializar) com estratégias opostas (allowlist vs blacklist)**:
+- ❌ Allowlist é **fail-closed**: esquecer de adicionar 1 campo = dado some SILENCIOSO. Não dá erro, não dá warning. Só some.
+- ✅ Toda vez que o schema ganha campo client-facing novo, a allowlist PRECISA ser atualizada no MESMO patch. Senão vira bug latente de meses.
+- ✅ Idealmente: UMA fonte canônica de "campos públicos" compartilhada entre file-export e web-link, em vez de 2 funções que driftam. (TODO refactor: extrair `PUBLIC_FIELDS` pra módulo compartilhado e derivar a blacklist do complemento.)
+
+**Auditoria preventiva**: `grep -rn "PUBLIC_FIELDS\|stripInternal" js/` — confirmar que toda chave do `emptyRoteiro()` client-facing está na allowlist. Quando adicionar seção nova ao generator, conferir que o campo-fonte está em `PUBLIC_FIELDS` ANTES de declarar a seção "feita" (senão renderiza vazia em produção).
+
+**Sinais que pegariam mais cedo**: `node --check` + curl NÃO pegam (allowlist é dado, não sintaxe). Só E2E real gerando PDF de cotação com TODAS as seções preenchidas + abrindo o arquivo pega. Harness Node que roda `stripInternalFields(roteiroCompleto)` e asserta que cada seção sobrevive = barato e determinístico (foi o que validou esse fix — 2 harnesses, allowlist + buildPaxLabel).
