@@ -8,17 +8,19 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ## [4.63.74+20260529-sso-cache-false-negative-fix] — 2026-05-29
 
-**Fix de login SSO: falso-negativo do cache local trancava usuário existente fora do sistema ("Erro ao criar perfil").**
+**Fix de login SSO: entrada obsoleta no cache local (IndexedDB) trancava usuário existente fora do sistema ("Erro ao criar perfil").**
 
 Reportado pela Thais Yoshitomi: *"não consigo mais entrar / Erro ao criar perfil. Verifique as regras do Firestore (users create)"*. Conta existente, ativa, Auth UID batendo com o doc Firestore — mas o login travava.
 
-**Causa raiz (cadeia de 1 gatilho + 2 defeitos latentes):**
-1. (Gatilho) App Check (reCAPTCHA Enterprise) falhando no browser dela → leitura do Firestore negada no servidor.
-2. (Defeito A) Com `persistentLocalCache` (IndexedDB) habilitado e o doc dela NÃO em cache (device novo/storage limpo), `getDoc` resolve `exists()===false` **a partir do cache** em vez de lançar erro → `fetchUserProfile` retorna null → cai no auto-provision SSO. Falso-negativo de cache tratado como "usuário não existe".
+**Causa raiz (confirmada por evidência operacional):**
+1. O cache persistente do Firestore (`persistentLocalCache`/IndexedDB) do browser dela tinha uma **entrada "negativa" obsoleta** pro doc `users/{uid}` dela — o cache "sabia" que o doc não existia, de algum estado anterior (read negado pontualmente / storage parcial). `getDoc` servia esse falso-negativo (`exists()===false`) sem confirmar com o servidor.
+2. `fetchUserProfile` retornava null → caía no auto-provisioning SSO. Falso-negativo de cache tratado como "usuário não existe".
 3. O lookup por email exclui o próprio uid (o único doc dela) → `mergedFromPending` null → monta `newProfile` com DEFAULTS (setor/núcleos/visibleSectors vazios, role member).
-4. (Defeito B) `setDoc(users/{uid}, defaults)` cai no doc EXISTENTE → avaliado como UPDATE → a self-update rule proíbe membro mudar `role/sector/nucleos/visibleSectors` → `permission-denied` → "Erro ao criar perfil". Mesmo se passasse, apagaria setor/núcleos dela.
+4. `setDoc(users/{uid}, defaults)` cai no doc EXISTENTE → avaliado como UPDATE → a self-update rule proíbe membro mudar `role/sector/nucleos/visibleSectors` → `permission-denied` → "Erro ao criar perfil".
 
-**Fix (cirúrgico, baixo blast radius — só o caminho `profile===null`):** quando `fetchUserProfile` volta null, força um read **autoritativo no servidor** via `getDocFromServer` antes de decidir provisionar. Se o doc existe no servidor → usa ele (evita o overwrite destrutivo + o lockout). Se o read do servidor **falha** (App Check/permissão/rede) → NÃO provisiona: emite erro claro e acionável + signOut, em vez de tentar um `setDoc` destrutivo fadado a falhar. Logins normais (profile não-null) e usuários genuinamente novos (servidor retorna vazio) ficam intactos.
+**Evidência da causa real (não era App Check):** o admin abriu Usuários e **re-salvou o doc dela sem mudar nada** → login destravou **44s depois** (`updatedAt 16:54:16` → `lastLogin 16:55:00`; campos estruturais idênticos antes/depois). Um write server-side NÃO consertaria App Check do navegador dela — o que ele fez foi mutar o doc, disparando o listener persistente do client a re-sincronizar e **invalidar a entrada obsoleta do cache**. Logo, o mecanismo dominante é cache local obsoleto, não atestação App Check.
+
+**Fix (cirúrgico, baixo blast radius — só o caminho `profile===null`):** quando `fetchUserProfile` volta null, força um read **autoritativo no servidor** via `getDocFromServer` antes de decidir provisionar — é a versão **automática** do re-save manual do admin. Se o doc existe no servidor → usa ele (evita o overwrite destrutivo + o lockout, sem precisar de intervenção do admin). Se o read do servidor **falha** (rede/permissão/App Check genuíno) → NÃO provisiona: emite erro claro e acionável + signOut, em vez de tentar um `setDoc` destrutivo fadado a falhar. Logins normais (profile não-null) e usuários genuinamente novos (servidor retorna vazio) ficam intactos.
 
 ---
 
