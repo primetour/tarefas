@@ -498,6 +498,21 @@ function _applyTipSelection(segments, selection) {
   return out;
 }
 
+/**
+ * v4.63.86 — Busca a dica ORIGINAL completa (segments não-filtrados) do Portal.
+ * Necessário pra re-curar uma dica já anexada: o snapshot embedado só guarda
+ * os segmentos já filtrados (content.segments), então pra reabrir o seletor
+ * pré-marcado precisamos do conteúdo integral de novo.
+ *
+ * Retorna o objeto da tip com `id` (igual ao tipId) + todos os campos, ou
+ * lança se não existir mais no Portal.
+ */
+export async function fetchTipById(tipId) {
+  const snap = await getDoc(doc(db, 'portal_tips', tipId));
+  if (!snap.exists()) throw new Error('Dica não encontrada no Portal (pode ter sido removida).');
+  return { id: snap.id, ...snap.data() };
+}
+
 export async function snapshotTipForEmbed(tipId, selection = null) {
   const snap = await getDoc(doc(db, 'portal_tips', tipId));
   if (!snap.exists()) throw new Error('Dica não encontrada (pode ter sido removida).');

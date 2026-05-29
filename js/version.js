@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 85,
-  build: '20260529-dicas-count-fix-republish-selection',
+  patch: 86,
+  build: '20260529-dica-editar-conteudo-curar',
 };
 
 /** "1.2.0" */

@@ -6,7 +6,7 @@
 import { store }  from '../store.js';
 import { toast } from '../components/toast.js';
 const showToast = (msg, type = 'info') => toast[type]?.(msg) ?? toast.info(msg);
-import { fetchRoteiro, saveRoteiro, snapshotTipForEmbed, isEmbeddedTipStale, createWebLink, updateRoteiroStatus } from '../services/roteiros.js';
+import { fetchRoteiro, saveRoteiro, snapshotTipForEmbed, fetchTipById, isEmbeddedTipStale, createWebLink, updateRoteiroStatus } from '../services/roteiros.js';
 import { generateRoteiroForExport, resolveDestinationImage } from '../services/roteiroGenerator.js';
 import { fetchDestinations, fetchAreas, fetchImages, fetchTips, saveDestination, CONTINENTS, SEGMENTS } from '../services/portal.js';
 import { detectBankContext, showBankGuardModal } from '../services/bankClientGuard.js';
@@ -1240,6 +1240,11 @@ function renderEmbeddedTipsSection() {
                 </span>
               </div>
             </div>
+            <button class="re-add-btn" data-action="edit-tip-content" data-idx="${i}"
+              title="Escolher quais segmentos/itens desta dica entram na cotação (re-curar a seleção)."
+              style="margin:0;background:var(--bg-soft);color:var(--text-primary);font-size:0.75rem;padding:6px 12px;">
+              ✎ Editar conteúdo
+            </button>
             <button class="re-add-btn" data-action="republish-tip" data-idx="${i}"
               title="Puxa a versão mais recente desta dica do Portal, mantendo a sua seleção de conteúdo."
               style="margin:0;background:var(--bg-soft);color:var(--text-primary);font-size:0.75rem;padding:6px 12px;">
@@ -4003,7 +4008,23 @@ function _tipItemTitle(it) {
  *
  * Espelha o padrão de checkboxes do _pickDaysFromBankRoteiro.
  */
-function _openTipSelectionModal(tip, onConfirm) {
+function _openTipSelectionModal(tip, onConfirm, opts = {}) {
+  // v4.63.86 — opts.initialSelection pré-marca os checkboxes pra re-curadoria
+  // de uma dica já anexada. null/undefined = tudo marcado (snapshot completo,
+  // comportamento de anexo). opts.confirmLabel / opts.titleVerb customizam UI.
+  const initSel = opts.initialSelection;
+  const hasInitSel = initSel && typeof initSel === 'object';
+  // Estado inicial de um item (índice REAL no array original do segmento):
+  const _itemChecked = (segKey, realIdx) => {
+    if (!hasInitSel) return true;          // sem seleção prévia → tudo
+    const sel = initSel[segKey];
+    if (sel === true) return true;         // segmento inteiro
+    if (Array.isArray(sel)) return sel.map(Number).includes(realIdx);
+    return false;                          // segmento omitido
+  };
+  // Estado inicial do bloco informacoes_gerais (só inteiro):
+  const _infoChecked = (segKey) => (!hasInitSel ? true : initSel[segKey] === true);
+
   const segments = tip.segments || {};
   // Lista de segmentos com conteúdo, na ordem canônica de SEGMENTS.
   const orderedKeys = [
@@ -4029,7 +4050,7 @@ function _openTipSelectionModal(tip, onConfirm) {
   overlay.innerHTML = `
     <div class="re-img-modal" style="max-width:640px;max-height:82vh;display:flex;flex-direction:column;">
       <div class="re-img-modal-header">
-        <div class="re-img-modal-title">💡 Escolher conteúdo · <span style="color:var(--text-muted);font-weight:400;font-size:0.875rem;">${esc(tip.city || '')}${tip.country ? ', ' + esc(tip.country) : ''}</span></div>
+        <div class="re-img-modal-title">💡 ${esc(opts.titleVerb || 'Escolher conteúdo')} · <span style="color:var(--text-muted);font-weight:400;font-size:0.875rem;">${esc(tip.city || '')}${tip.country ? ', ' + esc(tip.country) : ''}</span></div>
         <button class="re-img-modal-close" type="button">&times;</button>
       </div>
       <div class="re-img-modal-body" style="overflow:auto;">
@@ -4045,7 +4066,9 @@ function _openTipSelectionModal(tip, onConfirm) {
           ${segs.map((s, si) => `
             <div data-seg-block="${si}" style="border:1px solid var(--border-subtle,#e5e7eb);border-radius:8px;background:var(--bg-surface);overflow:hidden;">
               <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;">
-                <input type="checkbox" data-seg-cb="${si}" checked
+                <input type="checkbox" data-seg-cb="${si}" ${
+                  (s.isInfo ? _infoChecked(s.key) : s.itemIdxs.some(ri => _itemChecked(s.key, ri))) ? 'checked' : ''
+                }
                   style="accent-color:var(--brand-gold,#D4A843);cursor:pointer;flex-shrink:0;width:16px;height:16px;">
                 <div style="flex:1;min-width:0;font-weight:600;font-size:0.875rem;color:var(--text-primary);">
                   ${esc(_segmentLabel(s.key))}
@@ -4057,7 +4080,9 @@ function _openTipSelectionModal(tip, onConfirm) {
                 <div data-seg-items="${si}" style="display:none;padding:0 12px 10px 38px;flex-direction:column;gap:4px;">
                   ${s.items.map((it, ii) => `
                     <label style="display:flex;align-items:center;gap:8px;font-size:0.8125rem;color:var(--text-secondary);cursor:pointer;">
-                      <input type="checkbox" data-item-cb="${si}" data-item-idx="${s.itemIdxs[ii]}" checked
+                      <input type="checkbox" data-item-cb="${si}" data-item-idx="${s.itemIdxs[ii]}" ${
+                        _itemChecked(s.key, s.itemIdxs[ii]) ? 'checked' : ''
+                      }
                         style="accent-color:var(--brand-gold,#D4A843);cursor:pointer;flex-shrink:0;">
                       <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(_tipItemTitle(it))}</span>
                     </label>
@@ -4070,7 +4095,7 @@ function _openTipSelectionModal(tip, onConfirm) {
       </div>
       <div style="padding:14px 20px;border-top:1px solid var(--border-subtle,#e5e7eb);display:flex;justify-content:flex-end;gap:8px;">
         <button class="btn btn-ghost btn-sm" type="button" data-cancel style="font-size:0.8125rem;">Cancelar</button>
-        <button class="btn btn-primary btn-sm" type="button" data-confirm style="font-size:0.8125rem;">Anexar selecionados →</button>
+        <button class="btn btn-primary btn-sm" type="button" data-confirm style="font-size:0.8125rem;">${esc(opts.confirmLabel || 'Anexar selecionados →')}</button>
       </div>
     </div>`;
   document.body.appendChild(overlay);
@@ -4127,6 +4152,26 @@ function _openTipSelectionModal(tip, onConfirm) {
     if (el) el.textContent = `${total} item${total !== 1 ? 's' : ''} selecionado${total !== 1 ? 's' : ''}`;
     overlay.querySelector('[data-confirm]').disabled = total === 0;
   }
+  // v4.63.86 — sincroniza estado inicial: segmento parcialmente marcado vira
+  // indeterminate; segmento expandido se veio parcial (pra re-curadoria ficar
+  // óbvio qual conteúdo já está dentro). Pra anexo novo (tudo marcado) nada muda.
+  segs.forEach((s, si) => {
+    if (s.isInfo) return;
+    const items = [...overlay.querySelectorAll(`[data-item-cb="${si}"]`)];
+    const checked = items.filter(x => x.checked).length;
+    const segCb = overlay.querySelector(`[data-seg-cb="${si}"]`);
+    if (segCb) {
+      segCb.checked = checked > 0;
+      segCb.indeterminate = checked > 0 && checked < items.length;
+    }
+    // Se parcial, abre os itens automaticamente pra revisão.
+    if (checked > 0 && checked < items.length) {
+      const box = overlay.querySelector(`[data-seg-items="${si}"]`);
+      const tgl = overlay.querySelector(`[data-seg-toggle="${si}"]`);
+      if (box) box.style.display = 'flex';
+      if (tgl) tgl.textContent = 'Itens ▴';
+    }
+  });
   updateCount();
 
   overlay.querySelector('[data-bulk="all"]').addEventListener('click', () => {
@@ -5824,6 +5869,39 @@ async function handleEditorClick(e) {
     case 'open-tip-picker': {
       currentRoteiro = collectFormData();
       openTipPickerModal();
+      break;
+    }
+
+    case 'edit-tip-content': {
+      // v4.63.86 — re-curar a seleção de uma dica já anexada. Busca a dica
+      // ORIGINAL completa no Portal (o snapshot só tem os segmentos filtrados),
+      // reabre o seletor granular pré-marcado com content.selection, e ao
+      // confirmar re-snapshota com a nova seleção (preservando o id local).
+      currentRoteiro = collectFormData();
+      const tipEdit = currentRoteiro.embeddedTips?.[idx];
+      if (!tipEdit?.tipId) { showToast('Dica sem referência ao original.', 'error'); break; }
+      showToast('Carregando dica do Portal...', 'info');
+      fetchTipById(tipEdit.tipId).then(original => {
+        _openTipSelectionModal(original, async (selection) => {
+          try {
+            const snapshot = await snapshotTipForEmbed(tipEdit.tipId, selection);
+            // Preserva o id local (estabilidade na UI). collectFormData já
+            // rodou, então mexemos direto no array em memória.
+            currentRoteiro.embeddedTips[idx] = { ...snapshot, id: tipEdit.id };
+            rerenderCurrentSection();
+            markDirty();
+            showToast('Seleção da dica atualizada.', 'success');
+          } catch (err) {
+            showToast('Erro ao atualizar seleção: ' + err.message, 'error');
+          }
+        }, {
+          initialSelection: tipEdit.content?.selection || null,
+          titleVerb: 'Editar conteúdo',
+          confirmLabel: 'Salvar seleção →',
+        });
+      }).catch(err => {
+        showToast('Erro ao carregar dica: ' + err.message, 'error');
+      });
       break;
     }
 

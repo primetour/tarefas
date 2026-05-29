@@ -6,6 +6,20 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.86+20260529-dica-editar-conteudo-curar] — 2026-05-29
+
+**Dicas anexas no editor de cotações: botão "✎ Editar conteúdo" — re-curar granularmente a seleção da dica já anexada.**
+
+Continuação direta do reporte do Renê (issue da dica embedada): *"eu nao consigo editar pra escolher o que eu quero da dica... só aparece um botão 're-publicar' que nao sei pra que serve"*. As releases anteriores (v4.63.85) corrigiram a contagem e renomearam o botão. Esta entrega a **curadoria** propriamente dita (primeira metade do #227; a edição inline do texto vem na v4.63.87 após co-validação).
+
+**Mudanças:**
+- **Botão "✎ Editar conteúdo"** na linha de cada dica anexada (`roteiroEditor.js` `renderEmbeddedTipsSection`): reabre o **seletor granular** (segmentos + itens individuais, incl. `informacoes_gerais`) **pré-marcado** com a seleção atual da dica. O consultor desmarca o que não quer, confirma e o conteúdo da cotação é re-filtrado — sem mexer no Portal de Dicas (fonte canônica intacta).
+- **`_openTipSelectionModal` reaproveitável** (mesmo `roteiroEditor.js`): novo `opts.initialSelection` pré-marca os checkboxes (com estado `indeterminate` + auto-expand de segmentos parciais), e `opts.titleVerb`/`opts.confirmLabel` adaptam o copy (anexo novo vs. edição). Zero duplicação de UI entre anexar e re-curar.
+- **`fetchTipById(tipId)`** (`roteiros.js`): busca a dica ORIGINAL completa do Portal (o snapshot anexado só guarda os segmentos já filtrados), necessária pra reabrir o seletor com todas as opções disponíveis. Erro gracioso se a dica foi removida do Portal.
+- Ao confirmar, re-roda `snapshotTipForEmbed(tipId, novaSeleção)` preservando o `id` local (estabilidade na UI) → mesmo shape `content.segments` filtrado já consumido pelos 3 exports (HTML/jsPDF/web link), **sem mudança nos consumidores**.
+
+**Pendente (#227 v4.63.87, design-sensitive):** edição inline do TEXTO dos itens (override local na cotação, sem afetar o Portal) + honrar `overrides` nos 3 consumidores de export. Será construído após o Renê co-validar a curadoria desta release.
+
 ## [4.63.85+20260529-dicas-count-fix-republish-selection] — 2026-05-29
 
 **Dicas anexas no editor de cotações: contagem de itens corrigida + "Re-publicar" renomeado e preservando a seleção.**
