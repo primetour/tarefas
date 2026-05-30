@@ -145,7 +145,8 @@ function hasValidSite(item) {
 function normalizeUrl(raw) {
   let u = String(raw || '').trim();
   if (!u) return '';
-  if (/^[a-z][a-z0-9+.-]*:/i.test(u)) return u; // já tem protocolo (http, https, mailto, tel)
+  const m = u.match(/^([a-z][a-z0-9+.-]*):/i);
+  if (m) return /^(https?|mailto|tel)$/i.test(m[1]) ? u : ''; // bloqueia javascript:/data:/vbscript:
   return 'https://' + u;
 }
 

@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 93,
-  build: '20260530-pdf-cover-fullbleed-margins',
+  patch: 94,
+  build: '20260530-security-audit-xss-tokens',
 };
 
 /** "1.2.0" */

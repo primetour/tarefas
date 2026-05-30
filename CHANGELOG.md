@@ -6,6 +6,29 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.94+20260530-security-audit-xss-tokens] — 2026-05-30
+
+**Auditoria de segurança banking-grade — lote 1 (camada cliente) + lote 0 (Firestore rules, já deployado).**
+
+Pedido do Renê: *"faça uma auditoria de segurança no sistema, visando uma auditoria de instituição bancária. Opere o que precisa operar para resolver, publique, teste se está tudo certo, traga o relatório de testes."*
+
+**Firestore rules (lote 0 — deployado em PROD):**
+- **Privilege-escalation lock no self-update/self-create de `users`** — membro não pode mais setar/alterar `role`/`roleId`/`isMaster`/`permissions`/`permissionOverrides`/`permissionOverride`/`active`/`sector`/`nucleos`/`visibleSectors` via SDK direto (bypass de UI). Self-create bloqueia `role=='master'` e qualquer chave de permissão.
+- **`integrations` read restrito** a `isAdmin() || hasPermission('system_manage_settings')` — fecha exfiltração de segredos em texto plano (`rawConfig`) por membro autenticado.
+- **3 collections `*_dev` (`btg_ofertas_dev`/`portal_images_dev`/`btg_requests_dev`)** estavam `read,write: if true` (world-open) → travadas em `if false` (confirmadas vazias em PROD).
+- **`time_clock_audit`** `create` agora exige `actorId == request.auth.uid` (append-only mantido; update/delete já eram `false`).
+- **`csat_surveys`** update externo agora exige `respondedAt == null` (bloqueia re-submissão anônima sobrescrevendo resposta).
+- **`recurring_task_templates`** update agora exige `isManager() || createdBy == uid` (espelha a regra de delete).
+- **`portal_tips_stats`** write travado em `if false` (collection dormente).
+- `dev_hours` read público preservado (design deliberado de link compartilhável).
+
+**Camada cliente (lote 1 — este release):**
+- **XSS armazenado H1** — `csat-response.html`: `customMessage` (texto livre do criador da pesquisa) agora passa por `escHtml()` antes do `innerHTML` (2 pontos de injeção).
+- **XSS armazenado H2** — `portal-view.html` + `portalGenerator.js`: `normalizeUrl()` agora usa allowlist de esquema (http/https; +mailto/tel nos geradores de documento) → bloqueia `javascript:`/`data:`/`vbscript:` em links de site de dicas.
+- **Limpeza de token H5** — `auth.js` `signOut()` agora remove `ms-access-token`/`google-access-token` (+ expirações) do `sessionStorage` no logout — não confia só na expiração da aba.
+
+**Pendente (lote 2 — Cloud Functions + flags pro Renê):** hardening de `getGitHubFile`/`getR2UploadUrl`/`renderTemplate`/`callLLM`; remoção de `lengths` em `getAISecretsStatus`; gates `isSystem` excessivos. Flags: CSP `unsafe-inline`, headers HSTS/X-Frame (migração Cloudflare Pages Sprint 4), tokens de share adivinháveis.
+
 ## [4.63.93+20260530-pdf-cover-fullbleed-margins] — 2026-05-30
 
 **Ajustes finos do PDF de cotações/banco: capa full-bleed (sem moldura branca) + respiro de topo nas páginas de conteúdo.**

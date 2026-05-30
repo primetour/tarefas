@@ -276,7 +276,7 @@
         <div class="brand">PRIMETOUR</div>
         <div class="task-chip">✓ ${escHtml(s.taskTitle)}</div>
         <h1>Como foi sua experiência?</h1>
-        <p class="subtitle">${s.customMessage || 'Sua opinião é muito importante para nós. Leva menos de 1 minuto!'}</p>
+        <p class="subtitle">${s.customMessage ? escHtml(s.customMessage) : 'Sua opinião é muito importante para nós. Leva menos de 1 minuto!'}</p>
 
         <div class="score-picker" id="score-picker">
           ${[1,2,3,4,5].map(n => {
@@ -404,7 +404,7 @@
         <div class="brand">PRIMETOUR</div>
         <div class="task-chip">${isMultiTask ? '📦 ' + taskIds.length + ' entregas' : '✓ ' + escHtml(s.taskTitle)}</div>
         <h1 style="margin-bottom:8px;">Avaliação</h1>
-        <p class="subtitle">${s.customMessage || 'Sua opinião é muito importante para nós. Algumas perguntas rápidas abaixo:'}</p>
+        <p class="subtitle">${s.customMessage ? escHtml(s.customMessage) : 'Sua opinião é muito importante para nós. Algumas perguntas rápidas abaixo:'}</p>
 
         ${isMultiTask ? `
           <div id="task-list-block" style="background:#1F2937;border-radius:10px;padding:18px 20px;margin:18px 0 4px;text-align:left;">

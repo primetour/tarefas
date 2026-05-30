@@ -893,6 +893,14 @@ export async function signOut() {
     const { stopPresence } = await import('../services/presence.js');
     stopPresence();
   } catch {}
+  // Segurança: limpar tokens de acesso de terceiros (SharePoint/OneDrive/Google)
+  // do sessionStorage no logout — não confiar só na expiração da aba.
+  try {
+    sessionStorage.removeItem('ms-access-token');
+    sessionStorage.removeItem('ms-token-expires');
+    sessionStorage.removeItem('google-access-token');
+    sessionStorage.removeItem('google-token-expires');
+  } catch {}
   await firebaseSignOut(auth);
 }
 

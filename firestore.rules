@@ -82,17 +82,33 @@ service cloud.firestore {
     // (permissions overrides, audit metadata) com rule isAdmin() OR self.
     match /users/{userId} {
       allow read:   if isAuth();
-      // Admin pode criar qualquer usuário; SSO auto-provisioning: próprio UID
-      allow create: if isAdmin() || (isAuth() && request.auth.uid == userId);
+      // Admin pode criar qualquer usuário; SSO auto-provisioning: próprio UID.
+      // 4.63.94 (bank-grade audit): self-create NÃO pode nascer com privilégio.
+      // Antes: member malicioso podia setDoc(users/{ownUid}, {isMaster:true})
+      // no 1º login (a rule só checava uid==userId, sem validar campos).
+      // Agora: auto-provision só passa se NÃO declarar master/isMaster/
+      // permissions/permissionOverrides (auth.js legítimo nunca seta esses).
+      allow create: if isAdmin() || (
+        isAuth() && request.auth.uid == userId &&
+        (!('isMaster' in request.resource.data) || request.resource.data.isMaster == false) &&
+        !( request.resource.data.get('role','member') == 'master'
+           || request.resource.data.get('roleId','member') == 'master' ) &&
+        !('permissions' in request.resource.data) &&
+        !('permissionOverrides' in request.resource.data) &&
+        !('permissionOverride' in request.resource.data)
+      );
       // CRITICAL FIX (pentest 2026-05-03): self-update NAO pode tocar
       // campos sensiveis (role/isMaster/roleId/visibleSectors/permissions/active).
       // Antes: rule permitia member auto-escalar pra master.
       // Agora: admin pode tudo; user pode atualizar proprio profile MENOS
       // os campos sensiveis listados.
+      // 4.63.94 (bank-grade audit): + permissionOverrides/permissionOverride
+      // (member podia auto-conceder permissão granular via self-update — a
+      // rule hasPermission() lê userDoc().permissionOverrides ANTES do role).
       allow update: if isAdmin() || (
         request.auth.uid == userId &&
         !request.resource.data.diff(resource.data).affectedKeys()
-          .hasAny(['role','isMaster','roleId','visibleSectors','permissions','active','sector','nucleos','nucleo'])
+          .hasAny(['role','isMaster','roleId','visibleSectors','permissions','permissionOverrides','permissionOverride','active','sector','nucleos','nucleo'])
       );
       // 4.48.4+ Self-cleanup de doc pending_* via email match.
       //
@@ -150,7 +166,9 @@ service cloud.firestore {
     match /recurring_task_templates/{tplId} {
       allow read:   if isAuth();
       allow create: if isAuth();
-      allow update: if isAuth();
+      // 4.63.94 (bank-grade audit): update agora exige ownership/manager
+      // (espelha o delete). Antes: qualquer member editava template alheio.
+      allow update: if isAuth() && (isManager() || resource.data.createdBy == request.auth.uid);
       allow delete: if isAuth() && (isManager() || resource.data.createdBy == request.auth.uid);
     }
 
@@ -214,6 +232,9 @@ service cloud.firestore {
                               request.resource.data.taskId == resource.data.taskId
                               && request.resource.data.token == resource.data.token
                               && request.resource.data.createdBy == resource.data.createdBy
+                              // 4.63.94 (bank-grade audit): só a 1ª resposta. Bloqueia
+                              // re-submissão anônima que sobrescreveria score/comment.
+                              && resource.data.get('respondedAt', null) == null
                             );
       allow delete:         if isAdmin();
     }
@@ -268,8 +289,14 @@ service cloud.firestore {
     }
 
     // ── Integrações ───────────────────────────────────────────
+    // 4.63.94 (bank-grade audit): read restrito a admin/system_manage_settings.
+    // Antes: read:if isAuth() expunha SEGREDOS EM PLAINTEXT (rawConfig: tokens
+    // Slack/GitHub/Figma, webhook URLs) a QUALQUER member via SDK console.
+    // A única UI leitora (pages/integrations.js) já exige system_manage_settings;
+    // a rule agora espelha esse gate. (Migração futura: mover segredos pro
+    // Secret Manager + firing server-side — flagado pro Renê.)
     match /integrations/{intId} {
-      allow read:  if isAuth();
+      allow read:  if isAuth() && (isAdmin() || hasPermission('system_manage_settings'));
       allow write: if isAdmin();
     }
 
@@ -463,7 +490,11 @@ service cloud.firestore {
                         || isAdmin()
                         || isManager()
                       );
-      allow create: if isAuth();
+      // 4.63.94 (bank-grade audit): bind actorId ao auth.uid pra que o log
+      // append-only não possa nascer com autor forjado. Os 4 writers em
+      // js/services/checkin.js já gravam actorId: cu.uid.
+      allow create: if isAuth()
+                    && request.resource.data.actorId == request.auth.uid;
       allow update, delete: if false;
     }
 
@@ -696,9 +727,13 @@ service cloud.firestore {
       allow update: if false;
     }
 
+    // 4.63.94 (bank-grade audit): coleção dormente (0 writers no client, 0 docs
+    // em prod). write:if isAuth() permitia qualquer member popular/poluir.
+    // Trancado write até existir um writer legítimo (server-side via Admin SDK
+    // bypassa rules de qualquer forma).
     match /portal_tips_stats/{docId} {
       allow read:  if isAuth();
-      allow write: if isAuth();
+      allow write: if false;
     }
 
     match /portal_downloads/{docId} {
@@ -1221,8 +1256,12 @@ service cloud.firestore {
     //   - sem auth setup ainda (POC roda sem login)
     //   - dados de teste, sem PII real
     //   - URL `*.web.app` não divulgada externamente
+    // 4.63.94 (bank-grade audit): TRANCADO em produção.
+    // Postura "read,write:if true" era world-open na PROD. Confirmado VAZIO
+    // em gestor-de-tarefas-primetour. A staging BTG (gestor-btg-lp-builder-
+    // staging) faz deploy das PRÓPRIAS rules — pode reabrir lá sem afetar prod.
     match /btg_ofertas_dev/{docId} {
-      allow read, write: if true;
+      allow read, write: if false;
     }
 
     // ── BTG Portal Images (DEV/STAGING) ──────────────────────
@@ -1234,8 +1273,9 @@ service cloud.firestore {
     // com 12 imagens curadas de hoteis premium.
     // Mesma postura permissiva do btg_ofertas_dev (justificativas
     // identicas — staging isolado, sem PII).
+    // 4.63.94 (bank-grade audit): TRANCADO em produção (ver btg_ofertas_dev).
     match /portal_images_dev/{docId} {
-      allow read, write: if true;
+      allow read, write: if false;
     }
 
     // ── BTG Solicitações de conteúdo (DEV/STAGING) ───────────
@@ -1245,8 +1285,9 @@ service cloud.firestore {
     // aponta pra `requests` e a solicitação cai no módulo de
     // Tarefas & Solicitações (setor Marketing).
     // Mesma postura permissiva/justificativa do btg_ofertas_dev.
+    // 4.63.94 (bank-grade audit): TRANCADO em produção (ver btg_ofertas_dev).
     match /btg_requests_dev/{docId} {
-      allow read, write: if true;
+      allow read, write: if false;
     }
   }
 }
