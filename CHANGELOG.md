@@ -6,6 +6,20 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.96+20260530-hotfix-convertwebp-paren] — 2026-05-30
+
+**🔴 Hotfix crítico — loop de carregamento no login (boot do app travado).**
+
+Sintoma reportado pelo Renê: *"bug de looping de carregamento? não consigo entrar"* + console `Uncaught SyntaxError: missing ) after argument list` em `portal.js:1537`.
+
+**Causa raiz:** a função `convertToWebp` (`js/services/portal.js`, adicionada em v4.63.91 para upload AVIF/TIFF) tinha um `)` faltando. A linha 1525 abre `new Promise((resolve, reject) => {` — **dois** parênteses (a chamada `Promise(` + a lista de parâmetros). A lista de parâmetros fechava, mas o parêntese da chamada `Promise(` nunca era fechado: a linha 1537 estava `};` quando deveria ser `});`. Como `js/services/portal.js` é importado estaticamente pelo app principal (sem `?v=`), o módulo falhava no parse e **derrubava todo o boot** → tela "CARREGANDO PLATAFORMA..." infinita.
+
+**Por que escapou:** `node --check` (modo CommonJS/script padrão) aceitava o arquivo; só o parse estrito em **module goal** (`node --check --input-type=module`, idêntico ao do browser) reproduzia o erro exato `missing ) after argument list` na linha 1537. Lição registrada para validar arquivos ESM no goal correto.
+
+**Fix:** 1 caractere — `};` → `});` na linha 1537. Todos os irmãos `new Promise(...)` do arquivo (`_loadUTIF` linha 1502, caminho `<img>` linha 1555) já fechavam corretamente com `});`.
+
+---
+
 ## [4.63.95+20260530-security-audit-cf-hardening] — 2026-05-30
 
 **Auditoria de segurança banking-grade — lote 2 (Cloud Functions).** Deployado em PROD (`us-central1`).

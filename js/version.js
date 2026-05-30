@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 95,
-  build: '20260530-security-audit-cf-hardening',
+  patch: 96,
+  build: '20260530-hotfix-convertwebp-paren',
 };
 
 /** "1.2.0" */

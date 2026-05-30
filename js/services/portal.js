@@ -1534,7 +1534,7 @@ export async function convertToWebp(file, quality = 0.92, maxSide = WEBP_MAX_SID
         : reject(new Error('Conversão WebP falhou.')),
       'image/webp', quality
     );
-  };
+  });
 
   // TIFF: decode via UTIF → canvas-fonte → webp (mesmo molde de escala/saída).
   if (_isTiffFile(file)) {
