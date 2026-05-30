@@ -83,6 +83,36 @@ async function isAdmin(uid) {
 }
 
 /**
+ * hasPermissionUid — checa permissão granular server-side, espelhando o
+ * gate da UI. Shape (CLAUDE.md §13.f): users.{uid}.permissionOverrides é
+ * objeto {perm:bool}; roles.{roleId}.permissions é objeto {perm:bool}.
+ * Master/admin sempre passam.
+ */
+async function hasPermissionUid(uid, perm) {
+  if (!uid) return false;
+  const uSnap = await db.doc(`users/${uid}`).get();
+  if (!uSnap.exists) return false;
+  const u = uSnap.data();
+  if (u.isMaster === true || u.role === 'master' || u.roleId === 'master'
+      || u.role === 'admin' || u.roleId === 'admin') return true;
+  const overrides = u.permissionOverrides || u.permissionOverride || {};
+  if (overrides && overrides[perm] === true) return true;
+  const roleId = u.roleId || u.role;
+  if (roleId) {
+    const rSnap = await db.doc(`roles/${roleId}`).get();
+    if (rSnap.exists) {
+      const rd = rSnap.data();
+      const perms = rd.permissions || {};
+      // SECURITY (audit 4.63.95): NÃO conceder por rd.isSystem — TODAS as roles
+      // (inclusive member/partner) têm isSystem===true. Antes era bypass total:
+      // qualquer member passava QUALQUER permissão. master/admin já passam acima.
+      if (perms[perm] === true) return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Rate limit atomic via Firestore TRANSACTION.
  * Janela deslizante por user.
  *
@@ -204,20 +234,34 @@ export const getAISecretsStatus = onCall({
   maxInstances: 5,
   timeoutSeconds: 10,
 }, async (request) => {
-  requireAuth(request);
+  const auth = requireAuth(request);
+  // SECURITY (audit 4.63.95): antes era requireAuth-only — QUALQUER member
+  // logado conseguia o status (e o comprimento exato) das chaves de API.
+  // Agora exige ai_keys_manage (mesmo gate da aba API Keys em aiHub.js).
+  if (!(await hasPermissionUid(auth.uid, 'ai_keys_manage'))) {
+    throw new HttpsError('permission-denied',
+      'Apenas admin/master ou quem tem ai_keys_manage.');
+  }
   const isConfigured = (v) =>
     typeof v === 'string' && v.length > 8 && v !== 'not-configured-yet';
+  // SECURITY: não retornar mais o comprimento exato das chaves (shape leak).
+  // Boolean "configurado" basta pra UI. Faixa grosseira (curta/ok) pra debug.
+  const sizeHint = (v) => {
+    const n = (typeof v === 'string' ? v : '').length;
+    if (n === 0) return 'empty';
+    if (n < 16) return 'short';
+    return 'ok';
+  };
   return {
     anthropic: isConfigured(ANTHROPIC_API_KEY.value()),
     openai:    isConfigured(OPENAI_API_KEY.value()),
     gemini:    isConfigured(GEMINI_API_KEY.value()),
     groq:      isConfigured(GROQ_API_KEY.value()),
-    // Tamanho aproximado pra UI confirmar visualmente (sem expor o valor)
-    lengths: {
-      anthropic: (ANTHROPIC_API_KEY.value() || '').length,
-      openai:    (OPENAI_API_KEY.value() || '').length,
-      gemini:    (GEMINI_API_KEY.value() || '').length,
-      groq:      (GROQ_API_KEY.value() || '').length,
+    sizes: {
+      anthropic: sizeHint(ANTHROPIC_API_KEY.value()),
+      openai:    sizeHint(OPENAI_API_KEY.value()),
+      gemini:    sizeHint(GEMINI_API_KEY.value()),
+      groq:      sizeHint(GROQ_API_KEY.value()),
     },
   };
 });
@@ -261,12 +305,20 @@ export const callLLM = onCall({
     throw new HttpsError('invalid-argument', 'userMessage obrigatório.');
   }
 
+  // ── 4.63.95 (security audit): clamps server-side de custo/recurso ──
+  // O cliente envia agentDailyCapUsd e maxTokens. Sem teto, um usuário de
+  // baixo privilégio (member) chamando via SDK do console poderia passar
+  // agentDailyCapUsd=999999 (anula o cap diário) ou maxTokens gigante
+  // (abuso de custo). Aplicamos tetos server-side — o cliente nunca eleva.
+  const safeDailyCapUsd = Math.min(Math.max(Number(agentDailyCapUsd) || 5, 0.5), 50);
+  const safeMaxTokens   = Math.min(Math.max(parseInt(maxTokens) || 2048, 64), 32768);
+
   // ── Rate limit por IP (200 req / 60s) — defesa DDoS antes mesmo de auth ──
   await checkRateLimitIP(request, 'callLLM', 200, 60);
   // ── Rate limit por user (60 req / 60s) ──
   await checkRateLimit(uid, 'callLLM', 60, 60);
-  // ── Cap de custo por agente ──
-  if (agentId) await checkDailyCost(uid, agentId, agentDailyCapUsd);
+  // ── Cap de custo por agente (usa o teto server-side, não o valor cru do cliente) ──
+  if (agentId) await checkDailyCost(uid, agentId, safeDailyCapUsd);
 
   // ── Resolve API key do secret ──
   const KEYS = {
@@ -283,10 +335,10 @@ export const callLLM = onCall({
   // ── Chama o provider ──
   let result;
   try {
-    if (provider === 'anthropic') result = await callAnthropic(apiKey, { model, systemPrompt, userMessage, history, maxTokens, temperature, attachments, webSearch, allowedDomains, webSearchMaxUses });
-    else if (provider === 'openai') result = await callOpenAI(apiKey, { model, systemPrompt, userMessage, history, maxTokens, temperature });
-    else if (provider === 'gemini') result = await callGemini(apiKey, { model, systemPrompt, userMessage, history, maxTokens, temperature });
-    else if (provider === 'groq')   result = await callGroq(apiKey, { model, systemPrompt, userMessage, history, maxTokens, temperature });
+    if (provider === 'anthropic') result = await callAnthropic(apiKey, { model, systemPrompt, userMessage, history, maxTokens: safeMaxTokens, temperature, attachments, webSearch, allowedDomains, webSearchMaxUses });
+    else if (provider === 'openai') result = await callOpenAI(apiKey, { model, systemPrompt, userMessage, history, maxTokens: safeMaxTokens, temperature });
+    else if (provider === 'gemini') result = await callGemini(apiKey, { model, systemPrompt, userMessage, history, maxTokens: safeMaxTokens, temperature });
+    else if (provider === 'groq')   result = await callGroq(apiKey, { model, systemPrompt, userMessage, history, maxTokens: safeMaxTokens, temperature });
     else throw new HttpsError('invalid-argument', `Provider ${provider} desconhecido.`);
   } catch (e) {
     // Loga erro pra observability
@@ -639,8 +691,9 @@ export const deleteR2 = onCall({
           const rd = r.data();
           const perms = rd?.permissions || {};
           // permissions é OBJETO {key:bool}, não array
-          canDelete = perms.portal_manage === true || perms.portal_images_manage === true
-                   || rd?.isSystem === true;
+          // SECURITY (audit 4.63.95): removido `|| rd.isSystem` — TODAS as roles
+          // têm isSystem===true, logo era bypass total (member/partner deletavam).
+          canDelete = perms.portal_manage === true || perms.portal_images_manage === true;
         }
       }
     }
@@ -766,7 +819,9 @@ async function _checkTemplatesPermission(uid) {
   const r = await db.collection('roles').doc(role).get();
   if (!r.exists) return false;
   const perms = r.data()?.permissions || {};
-  return perms.templates_manage === true || r.data()?.isSystem === true;
+  // SECURITY (audit 4.63.95): removido `|| isSystem` — TODAS as roles têm
+  // isSystem===true, era bypass total. master já passa acima (role/isMaster).
+  return perms.templates_manage === true;
 }
 
 export const uploadTemplate = onCall({
@@ -1217,8 +1272,22 @@ export const renderTemplate = onCall({
   const auth = requireAuth(request);
   const { templateId, data = {} } = request.data || {};
 
-  if (!templateId || typeof templateId !== 'string') {
-    throw new HttpsError('invalid-argument', 'templateId obrigatório.');
+  if (!templateId || typeof templateId !== 'string' || templateId.length > 200
+      || !/^[\w.\-]+$/.test(templateId)) {
+    throw new HttpsError('invalid-argument', 'templateId inválido.');
+  }
+
+  // SECURITY (audit 4.63.95): cap no tamanho do payload `data` — sem isso, um
+  // member podia mandar um objeto gigante pra forçar OOM/custo no Puppeteer
+  // (memory 1GiB). 2MB de JSON cobre qualquer cotação real com folga.
+  try {
+    const dataBytes = Buffer.byteLength(JSON.stringify(data || {}), 'utf8');
+    if (dataBytes > 2 * 1024 * 1024) {
+      throw new HttpsError('invalid-argument', 'Payload de dados muito grande (máx 2MB).');
+    }
+  } catch (e) {
+    if (e instanceof HttpsError) throw e;
+    throw new HttpsError('invalid-argument', 'Payload de dados inválido (não serializável).');
   }
 
   // Rate limit
@@ -3155,14 +3224,36 @@ export const getGitHubFile = onCall({
   secrets: [GITHUB_PAT],
   maxInstances: 10,
 }, async (request) => {
-  requireAuth(request);
+  const auth = requireAuth(request);
+  // SECURITY (audit 4.63.95): antes era requireAuth-only com `repo` arbitrário.
+  // Qualquer member logado podia ler QUALQUER repo que o PAT alcança
+  // (inclusive privados) via SSRF na api.github.com. Agora:
+  //   1) exige admin/master ou system_manage_settings
+  //   2) repo precisa estar na allowlist
+  //   3) branch/path validados (anti path traversal / query injection)
+  //   4) download_url precisa vir de raw.githubusercontent.com
+  if (!(await hasPermissionUid(auth.uid, 'system_manage_settings'))) {
+    throw new HttpsError('permission-denied',
+      'Apenas admin/master ou system_manage_settings.');
+  }
+  const REPO_ALLOWLIST = new Set(['primetour/tarefas']);
   const { repo, path = '', branch = 'main' } = request.data || {};
-  if (!repo) throw new HttpsError('invalid-argument', 'repo obrigatório (owner/name)');
+  if (!repo || typeof repo !== 'string' || !REPO_ALLOWLIST.has(repo)) {
+    throw new HttpsError('permission-denied', 'repo fora da allowlist.');
+  }
+  if (typeof branch !== 'string' || !/^[\w.\-\/]{1,100}$/.test(branch)) {
+    throw new HttpsError('invalid-argument', 'branch inválido.');
+  }
+  const cleanPath = String(path).replace(/^\/+|\/+$/g, '');
+  if (cleanPath.includes('..') || !/^[\w.\-\/ ]{0,300}$/.test(cleanPath)) {
+    throw new HttpsError('invalid-argument', 'path inválido.');
+  }
+  const isRawGh = (u) => typeof u === 'string'
+    && /^https:\/\/raw\.githubusercontent\.com\//.test(u);
   const headers = {};
   const pat = GITHUB_PAT.value();
   if (pat) headers.Authorization = `Bearer ${pat}`;
-  const cleanPath = path.replace(/^\/+|\/+$/g, '');
-  const url = `https://api.github.com/repos/${repo}/contents/${cleanPath}?ref=${branch}`;
+  const url = `https://api.github.com/repos/${repo}/contents/${encodeURI(cleanPath)}?ref=${encodeURIComponent(branch)}`;
   const res = await fetch(url, { headers });
   if (!res.ok) throw new HttpsError('not-found', `GitHub ${res.status}`);
   const data = await res.json();
@@ -3170,12 +3261,16 @@ export const getGitHubFile = onCall({
     const files = data.filter(f => f.type === 'file' && /\.(md|txt|json|yml|yaml|csv|html)$/i.test(f.name)).slice(0, 5);
     let combined = '';
     for (const f of files) {
+      if (!isRawGh(f.download_url)) continue;
       const r = await fetch(f.download_url);
       const t = await r.text();
       combined += `\n--- ${f.name} ---\n${t.slice(0, 4000)}\n`;
     }
     return { type: 'folder', text: combined.trim() };
   } else if (data.type === 'file') {
+    if (!isRawGh(data.download_url)) {
+      throw new HttpsError('failed-precondition', 'download_url inesperado.');
+    }
     const r = await fetch(data.download_url);
     const t = await r.text();
     return { type: 'file', text: t.slice(0, 12000), name: data.name };
@@ -3802,6 +3897,12 @@ async function saveCacheMulti(queryKey, urls, sources, attributions, attribution
 
 async function saveDestinationPhoto(destinationId, result) {
   if (!destinationId) return;
+  // 4.63.95 (security audit): valida formato do ID — evita injeção de
+  // segmentos no path do db.doc() e escrita em doc arbitrário fora de padrão.
+  if (typeof destinationId !== 'string' || !/^[\w-]{1,128}$/.test(destinationId)) {
+    console.warn('[fetchPhoto] destinationId inválido, skip cache:', String(destinationId).slice(0, 40));
+    return;
+  }
   try {
     await db.doc(`destinations/${destinationId}`).set({
       defaultPhotoUrl:         result.url,
@@ -4454,9 +4555,10 @@ export const importRoteiroBankPdf = onCall({
         if (r.exists) {
           const rd = r.data();
           const perms = rd?.permissions || {};
+          // SECURITY (audit 4.63.95): removido `|| rd.isSystem` — TODAS as roles
+          // têm isSystem===true, era bypass total. master já passa acima.
           canImport = perms.portal_destinations_manage === true
-                   || perms.portal_manage === true
-                   || rd?.isSystem === true;
+                   || perms.portal_manage === true;
         }
       }
     }
@@ -5322,7 +5424,9 @@ export const roteiroBankValidityCron = onSchedule({
       }
       const rd = roleCache.get(r);
       if (!rd) return false;
-      if (rd.isSystem === true) return true;
+      // SECURITY (audit 4.63.95): removido `if (rd.isSystem) return true` —
+      // TODAS as roles têm isSystem===true, logo TODO user virava "curador" e
+      // recebia notif de validade. ADMIN_ROLES já cobre master/admin/head acima.
       const perms = rd.permissions || {};   // OBJETO {key:bool}, não Array
       return perms.portal_destinations_manage === true
           || perms.portal_manage === true;

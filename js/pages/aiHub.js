@@ -1312,14 +1312,17 @@ async function renderApiKeysTab(container) {
             </tr></thead>
             <tbody>${providers.filter(p => SECRET_NAMES[p.id]).map(p => {
               const ok  = !!secretsStatus?.[p.id];
-              const len = secretsStatus?.lengths?.[p.id] || 0;
+              // SECURITY (4.63.95): CF não retorna mais comprimento exato da
+              // chave (shape leak). Só faixa grosseira: empty/short/ok.
+              const sz  = secretsStatus?.sizes?.[p.id] || (ok ? 'ok' : 'empty');
+              const szLabel = sz === 'ok' ? 'OK' : sz === 'short' ? '⚠ curta' : '—';
               return `<tr style="${ok?'':'opacity:0.7;'}">
                 <td><strong>${esc(p.icon)} ${esc(p.label)}</strong></td>
                 <td>${ok
                   ? '<span style="color:#22C55E;">✓ Configurada</span>'
                   : '<span style="color:#9CA3AF;">— Não configurada</span>'}</td>
                 <td style="font-family:var(--font-mono,monospace);font-size:0.75rem;color:var(--text-muted);">${SECRET_NAMES[p.id]}</td>
-                <td style="text-align:right;color:var(--text-muted);">${len ? len + ' chars' : '—'}</td>
+                <td style="text-align:right;color:var(--text-muted);">${szLabel}</td>
                 <td style="text-align:right;">
                   <button class="btn btn-secondary btn-sm" data-act="ak-config" data-provider="${p.id}">
                     ${ok ? '↻ Rotacionar' : '+ Configurar'}

@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 94,
-  build: '20260530-security-audit-xss-tokens',
+  patch: 95,
+  build: '20260530-security-audit-cf-hardening',
 };
 
 /** "1.2.0" */

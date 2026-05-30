@@ -6,6 +6,34 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.95+20260530-security-audit-cf-hardening] — 2026-05-30
+
+**Auditoria de segurança banking-grade — lote 2 (Cloud Functions).** Deployado em PROD (`us-central1`).
+
+Continuação do pedido do Renê: *"Opere o que precisa operar para resolver, publique, teste se está tudo certo."* Este lote fecha o vetor de autorização mais grave da auditoria.
+
+**Descoberta crítica — `isSystem` em TODAS as roles (bypass total de autorização):**
+- Via Admin SDK confirmou-se que as 6 roles (`admin`/`coordinator`/`manager`/`master`/`member`/`partner`) têm `isSystem === true`. Logo, toda cláusula de permissão do tipo `|| rd.isSystem === true` era um **bypass completo** — qualquer `member`/`partner` autenticado passava. Removido de **5 pontos**:
+  - `hasPermissionUid` (helper central — afeta toda CF que checa permissão granular)
+  - `deleteR2` (delete de blob no R2)
+  - `_checkTemplatesPermission` (upload/edição de templates)
+  - `importRoteiroBankPdf` (import de PDF pro Banco)
+  - `roteiroBankValidityCron` (filtro de notificação — baixa severidade)
+  - master/admin continuam cobertos por checagem de nome de role/`isMaster`; `manager` mantém `templates_manage`.
+
+**Vazamento de status de segredos (`getAISecretsStatus`):**
+- Era `requireAuth`-only → qualquer membro lia o status das API keys de IA **com o comprimento exato em caracteres**. Agora exige permissão `ai_keys_manage` (ou admin/master) **e** o comprimento exato foi trocado por dica grosseira (`empty`/`short`/`ok`). Consumidor `js/pages/aiHub.js` atualizado.
+
+**SSRF em `getGitHubFile`:**
+- Era `requireAuth`-only + repo arbitrário → membro podia ler qualquer repo acessível pelo PAT do servidor. Agora: gate `system_manage_settings`, allowlist de repo (`primetour/tarefas`), validação de branch/path (sem `..`), `encodeURIComponent`/`encodeURI`, e allowlist de `download_url` (`raw.githubusercontent.com`) tanto no loop de pasta quanto no fetch de arquivo.
+
+**Abuso de custo/recurso:**
+- **`callLLM`** — `agentDailyCapUsd` e `maxTokens` eram controlados pelo cliente (membro podia passar `agentDailyCapUsd: 999999` pra anular o cap diário, ou `maxTokens` gigante). Agora ambos têm teto server-side (`safeDailyCapUsd` ≤ 50, `safeMaxTokens` ≤ 32768).
+- **`renderTemplate`** — `templateId` validado (`/^[\w.\-]+$/`, ≤200 chars) + cap de 2MB no payload `data` (evita OOM/custo no Puppeteer).
+- **`saveDestinationPhoto`** — `destinationId` agora validado (`/^[\w-]{1,128}$/`) antes do write — evita injeção de segmento no path do `db.doc()` / escrita em doc arbitrário.
+
+**Flags pro Renê (não resolvido neste lote — exige decisão/migração):** `getR2UploadUrl` devolve token compartilhado ao cliente (C2 — precisa Worker com JWT); CSP `unsafe-inline` em `script-src` (removível após build com nonce); headers HSTS/X-Frame-Options/COOP (arquivo `_headers` só vale em Cloudflare Pages — migração Sprint 4; GitHub Pages não aplica); tokens de share adivinháveis (H3 — schema change); `dev_hours`/`csat_surveys` read público (design deliberado).
+
 ## [4.63.94+20260530-security-audit-xss-tokens] — 2026-05-30
 
 **Auditoria de segurança banking-grade — lote 1 (camada cliente) + lote 0 (Firestore rules, já deployado).**
