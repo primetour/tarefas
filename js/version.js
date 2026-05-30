@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 88,
-  build: '20260529-hotels-overlap-fix',
+  patch: 89,
+  build: '20260529-dica-text-override',
 };
 
 /** "1.2.0" */

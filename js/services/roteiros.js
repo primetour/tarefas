@@ -539,6 +539,125 @@ export async function snapshotTipForEmbed(tipId, selection = null) {
   };
 }
 
+/* ─── Edições de TEXTO locais da dica embedada (v4.63.89) ───────────────
+ * O consultor pode editar o TEXTO de itens de uma dica anexada à cotação
+ * (titulo, descricao, endereco, telefone, site, observacoes) SEM tocar no
+ * `portal_tips` original. As edições são:
+ *   1. "Assadas" direto em `content.segments[seg].items[i]` (consumidores —
+ *      PDF/PPTX/DOCX/web link — leem isso, então zero mudança neles).
+ *   2. Espelhadas em `content._overrides` pra sobreviver a re-curagem /
+ *      "↻ Atualizar do Portal" (republish). Shape:
+ *        _overrides[segKey] = { [itemIdx]: { anchor, base, fields } }
+ *      Onde:
+ *        anchor = titulo ORIGINAL (portal) normalizado — match robusto a
+ *                 reordenação de itens entre versões do portal.
+ *        base   = valor portal de cada campo editado no momento da edição
+ *                 (metadata útil pra detectar divergência futura).
+ *        fields = só os campos efetivamente alterados, com o valor LOCAL.
+ *      Caso especial `informacoes_gerais`: chave especial `'info'` →
+ *        { fields: {descricao, dica, moeda, ...} } aplicado em segments.info.
+ */
+
+const _OVERRIDABLE_FIELDS = ['titulo', 'descricao', 'endereco', 'telefone', 'site', 'observacoes'];
+const _INFO_OVERRIDABLE   = ['descricao', 'dica', 'moeda', 'lingua', 'religiao', 'populacao', 'voltagem', 'ddd', 'fusoSinal', 'fusoHoras'];
+
+function _normAnchor(s) {
+  return String(s || '').toLowerCase().trim().replace(/\s+/g, ' ');
+}
+
+/**
+ * Re-aplica overrides de texto sobre um `content` recém-snapshotado (já
+ * filtrado pela seleção). Faz MATCH por anchor (titulo original normalizado),
+ * com fallback por índice se o titulo não bater. Muta `content` (assa os
+ * fields nos items + reconstrói `content._overrides` re-keyado pelos índices
+ * atuais). Retorna { preserved, dropped }.
+ */
+function _reapplyOverrides(content, overrides) {
+  let preserved = 0, dropped = 0;
+  const rebuilt = {};
+  if (!overrides || typeof overrides !== 'object') { content._overrides = {}; return { preserved, dropped }; }
+
+  for (const [segKey, segOv] of Object.entries(overrides)) {
+    if (!segOv || typeof segOv !== 'object') continue;
+    const seg = content.segments?.[segKey];
+
+    // Caso especial: informacoes_gerais → override no objeto `info`
+    if (segKey === 'informacoes_gerais') {
+      const info = seg?.info;
+      const ov = segOv.info || segOv['0'] || null; // tolerante a formatos
+      if (info && ov?.fields && typeof ov.fields === 'object') {
+        const keptFields = {};
+        for (const [f, v] of Object.entries(ov.fields)) {
+          if (!_INFO_OVERRIDABLE.includes(f)) continue;
+          info[f] = v;                          // assa
+          keptFields[f] = v;
+        }
+        if (Object.keys(keptFields).length) {
+          rebuilt[segKey] = { info: { base: ov.base || {}, fields: keptFields } };
+          preserved++;
+        } else { dropped++; }
+      } else if (ov) { dropped++; }
+      continue;
+    }
+
+    const items = Array.isArray(seg?.items) ? seg.items : null;
+    if (!items) { // segmento sumiu do snapshot (deselecionado / removido no portal)
+      dropped += Object.keys(segOv).length;
+      continue;
+    }
+
+    for (const [idxStr, ov] of Object.entries(segOv)) {
+      if (!ov?.fields || typeof ov.fields !== 'object') { continue; }
+      const anchor = _normAnchor(ov.anchor);
+      let foundIdx = -1;
+      if (anchor) {
+        // Match SÓ por anchor (titulo original normalizado). Se não bater,
+        // o item foi removido/renomeado no portal → drop. NÃO cair pra índice
+        // (aplicaria a edição no item ERRADO que por acaso está naquela posição).
+        foundIdx = items.findIndex(it => it && it.type !== 'subtitle' && _normAnchor(it.titulo || it.title) === anchor);
+      } else {
+        // Sem anchor (override legado/defensivo): usa índice original.
+        const i = Number(idxStr);
+        if (Number.isInteger(i) && items[i] && items[i].type !== 'subtitle') foundIdx = i;
+      }
+      if (foundIdx < 0) { dropped++; continue; }
+
+      const target = items[foundIdx];
+      const freshBase = {};
+      const keptFields = {};
+      for (const [f, v] of Object.entries(ov.fields)) {
+        if (!_OVERRIDABLE_FIELDS.includes(f)) continue;
+        freshBase[f] = target[f] != null ? target[f] : '';
+        target[f] = v;                          // assa o valor local
+        keptFields[f] = v;
+      }
+      if (!Object.keys(keptFields).length) { dropped++; continue; }
+      if (!rebuilt[segKey]) rebuilt[segKey] = {};
+      rebuilt[segKey][foundIdx] = {
+        anchor: ov.anchor || target.titulo || '',
+        base:   freshBase,
+        fields: keptFields,
+      };
+      preserved++;
+    }
+  }
+
+  content._overrides = rebuilt;
+  return { preserved, dropped };
+}
+
+/**
+ * v4.63.89 — snapshot + re-aplica overrides de texto locais. Usado por
+ * republish ("↻ Atualizar do Portal") e re-curagem ("✎ Editar conteúdo")
+ * pra que as edições de texto NÃO se percam ao buscar a versão fresca do
+ * portal. NUNCA escreve em portal_tips. Retorna { snapshot, preserved, dropped }.
+ */
+export async function snapshotTipForEmbedWithOverrides(tipId, selection = null, overrides = null) {
+  const snapshot = await snapshotTipForEmbed(tipId, selection);
+  const { preserved, dropped } = _reapplyOverrides(snapshot.content, overrides);
+  return { snapshot, preserved, dropped };
+}
+
 /**
  * Verifica se uma dica anexada está "stale" — i.e., a versão atual no
  * portal é mais nova que o snapshot. Usado no editor pra mostrar badge

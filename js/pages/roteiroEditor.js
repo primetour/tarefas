@@ -6,7 +6,7 @@
 import { store }  from '../store.js';
 import { toast } from '../components/toast.js';
 const showToast = (msg, type = 'info') => toast[type]?.(msg) ?? toast.info(msg);
-import { fetchRoteiro, saveRoteiro, snapshotTipForEmbed, fetchTipById, isEmbeddedTipStale, createWebLink, updateRoteiroStatus } from '../services/roteiros.js';
+import { fetchRoteiro, saveRoteiro, snapshotTipForEmbed, snapshotTipForEmbedWithOverrides, fetchTipById, isEmbeddedTipStale, createWebLink, updateRoteiroStatus } from '../services/roteiros.js';
 import { generateRoteiroForExport, resolveDestinationImage } from '../services/roteiroGenerator.js';
 import { fetchDestinations, fetchAreas, fetchImages, fetchTips, saveDestination, CONTINENTS, SEGMENTS } from '../services/portal.js';
 import { detectBankContext, showBankGuardModal } from '../services/bankClientGuard.js';
@@ -1224,6 +1224,12 @@ function renderEmbeddedTipsSection() {
           const d = e.snapshotAt?.toDate ? e.snapshotAt.toDate() : (e.snapshotAt ? new Date(e.snapshotAt) : null);
           return d ? d.toLocaleDateString('pt-BR') : '—';
         })();
+        // v4.63.89 — conta overrides de texto locais (incluindo info)
+        const ovCount = (() => {
+          const ov = e.content?._overrides;
+          if (!ov || typeof ov !== 'object') return 0;
+          return Object.values(ov).reduce((s, seg) => s + (seg && typeof seg === 'object' ? Object.keys(seg).length : 0), 0);
+        })();
         return `
           <div data-embed-idx="${i}" style="border:1px solid var(--border);border-radius:8px;
             padding:14px 16px;margin-bottom:10px;display:flex;align-items:center;gap:14px;
@@ -1235,6 +1241,7 @@ function renderEmbeddedTipsSection() {
                 ${esc(e.subtitle || 'Sem continente')} ·
                 ${segmentsCount} item${segmentsCount !== 1 ? 's' : ''} ·
                 snapshot em ${snapDate}
+                ${ovCount ? `<span style="margin-left:8px;color:var(--brand-gold);font-weight:600;">✎ ${ovCount} texto${ovCount !== 1 ? 's' : ''} editado${ovCount !== 1 ? 's' : ''}</span>` : ''}
                 <span data-embed-stale-${i} style="display:none;margin-left:8px;color:var(--color-warning, #F59E0B);font-weight:600;">
                   ⚠ versão mais recente disponível
                 </span>
@@ -1243,7 +1250,12 @@ function renderEmbeddedTipsSection() {
             <button class="re-add-btn" data-action="edit-tip-content" data-idx="${i}"
               title="Escolher quais segmentos/itens desta dica entram na cotação (re-curar a seleção)."
               style="margin:0;background:var(--bg-soft);color:var(--text-primary);font-size:0.75rem;padding:6px 12px;">
-              ✎ Editar conteúdo
+              ✎ Editar seleção
+            </button>
+            <button class="re-add-btn" data-action="edit-tip-text" data-idx="${i}"
+              title="Editar o TEXTO dos itens desta dica (título, descrição, endereço…) só nesta cotação — sem afetar a dica original do Portal."
+              style="margin:0;background:var(--bg-soft);color:var(--text-primary);font-size:0.75rem;padding:6px 12px;">
+              ✎ Editar textos
             </button>
             <button class="re-add-btn" data-action="republish-tip" data-idx="${i}"
               title="Puxa a versão mais recente desta dica do Portal, mantendo a sua seleção de conteúdo."
@@ -4211,6 +4223,187 @@ function _openTipSelectionModal(tip, onConfirm, opts = {}) {
 }
 
 /**
+ * v4.63.89 — Editor de TEXTO de uma dica embedada.
+ *
+ * Renê: "quando eu falo editar a dica, eu falo em poder editar o texto também
+ * (sem afetar o original, claro)". Permite editar titulo/descrição/endereço/
+ * telefone/site/observações de cada item (e os campos de informacoes_gerais)
+ * SÓ nesta cotação. As edições são:
+ *   - assadas direto em content.segments[seg].items[i] (consumidores leem isso)
+ *   - espelhadas em content._overrides (anchor por titulo original) pra
+ *     sobreviver a re-curagem e "↻ Atualizar do Portal" (preservar).
+ * Nunca toca o portal_tips original.
+ *
+ * `emb` = embeddedTips[idx]. `onSave(updatedContent)` recebe o content mutado.
+ */
+const _ITEM_TEXT_FIELDS = [
+  { k: 'titulo',      label: 'Título',      ta: false },
+  { k: 'descricao',   label: 'Descrição',   ta: true  },
+  { k: 'endereco',    label: 'Endereço',    ta: false },
+  { k: 'telefone',    label: 'Telefone',    ta: false },
+  { k: 'site',        label: 'Site',        ta: false },
+  { k: 'observacoes', label: 'Observações', ta: true  },
+];
+const _INFO_TEXT_FIELDS = [
+  { k: 'descricao',  label: 'Descrição',    ta: true  },
+  { k: 'dica',       label: 'Dica',         ta: true  },
+  { k: 'moeda',      label: 'Moeda',        ta: false },
+  { k: 'lingua',     label: 'Idioma',       ta: false },
+  { k: 'religiao',   label: 'Religião',     ta: false },
+  { k: 'populacao',  label: 'População',    ta: false },
+  { k: 'voltagem',   label: 'Voltagem',     ta: false },
+  { k: 'ddd',        label: 'DDD',          ta: false },
+  { k: 'fusoSinal',  label: 'Fuso (sinal)', ta: false },
+  { k: 'fusoHoras',  label: 'Fuso (horas)', ta: false },
+];
+
+function _openTipTextEditModal(emb, onSave) {
+  const content = emb.content || {};
+  const segments = content.segments || {};
+  const ovAll = content._overrides || {};
+
+  const orderedKeys = [
+    ...(SEGMENTS || []).map(s => s.key).filter(k => segments[k]),
+    ...Object.keys(segments).filter(k => !(SEGMENTS || []).some(s => s.key === k)),
+  ];
+
+  // valor "base" (portal) efetivo de um campo: se já há override desse campo,
+  // a base ficou guardada; senão o valor atual no item É o do portal.
+  const _fieldInputHTML = (f, val) => f.ta
+    ? `<textarea data-fld="${f.k}" class="re-textarea" rows="2" style="width:100%;font-size:0.8125rem;">${esc(val || '')}</textarea>`
+    : `<input type="text" data-fld="${f.k}" class="re-input" value="${esc(val || '')}" style="width:100%;font-size:0.8125rem;">`;
+
+  let bodyHTML = '';
+  let anyContent = false;
+
+  for (const segKey of orderedKeys) {
+    const val = segments[segKey];
+    bodyHTML += `<div style="font-weight:700;font-size:0.8125rem;color:var(--text-primary);margin:14px 0 6px;text-transform:uppercase;letter-spacing:0.03em;">${esc(_segmentLabel(segKey))}</div>`;
+
+    if (segKey === 'informacoes_gerais') {
+      const info = val?.info || {};
+      const ov = ovAll[segKey]?.info || null;
+      anyContent = true;
+      bodyHTML += `<div data-info-block data-seg="${esc(segKey)}" style="border:1px solid var(--border-subtle,#e5e7eb);border-radius:8px;background:var(--bg-surface);padding:12px;display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        ${_INFO_TEXT_FIELDS.map(f => {
+          const cur = info[f.k] != null ? info[f.k] : '';
+          return `<label style="display:flex;flex-direction:column;gap:3px;font-size:0.7rem;color:var(--text-muted);${f.ta ? 'grid-column:1/-1;' : ''}">${f.label}${_fieldInputHTML(f, cur)}</label>`;
+        }).join('')}
+      </div>`;
+      continue;
+    }
+
+    const items = Array.isArray(val?.items) ? val.items : [];
+    let rendered = 0;
+    items.forEach((it, realIdx) => {
+      if (!it || it.type === 'subtitle') return;
+      rendered++;
+      anyContent = true;
+      const ov = ovAll[segKey]?.[realIdx] || null;
+      const edited = ov?.fields && Object.keys(ov.fields).length;
+      const titulo = it.titulo || it.title || '(sem título)';
+      bodyHTML += `<details data-item-block data-seg="${esc(segKey)}" data-idx="${realIdx}" style="border:1px solid var(--border-subtle,#e5e7eb);border-radius:8px;background:var(--bg-surface);margin-bottom:6px;overflow:hidden;">
+        <summary style="cursor:pointer;padding:8px 12px;font-size:0.8125rem;color:var(--text-primary);display:flex;align-items:center;gap:8px;list-style:none;">
+          <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(titulo)}</span>
+          ${edited ? '<span style="color:var(--brand-gold,#D4A843);font-size:0.7rem;font-weight:600;flex-shrink:0;">✎ editado</span>' : ''}
+          <span style="color:var(--text-muted);font-size:0.7rem;flex-shrink:0;">editar ▾</span>
+        </summary>
+        <div style="padding:10px 12px 12px;display:grid;grid-template-columns:1fr 1fr;gap:10px;border-top:1px solid var(--border-subtle,#e5e7eb);">
+          ${_ITEM_TEXT_FIELDS.map(f => {
+            const cur = it[f.k] != null ? it[f.k] : '';
+            return `<label style="display:flex;flex-direction:column;gap:3px;font-size:0.7rem;color:var(--text-muted);${f.ta || f.k === 'titulo' ? 'grid-column:1/-1;' : ''}">${f.label}${_fieldInputHTML(f, cur)}</label>`;
+          }).join('')}
+        </div>
+      </details>`;
+    });
+    if (!rendered) bodyHTML = bodyHTML.replace(/<div style="font-weight:700[^>]*>[^<]*<\/div>$/, ''); // remove header vazio
+  }
+
+  if (!anyContent) bodyHTML = `<p style="color:var(--text-muted);font-size:0.8125rem;padding:20px;text-align:center;">Esta dica não tem itens com texto editável.</p>`;
+
+  const overlay = document.createElement('div');
+  overlay.className = 're-img-modal-overlay';
+  overlay.innerHTML = `
+    <div class="re-img-modal" style="max-width:720px;max-height:86vh;display:flex;flex-direction:column;">
+      <div class="re-img-modal-header">
+        <div class="re-img-modal-title">✎ Editar textos · <span style="color:var(--text-muted);font-weight:400;font-size:0.875rem;">${esc(emb.title || '')}</span></div>
+        <button class="re-img-modal-close" type="button">&times;</button>
+      </div>
+      <div class="re-img-modal-body" style="overflow:auto;">
+        <div style="background:var(--bg-soft);border-left:3px solid var(--brand-gold,#D4A843);padding:8px 12px;border-radius:4px;font-size:0.75rem;color:var(--text-muted);margin-bottom:8px;line-height:1.5;">
+          As edições valem <strong>só nesta cotação</strong> — a dica original no Portal não é alterada.
+          Ao usar <strong>↻ Atualizar do Portal</strong>, suas edições de texto são preservadas.
+        </div>
+        ${bodyHTML}
+      </div>
+      <div style="padding:14px 20px;border-top:1px solid var(--border-subtle,#e5e7eb);display:flex;justify-content:flex-end;gap:8px;">
+        <button class="btn btn-ghost btn-sm" type="button" data-cancel style="font-size:0.8125rem;">Cancelar</button>
+        <button class="btn btn-primary btn-sm" type="button" data-confirm style="font-size:0.8125rem;">Salvar textos →</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const close = () => overlay.remove();
+  overlay.addEventListener('click', e => { if (e.target === overlay) close(); });
+  overlay.querySelector('.re-img-modal-close').addEventListener('click', close);
+  overlay.querySelector('[data-cancel]').addEventListener('click', close);
+
+  overlay.querySelector('[data-confirm]').addEventListener('click', () => {
+    const newOverrides = {};
+
+    // Itens normais
+    overlay.querySelectorAll('[data-item-block]').forEach(block => {
+      const segKey = block.dataset.seg;
+      const realIdx = Number(block.dataset.idx);
+      const seg = segments[segKey];
+      const item = Array.isArray(seg?.items) ? seg.items[realIdx] : null;
+      if (!item) return;
+      const prevOv = ovAll[segKey]?.[realIdx] || null;
+      const anchor = prevOv?.anchor || item.titulo || item.title || '';
+      const newFields = {}, newBase = {};
+      block.querySelectorAll('[data-fld]').forEach(inp => {
+        const f = inp.dataset.fld;
+        const v = inp.value;
+        const effBase = (prevOv?.fields && f in prevOv.fields)
+          ? (prevOv.base?.[f] != null ? prevOv.base[f] : '')
+          : (item[f] != null ? item[f] : '');
+        if (v !== String(effBase)) { newFields[f] = v; newBase[f] = effBase; }
+        item[f] = v;                       // assa o valor exibido
+      });
+      if (Object.keys(newFields).length) {
+        if (!newOverrides[segKey]) newOverrides[segKey] = {};
+        newOverrides[segKey][realIdx] = { anchor, base: newBase, fields: newFields };
+      }
+    });
+
+    // informacoes_gerais
+    overlay.querySelectorAll('[data-info-block]').forEach(block => {
+      const segKey = block.dataset.seg;
+      const seg = segments[segKey];
+      if (!seg) return;
+      if (!seg.info || typeof seg.info !== 'object') seg.info = {};
+      const prevOv = ovAll[segKey]?.info || null;
+      const newFields = {}, newBase = {};
+      block.querySelectorAll('[data-fld]').forEach(inp => {
+        const f = inp.dataset.fld;
+        const v = inp.value;
+        const effBase = (prevOv?.fields && f in prevOv.fields)
+          ? (prevOv.base?.[f] != null ? prevOv.base[f] : '')
+          : (seg.info[f] != null ? seg.info[f] : '');
+        if (v !== String(effBase)) { newFields[f] = v; newBase[f] = effBase; }
+        seg.info[f] = v;
+      });
+      if (Object.keys(newFields).length) {
+        newOverrides[segKey] = { info: { base: newBase, fields: newFields } };
+      }
+    });
+
+    content._overrides = newOverrides;
+    close();
+    onSave(content);
+  });
+}
+
+/**
  * 4.42.0+ (Sprint 3) — Modal pra anexar dica do Portal de Dicas.
  *
  * Reusa visual e estrutura do modal de imagens (mesmas classes CSS). Lista
@@ -5884,13 +6077,18 @@ async function handleEditorClick(e) {
       fetchTipById(tipEdit.tipId).then(original => {
         _openTipSelectionModal(original, async (selection) => {
           try {
-            const snapshot = await snapshotTipForEmbed(tipEdit.tipId, selection);
+            // v4.63.89 — re-aplica edições de texto locais (overrides) sobre
+            // a nova seleção, pra não perder o que o consultor editou.
+            const { snapshot, dropped } = await snapshotTipForEmbedWithOverrides(
+              tipEdit.tipId, selection, tipEdit.content?._overrides || null);
             // Preserva o id local (estabilidade na UI). collectFormData já
             // rodou, então mexemos direto no array em memória.
             currentRoteiro.embeddedTips[idx] = { ...snapshot, id: tipEdit.id };
             rerenderCurrentSection();
             markDirty();
-            showToast('Seleção da dica atualizada.', 'success');
+            showToast(dropped
+              ? `Seleção atualizada. ${dropped} edição(ões) de texto não couberam na nova seleção.`
+              : 'Seleção da dica atualizada.', dropped ? 'info' : 'success');
           } catch (err) {
             showToast('Erro ao atualizar seleção: ' + err.message, 'error');
           }
@@ -5911,17 +6109,36 @@ async function handleEditorClick(e) {
       if (!tip?.tipId) { showToast('Dica sem referência ao original.', 'error'); break; }
       showToast('Atualizando do Portal...', 'info');
       // v4.63.85 — preserva a seleção curada (selection) ao re-snapshotar.
-      // Antes puxava TUDO de novo, descurando silenciosamente o que o
-      // consultor tinha filtrado. content.selection registra a escolha.
-      snapshotTipForEmbed(tip.tipId, tip.content?.selection || null).then(fresh => {
-        // Preserva o ID local (pra estabilidade na UI), mas atualiza
-        // título/subtitle/snapshotAt/content com a versão atual.
-        currentRoteiro.embeddedTips[idx] = { ...fresh, id: tip.id };
+      // v4.63.89 — TAMBÉM preserva edições de texto locais (overrides): o
+      // consultor escolheu "Preservar" suas edições ao atualizar do Portal.
+      snapshotTipForEmbedWithOverrides(tip.tipId, tip.content?.selection || null, tip.content?._overrides || null)
+        .then(({ snapshot: fresh, preserved, dropped }) => {
+          // Preserva o ID local (pra estabilidade na UI), mas atualiza
+          // título/subtitle/snapshotAt/content com a versão atual.
+          currentRoteiro.embeddedTips[idx] = { ...fresh, id: tip.id };
+          rerenderCurrentSection();
+          markDirty();
+          let msg = 'Snapshot atualizado!';
+          if (preserved) msg += ` ${preserved} edição(ões) de texto preservada(s).`;
+          if (dropped)   msg += ` ${dropped} não pôde(ram) ser reaplicada(s) (item mudou no Portal).`;
+          showToast(msg, dropped ? 'info' : 'success');
+        }).catch(err => {
+          showToast('Erro ao re-publicar: ' + err.message, 'error');
+        });
+      break;
+    }
+
+    case 'edit-tip-text': {
+      // v4.63.89 — editar o TEXTO dos itens da dica embedada (override local,
+      // NÃO afeta o portal_tips original). Abre modal com campos editáveis.
+      currentRoteiro = collectFormData();
+      const tipTx = currentRoteiro.embeddedTips?.[idx];
+      if (!tipTx) { showToast('Dica não encontrada.', 'error'); break; }
+      _openTipTextEditModal(tipTx, (updatedContent) => {
+        currentRoteiro.embeddedTips[idx] = { ...tipTx, content: updatedContent };
         rerenderCurrentSection();
         markDirty();
-        showToast('Snapshot atualizado!', 'success');
-      }).catch(err => {
-        showToast('Erro ao re-publicar: ' + err.message, 'error');
+        showToast('Textos da dica atualizados (só nesta cotação).', 'success');
       });
       break;
     }
