@@ -13,8 +13,16 @@ import {
 } from '../services/portal.js';
 
 // 4.35.31+ validações client-side
+// v4.63.91+ AVIF (decode nativo Chrome moderno) + TIFF (decode via UTIF →
+// converte pra WebP no upload, mesmo molde dos demais).
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;  // 10 MB
-const ACCEPTED_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif']);
+const ACCEPTED_MIMES = new Set([
+  'image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif',
+  'image/avif', 'image/tiff', 'image/x-tiff',
+]);
+// TIFF às vezes chega com file.type vazio (OS não mapeia o MIME) — aceitamos
+// também por extensão; a conversão via canvas/UTIF é o gate real de validade.
+const ACCEPTED_EXTS = /\.(jpe?g|png|webp|heic|heif|avif|tiff?)$/i;
 
 const esc = s => String(s||'').replace(/[&<>"']/g,
   c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -272,14 +280,14 @@ function uploadPanelHtml() {
           <div style="font-size:1rem;font-weight:600;margin-bottom:6px;">
             Arraste quantas imagens quiser aqui</div>
           <div style="font-size:0.8125rem;color:var(--text-muted);margin-bottom:16px;">
-            ou clique para selecionar · JPG, PNG, WEBP, HEIC · Máx 10 MB por arquivo
+            ou clique para selecionar · JPG, PNG, WEBP, HEIC, AVIF, TIFF · Máx 10 MB por arquivo
           </div>
           <div style="display:inline-flex;align-items:center;gap:8px;padding:8px 20px;
             background:var(--bg-surface);border:1px solid var(--border-subtle);
             border-radius:var(--radius-sm);font-size:0.8125rem;color:var(--text-secondary);">
             ↑ Selecionar arquivos
           </div>
-          <input type="file" id="img-file-input" multiple accept="image/*" style="display:none;">
+          <input type="file" id="img-file-input" multiple accept="image/*,.avif,.tif,.tiff" style="display:none;">
         </div>
       </div>
 
@@ -432,8 +440,15 @@ function _validateFiles(files) {
   const ok = [];
   const rejected = [];
   for (const f of files) {
-    if (!f.type.startsWith('image/')) { rejected.push([f.name, 'não é imagem']); continue; }
-    if (!ACCEPTED_MIMES.has(f.type)) { rejected.push([f.name, `tipo ${f.type} não suportado`]); continue; }
+    // Aceita por MIME conhecido OU por extensão (cobre TIFF com type vazio).
+    const mimeOk = ACCEPTED_MIMES.has(f.type);
+    const extOk  = ACCEPTED_EXTS.test(f.name || '');
+    if (!mimeOk && !extOk) {
+      const why = (f.type && !f.type.startsWith('image/'))
+        ? 'não é imagem'
+        : `tipo ${f.type || 'desconhecido'} não suportado`;
+      rejected.push([f.name, why]); continue;
+    }
     if (f.size > MAX_FILE_SIZE_BYTES) { rejected.push([f.name, `${(f.size/1024/1024).toFixed(1)} MB > 10 MB`]); continue; }
     ok.push(f);
   }

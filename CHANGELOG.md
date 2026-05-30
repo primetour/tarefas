@@ -6,6 +6,16 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.91+20260530-avif-tiff-upload] — 2026-05-30
+
+**Banco de Imagens: aceitar upload de AVIF e TIFF, convertendo pra WebP no mesmo pipeline.**
+
+Pedido do Renê: *"permitir upload de fotos avif e o tiff (dá pra converter pra webp esses formatos nos moldes que construímos?)"*
+
+**Mudanças:**
+- **`js/services/portal.js`** — `convertToWebp` refatorado pra helper compartilhado `drawableToWebp(drawable, w, h)`. AVIF entra pelo caminho nativo de `<img>` (Chrome moderno decodifica AVIF nativamente → já cai no canvas existente). TIFF (não-decodável via `<img>`) ganha branch dedicado: `_tiffToCanvas(file)` via decoder JS **UTIF.js** (lazy-load `cdn.jsdelivr.net/npm/utif@3.1.0`, já permitido no CSP `script-src`) → `UTIF.decode`/`decodeImage`/`toRGBA8` → `ImageData` → canvas → `drawableToWebp`. Assinatura inalterada → beneficia todos os callers (batch do Banco, roteiroEditor, etc.).
+- **`js/pages/portalImages.js`** — `ACCEPTED_MIMES` expandido (`image/avif`, `image/tiff`, `image/x-tiff`) + `ACCEPTED_EXTS` regex; `_validateFiles` aceita por MIME **ou** extensão (TIFF costuma vir com `type` vazio); `accept="image/*,.avif,.tif,.tiff"` no input; hint de formatos atualizado pra incluir AVIF/TIFF.
+
 ## [4.63.90+20260530-dica-rich-toolbar-fix] — 2026-05-30
 
 **Fix da formatação de texto (negrito/itálico/sublinhado) no editor do Portal de Dicas.**

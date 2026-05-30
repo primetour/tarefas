@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 90,
-  build: '20260530-dica-rich-toolbar-fix',
+  patch: 91,
+  build: '20260530-avif-tiff-upload',
 };
 
 /** "1.2.0" */

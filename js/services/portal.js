@@ -1481,25 +1481,74 @@ export async function deleteImageMeta(id) {
   }
 }
 
+// v4.63.91: TIFF não é decodável via <img> no Chrome/Firefox (só Safari).
+// Usa UTIF (decoder JS puro, ~58KB) carregado on-demand do jsDelivr
+// (CSP script-src já permite cdn.jsdelivr.net). AVIF/HEIC/JPEG/PNG/WebP
+// seguem o caminho nativo (<img>), que o Chrome moderno decodifica direto.
+const _TIFF_EXT_RE = /\.tiff?$/i;
+function _isTiffFile(file) {
+  return /image\/(tiff|x-tiff)/i.test(file?.type || '') || _TIFF_EXT_RE.test(file?.name || '');
+}
+let _utifPromise = null;
+function _loadUTIF() {
+  if (typeof window !== 'undefined' && window.UTIF) return Promise.resolve(window.UTIF);
+  if (_utifPromise) return _utifPromise;
+  _utifPromise = new Promise((resolve, reject) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/utif@3.1.0/UTIF.js';
+    s.onload  = () => window.UTIF ? resolve(window.UTIF) : reject(new Error('Decoder TIFF não inicializou.'));
+    s.onerror = () => { _utifPromise = null; reject(new Error('Falha ao carregar decoder TIFF (rede/CSP).')); };
+    document.head.appendChild(s);
+  });
+  return _utifPromise;
+}
+async function _tiffToCanvas(file) {
+  const UTIF = await _loadUTIF();
+  const buf  = await file.arrayBuffer();
+  const ifds = UTIF.decode(buf);
+  if (!ifds || !ifds.length) throw new Error('TIFF inválido (nenhuma página encontrada).');
+  UTIF.decodeImage(buf, ifds[0], ifds);
+  const rgba = UTIF.toRGBA8(ifds[0]);            // Uint8Array RGBA
+  const w = ifds[0].width, h = ifds[0].height;
+  if (!w || !h) throw new Error('TIFF sem dimensões legíveis.');
+  const canvas = document.createElement('canvas');
+  canvas.width = w; canvas.height = h;
+  const imgData = new ImageData(new Uint8ClampedArray(rgba.buffer, rgba.byteOffset, rgba.byteLength), w, h);
+  canvas.getContext('2d').putImageData(imgData, 0, 0);
+  return canvas;
+}
+
 export async function convertToWebp(file, quality = 0.92, maxSide = WEBP_MAX_SIDE_DEFAULT) {
   const MAX_SIDE = maxSide;
+  // Caminho comum: dado um drawable (HTMLImageElement OU canvas) com w/h
+  // conhecidos, escala (sem upscale) e gera o blob WebP.
+  const drawableToWebp = (drawable, w, h) => new Promise((resolve, reject) => {
+    const scale  = Math.min(1, MAX_SIDE / Math.max(w, h));
+    const canvas = document.createElement('canvas');
+    canvas.width  = Math.round(w * scale);
+    canvas.height = Math.round(h * scale);
+    canvas.getContext('2d').drawImage(drawable, 0, 0, canvas.width, canvas.height);
+    canvas.toBlob(
+      blob => blob
+        ? resolve({ blob, width: canvas.width, height: canvas.height })
+        : reject(new Error('Conversão WebP falhou.')),
+      'image/webp', quality
+    );
+  };
+
+  // TIFF: decode via UTIF → canvas-fonte → webp (mesmo molde de escala/saída).
+  if (_isTiffFile(file)) {
+    const srcCanvas = await _tiffToCanvas(file);
+    return drawableToWebp(srcCanvas, srcCanvas.width, srcCanvas.height);
+  }
+
+  // Demais formatos (AVIF/HEIC/JPEG/PNG/WebP): decode nativo via <img>.
   return new Promise((resolve, reject) => {
     const img = new Image();
     const url = URL.createObjectURL(file);
     img.onload = () => {
       URL.revokeObjectURL(url);
-      // Scale down only if the longest side exceeds MAX_SIDE — never upscale
-      const scale  = Math.min(1, MAX_SIDE / Math.max(img.width, img.height));
-      const canvas = document.createElement('canvas');
-      canvas.width  = Math.round(img.width  * scale);
-      canvas.height = Math.round(img.height * scale);
-      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
-      canvas.toBlob(
-        blob => blob
-          ? resolve({ blob, width: canvas.width, height: canvas.height })
-          : reject(new Error('Conversão WebP falhou.')),
-        'image/webp', quality
-      );
+      drawableToWebp(img, img.width, img.height).then(resolve, reject);
     };
     img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Imagem inválida.')); };
     img.src = url;
