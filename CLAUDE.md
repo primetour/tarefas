@@ -2299,3 +2299,60 @@ if (!profile) {
 **Padrão de teste reusável — interceptar `jsPDF` text**: `text` é own-property por instância (não está em `jsPDF.API` nem no protótipo). Pra capturar o que entra no PDF sem abrir o arquivo: envelopar o construtor `window.jspdf.jsPDF` (wrapper que sobrescreve `inst.text` de cada instância) ANTES de chamar o generator, restaurar em `finally`. Generators leem `window.jspdf.jsPDF` em tempo de chamada, então o wrap pega.
 
 **Princípio mestre**: quando consumir shape de OUTRO módulo (cross-module read), confirmar o schema real lendo um doc de produção ANTES de escrever o reader — não assumir array/chaves EN. `segments` parece array (tem itens) mas é objeto-container. Bug invisível porque `Array.isArray` num objeto não-array retorna `false` graciosamente (0 itens, sem throw).
+
+---
+
+## 17. Auditoria de segurança banking-grade — lições permanentes (v4.63.94-95, 30/05/2026)
+
+Renê pediu auditoria nível instituição bancária da superfície inteira de autorização (rules + cliente + Cloud Functions). 2 releases (v4.63.94 lote 0 rules + lote 1 cliente; v4.63.95 lote 2 CF). Relatório completo em `SECURITY-AUDIT-2026-05-30.md`. Os padrões abaixo são reusáveis em qualquer auditoria futura.
+
+### a) ⚠ ARMADILHA CRÍTICA: `isSystem === true` está em TODAS as 6 roles — NÃO é marcador de privilégio
+
+**Descoberta via Admin SDK em produção** (o achado mais grave da auditoria):
+
+```
+roleId       | isSystem | #perms
+admin        | true     | 75
+coordinator  | true     | 49
+manager      | true     | 60
+master       | true     | 90
+member       | true     | 29      ← membro comum
+partner      | true     | 4       ← parceiro externo
+```
+
+`isSystem` marca "role de sistema / não-deletável", NÃO "role privilegiada". TODAS têm `true`. Logo, qualquer cláusula de permissão na forma:
+
+```js
+if (perms[perm] === true || rd.isSystem === true) return true;   // ❌ BYPASS TOTAL
+```
+
+concedia acesso irrestrito a **member e partner também**. Estava em 5 pontos de `functions/index.js` (hasPermissionUid central, deleteR2, _checkTemplatesPermission, importRoteiroBankPdf, roteiroBankValidityCron). Fix: remover o fallback `|| isSystem`. master/admin seguem cobertos por nome de role + `isMaster`; manager mantém `templates_manage`.
+
+**Princípio mestre**: ANTES de usar qualquer flag de role/user como gate de autorização (`isSystem`, `isVerified`, `isActive`, `tier`, etc.), **confirmar a distribuição real do campo via Admin SDK em produção**. Um campo que parece "marcador de admin" pode estar setado em 100% dos docs e não discriminar nada. `grep "isSystem\|perms.includes\|permissions.includes" functions/index.js` pega callsites com o mesmo anti-padrão. Cf. §13.f (permissions é OBJETO `{key:bool}`, não array).
+
+### b) Cliente NUNCA controla teto de custo/recurso — clamp server-side sempre
+
+`callLLM` aceitava `agentDailyCapUsd` e `maxTokens` do cliente. Membro mandava cap alto e anulava o teto diário. Pattern obrigatório pra qualquer CF que gasta dinheiro/recurso por parâmetro do cliente:
+
+```js
+const safeDailyCapUsd = Math.min(Math.max(Number(agentDailyCapUsd)||5, 0.5), 50);
+const safeMaxTokens   = Math.min(Math.max(parseInt(maxTokens)||2048, 64), 32768);
+```
+
+Vale pra: token caps LLM, page size de query, timeout, tamanho de upload, TTL de cache, retry count. **O cliente sugere; o servidor clampa.** Nunca confiar no número que veio do front pra limitar custo.
+
+### c) Status-leak: endpoint de "status" não devolve valor exato de segredo
+
+`getAISecretsStatus` devolvia `lengths: { provider: <int exato> }` — comprimento exato de cada API key, oráculo útil pra ataque, a qualquer membro. Fix: gate de permissão (`ai_keys_manage`) + **dica grosseira** (`'empty'|'short'|'ok'`) no lugar do valor preciso. Princípio: endpoint de health/status de segredo retorna categoria booleana/enum, nunca metadado mensurável (tamanho, prefixo, hash parcial, timestamp de criação).
+
+### d) CF que faz fetch de URL configurável = SSRF — allowlist obrigatória
+
+`getGitHubFile` montava URL a partir de repo/branch/path do cliente sem allowlist. Toda CF que faz `fetch(urlDerivadaDeInput)` precisa: gate de admin + allowlist de host/repo (`Set`) + validação de branch/path (sem `..`) + `encodeURIComponent` + allowlist do `download_url` de resposta. Cf. §16.a (fileUrl), §16.b (Puppeteer interception), §14.l (Content-Length cap).
+
+### e) Probe não-autenticado é o teste E2E que NÃO precisa de credencial
+
+Sem poder logar como member (Renê autentica ele mesmo), o teste de borda de autorização mais barato é `curl -X POST .../<fn>` sem token → esperar `UNAUTHENTICATED`. Roda em segundos, cobre "nenhuma CF sensível responde a anônimo", e não esbarra na regra de não-inserir-credencial-de-terceiro. Complementar com Admin SDK pra confirmar estado (roles, % de campo populado) e matriz de autorização por raciocínio sobre as rules. E2E autenticado fica explicitamente flagado como pendente do Renê — honestidade > falsa cobertura.
+
+### f) `_headers` (HSTS/X-Frame/COOP) NÃO funciona no GitHub Pages
+
+Formato `_headers` é Cloudflare Pages. No GH Pages só a CSP via `<meta http-equiv>` aplica. HSTS, X-Frame-Options, COOP/COEP exigem response header real → só na migração Cloudflare (Sprint 4). Não declarar "headers de segurança aplicados" enquanto host é GH Pages. CSP `script-src 'unsafe-inline'` continua até build com nonce.
