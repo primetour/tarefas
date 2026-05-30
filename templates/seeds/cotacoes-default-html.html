@@ -20,7 +20,14 @@
       --check-color: #228B22;
       --x-color: #C83C3C;
     }
-    @page { size: A4; margin: 0; }
+    /* v4.63.93: page.pdf do Puppeteer agora roda com margin:0 (functions/index.js),
+       então o CSS @page controla as margens. Margem 18mm topo/base + 15mm laterais
+       aplica em TODA página (inclusive continuação) — corrige texto colado no topo.
+       Capa e fechamento usam @page nomeadas com margin:0 → full-bleed (capa escura
+       ocupa a folha inteira, sem frame branco). */
+    @page { size: A4; margin: 18mm 15mm; }
+    @page coverpage { size: A4; margin: 0; }
+    @page closingpage { size: A4; margin: 0; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: 'Poppins', -apple-system, sans-serif;
@@ -31,16 +38,15 @@
     }
 
     /* ─── COVER ────────────────────────────────────────────── */
-    /* v4.63.82: Puppeteer renderiza com margin 20mm/15mm (functions/index.js:1130),
-       então a caixa de conteúdo é 180mm×257mm — NÃO 210×297. Capa full-size
-       (297mm) transbordava ~40mm pra pág.2 (capa cortada). Altura 256mm fixa cabe
-       em UMA página; width:100% evita corte horizontal. Margens internas reduzidas
-       pra caber no novo envelope. */
+    /* v4.63.93: capa FULL-BLEED. Com page.pdf margin:0 + @page coverpage{margin:0},
+       a capa ocupa a folha A4 inteira (210×297mm) sem frame branco. A foto/cor de
+       fundo sangra até a borda. padding interno garante respiro do conteúdo. */
     .cover {
-      width: 100%; height: 256mm;
+      page: coverpage;
+      width: 210mm; height: 297mm;
       background: var(--secondary);
       color: #fff;
-      padding: 18mm 16mm;
+      padding: 24mm 20mm;
       display: flex; flex-direction: column;
       page-break-after: always;
       position: relative;
@@ -94,12 +100,14 @@
       text-shadow: 0 1px 6px rgba(0,0,0,0.85), 0 0 2px rgba(0,0,0,0.6);
     }
     .cover-line-top, .cover-line-bottom {
-      position: absolute; left: 16mm; right: 16mm; height: 0.6mm;
+      position: absolute; left: 20mm; right: 20mm; height: 0.6mm;
       background: rgba(255,255,255,0.9);
       z-index: 2;
     }
+    /* v4.63.93: reposicionadas pra capa full A4 (297mm). Topo 40mm, base 257mm
+       (= 40mm da borda inferior) → moldura simétrica. */
     .cover-line-top { top: 40mm; }
-    .cover-line-bottom { top: 224mm; }
+    .cover-line-bottom { top: 257mm; }
     .cover-logo {
       max-width: 130mm; max-height: 55mm;
       margin: 10mm auto 10mm;
@@ -454,25 +462,28 @@
     }
 
     /* ─── CLOSING PAGE ─────────────────────────────────────── */
-    /* v4.63.82: mesma correção da capa — 256mm cabe em UMA página dentro da
-       caixa de conteúdo 180×257mm do Puppeteer. Flexbox centra o conteúdo. */
+    /* v4.63.93: fechamento FULL-BLEED (igual capa) — @page closingpage{margin:0}
+       + page:closingpage → ocupa a folha A4 inteira. Flexbox centra o conteúdo. */
     .closing {
-      width: 100%; height: 256mm;
+      page: closingpage;
+      width: 210mm; height: 297mm;
       background: var(--secondary);
       color: #fff;
       position: relative;
       page-break-before: always;
-      padding: 30mm 16mm;
+      padding: 30mm 20mm;
       text-align: center;
       display: flex; flex-direction: column;
       align-items: center; justify-content: center;
     }
     .closing-line {
-      position: absolute; left: 16mm; right: 16mm; height: 0.5mm;
+      position: absolute; left: 20mm; right: 20mm; height: 0.5mm;
       background: rgba(255,255,255,0.9);
     }
-    .closing-line-top { top: 90mm; }
-    .closing-line-bottom { top: 166mm; }
+    /* v4.63.93: reposicionadas pra folha full A4 (297mm) mantendo a faixa
+       centralizada em torno do conteúdo. */
+    .closing-line-top { top: 110mm; }
+    .closing-line-bottom { top: 187mm; }
     .closing-logo {
       max-width: 100mm; max-height: 40mm;
       margin: 0 auto 16mm; display: block;

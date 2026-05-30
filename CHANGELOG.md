@@ -6,6 +6,20 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.93+20260530-pdf-cover-fullbleed-margins] — 2026-05-30
+
+**Ajustes finos do PDF de cotações/banco: capa full-bleed (sem moldura branca) + respiro de topo nas páginas de conteúdo.**
+
+Pedido do Renê: *"Geração de cotações... Capa está cortada, textos estão começando no limite superior da folha... precisa organizar. analise o pdf para realizar as melhorias visuais."*
+
+**Causa raiz:** o render via template (Puppeteer `page.pdf`) aplicava margens uniformes a todas as páginas, mas o Chromium só aplica a margem de TOPO na primeira página de cada fluxo — páginas de continuação colavam no topo. E como a capa é um bloco 210×297mm, qualquer margem do `page.pdf` recortava as bordas dela (moldura branca = "capa cortada").
+
+**Mudanças:**
+- **`functions/index.js`** (`_renderTemplateCore`) — `page.pdf({ margin: 0 })`: o controle de margem passa pro CSS `@page` de cada template (assim cada um decide capa full-bleed vs conteúdo com respiro). Blast radius: só os 2 templates HTML ativos que passam por `page.pdf` (cotações + banco-roteiros). Portal ativo é formato `web` (não-Puppeteer) → intocado.
+- **`templates/seeds/cotacoes-default-html.html`** — `@page { margin: 18mm 15mm }` (conteúdo) + `@page coverpage/closingpage { margin: 0 }` (full-bleed). `.cover` e `.closing` viram páginas nomeadas 210×297mm com `page:`. Linhas decorativas reposicionadas pro novo height. Largura de conteúdo preservada (15mm @page + 16mm `.section` = 31mm efetivo, idêntico ao layout anterior).
+- **`templates/seeds/banco-roteiros-default-html.html`** — mesma receita; **removidas** as regras CSS Paged Media `running(footer)`/`running(header)` + `@bottom-center`/`@top-right` (Chromium não suporta running elements → o `.footer-area` caía solto no topo da página 1). Elemento `.footer-area` do body removido.
+- Validado via harness Puppeteer real (cotação Yamamoto 34 páginas + banco sample): capa full-bleed confirmada, página 2 com margem de topo, sem footer solto.
+
 ## [4.63.92+20260530-unsplash-fallback-choice] — 2026-05-30
 
 **Fallback Unsplash visível e opcional antes de gerar a cotação — usuário escolhe manter cada imagem automática ou deixar o slot vazio.**

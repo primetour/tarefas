@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 92,
-  build: '20260530-unsplash-fallback-choice',
+  patch: 93,
+  build: '20260530-pdf-cover-fullbleed-margins',
 };
 
 /** "1.2.0" */

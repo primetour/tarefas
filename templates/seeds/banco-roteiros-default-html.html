@@ -17,19 +17,24 @@
       --check-color: #228B22;
       --x-color: #C83C3C;
     }
-    @page { size: A4; margin: 0; }
+    /* v4.63.93: margem do PDF agora é 0 no Puppeteer (CF) — o CSS @page controla.
+       Conteúdo: 18mm topo/base + 15mm laterais (com .section 16mm = 31mm efetivo, idêntico ao layout antigo).
+       Capa: página nomeada sem margem (full-bleed). */
+    @page { size: A4; margin: 18mm 15mm; }
+    @page coverpage { size: A4; margin: 0; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: 'Poppins', -apple-system, sans-serif; color: var(--text-dark); line-height: 1.55; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 
     .cover {
+      page: coverpage;
       width: 210mm; height: 297mm;
       background: var(--secondary); color: #fff;
-      padding: 50mm 16mm; display: flex; flex-direction: column;
-      page-break-after: always; position: relative;
+      padding: 50mm 20mm; display: flex; flex-direction: column;
+      page-break-after: always; position: relative; overflow: hidden;
     }
-    .cover-line { position: absolute; left: 16mm; right: 16mm; height: 0.6mm; background: rgba(255,255,255,0.9); }
+    .cover-line { position: absolute; left: 20mm; right: 20mm; height: 0.6mm; background: rgba(255,255,255,0.9); }
     .cover-line-top { top: 40mm; }
-    .cover-line-bottom { top: 245mm; }
+    .cover-line-bottom { top: 257mm; }
     .cover-logo { max-width: 130mm; max-height: 60mm; margin: 8mm auto 12mm; display: block; object-fit: contain; }
     .cover-brand-name { font-size: 22pt; font-weight: 700; text-align: center; letter-spacing: 4px; margin: 30mm 0 18mm; }
     .cover-collection { font-size: 10pt; font-weight: 600; letter-spacing: 5px; text-transform: uppercase; text-align: center; color: rgba(255,255,255,0.9); margin: 5mm 0; }
@@ -63,18 +68,13 @@
     .icon-check { color: var(--check-color); font-weight: 700; width: 4mm; flex-shrink: 0; }
     .icon-x { color: var(--x-color); font-weight: 700; width: 4mm; flex-shrink: 0; }
 
-    .footer-area { position: running(footer); text-align: center; font-size: 7pt; color: #999; padding: 0 16mm 4mm; }
-    @page { @bottom-center { content: element(footer); } margin-bottom: 16mm; }
-    .footer-area .footer-line { border-top: 0.3mm solid #ddd; padding-top: 2mm; }
-    .header-area { position: running(header); text-align: right; font-size: 6pt; color: #aaa; padding: 4mm 16mm 0; }
-    @page { @top-right { content: element(header); } margin-top: 14mm; }
+    /* v4.63.93: removidas as regras CSS Paged Media running(footer)/running(header)
+       e @bottom-center/@top-right — Chromium/Puppeteer NÃO suporta running elements,
+       o que fazia o .footer-area cair solto no topo da página 1. A margem @page acima
+       já garante respiro de topo/base em todas as páginas de continuação. */
   </style>
 </head>
 <body>
-
-<div class="footer-area">
-  <div class="footer-line">{{area.nome}} · {{titulo}} · {{today}}</div>
-</div>
 
 <section class="cover">
   <div class="cover-line cover-line-top"></div>

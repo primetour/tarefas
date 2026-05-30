@@ -1135,10 +1135,19 @@ async function _renderTemplateCore(templateId, data = {}) {
           req.abort('blockedbyresponse');
         });
         await page.setContent(rendered, { waitUntil: 'networkidle0', timeout: 60000 });
+        // v4.63.93: margem do PDF = 0 → o CSS @page de cada template controla as
+        // margens. Necessário pra (1) capa full-bleed (`@page coverpage{margin:0}`
+        // + `.cover{page:coverpage}`) — antes a margem fixa 20mm/15mm enquadrava a
+        // capa escura num frame branco ("capa cortada"); e (2) margem de topo
+        // CONSISTENTE em TODAS as páginas — a margem do page.pdf só aplicava o top
+        // na 1ª página de cada fluxo, então páginas de continuação colavam o texto
+        // no limite superior. Com @page{margin:18mm 15mm} no CSS, toda página
+        // (inclusive continuação) recebe a margem. Templates HTML que passam por
+        // aqui (cotacoes, banco-roteiros) declaram suas próprias @page.
         outputBuf = await page.pdf({
           format: 'A4',
           printBackground: true,
-          margin: { top: '20mm', right: '15mm', bottom: '20mm', left: '15mm' },
+          margin: { top: 0, right: 0, bottom: 0, left: 0 },
         });
       } finally {
         await browser.close();
