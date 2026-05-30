@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 87,
-  build: '20260529-render-stream-fix',
+  patch: 88,
+  build: '20260529-hotels-overlap-fix',
 };
 
 /** "1.2.0" */

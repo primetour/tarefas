@@ -1067,10 +1067,18 @@ export async function generateRoteiroPDF(roteiro, area = null) {
   if (roteiro.hotels?.length) {
     // v4.49.91+ Se já houve flights, mantém na mesma página se couber.
     // Se não houve flights, addPage como antes.
-    if (!Array.isArray(roteiro.flights) || !roteiro.flights.length) {
+    // v4.63.88 fix overlap: quando há voos, HOSPEDAGEM continuava resetando
+    // y=MARGIN e desenhava POR CIMA da tabela AÉREO (mesma página, sem addPage).
+    // Agora passa o finalY da tabela de voos como startY; buildHotelsSection
+    // quebra página sozinho se o cabeçalho (título + faixa de thumbs) não couber.
+    const hadFlights = Array.isArray(roteiro.flights) && roteiro.flights.length;
+    let hotelsStartY = null;
+    if (hadFlights) {
+      hotelsStartY = (doc.lastAutoTable?.finalY != null ? doc.lastAutoTable.finalY : MARGIN) + 12;
+    } else {
       doc.addPage();
     }
-    await buildHotelsSection(doc, roteiro, primary, secondary, images.byHotel);
+    await buildHotelsSection(doc, roteiro, primary, secondary, images.byHotel, hotelsStartY);
   }
 
   /* ─── PRICING ────────────────────────────────────────────── */
@@ -1786,19 +1794,32 @@ function buildFlightsSection(doc, roteiro, primary, secondary) {
   });
 }
 
-async function buildHotelsSection(doc, roteiro, primary, secondary, byHotel = {}) {
+async function buildHotelsSection(doc, roteiro, primary, secondary, byHotel = {}, startY = null) {
   const [pr, pg, pb] = hexToRgb(primary);
   const [sr, sg, sb] = hexToRgb(secondary);
 
-  let y = MARGIN;
-  y = addSectionTitle(doc, y, 'HOSPEDAGEM', primary, secondary);
-  y += 2;
+  // v4.63.88 fix overlap: quando há voos, esta seção continua na mesma página
+  // a partir do finalY da tabela AÉREO (startY passado pelo orquestrador). Antes
+  // resetava y=MARGIN sem addPage → HOSPEDAGEM desenhava POR CIMA do AÉREO.
+  let y = startY != null ? startY : MARGIN;
 
   // Faixa de thumbnails — até 4 hotéis com imagem, lado a lado
   const hotelsWithImg = roteiro.hotels
     .map((h, i) => ({ h, i, url: byHotel?.[i] }))
     .filter(x => x.url)
     .slice(0, 4);
+
+  // Header guard: garante que título + faixa de thumbs + 1ª linha da tabela
+  // não estourem o rodapé. Se não couber, abre página nova ANTES de desenhar.
+  // 22 (título) + faixa thumbs (32 thumbH + 6 caption + 4) + ~24 (head+1 linha).
+  const headerNeeded = 22 + (hotelsWithImg.length ? (32 + 6 + 4) : 0) + 24;
+  if (y + headerNeeded > PAGE_H - MARGIN) {
+    doc.addPage();
+    y = MARGIN;
+  }
+
+  y = addSectionTitle(doc, y, 'HOSPEDAGEM', primary, secondary);
+  y += 2;
 
   if (hotelsWithImg.length) {
     const usableW = PAGE_W - 2 * MARGIN;

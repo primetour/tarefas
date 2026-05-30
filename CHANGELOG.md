@@ -6,6 +6,16 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.88+20260529-hotels-overlap-fix] — 2026-05-29
+
+**Fix da sobreposição AÉREO↔HOSPEDAGEM no PDF "padrão do sistema" (jsPDF fallback).**
+
+Reporte do Renê: *"segue o mesmo problema entre aéreo e hospedagem"* — a seção HOSPEDAGEM desenhava **por cima** da tabela AÉREO na mesma página. Causa: em `buildHotelsSection` (`js/services/roteiroGenerator.js`), quando havia voos, o orquestrador (v4.49.91) mantinha hotéis na mesma página, mas a função resetava `y = MARGIN` **sem `addPage`** e desenhava o título + tabela sobre o conteúdo do AÉREO.
+
+**Mudanças (`js/services/roteiroGenerator.js`):**
+- **Orquestrador**: quando há voos, calcula `hotelsStartY = doc.lastAutoTable.finalY + 12` (continua logo abaixo da tabela AÉREO) e passa como novo argumento `startY` pra `buildHotelsSection`. Sem voos, mantém o `addPage()` anterior (`startY = null`).
+- **`buildHotelsSection(…, startY = null)`**: usa `let y = startY != null ? startY : MARGIN` em vez de resetar pra topo. Adiciona um **header guard** que calcula o espaço necessário (título + faixa de thumbnails + 1ª linha da tabela) e faz `addPage()` ANTES de desenhar se não couber no rodapé — assim título e thumbs nunca ficam órfãos numa quebra.
+
 ## [4.63.87+20260529-render-stream-fix] — 2026-05-29
 
 **Fix do erro `internal` no render de template de cotação: endpoint STREAMING substitui o onCall com limite de 10MB.**
