@@ -6,6 +6,22 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.97+20260530-cotacoes-capa-linha-logo] — 2026-05-30
+
+**🎨 Fix visual — linha do frame decorativo cortando o logo BTG na capa e contracapa do PDF de cotação.**
+
+Sintoma reportado pelo Renê: *"avalie o pdf que deixei no mcp. acredito que o único ajuste visível seja na capa e contracapa agora. (existe uma linha meio do lado). o restante parece ter estabilizado"*.
+
+**Causa raiz:** no template HTML de cotações (`templates/seeds/cotacoes-default-html.html`, renderizado via Puppeteer/Chromium na CF `renderTemplateFile`), as linhas-topo do frame decorativo estavam posicionadas em cima dos logos:
+- **Capa** — `.cover-line-top` em `top: 40mm` cortava o logo BTG (imagem começa ~34mm num layout top-anchored).
+- **Contracapa** — `.closing-line-top` em `top: 110mm` cortava o logo centralizado (~102-140mm).
+
+**Fix:** subir cada linha-topo pra ACIMA do respectivo logo — capa `40mm → 24mm`, contracapa `110mm → 88mm`. Linhas-base (capa 257mm, contracapa 187mm) inalteradas. Template re-seedado no R2 (novo `templateId` ativo/default, antigo arquivado).
+
+**Validação:** render real via CF (Skia/PDF m149, 14MB, 35 páginas) + inspeção a 150dpi da pg1 (capa) e pg35 (contracapa) — ambos limpos, nenhuma linha cruza o logo.
+
+---
+
 ## [4.63.96+20260530-hotfix-convertwebp-paren] — 2026-05-30
 
 **🔴 Hotfix crítico — loop de carregamento no login (boot do app travado).**

@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 96,
-  build: '20260530-hotfix-convertwebp-paren',
+  patch: 97,
+  build: '20260530-cotacoes-capa-linha-logo',
 };
 
 /** "1.2.0" */

@@ -104,9 +104,10 @@
       background: rgba(255,255,255,0.9);
       z-index: 2;
     }
-    /* v4.63.93: reposicionadas pra capa full A4 (297mm). Topo 40mm, base 257mm
-       (= 40mm da borda inferior) → moldura simétrica. */
-    .cover-line-top { top: 40mm; }
+    /* v4.63.97: a linha-topo a 40mm cortava o logo (imagem começa ~34mm,
+       layout top-anchored). Subida pra 24mm → fica ACIMA do logo, formando
+       moldura com a base (257mm) sem atravessar a marca. */
+    .cover-line-top { top: 24mm; }
     .cover-line-bottom { top: 257mm; }
     .cover-logo {
       max-width: 130mm; max-height: 55mm;
@@ -480,9 +481,10 @@
       position: absolute; left: 20mm; right: 20mm; height: 0.5mm;
       background: rgba(255,255,255,0.9);
     }
-    /* v4.63.93: reposicionadas pra folha full A4 (297mm) mantendo a faixa
-       centralizada em torno do conteúdo. */
-    .closing-line-top { top: 110mm; }
+    /* v4.63.97: a linha-topo a 110mm cortava o logo centralizado (~102-140mm).
+       Subida pra 88mm → fica ACIMA do logo; a base (187mm) segue abaixo do
+       tagline → moldura limpa em torno do bloco central. */
+    .closing-line-top { top: 88mm; }
     .closing-line-bottom { top: 187mm; }
     .closing-logo {
       max-width: 100mm; max-height: 40mm;
