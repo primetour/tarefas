@@ -6,6 +6,24 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.89+20260529-dica-text-override] — 2026-05-29
+
+**Editar o TEXTO da dica embedada na cotação — override local que não afeta o Portal de Dicas original.**
+
+Pedido do Renê: *"quando eu falo editar a dica, eu falo em poder editar o texto também (sem afetar o original, claro), e não só escolher o que vai nela. mesmo mecanismo que já existe no próprio portal de dicas antes da geração."* Antes só dava pra escolher QUAIS itens entravam; agora dá pra editar o conteúdo de cada item, só naquela cotação.
+
+**Design:**
+- A edição é **"baked" direto** em `content.segments[seg].items[i]` → todos os consumers (PDF/PPTX/DOCX/web link) leem o texto editado **sem nenhuma mudança de código**.
+- Em paralelo, é espelhada em `content._overrides`, **ancorada pelo título ORIGINAL** do item no Portal — assim sobrevive à reindexação/recuração da dica.
+- Campos editáveis: `titulo`, `descricao`, `endereco`, `telefone`, `site`, `observacoes` + os 10 campos de `informacoes_gerais` (descrição, dica, moeda, língua, religião, população, voltagem, DDD, fuso).
+- **Nunca toca o `portal_tips` original** (override é 100% local à cotação).
+
+**Mudanças:**
+- **`js/services/roteiros.js`**: `_reapplyOverrides(content, overrides)` (grava os campos editados nos items + reconstrói `_overrides` re-keyado pelo índice atual) e `snapshotTipForEmbedWithOverrides(tipId, selection, overrides)`. Regra crítica de matching: casa **só por anchor**; se o anchor não bate (item removido/renomeado), o override é **descartado** — nunca cai pra índice posicional (aplicaria a edição no item errado). Fallback de índice só pra anchors vazios/legados.
+- **`js/pages/roteiroEditor.js`**: botão **"✎ Editar textos"** + badge **"✎ N textos editados"** na linha da dica; modal `_openTipTextEditModal` com `<details>` por item (pula subtitles) e bloco de info pra `informacoes_gerais`. **"Editar seleção"** e **"↻ Atualizar do Portal"** agora roteiam pelo helper que **preserva** os overrides (o Renê escolheu "Preservar"); toast informa quantos overrides foram preservados/descartados.
+
+**Validação:** harness Node de 8 cenários (14 asserts, 14/14) — reorder por anchor, item removido→drop, fallback de índice só com anchor vazio, override de `informacoes_gerais`, segmento sumido→drop, skip de subtitle, limpar override, editar o próprio título.
+
 ## [4.63.88+20260529-hotels-overlap-fix] — 2026-05-29
 
 **Fix da sobreposição AÉREO↔HOSPEDAGEM no PDF "padrão do sistema" (jsPDF fallback).**
