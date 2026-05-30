@@ -2300,6 +2300,37 @@ if (!profile) {
 
 **Princípio mestre**: quando consumir shape de OUTRO módulo (cross-module read), confirmar o schema real lendo um doc de produção ANTES de escrever o reader — não assumir array/chaves EN. `segments` parece array (tem itens) mas é objeto-container. Bug invisível porque `Array.isArray` num objeto não-array retorna `false` graciosamente (0 itens, sem throw).
 
+### w) ⚠ ARMADILHA CRÍTICA: `node --check` parseia em SCRIPT GOAL — FALSE-PASSA erro de sintaxe que só aparece em MODULE GOAL (v4.63.96)
+
+**Sintoma Renê 2026-05-30**: *"bug de looping de carregamento? nao consigo entrar"* — loop infinito de "CARREGANDO PLATAFORMA...". Console: `portal.js:1537 Uncaught SyntaxError: missing ) after argument list`. Login de TODOS os usuários travado (regressão prod).
+
+**Causa raiz**: em v4.63.91 (suporte AVIF/TIFF → WebP) adicionei `drawableToWebp` em `js/services/portal.js` com `new Promise((resolve, reject) => { ... };` — o `};` fechava só o corpo da arrow, deixando o `(` do `new Promise(` **sem `)` de fechamento**. Como `js/services/portal.js` é static import do app principal, o parse falho quebrava o boot inteiro em cascata → loading screen eterno.
+
+**Por que escapou de N camadas**:
+- `node --check js/services/portal.js` → **PASSOU** (falso-negativo). Esse é o ponto crítico: o default do `node --check` parseia o arquivo em **script goal** (CommonJS), que tolera certas construções que o **module goal** (ESM, o que o browser usa pra `<script type="module">`) rejeita. O erro só existe em module goal.
+- `curl` confirmava deploy no ar (mas o arquivo no ar TINHA o bug).
+- E2E visual da UI principal não passava por `convertToWebp` (caminho só usado em upload AVIF/TIFF).
+
+**Como reproduzir o erro que o BROWSER vê** (a ferramenta correta):
+```bash
+# ❌ falso-negativo (script goal):
+node --check js/services/portal.js                       # passa mesmo com bug
+
+# ✅ reproduz o erro real (module goal):
+node --check --input-type=module < js/services/portal.js # falha igual ao browser
+# ou: node --experimental-vm-modules + new vm.SourceTextModule(src)
+```
+
+**Fix**: 1 caractere — `};` → `});` na linha de fechamento do `new Promise`. Sibling Promises (`_loadUTIF`, path `<img>`) já estavam corretos com `});`.
+
+**Cache trap correlato (GH Pages)**: `js/services/portal.js` é static import **SEM `?v=`** (diferente de `js/app.js?v=FULL`). GH Pages serve `max-age=600` + browser cacheia módulo por URL. Após push do fix, o primeiro reload ainda pegava bytes velhos do HTTP cache. Solução: `fetch('js/services/portal.js', {cache:'reload'})` no console pra reprimir a entrada do HTTP cache com bytes frescos, **depois** reload normal → module loader pega o arquivo corrigido. (Nunca usar `caches.delete`/unregister SW — derruba auth Firebase.)
+
+**Regras permanentes**:
+1. **SEMPRE** validar sintaxe de arquivo ESM com `node --check --input-type=module < arquivo.js`, NUNCA só `node --check arquivo.js`. O default mente pra arquivos module.
+2. Build de feature que adiciona `new Promise`/IIFE/callback aninhado em arquivo grande: contar fechamentos OU rodar o module-goal check antes de commitar.
+3. Bug que quebra o **boot inteiro** (static import com syntax error) tem sintoma genérico ("loading loop") que NÃO aponta a causa — ir direto no console do browser (`SyntaxError ... arquivo:linha`) é o atalho. O browser está SEMPRE certo sobre sintaxe ESM; se `node --check` discorda, é o `node --check` em script goal mentindo.
+4. Static imports sem `?v=` (`js/services/*.js`, `js/version.js`) ficam stale até `max-age=600` pós-deploy. Pra forçar refresh imediato num teste: `fetch(url, {cache:'reload'})` + reload.
+
 ---
 
 ## 17. Auditoria de segurança banking-grade — lições permanentes (v4.63.94-95, 30/05/2026)
