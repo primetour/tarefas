@@ -541,6 +541,55 @@ export async function resolveDestinationImage(dest, override, bankImages, opts =
   return await fetchAutoPhoto(q, opts);
 }
 
+/* ─── v4.63.92 — Source-aware resolution + política efêmera de Unsplash ───
+ *
+ * Renê (28/05/2026): "fallback de imagens Unsplash deve ser visível para o
+ * usuário antes da geração, e não hardcoded padrão. Usuário pode escolher
+ * seguir com o fallback ou deixar o documento sem imagem."
+ *
+ * Decisões: default = DEIXAR VAZIO (Unsplash só entra se o user optar
+ * explicitamente "Manter") · persistência EFÊMERA (só por geração, sem
+ * schema no Firestore) · escopo Cotações primeiro.
+ *
+ * Mecânica: o editor seta a política (Set de slotKeys a MANTER) via
+ * setUnsplashKeepPolicy() logo antes de exportar, e limpa com
+ * clearUnsplashKeepPolicy() no finally. enrichRoteiroImages lê essa política
+ * (ou opts.keepUnsplash explícito) e DROPA slots resolvidos via Unsplash que
+ * não estejam na lista. slotKeys seguem a convenção do editor:
+ * 'hero' · `city_${normKey}` · `hotel_${idx}`.
+ *
+ * Compat: política null/ausente = comportamento legado (mantém todas as
+ * Unsplash). Banco e overrides manuais NUNCA são dropados — só Unsplash. */
+let _unsplashKeepPolicy = null;
+
+/** Define quais slots Unsplash MANTER na próxima geração (Set ou Array de slotKeys). */
+export function setUnsplashKeepPolicy(slotKeys) {
+  if (slotKeys instanceof Set) _unsplashKeepPolicy = new Set(slotKeys);
+  else if (Array.isArray(slotKeys)) _unsplashKeepPolicy = new Set(slotKeys);
+  else _unsplashKeepPolicy = null;
+}
+
+/** Limpa a política efêmera (volta ao legado: mantém todas as Unsplash). */
+export function clearUnsplashKeepPolicy() { _unsplashKeepPolicy = null; }
+
+/** Resolve um destino reportando a FONTE (bank|unsplash|none) junto da URL. */
+async function _resolveDestWithSource(dest, bankImages, opts = {}) {
+  const fromBank = pickFromBank(bankImages, dest || {}, opts);
+  if (fromBank) return { url: fromBank, source: 'bank' };
+  const q = [dest?.city, dest?.country].filter(Boolean).join(' ');
+  if (!q) return { url: null, source: 'none' };
+  const url = await fetchAutoPhoto(q, opts);
+  return { url: url || null, source: url ? 'unsplash' : 'none' };
+}
+
+/** slot interno ('hero' | 'city:KEY' | 'hotel:IDX') → slotKey do editor. */
+function _slotToEditorKey(slot) {
+  if (slot === 'hero') return 'hero';
+  if (slot.startsWith('city:')) return `city_${slot.slice(5)}`;
+  if (slot.startsWith('hotel:')) return `hotel_${slot.slice(6)}`;
+  return slot;
+}
+
 /** Enriquece roteiro com imagens pra capa, dias e hotéis.
  * Lê roteiro.images.overrides (manuais) e popula:
  *   - heroUrl: capa (1ª destinação ou override)
@@ -549,11 +598,28 @@ export async function resolveDestinationImage(dest, override, bankImages, opts =
  * Não persiste — só retorna pra usar no PDF/PPTX/DOCX.
  *
  * @param {Object} roteiro
- * @returns {Promise<{ heroUrl, byCity: Object, byHotel: Object }>}
+ * @param {Object} [opts]
+ * @param {Set<string>|null} [opts.keepUnsplash] - slotKeys do editor a MANTER
+ *        quando a fonte for Unsplash. Se ausente, usa a política efêmera
+ *        global (setUnsplashKeepPolicy). null/ausente em ambos = legado
+ *        (mantém todas as Unsplash).
+ * @returns {Promise<{ heroUrl, byCity, byHotel, raw, sources }>}
+ *        - raw: { slotKey: url } TODAS as URLs resolvidas (pré-filtro) — pro preview.
+ *        - sources: { slotKey: 'override'|'bank'|'unsplash'|'none' } — pro label/UI.
  */
-export async function enrichRoteiroImages(roteiro) {
+export async function enrichRoteiroImages(roteiro, opts = {}) {
   const overrides = roteiro?.images?.overrides || {};
-  const out = { heroUrl: null, byCity: {}, byHotel: {} };
+  const out = { heroUrl: null, byCity: {}, byHotel: {}, raw: {}, sources: {} };
+
+  // Política de Unsplash: opts.keepUnsplash tem precedência; senão a global.
+  const keepUnsplash = (opts.keepUnsplash !== undefined) ? opts.keepUnsplash : _unsplashKeepPolicy;
+  // shouldKeep: bank/override/none sempre passam; unsplash só se na política
+  // (ou se NÃO há política = legado).
+  const _shouldKeep = (editorKey, source) => {
+    if (source !== 'unsplash') return true;
+    if (!(keepUnsplash instanceof Set)) return true; // legado
+    return keepUnsplash.has(editorKey);
+  };
 
   // v4.58.6 — REWRITE pra paralelismo. Antes era SEQUENCIAL (1 hero +
   // N cidades + M hotéis em série) → 23s pra Japão (5 cidades + 8 hotéis).
@@ -591,12 +657,12 @@ export async function enrichRoteiroImages(roteiro) {
 
   // Hero
   if (heroOverride) {
-    tasks.push(Promise.resolve({ slot: 'hero', url: heroOverride, override: true }));
+    tasks.push(Promise.resolve({ slot: 'hero', url: heroOverride, override: true, source: 'override' }));
   } else if (firstDest) {
     tasks.push(
-      resolveDestinationImage(firstDest, null, bankImages, { excludeUrls: new Set() })
-        .then(url => ({ slot: 'hero', url, override: false }))
-        .catch(() => ({ slot: 'hero', url: null, override: false }))
+      _resolveDestWithSource(firstDest, bankImages, { excludeUrls: new Set() })
+        .then(r => ({ slot: 'hero', url: r.url, override: false, source: r.source }))
+        .catch(() => ({ slot: 'hero', url: null, override: false, source: 'none' }))
     );
   }
 
@@ -604,12 +670,12 @@ export async function enrichRoteiroImages(roteiro) {
   for (const [key, dest] of cities.entries()) {
     const ovKey = `city_${key}`;
     if (overrides[ovKey]) {
-      tasks.push(Promise.resolve({ slot: `city:${key}`, url: overrides[ovKey], override: true }));
+      tasks.push(Promise.resolve({ slot: `city:${key}`, url: overrides[ovKey], override: true, source: 'override' }));
     } else {
       tasks.push(
-        resolveDestinationImage(dest, null, bankImages, { excludeUrls: new Set() })
-          .then(url => ({ slot: `city:${key}`, url, override: false }))
-          .catch(() => ({ slot: `city:${key}`, url: null, override: false }))
+        _resolveDestWithSource(dest, bankImages, { excludeUrls: new Set() })
+          .then(r => ({ slot: `city:${key}`, url: r.url, override: false, source: r.source }))
+          .catch(() => ({ slot: `city:${key}`, url: null, override: false, source: 'none' }))
       );
     }
   }
@@ -619,22 +685,22 @@ export async function enrichRoteiroImages(roteiro) {
     const h = roteiro.hotels[idx];
     const ovKey = `hotel_${idx}`;
     if (overrides[ovKey]) {
-      tasks.push(Promise.resolve({ slot: `hotel:${idx}`, url: overrides[ovKey], override: true }));
+      tasks.push(Promise.resolve({ slot: `hotel:${idx}`, url: overrides[ovKey], override: true, source: 'override' }));
       continue;
     }
     // Banco por city
     const fromBank = pickFromBank(bankImages, { city: h.city, country: '' }, { excludeUrls: new Set() });
     if (fromBank) {
-      tasks.push(Promise.resolve({ slot: `hotel:${idx}`, url: fromBank, override: false }));
+      tasks.push(Promise.resolve({ slot: `hotel:${idx}`, url: fromBank, override: false, source: 'bank' }));
       continue;
     }
-    // Auto-fetch hotel
+    // Auto-fetch hotel (Unsplash)
     const q = h.hotelName ? `${h.hotelName} ${h.city || ''}`.trim() : h.city;
     if (q) {
       tasks.push(
         fetchAutoPhoto(q, { excludeUrls: new Set() })
-          .then(url => ({ slot: `hotel:${idx}`, url, override: false }))
-          .catch(() => ({ slot: `hotel:${idx}`, url: null, override: false }))
+          .then(url => ({ slot: `hotel:${idx}`, url: url || null, override: false, source: url ? 'unsplash' : 'none' }))
+          .catch(() => ({ slot: `hotel:${idx}`, url: null, override: false, source: 'none' }))
       );
     }
   }
@@ -647,28 +713,35 @@ export async function enrichRoteiroImages(roteiro) {
   // Map = ordem dos days no roteiro), depois hotéis.
   // Override sempre ganha (não passa por dedup — user escolheu manualmente).
   const usedUrls = new Set();
+
+  // Helper: registra raw/sources (sempre, pré-filtro) e retorna se a URL deve
+  // ser efetivamente ATRIBUÍDA (passa dedup + política Unsplash).
+  const _record = (found) => {
+    if (!found) return false;
+    const ek = _slotToEditorKey(found.slot);
+    if (found.url) out.raw[ek] = found.url;
+    out.sources[ek] = found.source || (found.override ? 'override' : 'none');
+    if (!found.url) return false;
+    // Política Unsplash: dropa fallback não-escolhido (slot fica vazio no doc).
+    if (!_shouldKeep(ek, out.sources[ek])) return false;
+    // Dedup: override sempre passa; demais só se URL ainda não usada.
+    if (!found.override && usedUrls.has(found.url)) return false;
+    usedUrls.add(found.url);
+    return true;
+  };
+
   const byHero = results.find(r => r.status === 'fulfilled' && r.value?.slot === 'hero')?.value;
-  if (byHero?.url) {
-    out.heroUrl = byHero.url;
-    usedUrls.add(byHero.url);
-  }
+  if (_record(byHero)) out.heroUrl = byHero.url;
+
   // Cidades — preserva ordem do Map original
   for (const [key] of cities.entries()) {
     const found = results.find(r => r.status === 'fulfilled' && r.value?.slot === `city:${key}`)?.value;
-    if (!found?.url) continue;
-    if (found.override || !usedUrls.has(found.url)) {
-      out.byCity[key] = found.url;
-      usedUrls.add(found.url);
-    }
+    if (_record(found)) out.byCity[key] = found.url;
   }
   // Hotéis
   for (let idx = 0; idx < (roteiro?.hotels?.length || 0); idx++) {
     const found = results.find(r => r.status === 'fulfilled' && r.value?.slot === `hotel:${idx}`)?.value;
-    if (!found?.url) continue;
-    if (found.override || !usedUrls.has(found.url)) {
-      out.byHotel[idx] = found.url;
-      usedUrls.add(found.url);
-    }
+    if (_record(found)) out.byHotel[idx] = found.url;
   }
 
   return out;

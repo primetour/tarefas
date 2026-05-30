@@ -7,7 +7,7 @@ import { store }  from '../store.js';
 import { toast } from '../components/toast.js';
 const showToast = (msg, type = 'info') => toast[type]?.(msg) ?? toast.info(msg);
 import { fetchRoteiro, saveRoteiro, snapshotTipForEmbed, snapshotTipForEmbedWithOverrides, fetchTipById, isEmbeddedTipStale, createWebLink, updateRoteiroStatus } from '../services/roteiros.js';
-import { generateRoteiroForExport, resolveDestinationImage } from '../services/roteiroGenerator.js';
+import { generateRoteiroForExport, resolveDestinationImage, setUnsplashKeepPolicy, clearUnsplashKeepPolicy } from '../services/roteiroGenerator.js';
 import { fetchDestinations, fetchAreas, fetchImages, fetchTips, saveDestination, CONTINENTS, SEGMENTS } from '../services/portal.js';
 import { detectBankContext, showBankGuardModal } from '../services/bankClientGuard.js';
 
@@ -18,6 +18,12 @@ let autoSaveTimer = null;
 let allDestinations = [];
 let allAreas = [];
 let activeSection = 0;
+
+// v4.63.92 — Política efêmera de fallback Unsplash. Set de slotKeys (hero,
+// city_<k>, hotel_<i>) que o user escolheu MANTER. Default = vazio (nenhum
+// Unsplash entra na geração — slot fica sem imagem). NÃO persiste no Firestore;
+// resetado a cada load. Aplicado via setUnsplashKeepPolicy() antes do export.
+let _keepUnsplashSlots = new Set();
 
 /* ─── Helper ──────────────────────────────────────────────── */
 const esc = s => s ? String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;') : '';
@@ -3853,8 +3859,10 @@ function renderImagensSection() {
   return `
     <div class="re-section-title">Imagens</div>
     <p style="font-size:0.8125rem;color:var(--text-muted);margin:-4px 0 14px;line-height:1.5;">
-      A geração de PDF/PPTX usa, em ordem: imagem manual → banco do Portal → Unsplash → Wikipedia.
-      Marque "Trocar" para escolher manualmente; senão fica automática.
+      A geração usa, em ordem: imagem manual → banco do Portal → Unsplash (fallback).
+      Imagens manuais e do banco entram sempre. Já o <strong>fallback Unsplash</strong> NÃO
+      entra por padrão — quando aparecer, clique em <strong>"✓ Usar Unsplash"</strong> no slot
+      pra incluí-la; senão o documento sai sem aquela imagem. (Escolha vale só para esta geração.)
     </p>
 
     <div class="re-img-group">
@@ -5590,25 +5598,29 @@ async function autoAttachTipsForCountry(country) {
 async function populateAutoImagePreviews() {
   try {
     const { enrichRoteiroImages } = await import('../services/roteiroGenerator.js');
-    const enriched = await enrichRoteiroImages(currentRoteiro);
+    // v4.63.92 — resolve SEM política (keepUnsplash:null = legado) pra enxergar
+    // TODAS as imagens candidatas + suas fontes. A escolha keep/vazio do user
+    // (em _keepUnsplashSlots) só é aplicada na hora do export, não no preview.
+    const enriched = await enrichRoteiroImages(currentRoteiro, { keepUnsplash: null });
     if (!enriched) return;
 
-    // Hero
-    if (enriched.heroUrl) {
-      _swapImgThumb('hero', enriched.heroUrl, 'Auto (banco → Unsplash)');
-    }
-    // Cidades — chave do override é `city_${normKey}` (igual ao map enriched.byCity)
-    if (enriched.byCity) {
-      Object.entries(enriched.byCity).forEach(([cityKey, url]) => {
-        if (url) _swapImgThumb(`city_${cityKey}`, url, 'Auto (banco → Unsplash)');
-      });
-    }
-    // Hotéis — chave do override é `hotel_${idx}`
-    if (enriched.byHotel) {
-      Object.entries(enriched.byHotel).forEach(([idx, url]) => {
-        if (url) _swapImgThumb(`hotel_${idx}`, url, 'Auto (banco → Unsplash)');
-      });
-    }
+    const sources = enriched.sources || {};
+    const raw = enriched.raw || {};
+
+    // slotKeys já vêm em formato de editor (hero, city_<k>, hotel_<i>)
+    Object.keys(sources).forEach(slotKey => {
+      const src = sources[slotKey];
+      const url = raw[slotKey];
+      if (src === 'unsplash' && url) {
+        // Fallback Unsplash → renderiza com toggle keep/vazio (default: vazio)
+        _applyUnsplashSlotUI(slotKey, url);
+      } else if (url) {
+        // Banco do Portal ou imagem manual → entra sempre, sem escolha
+        const label = src === 'bank' ? 'Banco do Portal'
+          : (src === 'override' ? 'Personalizada' : 'Automática');
+        _swapImgThumb(slotKey, url, label);
+      }
+    });
   } catch (e) {
     console.warn('[roteiroEditor] populateAutoImagePreviews falhou:', e?.message || e);
   }
@@ -5623,6 +5635,54 @@ function _swapImgThumb(imgKey, url, label) {
     thumb.innerHTML = `<img src="${url}" alt="${imgKey}" />`;
   }
   if (sub && label) sub.textContent = label;
+}
+
+/**
+ * v4.63.92 — Renderiza um slot com fonte Unsplash (fallback) deixando o user
+ * decidir, ANTES da geração, se mantém a imagem ou gera sem ela. Default =
+ * vazio (Unsplash NÃO entra). Estado em _keepUnsplashSlots (efêmero, não salva).
+ */
+function _applyUnsplashSlotUI(slotKey, url) {
+  const row = document.querySelector(`[data-img-target="${slotKey}"]`);
+  if (!row) return;
+  const kept = _keepUnsplashSlots.has(slotKey);
+  const thumb = row.querySelector('.re-img-thumb');
+  const sub = row.querySelector('.re-img-sub');
+  const actions = row.querySelector('.re-img-actions');
+
+  if (thumb) {
+    thumb.style.position = 'relative';
+    thumb.innerHTML = `<img src="${esc(url)}" alt="${esc(slotKey)}"
+        style="opacity:${kept ? '1' : '0.32'};filter:${kept ? 'none' : 'grayscale(0.6)'};" />`
+      + (kept ? '' : `<span style="position:absolute;inset:0;display:flex;align-items:center;
+          justify-content:center;font-size:0.58rem;font-weight:700;letter-spacing:0.04em;
+          color:#fff;background:rgba(10,22,40,0.45);text-align:center;line-height:1.2;">SEM<br>IMAGEM</span>`);
+  }
+  if (sub) {
+    sub.innerHTML = kept
+      ? '<span style="color:var(--brand-gold,#D4A843);font-weight:600;">Unsplash · será incluída</span>'
+      : '<span style="color:var(--text-muted);">Unsplash (fallback) · documento sai sem esta imagem</span>';
+  }
+  if (actions) {
+    let btn = actions.querySelector('[data-action="unsplash-toggle"]');
+    if (!btn) {
+      btn = document.createElement('button');
+      btn.dataset.action = 'unsplash-toggle';
+      btn.dataset.imgKey = slotKey;
+      btn.style.fontSize = '0.75rem';
+      actions.insertBefore(btn, actions.firstChild);
+    }
+    btn.dataset.unsplashUrl = url;
+    if (kept) {
+      btn.className = 'btn btn-ghost btn-sm';
+      btn.textContent = 'Deixar vazio';
+      btn.style.color = 'var(--color-danger,#EF4444)';
+    } else {
+      btn.className = 'btn btn-secondary btn-sm';
+      btn.textContent = '✓ Usar Unsplash';
+      btn.style.color = '';
+    }
+  }
 }
 
 /* ─── Generate empty days from travel data ────────────────── */
@@ -6334,6 +6394,17 @@ async function handleEditorClick(e) {
       break;
     }
 
+    /* v4.63.92 — Fallback Unsplash: alterna manter/vazio (efêmero, não salva) */
+    case 'unsplash-toggle': {
+      const imgKey = target.dataset.imgKey;
+      const url = target.dataset.unsplashUrl;
+      if (!imgKey) break;
+      if (_keepUnsplashSlots.has(imgKey)) _keepUnsplashSlots.delete(imgKey);
+      else _keepUnsplashSlots.add(imgKey);
+      if (url) _applyUnsplashSlotUI(imgKey, url);
+      break;
+    }
+
     /* ── Export ────────────────────────────────────────────── */
     case 'export-pdf': {
       const formData = collectFormData();
@@ -6355,9 +6426,12 @@ async function handleEditorClick(e) {
         (async () => {
           try {
             if (isDirty || !currentRoteiro.id) await handleSave();
+            setUnsplashKeepPolicy(_keepUnsplashSlots); // v4.63.92
             await generateRoteiroForExport(currentRoteiro, areaId);
           } catch (err) {
             showToast('Erro ao gerar PDF: ' + err.message, 'error');
+          } finally {
+            clearUnsplashKeepPolicy();
           }
         })();
       }
@@ -6385,11 +6459,14 @@ async function handleEditorClick(e) {
         (async () => {
           try {
             if (isDirty || !currentRoteiro.id) await handleSave();
+            setUnsplashKeepPolicy(_keepUnsplashSlots); // v4.63.92
             const { generateRoteiro } = await import('../services/roteiroGenerator.js');
             await generateRoteiro({ roteiro: currentRoteiro, areaId, format: 'docx' });
             showToast('DOCX gerado!', 'success');
           } catch (err) {
             showToast('Erro ao gerar DOCX: ' + err.message, 'error');
+          } finally {
+            clearUnsplashKeepPolicy();
           }
         })();
       }
@@ -6410,9 +6487,12 @@ async function handleEditorClick(e) {
         (async () => {
           try {
             if (isDirty || !currentRoteiro.id) await handleSave();
+            setUnsplashKeepPolicy(_keepUnsplashSlots); // v4.63.92
             await generateRoteiroForExport(currentRoteiro, areaId, 'pptx');
           } catch (err) {
             showToast('Erro ao gerar PPTX: ' + err.message, 'error');
+          } finally {
+            clearUnsplashKeepPolicy();
           }
         })();
       }
@@ -6483,6 +6563,10 @@ async function doGenerateWebLink() {
     if (areaId && Array.isArray(allAreas)) {
       area = allAreas.find(a => a.id === areaId) || null;
     }
+    // v4.63.92 \u2014 aplica pol\u00edtica Unsplash ef\u00eamera ao snapshot do link p\u00fablico.
+    // createWebLink chama enrichRoteiroImages internamente (roteiros.js), que
+    // honra o global _unsplashKeepPolicy. Limpo no finally abaixo.
+    setUnsplashKeepPolicy(_keepUnsplashSlots);
     // createWebLink j\u00e1 aplica stripInternalForPublicLink (Sprint 2)
     const token = await createWebLink(currentRoteiro.id, currentRoteiro, area);
     const baseUrl = `${location.protocol}//${location.host}${location.pathname.replace(/\/[^/]*$/, '/')}`;
@@ -6542,6 +6626,8 @@ async function doGenerateWebLink() {
   } catch (err) {
     console.error('[Roteiro] Erro ao gerar link web:', err);
     showToast('Erro ao gerar link: ' + (err.message || err), 'error');
+  } finally {
+    clearUnsplashKeepPolicy(); // v4.63.92
   }
 }
 
@@ -6747,6 +6833,9 @@ export async function renderRoteiroEditor(container) {
 
     allDestinations = destinations || [];
     allAreas = areas || [];
+
+    // v4.63.92 — reset política Unsplash efêmera a cada load de cotação
+    _keepUnsplashSlots = new Set();
 
     if (roteiroData) {
       currentRoteiro = roteiroData;
@@ -7882,4 +7971,5 @@ export function destroyRoteiroEditor() {
   // v4.62.31: sub-tab state removida (Serviços virou form único, sem state).
   allAreas = [];
   activeSection = 0;
+  _keepUnsplashSlots = new Set(); // v4.63.92
 }

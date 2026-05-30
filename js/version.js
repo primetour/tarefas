@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 91,
-  build: '20260530-avif-tiff-upload',
+  patch: 92,
+  build: '20260530-unsplash-fallback-choice',
 };
 
 /** "1.2.0" */

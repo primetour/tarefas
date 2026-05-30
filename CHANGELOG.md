@@ -6,6 +6,18 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.92+20260530-unsplash-fallback-choice] — 2026-05-30
+
+**Fallback Unsplash visível e opcional antes de gerar a cotação — usuário escolhe manter cada imagem automática ou deixar o slot vazio.**
+
+Pedido do Renê: *"fallback de imagens Unsplash deve ser visível para o usuário antes da geração, e não hardcoded padrão. Usuário pode escolher seguir com o fallback ou deixar o documento sem imagem."*
+
+**Decisões confirmadas:** default por slot = **deixar vazio** (Unsplash só entra se o user clicar "✓ Usar Unsplash"); persistência = **só por geração (efêmero)** — sem mudança de schema no Firestore; escopo = **começar por Cotações**, validar UX, depois replicar no Portal de Dicas.
+
+**Mudanças:**
+- **`js/services/roteiroGenerator.js`** — política efêmera de fallback via global de módulo `_unsplashKeepPolicy` (Set de slotKeys a MANTER, ou `null` = legado/manter-tudo). Novos exports `setUnsplashKeepPolicy(slotKeys)` / `clearUnsplashKeepPolicy()`. `enrichRoteiroImages(roteiro, opts)` agora retorna `{ raw, sources }` por slot (`'override'|'bank'|'unsplash'|'none'`) e só dropa slots cuja fonte é `'unsplash'` e que NÃO estão no Set. Imagens manuais (override) e do Banco do Portal **nunca** são afetadas. `keepUnsplash` aceita override via `opts` (preview força `null` = ver todas as candidatas).
+- **`js/pages/roteiroEditor.js`** — estado efêmero `_keepUnsplashSlots` (Set, resetado a cada load e no destroy). `populateAutoImagePreviews()` reescrito pra resolver SEM política e pintar cada slot com sua fonte. Slots Unsplash ganham UI dedicada (`_applyUnsplashSlotUI`): thumb esmaecida + overlay "SEM IMAGEM" quando vazio, dourada quando mantida, + botão toggle **"✓ Usar Unsplash" / "Deixar vazio"**. Os 4 caminhos de export (PDF/DOCX/PPTX + Web Link) aplicam `setUnsplashKeepPolicy(_keepUnsplashSlots)` antes de gerar e `clearUnsplashKeepPolicy()` no `finally`. Hint da seção Imagens atualizado.
+
 ## [4.63.91+20260530-avif-tiff-upload] — 2026-05-30
 
 **Banco de Imagens: aceitar upload de AVIF e TIFF, convertendo pra WebP no mesmo pipeline.**
