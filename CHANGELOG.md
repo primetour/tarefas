@@ -6,6 +6,19 @@ Todas as mudanças relevantes do sistema. Formato baseado em [Keep a Changelog](
 
 ---
 
+## [4.63.90+20260530-dica-rich-toolbar-fix] — 2026-05-30
+
+**Fix da formatação de texto (negrito/itálico/sublinhado) no editor do Portal de Dicas.**
+
+Reporte do Renê: *"Formatação de texto (negrito, itálico…) não está funcionando."* Os botões **B / I / U / 🔗 / ⚓** da toolbar de markdown leve não faziam nada nos segmentos **Informações Gerais** (`#ig-descricao`/`#ig-dica`) nem nos de **lista simples** (`simple_list`).
+
+**Causa raiz:** o handler de clique `.rt-btn` estava registrado **apenas dentro de `bindPlaceList`** (modos `place_list`/`agenda`). Os painéis montados por `bindInfoGenerais()` (`special_info`) e `bindSimpleList()` (`simple_list`) nunca registravam o listener → toolbars inertes. Só `place_list`/`agenda` funcionavam.
+
+**Mudanças (`js/pages/portalTipEditor.js`):**
+- Handler `_handleRichToolbarClick(e)` **hoisted pra módulo** (dispatch: `bold`→`**`, `italic`→`_`, `underline`→`__`, `link`→modal externo, `anchor`→modal interno).
+- **Bind ÚNICO** via delegação no `#segment-editor-panel` (painel persistente entre re-renders), guardado por `panel._rtBound` pra não duplicar listener. Cobre os **4 modos** (`special_info`, `simple_list`, `place_list`, `agenda`).
+- Removido o handler antigo duplicado de `bindPlaceList` (substituído por comentário documental) — sem double-fire.
+
 ## [4.63.89+20260529-dica-text-override] — 2026-05-29
 
 **Editar o TEXTO da dica embedada na cotação — override local que não afeta o Portal de Dicas original.**

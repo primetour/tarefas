@@ -25,8 +25,8 @@
 export const VERSION = {
   major: 4,
   minor: 63,
-  patch: 89,
-  build: '20260529-dica-text-override',
+  patch: 90,
+  build: '20260530-dica-rich-toolbar-fix',
 };
 
 /** "1.2.0" */

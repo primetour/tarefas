@@ -622,6 +622,14 @@ function renderSegmentPanel(key) {
     case 'agenda':       panel.innerHTML = buildAgendaPanel(seg, data); bindPlaceList(key, true); break;
   }
 
+  // v4.63.90: bind ÚNICO da toolbar de markdown no painel persistente.
+  // Delegação no #segment-editor-panel cobre os 4 modos (toolbars são
+  // recriadas via innerHTML a cada render, mas o listener no pai sobrevive).
+  if (!panel._rtBound) {
+    panel._rtBound = true;
+    panel.addEventListener('click', _handleRichToolbarClick);
+  }
+
   // Expiry bindings (common to all)
   document.getElementById('seg-has-expiry')?.addEventListener('change', e => {
     document.getElementById('seg-expiry-field').style.display = e.target.checked ? 'flex' : 'none';
@@ -1104,6 +1112,27 @@ function openInternalAnchorModal(field) {
   });
 }
 
+// v4.63.90: handler ÚNICO de toolbar de markdown, hoisted pra módulo.
+// Bind uma vez no #segment-editor-panel (ver renderSegmentPanel) — cobre os 4
+// modos (special_info, simple_list, place_list, agenda). Antes ficava só dentro
+// de bindPlaceList → toolbars de Informações Gerais e simple_list eram INERTES.
+function _handleRichToolbarClick(e) {
+  const btn = e.target.closest('.rt-btn');
+  if (!btn) return;
+  e.preventDefault();
+  const toolbar   = btn.closest('.rich-toolbar');
+  const targetSel = toolbar?.dataset.target;
+  if (!targetSel) return;
+  const field = document.querySelector(targetSel);
+  if (!field) return;
+  const action = btn.dataset.rt;
+  if      (action === 'bold')      wrapSelection(field, '**');
+  else if (action === 'italic')    wrapSelection(field, '_');
+  else if (action === 'underline') wrapSelection(field, '__');
+  else if (action === 'link')      openExternalLinkModal(field);
+  else if (action === 'anchor')    openInternalAnchorModal(field);
+}
+
 // v4.63.40+ Toolbar mini de markdown: B / I / U / Link / âncora interna.
 // Renderiza inline acima do textarea/input alvo. Data attribute aponta target.
 function richToolbar(targetSel, opts = {}) {
@@ -1427,31 +1456,10 @@ function bindPlaceList(key, isAgenda = false) {
   }
 
   // ───── v4.63.40+ Rich text toolbar (markdown leve) ─────
-  // Click em .rt-btn dentro do container chama wrapSelection no textarea/input
-  // alvo. data-target no .rich-toolbar é o selector CSS pra encontrar o campo.
-  container?.addEventListener('click', (e) => {
-    const btn = e.target.closest('.rt-btn');
-    if (!btn) return;
-    e.preventDefault();
-    const toolbar = btn.closest('.rich-toolbar');
-    const targetSel = toolbar?.dataset.target;
-    if (!targetSel) return;
-    const field = document.querySelector(targetSel);
-    if (!field) return;
-    const action = btn.dataset.rt;
-    if (action === 'bold')      wrapSelection(field, '**');
-    else if (action === 'italic')    wrapSelection(field, '_');
-    else if (action === 'underline') wrapSelection(field, '__');
-    else if (action === 'link') {
-      // v4.63.42+ HIGH H4: prompt() nativo viola CLAUDE.md §11.k.
-      // Modal estilizado replace.
-      openExternalLinkModal(field);
-    }
-    // v4.63.41+ Link interno (âncora) pra outro segmento da própria dica
-    else if (action === 'anchor') {
-      openInternalAnchorModal(field);
-    }
-  });
+  // v4.63.90: handler hoisted pra módulo + bind ÚNICO no #segment-editor-panel
+  // (ver renderSegmentPanel). Antes só bindPlaceList registrava → toolbars de
+  // Informações Gerais (#ig-descricao/#ig-dica) e simple_list ficavam INERTES.
+  // Mantido aqui apenas como no-op documental; binding real é no panel.
 
   // ───── v4.63.37+ Tags: add/remove chips ─────
   // Click no ✕ remove chip
